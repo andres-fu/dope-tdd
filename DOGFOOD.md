@@ -1,0 +1,12 @@
+# Dogfood log — Red First on throughline
+
+Gate: ~2 weeks of real use (started 2026-10-07). One line per friction or surprise:
+date · what happened · what it suggests. Keep entries short and honest.
+
+| Date | What happened | What it suggests |
+| --- | --- | --- |
+| 2026-10-06 | Desktop band rendered as a bright bone slab on the dark app; buttons invisible | Use theme colors; brand only in accents (fixed in v2.1) |
+| 2026-10-06 | Calavera logo SVG rendered as a broken image; a tiny probe SVG worked | Purpose-drawn small mark beats a detailed logo (fixed: skull.svg) |
+| 2026-10-07 | Guard sat paused during real work; owner believed they had resumed it | No confirmation on toggle, no way to check state (fixed: toasts, /tdd, status tool) → MVP needs spike mode so pausing isn't the escape hatch |
+| 2026-10-07 | Claude edited CareerTimeline.tsx via a Python script in Bash; guard never saw it | Bash bypass (fixed in v3: pre-call write detection + git diff backstop) |
+| 2026-10-07 | "AVG 6S" cycles didn't match ~30s real cycles | RED started at test edit, not failing run (fixed in v3: WRITING phase) |

@@ -1,0 +1,276 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
+
+import type { TddStats } from '../types'
+import { findSourceWrites } from './bashWrites'
+import { drawBand, drawTestPane } from './draw'
+import { changedPaths, parseNumstat } from './gitChanges'
+import type { SourceSnapshot } from './gitChanges'
+import { classifyPath, isTestRun } from './mirror'
+import {
+  INITIAL_STATS,
+  expireCurrent,
+  normalizeStats,
+  recordBlocked,
+  recordRun,
+  recordRunTarget,
+  recordSourceEdit,
+  recordTestTouch,
+  resetStats,
+  togglePause,
+} from './stats'
+import { formatStatus } from './summary'
+
+const MINUTE = 60_000
+const TEST_PANE = 'red-first-test'
+const STATUS_TOOL = /^mcp__red-first__status$/
+const MAX_SOURCE_CHARS = 10_000
+const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
+
+const stats = atom({ plugin: 'red-first', key: 'stats' } as const, INITIAL_STATS)
+const tick = atom({ plugin: 'red-first', key: 'tick' } as const, 0)
+
+function succeeded(result: ToolCallResult): boolean {
+  return result.deny === undefined && result.isError !== true
+}
+
+function hasActivity(s: TddStats): boolean {
+  return s.events.length > 0 || s.paused || s.current !== null
+}
+
+function change($: EngineInterface, fn: (s: TddStats) => TddStats): Promise<TddStats> {
+  return update($, stats, stored => fn(normalizeStats(stored)))
+}
+
+async function readStats($: EngineInterface): Promise<TddStats> {
+  return normalizeStats(await read($, stats))
+}
+
+function lockedMessage(module: string): string {
+  return `red-first: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
+}
+
+async function sourceModuleOf($: EngineInterface, root: string, path: string): Promise<string | null> {
+  const isAbsolute = /^([A-Za-z]:|[\\/])/.test(path)
+  const target = classifyPath(root, isAbsolute ? path : `${root}/${path}`)
+  return target.kind === 'source' ? target.module : null
+}
+
+async function guardFileWrite(
+  $: EngineInterface,
+  filePath: string,
+  proceed: () => Promise<ToolCallResult>,
+): Promise<ToolCallResult> {
+  const target = classifyPath(await $.session.root(), filePath)
+  const current = await readStats($)
+
+  if (target.kind === 'source' && !current.paused && current.unlocked[target.module] === undefined) {
+    const nowMs = await $.clock.now()
+    await change($, s => recordBlocked(s, target.module, nowMs))
+    return { deny: lockedMessage(target.module) }
+  }
+
+  const result = await proceed()
+  if (!succeeded(result)) {
+    return result
+  }
+
+  const nowMs = await $.clock.now()
+  if (target.kind === 'source') {
+    await change($, s => recordSourceEdit(s, target.module, true, nowMs))
+  }
+  if (target.kind === 'test') {
+    await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
+  }
+  return result
+}
+
+async function runGit($: EngineInterface, root: string, args: string[]): Promise<string | null> {
+  try {
+    const { exitCode, stdout, stderr } = await $.process.run(['git', ...args], { cwd: root })
+    if (exitCode !== 0) {
+      $.ui.log(`red-first: git ${args.join(' ')} exited ${exitCode}: ${stderr.trim()}`)
+      return null
+    }
+    return stdout
+  } catch (error) {
+    $.ui.log(`red-first: could not run git ${args.join(' ')}: ${String(error)}`)
+    return null
+  }
+}
+
+async function snapshotSource($: EngineInterface, root: string): Promise<SourceSnapshot | null> {
+  const numstat = await runGit($, root, ['diff', '--numstat', '--', 'src'])
+  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', 'src'])
+  if (numstat === null || untracked === null) {
+    return null
+  }
+
+  const untrackedEntries = await Promise.all(
+    untracked
+      .split(/\r?\n/)
+      .filter(path => path !== '')
+      .map(async path => [path, `untracked:${(await lastModifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const),
+  )
+  return { ...parseNumstat(numstat), ...Object.fromEntries(untrackedEntries) }
+}
+
+async function guardBash(
+  $: EngineInterface,
+  command: string,
+  proceed: () => Promise<ToolCallResult>,
+): Promise<ToolCallResult> {
+  const root = await $.session.root()
+  const current = await readStats($)
+
+  const writtenModules = await Promise.all(findSourceWrites(command).map(path => sourceModuleOf($, root, path)))
+  const locked = writtenModules.filter(
+    (module): module is string => module !== null && current.unlocked[module] === undefined,
+  )
+  if (locked.length > 0 && !current.paused) {
+    const nowMs = await $.clock.now()
+    await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
+    return { deny: locked.map(lockedMessage).join('\n') }
+  }
+
+  const before = await snapshotSource($, root)
+  const result = await proceed()
+  if (result.deny !== undefined) {
+    return result
+  }
+  const after = before === null ? null : await snapshotSource($, root)
+  const nowMs = await $.clock.now()
+
+  const changedSources = before === null || after === null
+    ? []
+    : (await Promise.all(
+        changedPaths(before, after).map(async path => ({ path, module: await sourceModuleOf($, root, path) })),
+      )).filter((source): source is { path: string; module: string } => source.module !== null)
+  const unguardedPaths = changedSources
+    .filter(source => current.unlocked[source.module] === undefined)
+    .map(source => source.path)
+  await change($, s =>
+    changedSources.reduce(
+      (acc, { module }) => recordSourceEdit(acc, module, acc.unlocked[module] !== undefined, nowMs),
+      s,
+    ),
+  )
+
+  if (isTestRun(command)) {
+    const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
+    const target = named === undefined ? null : classifyPath(root, /^([A-Za-z]:)?[\\/]/.test(named) ? named : `${root}/${named}`)
+    if (target?.kind === 'test') {
+      await change($, s => recordRunTarget(s, target.module))
+    }
+    await change($, s => recordRun(s, result.isError !== true, nowMs))
+  }
+
+  const reminders = current.paused
+    ? []
+    : unguardedPaths.map(path => `red-first: ${path} changed through a shell command without a test touched first.`)
+  if (reminders.length === 0 || result.isError === true) {
+    return result
+  }
+  return { ...result, context: [...(result.context ?? []), ...reminders] }
+}
+
+async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {
+  try {
+    return (await $.fs.stat(path)).mtimeMs
+  } catch (error) {
+    $.ui.log(`red-first: could not stat ${path}: ${String(error)}`)
+    return null
+  }
+}
+
+async function readSource($: EngineInterface, path: string): Promise<string | null> {
+  try {
+    return (await $.fs.read(path)).slice(0, MAX_SOURCE_CHARS)
+  } catch (error) {
+    $.ui.log(`red-first: could not read ${path}: ${String(error)}`)
+    return null
+  }
+}
+
+let logoSource: string | null = null
+
+async function loadLogo($: EngineInterface): Promise<string | null> {
+  if (logoSource === null) {
+    logoSource = await readSource($, `${$.plugin.root}/assets/skull.svg`)
+  }
+  return logoSource
+}
+
+async function currentStatus($: EngineInterface): Promise<string> {
+  return formatStatus(await readStats($), await $.clock.now())
+}
+
+export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    $.clock.every(MINUTE, () => {
+      void $.clock.now().then(nowMs =>
+        change($, s => expireCurrent(s, nowMs)).then(s =>
+          hasActivity(s) ? update($, tick, n => n + 1) : undefined,
+        ),
+      )
+    })
+    const started = await next(e)
+    await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events' })
+    await $.tool.register({
+      name: 'status',
+      description: 'Report the TDD guard state: paused or on, phase, current module, counts, and the recent event log.',
+    })
+    return started
+  })
+
+  on('command.run', { command: 'tdd' }, async $ => ({ text: await currentStatus($) }))
+
+  on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult)
+
+  on('tool.call', { tool: 'Edit' }, ($, e, next) =>
+    guardFileWrite($, e.file_path, () => next(e)),
+  )
+
+  on('tool.call', { tool: 'Write' }, ($, e, next) =>
+    guardFileWrite($, e.file_path, () => next(e)),
+  )
+
+  on('tool.call', { tool: 'Bash' }, ($, e, next) =>
+    guardBash($, e.command, () => next(e)),
+  )
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await read($, tick)
+    const current = await readStats($)
+    if (e.props.hasSurvey || !hasActivity(current)) {
+      return next(e)
+    }
+
+    const nowMs = await $.clock.now()
+    const modifiedMs = current.current ? await lastModifiedMs($, current.current.testPath) : null
+    const logo = e.surface === 'terminal' ? null : await loadLogo($)
+
+    return drawBand($.ui.resolve(e), {
+      stats: current,
+      nowMs,
+      modifiedMs,
+      logo,
+      onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current?.module ?? ''}` }),
+      onTogglePause: async () => {
+        const nowMs = await $.clock.now()
+        const toggled = await change($, s => togglePause(s, nowMs))
+        $.ui.toast(toggled.paused ? 'TDD guard paused' : 'TDD guard resumed')
+      },
+      onReset: async () => {
+        await change($, resetStats)
+        $.ui.toast('TDD stats reset')
+      },
+    })
+  })
+
+  on('ui.render', { component: 'Pane', requestId: TEST_PANE }, async ($, e) => {
+    const { current } = await readStats($)
+    const source = current ? await readSource($, current.testPath) : null
+    return drawTestPane($.ui.resolve(e), { current, source })
+  })
+}

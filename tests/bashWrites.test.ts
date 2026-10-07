@@ -1,0 +1,48 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { findSourceWrites } from '../hooks/bashWrites'
+
+describe('findSourceWrites', () => {
+  test('sees in-place sed edits of source files', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' src/utils/formatDuration.ts")).toEqual(['src/utils/formatDuration.ts'])
+  })
+
+  test('sees redirects and tee into source files', () => {
+    expect(findSourceWrites('echo x > src/App.tsx')).toEqual(['src/App.tsx'])
+    expect(findSourceWrites('cat <<END >> src/data/career.ts\nx\nEND')).toEqual(['src/data/career.ts'])
+    expect(findSourceWrites('printf x | tee src/main.tsx')).toEqual(['src/main.tsx'])
+  })
+
+  test('sees scripts that write a named source file', () => {
+    const python = "python - <<'PY'\np='src/components/CareerTimeline.tsx'\ns=open(p).read()\nopen(p,'w').write(s)\nPY"
+    const node = "node -e \"require('fs').writeFileSync('src/theme/hueso.ts','x')\""
+    expect(findSourceWrites(python)).toEqual(['src/components/CareerTimeline.tsx'])
+    expect(findSourceWrites(node)).toEqual(['src/theme/hueso.ts'])
+  })
+
+  test('sees copies and moves into src/', () => {
+    expect(findSourceWrites('cp /tmp/x.ts src/utils/x.ts')).toEqual(['src/utils/x.ts'])
+    expect(findSourceWrites('mv old.tsx src/components/New.tsx')).toEqual(['src/components/New.tsx'])
+  })
+
+  test('ignores reads, searches and test runs that merely mention source files', () => {
+    expect(findSourceWrites('cat src/App.tsx')).toEqual([])
+    expect(findSourceWrites('grep -n color src/components/CareerTimeline.tsx')).toEqual([])
+    expect(findSourceWrites('npx vitest run tests/utils/formatDuration.test.ts')).toEqual([])
+    expect(findSourceWrites('git diff src/App.tsx > /tmp/patch.diff')).toEqual([])
+  })
+
+  test('ignores writes to test files and non-ts files under src', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' tests/utils/a.test.ts")).toEqual([])
+    expect(findSourceWrites('echo x >> src/index.css')).toEqual([])
+  })
+
+  test('keeps absolute and drive-letter paths whole so the caller can tell which repo they are in', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' /c/Users/me/throughline/src/App.tsx")).toEqual(['/c/Users/me/throughline/src/App.tsx'])
+    expect(findSourceWrites("python - <<'PY'\nopen('C:/Users/me/throughline/src/App.tsx','w')\nPY")).toEqual(['C:/Users/me/throughline/src/App.tsx'])
+  })
+
+  test('reports each written source file once, also with Windows separators', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' src\\App.tsx src/App.tsx")).toEqual(['src/App.tsx'])
+  })
+})

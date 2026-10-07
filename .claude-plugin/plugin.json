@@ -1,0 +1,8 @@
+{
+  "name": "red-first",
+  "displayName": "Red First",
+  "version": "0.1.0",
+  "description": "TDD companion for Claude Code: keeps Claude test-first, verifies the evidence, and shows it above the prompt",
+  "author": { "name": "Andres Fuentes" },
+  "types": "./types/index.d.ts"
+}

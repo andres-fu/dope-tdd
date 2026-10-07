@@ -1,0 +1,8 @@
+{
+  "name": "red-first",
+  "description": "Red First, the TDD companion for Claude Code",
+  "owner": { "name": "Andres Fuentes" },
+  "plugins": [
+    { "name": "red-first", "source": "./", "description": "Keeps Claude test-first and shows the evidence" }
+  ]
+}

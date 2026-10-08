@@ -73,7 +73,7 @@ describe('runAdvice with the catch check', () => {
 
   test('green, saw red, but the test misses the change: fix the test first', () => {
     expect(runAdvice(edited, green, { kind: 'missed' })).toBe(
-      'red-first: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes. Fix the test before moving on.',
+      'red-first: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
     )
   })
 
@@ -106,6 +106,6 @@ describe('runAdvice on a pass that completes no cycle', () => {
     const green = recordRun(touched, true, at(1))
     const again = recordRun(recordSourceEdit(green, 'money/formatCents', true, at(2)), true, at(3))
 
-    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/does NOT catch the change/)
+    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/has proven nothing yet/)
   })
 })

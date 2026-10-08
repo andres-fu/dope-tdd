@@ -37,6 +37,33 @@ fixture.
 - The project must be a git repository; without one the shell backstop
   records nothing.
 
+## Settings, checked into the repo
+
+An optional `red-first.json` at the repository root sets how strict the guard
+is and where. Every setting shows in `/tdd`, so nothing is hidden.
+
+```json
+{
+  "mode": "warn",
+  "scope": ["src/billing/**"],
+  "exempt": ["src/main.tsx", "src/generated/**"]
+}
+```
+
+- `mode`: `enforce` (default) denies a source edit until its test is
+  touched; `warn` allows it, counts it as unguarded, and tells Claude what to
+  write next; `observe` allows it, counts it, and says nothing, for a
+  baseline before a team turns the guard on.
+- `scope`: when set, the mode applies only inside these paths and everything
+  else is observed. This is how to bring the guard into one area of an old
+  codebase at a time.
+- `exempt`: paths the guard never touches or counts, such as an entry file
+  or generated code. Prefer this to pausing; a pause hides edits, an
+  exemption is on the record.
+
+Everything else, including the catch check and the evidence, runs in every
+mode. Modes only decide whether an edit is denied and whether Claude is told.
+
 ## Develop
 
 ```bash

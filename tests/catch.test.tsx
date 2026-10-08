@@ -99,7 +99,7 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/missed 1/)
-    expect(result.context?.join(' ')).toMatch(/does NOT catch the change/)
+    expect(result.context?.join(' ')).toMatch(/has proven nothing yet/)
   })
 
   test('a refactor after a caught cycle is credited, not reverted', async ($, on) => {

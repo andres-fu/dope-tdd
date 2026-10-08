@@ -118,9 +118,19 @@ Claude. Ask Claude what it did.
 
 ## When the guard is in the way
 
-Press **PAUSE GUARD**. Edits go through, the band says **⏸ PAUSED**, and
-nothing counts as test-first while paused. Press **RESUME GUARD** when you're
-back. `/tdd` always shows which state you're in.
+Two honest answers, in order of preference:
+
+1. **Make the exception explicit.** A `red-first.json` in the project root
+   can exempt files that have no business being unit tested (an entry file,
+   generated code) or switch the guard to `warn` mode, where nothing is
+   denied but every untested edit is counted and Claude is told what to write
+   next. Both show up in `/tdd`, so the exception is on the record. This is
+   how you bring the guard into an old codebase: `warn` everywhere, `enforce`
+   in the area you're reclaiming.
+2. **Pause, briefly.** Press **PAUSE GUARD**. Edits go through, the band says
+   **⏸ PAUSED**, and nothing counts as test-first while paused. Press
+   **RESUME GUARD** when you're back. A pause is for a spike you'll throw
+   away, not for a file you'd rather not test.
 
 ## What "clean" means here
 

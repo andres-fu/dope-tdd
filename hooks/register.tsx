@@ -5,7 +5,9 @@ import type { CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { catchOutcome, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
-import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice } from './advice'
+import { CONFIG_FILE, parseConfig, policyFor } from './config'
+import type { GuardConfig } from './config'
+import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice, unguardedAdvice } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
@@ -68,6 +70,14 @@ async function rememberUnlock($: EngineInterface, root: string, module: string, 
   const key = unlockKey(root)
   const stored = freshUnlocks(await $.store.get(key), nowMs)
   await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
+}
+
+async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
+  return parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`))
+}
+
+function tell(quiet: boolean, result: ToolCallResult, lines: string[]): ToolCallResult {
+  return quiet ? result : withContext(result, lines)
 }
 
 function checkingMessage(module: string): string {
@@ -193,8 +203,15 @@ async function guardFileWrite(
   const root = await $.session.root()
   const target = classifyPath(root, filePath)
   const current = await readStats($)
+  const config = await loadConfig($, root)
+  const quiet = config.mode === 'observe'
+  const policy = target.kind === 'source' ? policyFor(config, relativePath(root, filePath)) : null
+  if (policy === 'exempt') {
+    return proceed()
+  }
+  const isLocked = target.kind === 'source' && current.unlocked[target.module] === undefined
 
-  if (target.kind === 'source' && !current.paused && current.unlocked[target.module] === undefined) {
+  if (isLocked && policy === 'enforce' && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => recordBlocked(s, target.module, nowMs))
     return { deny: lockedMessage(target.module) }
@@ -214,20 +231,26 @@ async function guardFileWrite(
     const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
     const after = before === undefined ? null : await readWhole($, filePath)
     const edited = await change($, s => {
-      const recorded = markReminded(recordSourceEdit(s, target.module, true, nowMs), target.module)
+      const recorded = markReminded(recordSourceEdit(s, target.module, !isLocked, nowMs), target.module)
       return before === undefined || after === null ? recorded : recordChange(recorded, target.module, filePath, before, after)
     })
+    if (edited.paused) {
+      return result
+    }
+    if (isLocked) {
+      return tell(quiet, result, policy === 'warn' ? [unguardedAdvice(target.module)] : [])
+    }
     const testPath = edited.unlocked[target.module]
-    return inheritedAt === undefined || testPath === undefined || edited.paused
+    return inheritedAt === undefined || testPath === undefined
       ? result
-      : withContext(result, [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)])
+      : tell(quiet, result, [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)])
   }
   if (target.kind === 'test') {
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
     await rememberUnlock($, root, target.module, filePath, nowMs)
     const source = await readSource($, filePath)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
-    return touched.paused ? result : withContext(result, [touchAdvice(target.module), ...hollow])
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module), ...hollow])
   }
   return result
 }
@@ -277,17 +300,24 @@ async function guardBash(
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
   const current = await readStats($)
+  const config = await loadConfig($, root)
+  const quiet = config.mode === 'observe'
 
-  const writtenModules = await Promise.all(findSourceWrites(command).map(path => sourceModuleOf($, root, path)))
-  const locked = writtenModules.filter(
-    (module): module is string => module !== null && current.unlocked[module] === undefined,
+  const writes = await Promise.all(
+    findSourceWrites(command).map(async path => ({
+      module: await sourceModuleOf($, root, path),
+      policy: policyFor(config, relativePath(root, path)),
+    })),
+  )
+  const locked = writes.flatMap(({ module, policy }) =>
+    module !== null && policy === 'enforce' && current.unlocked[module] === undefined ? [module] : [],
   )
   if (locked.length > 0 && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
     return { deny: locked.map(lockedMessage).join('\n') }
   }
-  if (current.checking && writtenModules.some(module => module !== null)) {
+  if (current.checking && writes.some(({ module }) => module !== null)) {
     return { deny: checkingMessage(current.current?.module ?? 'this module') }
   }
 
@@ -302,7 +332,7 @@ async function guardBash(
 
   const changed = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
   const touchedTests = changedOfKind(root, changed, 'test')
-  const changedSources = changedOfKind(root, changed, 'source')
+  const changedSources = changedOfKind(root, changed, 'source').filter(({ path }) => policyFor(config, path) !== 'exempt')
   const updated = await change($, s => {
     const withTouches = touchedTests.reduce(
       (acc, { path, module }) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs),
@@ -317,7 +347,7 @@ async function guardBash(
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
   const unguardedPaths = changedSources
-    .filter(source => updated.unlocked[source.module] === undefined)
+    .filter(source => updated.unlocked[source.module] === undefined && policyFor(config, source.path) !== 'observe')
     .map(source => source.path)
 
   const outcome = isTestRun(command) ? runOutcome(result.text ?? '', result.isError === true) : 'none'
@@ -343,7 +373,7 @@ async function guardBash(
         ...unguardedPaths.map(path => `red-first: ${path} changed through a shell command without a test touched first.`),
         ...(advice === null ? [] : [advice]),
       ]
-  return withContext(result, reminders)
+  return tell(quiet, result, reminders)
 }
 
 async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {
@@ -389,7 +419,8 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
 }
 
 async function currentStatus($: EngineInterface): Promise<string> {
-  return formatStatus(await readStats($), await $.clock.now())
+  const config = await loadConfig($, await $.session.root())
+  return formatStatus(await readStats($), await $.clock.now(), config)
 }
 
 export const register: Register = on => {

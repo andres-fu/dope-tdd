@@ -1,4 +1,6 @@
 import type { TddStats } from '../types'
+import { describeConfig } from './config'
+import type { GuardConfig } from './config'
 import { formatAgo, formatSpan } from './timeText'
 
 const RECENT_EVENTS = 10
@@ -39,10 +41,11 @@ function inheritedLine(s: TddStats, nowMs: number): string[] {
   return [`unlocked earlier: ${entries.map(([module, atMs]) => `${module} (${formatAgo(nowMs - atMs)})`).join(', ')}`]
 }
 
-export function formatStatus(s: TddStats, nowMs: number): string {
+export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): string {
   return [
     'red-first',
     `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
+    ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
     `module: ${s.current?.module ?? 'none'}`,
     `runs: ${s.passes + s.fails} (${s.passes} pass, ${s.fails} fail)`,

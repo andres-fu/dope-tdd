@@ -9,9 +9,11 @@ import {
   fakeEngine,
   runBash,
   runCommand,
+  runPowerShell,
   runTests,
   startSession,
   touchTest,
+  writeAt,
 } from './engine'
 
 describe('bash bypass', () => {
@@ -132,6 +134,18 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/unguarded 0/)
   })
 
+  test('a patch applied with git apply is an edit like any other', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'git apply fix.patch')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 1/)
+  })
+
   test('ignores shell calls that change nothing under src/', async ($, on) => {
     fakeEngine(on)
 
@@ -140,6 +154,40 @@ describe('bash bypass', () => {
 
     expect(result.context).toBeUndefined()
     expect(status.text).toMatch(/unguarded 0/)
+  })
+})
+
+describe('the PowerShell tool', () => {
+  test('a PowerShell write to a locked source file is denied like a Bash one', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runPowerShell($, "Set-Content -Path src/utils/calculateDuration.ts -Value 'x'")
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a PowerShell test run is read like a Bash one', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+
+    const result = await runPowerShell($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(result.context?.join(' ')).toMatch(/RED on utils.formatDuration/)
+  })
+
+  test('a source change a PowerShell command made without a test is counted through the git backstop', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runPowerShell($, './scripts/codemod.ps1')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 1/)
   })
 })
 
@@ -165,6 +213,121 @@ describe('honest runs', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/runs: 0/)
+  })
+
+  test('a failing run in other test files is red elsewhere, not red for the module', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/cart/applyDiscount.test.ts > rounds down\n\n Test Files  1 failed | 1 passed (2)\n      Tests  1 failed | 3 passed (4)\n'
+
+    const result = await runBash($, 'npm test')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(status.text).toMatch(/phase: WRITING.*red elsewhere: tests\/cart\/applyDiscount\.test\.ts/)
+    expect(status.text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
+    expect(result.context?.join(' ')).toMatch(/RED, but not on money.formatCents: tests\/cart\/applyDiscount\.test\.ts failed/)
+    expect(await ui.find({ type: 'Text', text: 'RED ELSEWHERE' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /■ RED/ })).toBeUndefined()
+  })
+
+  test('a failing run that names the module\'s own test is RED for it, and the green after it saw red', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/money/formatCents.test.ts > x\n FAIL  tests/cart/applyDiscount.test.ts > y\n\n Tests  2 failed (4)\n'
+
+    await runBash($, 'npm test')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(status.text).not.toMatch(/red elsewhere/)
+  })
+
+  test('a run whose output has no summary line counts as nothing, and the agent is told why', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+    world.bashText = 'Error: Cannot find module vitest\n'
+
+    const result = await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: WRITING/)
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail, 1 unread\)/)
+    expect(result.context?.join(' ')).toMatch(/summary line was not in the output, so nothing was counted/)
+  })
+
+  test('a truncated tool result is named as the reason', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashText = 'Output too large (41.9KB). Full output saved to: C:/x.txt\n\nPreview (first 2KB):\n RUN  v3.2.4\n'
+
+    const result = await runBash($, 'npx vitest run')
+
+    expect(result.context?.join(' ')).toMatch(/the result was truncated/)
+  })
+})
+
+describe('a test changed after red', () => {
+  test('green with the test edited and the code untouched says the green came from the test', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/the test changed after red and src\/money\/formatCents did not/)
+    expect(status.text).toMatch(/test changed 1/)
+    expect(status.text).toMatch(/test-changed\s+money\/formatCents/)
+    expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeDefined()
+  })
+
+  test('green with the test edited and the code changed too is checked, not flagged', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/src/money/formatCents.ts`, 'export const a = 1')
+    await touchTest($, world, 'money/formatCents')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/money/formatCents.ts')
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).not.toMatch(/the green came from the test/)
+    expect(status.text).not.toMatch(/test changed/)
+    expect(status.text).toMatch(/caught 1/)
+  })
+})
+
+describe('the config file is watched', () => {
+  test('loosening dope-tdd.json is recorded, said to the agent, and shown to the user', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await writeAt($, 'dope-tdd.json', '{"mode":"observe"}')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.deny).toBeUndefined()
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed \(mode enforce → observe\)/)
+    expect(world.toasts.some(t => /mode enforce → observe/.test(t))).toBe(true)
+    expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
+    expect(await ui.find({ type: 'Text', text: 'MODE OBSERVE' })).toBeDefined()
+  })
+
+  test('a write that changes nothing the guard reads is quiet', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"warn"}')
+
+    const result = await writeAt($, 'dope-tdd.json', '{"mode": "warn", "comment": "same"}')
+
+    expect(result.context).toBeUndefined()
+    expect(world.toasts).toEqual([])
   })
 })
 
@@ -252,6 +415,15 @@ describe('hollow tests', () => {
 
   test('a touched test that asserts something is not', async ($, on) => {
     const world = fakeEngine(on)
+
+    const result = await touchTest($, world, 'utils/formatDuration')
+
+    expect(result.context?.join(' ')).not.toMatch(/no assertion/)
+  })
+
+  test('a long test file whose first assertion comes late is read whole, not from a prefix', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/tests/utils/formatDuration.test.ts`, `${'// setup\n'.repeat(1_500)}expect(formatDuration(14)).toBe('1y 2m')\n`)
 
     const result = await touchTest($, world, 'utils/formatDuration')
 

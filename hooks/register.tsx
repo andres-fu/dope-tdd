@@ -1,33 +1,46 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
-import type { CatchOutcome, TddStats } from '../types'
+import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { catchOutcome, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
-import { CONFIG_FILE, parseConfig, policyFor } from './config'
+import { CONFIG_FILE, describeConfigChange, parseConfig, policyFor } from './config'
 import type { GuardConfig } from './config'
-import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice, unguardedAdvice } from './advice'
+import {
+  configChangedAdvice,
+  hollowAdvice,
+  inheritedAdvice,
+  runAdvice,
+  touchAdvice,
+  unguardedAdvice,
+  unreadRunAdvice,
+} from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isTestRun, relativePath } from './mirror'
-import { runOutcome } from './runOutcome'
+import { failedFiles, isTruncated, runOutcome } from './runOutcome'
 import {
   INITIAL_STATS,
+  acquireCheck,
   expireCurrent,
+  isChecking,
   markReminded,
   normalizeStats,
   recordBlocked,
   recordCatch,
   recordChange,
+  recordConfigChange,
   recordRun,
   recordRunTarget,
   recordSourceEdit,
+  recordTestChanged,
   recordTestTouch,
+  recordUnreadRun,
+  releaseCheck,
   resetStats,
   seedUnlocks,
-  setChecking,
   togglePause,
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
@@ -40,9 +53,18 @@ const MAX_SOURCE_CHARS = 10_000
 const WATCHED_DIRS = ['src', 'tests']
 const JOURNAL_PREFIX = 'catch-journal:'
 const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
+const RUNNER_FILES: readonly (readonly [RunnerKind, string])[] = [
+  ['vitest', 'node_modules/vitest/vitest.mjs'],
+  ['jest', 'node_modules/jest/bin/jest.js'],
+]
 
 const stats = atom({ plugin: 'dope-tdd', key: 'stats' } as const, INITIAL_STATS)
 const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
+
+/** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
+let cachedConfig: { root: string; config: GuardConfig } | null = null
+
+type FileRead = { kind: 'text'; text: string } | { kind: BeforeState }
 
 function succeeded(result: ToolCallResult): boolean {
   return result.deny === undefined && result.isError !== true
@@ -73,7 +95,13 @@ async function rememberUnlock($: EngineInterface, root: string, module: string, 
 }
 
 async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
-  return parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`))
+  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`))
+  cachedConfig = { root, config }
+  return config
+}
+
+async function configForRender($: EngineInterface, root: string): Promise<GuardConfig> {
+  return cachedConfig?.root === root ? cachedConfig.config : loadConfig($, root)
 }
 
 function tell(quiet: boolean, result: ToolCallResult, lines: string[]): ToolCallResult {
@@ -96,74 +124,153 @@ async function readWhole($: EngineInterface, path: string): Promise<string | nul
   }
 }
 
-async function detectRunner($: EngineInterface, root: string): Promise<RunnerKind | null> {
-  if (await $.fs.exists(`${root}/node_modules/vitest/vitest.mjs`)) {
-    return 'vitest'
+/** Tells a file that is not there from one that is there but cannot be read (too large, locked): only the first is a new file. */
+async function readFile($: EngineInterface, path: string): Promise<FileRead> {
+  try {
+    return { kind: 'text', text: await $.fs.read(path) }
+  } catch {
+    try {
+      return { kind: (await $.fs.exists(path)) ? 'unreadable' : 'missing' }
+    } catch {
+      return { kind: 'unreadable' }
+    }
   }
-  if (await $.fs.exists(`${root}/node_modules/jest/bin/jest.js`)) {
-    return 'jest'
+}
+
+function parentDir(dir: string): string | null {
+  const trimmed = dir.replace(/[\\/]+$/, '')
+  const cut = trimmed.replace(/[\\/][^\\/]*$/, '')
+  return cut === trimmed || cut === '' ? null : cut
+}
+
+type Runner = { kind: RunnerKind; root: string }
+
+/** Walks up from the project root, because a monorepo hoists the runner into a parent node_modules. */
+async function detectRunner($: EngineInterface, root: string): Promise<Runner | null> {
+  for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
+    for (const [kind, file] of RUNNER_FILES) {
+      if (await $.fs.exists(`${dir}/${file}`)) {
+        return { kind, root: dir }
+      }
+    }
   }
   return null
 }
 
-type Journal = { files: { path: string; text: string }[] }
+type JournalFile = { path: string; before: string; after: string }
 
-function isJournal(value: unknown): value is Journal {
-  return typeof value === 'object' && value !== null && Array.isArray((value as Journal).files)
+function isJournalFile(value: unknown): value is JournalFile {
+  const file = value as Partial<JournalFile> | null
+  return typeof file === 'object' && file !== null && typeof file.path === 'string' && typeof file.before === 'string' && typeof file.after === 'string'
 }
 
+function journalFiles(value: unknown): JournalFile[] | null {
+  const journal = value as { files?: unknown } | null
+  return typeof journal === 'object' && journal !== null && Array.isArray(journal.files) ? journal.files.filter(isJournalFile) : null
+}
+
+async function forget($: EngineInterface, key: string): Promise<void> {
+  try {
+    await $.store.delete(key)
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not clear ${key}: ${String(error)}`)
+  }
+}
+
+/**
+ * A journal left behind means a check died between revert and restore. A file
+ * still at `before` gets `after` back; a file that moved since is left alone,
+ * because the hand that moved it knew more than the journal does.
+ */
 async function repairInterruptedCheck($: EngineInterface): Promise<void> {
   const key = `${JOURNAL_PREFIX}${await $.session.root()}`
-  const journal = await $.store.get(key)
-  if (!isJournal(journal) || journal.files.length === 0) {
+  const files = journalFiles(await $.store.get(key))
+  if (files === null) {
     return
   }
-  for (const file of journal.files) {
-    await $.fs.write(file.path, file.text)
+  const restored: string[] = []
+  const left: string[] = []
+  for (const file of files) {
+    const onDisk = await readWhole($, file.path)
+    if (onDisk === file.after) {
+      continue
+    }
+    if (onDisk !== file.before) {
+      left.push(file.path)
+      continue
+    }
+    try {
+      await $.fs.write(file.path, file.after)
+      restored.push(file.path)
+    } catch {
+      left.push(file.path)
+    }
   }
-  await $.store.delete(key)
-  $.ui.toast(`dope-tdd restored ${journal.files.length} file(s) after an interrupted check`)
+  await forget($, key)
+  if (restored.length > 0) {
+    $.ui.toast(`dope-tdd restored ${restored.length} file(s) after an interrupted check`)
+  }
+  if (left.length > 0) {
+    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; see the log`)
+    $.ui.log(`dope-tdd: not restored, they no longer match the interrupted check: ${left.join(', ')}`)
+  }
 }
 
+/**
+ * Proves `module`'s test against this cycle's change to its source: revert,
+ * run only that test, restore. Only this module's change is touched; other
+ * modules wait for their own green. The lock is taken in one update and
+ * released whatever happens; a file that moved while reverted is left alone.
+ */
 async function verifyCatch(
   $: EngineInterface,
   root: string,
   s: TddStats,
   module: string,
   greenRunMs: number,
+  nowMs: number,
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
-  const changes = Object.values(s.changes)
+  const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
-  if (changes.length === 0 || testPath === undefined || changes.every(cycleChange => cycleChange.before === cycleChange.after)) {
+  if (cycleChange === undefined || testPath === undefined || cycleChange.before === cycleChange.after) {
     return 'unchecked'
   }
-  if (changes.every(cycleChange => cycleChange.kind === 'refactor')) {
+  if (cycleChange.kind === 'refactor') {
     return 'refactor'
   }
-  for (const cycleChange of changes) {
-    if ((await readWhole($, cycleChange.path)) !== cycleChange.after) {
-      return { kind: 'unverified', reason: 'changed outside' }
-    }
+  if (cycleChange.before === null) {
+    return { kind: 'unverified', reason: cycleChange.beforeState === 'unreadable' ? 'could not read the file before the edit' : 'new file' }
+  }
+  const { path, before, after } = cycleChange
+  if ((await readWhole($, path)) !== after) {
+    return { kind: 'unverified', reason: 'changed outside' }
   }
   const runner = await detectRunner($, root)
   if (runner === null) {
     return catchOutcome('no-runner')
   }
-  const revertible = changes.filter((cycleChange): cycleChange is { path: string; before: string; after: string } => cycleChange.before !== null)
-  if (revertible.length === 0) {
-    return { kind: 'caught' }
-  }
 
   const journalKey = `${JOURNAL_PREFIX}${root}`
-  await $.store.set(journalKey, { files: revertible.map(cycleChange => ({ path: cycleChange.path, text: cycleChange.after })) })
-  await change($, state => setChecking(state, true))
-  let outcome: CatchOutcome
   try {
-    for (const cycleChange of revertible) {
-      await $.fs.write(cycleChange.path, cycleChange.before)
-    }
+    await $.store.set(journalKey, { files: [{ path, before, after }] })
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not journal the catch check for ${path}: ${String(error)}`)
+    return { kind: 'unverified', reason: 'could not journal the revert' }
+  }
+  const locked = await change($, state => acquireCheck(state, module, nowMs))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
+    await forget($, journalKey)
+    return { kind: 'unverified', reason: 'another check was running' }
+  }
+
+  let outcome: CatchOutcome = { kind: 'unverified', reason: 'revert failed' }
+  let reverted = false
+  let movedWhileReverted = false
+  try {
+    await $.fs.write(path, before)
+    reverted = true
     try {
-      const run = await $.process.run(runnerArgv(root, runner, relativePath(root, testPath)), {
+      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath)), {
         cwd: root,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
@@ -172,20 +279,35 @@ async function verifyCatch(
     } catch {
       outcome = catchOutcome('timeout')
     }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not revert ${path} for the catch check: ${String(error)}`)
   } finally {
-    for (const cycleChange of revertible) {
-      await $.fs.write(cycleChange.path, cycleChange.after)
+    if (reverted) {
+      const onDisk = await readWhole($, path)
+      if (onDisk === before) {
+        try {
+          await $.fs.write(path, after)
+        } catch (error) {
+          $.ui.log(`dope-tdd: could not restore ${path}: ${String(error)}`)
+        }
+      } else if (onDisk !== after) {
+        movedWhileReverted = true
+      }
     }
-    await change($, state => setChecking(state, false))
+    await change($, releaseCheck)
   }
 
-  const restored = await Promise.all(revertible.map(async cycleChange => (await readWhole($, cycleChange.path)) === cycleChange.after))
-  if (!restored.every(Boolean)) {
+  if (movedWhileReverted) {
+    $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; see /tdd`)
+    $.ui.log(`dope-tdd: ${path} changed while reverted; the text before the check is kept under ${journalKey}`)
+    return { kind: 'unverified', reason: 'changed during check' }
+  }
+  if ((await readWhole($, path)) !== after) {
     $.ui.toast('dope-tdd could not restore a source file after the catch check; see /tdd')
-    $.ui.log(`dope-tdd: restore failed for ${revertible.map(cycleChange => cycleChange.path).join(', ')}; journal kept under ${journalKey}`)
+    $.ui.log(`dope-tdd: restore failed for ${path}; journal kept under ${journalKey}`)
     return { kind: 'unverified', reason: 'restore failed' }
   }
-  await $.store.delete(journalKey)
+  await forget($, journalKey)
   return outcome
 }
 
@@ -193,10 +315,17 @@ function lockedMessage(module: string): string {
   return `dope-tdd: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
 }
 
-async function sourceModuleOf($: EngineInterface, root: string, path: string): Promise<string | null> {
-  const isAbsolute = /^([A-Za-z]:|[\\/])/.test(path)
-  const target = classifyPath(root, isAbsolute ? path : `${root}/${path}`)
+function sourceModuleOf(root: string, path: string): string | null {
+  const target = classifyPath(root, absolutePath(root, path))
   return target.kind === 'source' ? target.module : null
+}
+
+function beforeText(file: FileRead): string | null {
+  return file.kind === 'text' ? file.text : null
+}
+
+function beforeState(file: FileRead): BeforeState | undefined {
+  return file.kind === 'text' ? undefined : file.kind
 }
 
 async function guardFileWrite(
@@ -206,6 +335,7 @@ async function guardFileWrite(
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
   const target = classifyPath(root, filePath)
+  const isConfig = relativePath(root, filePath) === CONFIG_FILE
   const current = await readStats($)
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
@@ -220,23 +350,38 @@ async function guardFileWrite(
     await change($, s => recordBlocked(s, target.module, nowMs))
     return { deny: lockedMessage(target.module) }
   }
-  if (current.checking && target.kind !== 'other') {
-    return { deny: checkingMessage(current.current?.module ?? target.module) }
-  }
 
-  const before = target.kind === 'source' && !current.paused ? await readWhole($, filePath) : undefined
+  const before = target.kind === 'source' && !current.paused ? await readFile($, filePath) : undefined
+  if (target.kind !== 'other') {
+    // Read again right before the write: a check that started since must not have this file reverted under the edit.
+    const latest = await readStats($)
+    if (isChecking(latest, await $.clock.now())) {
+      return { deny: checkingMessage(latest.checking?.module ?? target.module) }
+    }
+  }
   const result = await proceed()
   if (!succeeded(result)) {
     return result
   }
 
   const nowMs = await $.clock.now()
+  if (isConfig) {
+    const detail = describeConfigChange(config, await loadConfig($, root))
+    if (detail === null) {
+      return result
+    }
+    await change($, s => recordConfigChange(s, detail, nowMs))
+    $.ui.toast(`dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
+    return withContext(result, [configChangedAdvice(detail)])
+  }
   if (target.kind === 'source') {
     const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
     const after = before === undefined ? null : await readWhole($, filePath)
     const edited = await change($, s => {
       const recorded = markReminded(recordSourceEdit(s, target.module, !isLocked, nowMs), target.module)
-      return before === undefined || after === null ? recorded : recordChange(recorded, target.module, filePath, before, after)
+      return before === undefined || after === null
+        ? recorded
+        : recordChange(recorded, target.module, filePath, beforeText(before), after, beforeState(before))
     })
     if (edited.paused) {
       return result
@@ -252,7 +397,7 @@ async function guardFileWrite(
   if (target.kind === 'test') {
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
     await rememberUnlock($, root, target.module, filePath, nowMs)
-    const source = await readSource($, filePath)
+    const source = await readWhole($, filePath)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
     return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module), ...hollow])
   }
@@ -297,7 +442,15 @@ async function snapshotWatched($: EngineInterface, root: string): Promise<Source
   return Object.fromEntries([...tracked, ...untrackedEntries])
 }
 
-async function guardBash(
+/** The test files the runner named as failed, as modules; empty when the output names none. */
+function failedModules(root: string, files: string[]): string[] {
+  return files.flatMap(file => {
+    const target = classifyPath(root, absolutePath(root, file))
+    return target.kind === 'test' ? [target.module] : []
+  })
+}
+
+async function guardShell(
   $: EngineInterface,
   command: string,
   proceed: () => Promise<ToolCallResult>,
@@ -307,13 +460,11 @@ async function guardBash(
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
 
-  const writes = await Promise.all(
-    findSourceWrites(command).map(async path => ({
-      path: absolutePath(root, path),
-      module: await sourceModuleOf($, root, path),
-      policy: policyFor(config, relativePath(root, path)),
-    })),
-  )
+  const writes = findSourceWrites(command).map(path => ({
+    path: absolutePath(root, path),
+    module: sourceModuleOf(root, path),
+    policy: policyFor(config, relativePath(root, path)),
+  }))
   const locked = writes.flatMap(({ module, policy }) =>
     module !== null && policy === 'enforce' && current.unlocked[module] === undefined ? [module] : [],
   )
@@ -322,15 +473,15 @@ async function guardBash(
     await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
     return { deny: locked.map(lockedMessage).join('\n') }
   }
-  if (current.checking && writes.some(({ module }) => module !== null)) {
-    return { deny: checkingMessage(current.current?.module ?? 'this module') }
+  if (writes.some(({ module }) => module !== null) && isChecking(current, await $.clock.now())) {
+    return { deny: checkingMessage(current.checking?.module ?? 'this module') }
   }
 
   const before = await snapshotWatched($, root)
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
-  const textsBefore = await Promise.all(expectedWrites.map(async write => ({ ...write, before: await readWhole($, write.path) })))
+  const textsBefore = await Promise.all(expectedWrites.map(async write => ({ ...write, before: await readFile($, write.path) })))
   const startedMs = await $.clock.now()
   const result = await proceed()
   if (result.deny !== undefined) {
@@ -358,7 +509,10 @@ async function guardBash(
       withTouches,
     )
     return captured.reduce(
-      (acc, write) => (write.after === null ? acc : recordChange(acc, write.module, write.path, write.before, write.after)),
+      (acc, write) =>
+        write.after === null
+          ? acc
+          : recordChange(acc, write.module, write.path, beforeText(write.before), write.after, beforeState(write.before)),
       withEdits,
     )
   })
@@ -369,22 +523,40 @@ async function guardBash(
     .filter(source => updated.unlocked[source.module] === undefined && policyFor(config, source.path) !== 'observe')
     .map(source => source.path)
 
-  const outcome = isTestRun(command) ? runOutcome(result.text ?? '', result.isError === true) : 'none'
+  const output = result.text ?? ''
+  const outcome = isTestRun(command) ? runOutcome(output) : 'none'
   let afterRun = updated
-  if (outcome !== 'none') {
+  let elsewhere: string[] = []
+  if (outcome === 'unknown') {
+    afterRun = await change($, s => recordUnreadRun(s, nowMs))
+  } else if (outcome !== 'none') {
     const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
-    const target = named === undefined ? null : classifyPath(root, /^([A-Za-z]:)?[\\/]/.test(named) ? named : `${root}/${named}`)
-    if (target?.kind === 'test') {
-      await change($, s => recordRunTarget(s, target.module))
+    const target = named === undefined ? null : classifyPath(root, absolutePath(root, named))
+    const targeted = target?.kind === 'test' ? await change($, s => recordRunTarget(s, target.module)) : updated
+    if (outcome === 'fail') {
+      const failed = failedFiles(output)
+      const own = targeted.current?.module
+      // The suite is red; the module is red only if its own test is among the files that failed.
+      elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed).includes(own) ? failed : []
     }
-    afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs))
+    afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
   }
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
-  const check = passedModule === undefined ? 'unchecked' : await verifyCatch($, root, afterRun, passedModule, nowMs - startedMs)
+  const check = passedModule === undefined ? 'unchecked' : await verifyCatch($, root, afterRun, passedModule, nowMs - startedMs, nowMs)
+  // Red, then the test edited, then green with the module's code unchanged: the green came from the test.
+  const testChanged = passedModule !== undefined && check === 'unchecked' && updated.sawRed && updated.testChangedAfterRed
   if (passedModule !== undefined) {
-    await change($, s => recordCatch(s, passedModule, check, nowMs))
+    await change($, s => {
+      const counted = recordCatch(s, passedModule, check, nowMs)
+      return testChanged ? recordTestChanged(counted, passedModule, nowMs) : counted
+    })
   }
-  const advice = outcome === 'none' ? null : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check)
+  const advice =
+    outcome === 'none'
+      ? null
+      : outcome === 'unknown'
+        ? unreadRunAdvice(isTruncated(output))
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged })
 
   const reminders = current.paused
     ? []
@@ -454,6 +626,7 @@ export const register: Register = on => {
     const started = await next(e)
     await repairInterruptedCheck($)
     await seedRememberedUnlocks($)
+    await loadConfig($, await $.session.root())
     await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band' })
     await $.tool.register({
       name: 'status',
@@ -463,7 +636,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'tdd' }, async ($, e) => {
-    const wantsGlossary = String((e as { args?: unknown }).args ?? '').trim().toLowerCase() === 'why'
+    const wantsGlossary = e.args.trim().toLowerCase() === 'why'
     return { text: wantsGlossary ? formatGlossary() : await currentStatus($) }
   })
 
@@ -478,7 +651,12 @@ export const register: Register = on => {
   )
 
   on('tool.call', { tool: 'Bash' }, ($, e, next) =>
-    guardBash($, e.command, () => next(e)),
+    guardShell($, e.command, () => next(e)),
+  )
+
+  // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) =>
+    guardShell($, e.command, () => next(e)),
   )
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -489,7 +667,7 @@ export const register: Register = on => {
     }
 
     const nowMs = await $.clock.now()
-    const config = await loadConfig($, await $.session.root())
+    const config = await configForRender($, await $.session.root())
     const logo = e.surface === 'terminal' ? null : await loadLogo($)
 
     return drawBand($.ui.resolve(e), {

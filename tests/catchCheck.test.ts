@@ -12,6 +12,10 @@ describe('runnerArgv', () => {
     ])
     expect(runnerArgv('C:/w', 'jest', 'tests/a.test.ts')).toEqual(['node', 'C:/w/node_modules/jest/bin/jest.js', 'tests/a.test.ts'])
   })
+
+  test('takes the directory that holds the runner, which in a monorepo is above the project', () => {
+    expect(runnerArgv('C:/mono', 'vitest', 'tests/a.test.ts')[1]).toBe('C:/mono/node_modules/vitest/vitest.mjs')
+  })
 })
 
 describe('catchOutcome', () => {
@@ -27,6 +31,18 @@ describe('catchOutcome', () => {
     expect(catchOutcome({ stdout: 'No test files found\n', stderr: '', exitCode: 1 })).toEqual({ kind: 'unverified', reason: 'no tests ran' })
     expect(catchOutcome('timeout')).toEqual({ kind: 'unverified', reason: 'timeout' })
     expect(catchOutcome('no-runner')).toEqual({ kind: 'unverified', reason: 'no runner found' })
+  })
+
+  test('a runner that crashed before any test ran is unverified, never caught: the exit code is not evidence', () => {
+    expect(catchOutcome({ stdout: '', stderr: 'Error: Cannot find module vitest.config.ts', exitCode: 1 })).toEqual({
+      kind: 'unverified',
+      reason: 'no runner summary',
+    })
+    expect(catchOutcome({ stdout: '', stderr: '', exitCode: 0 })).toEqual({ kind: 'unverified', reason: 'no runner summary' })
+  })
+
+  test('reads a coloured summary', () => {
+    expect(catchOutcome({ stdout: '\u001b[2m Tests\u001b[22m  \u001b[31m1 failed\u001b[39m (1)\n', stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
   })
 })
 

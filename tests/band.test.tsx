@@ -1,19 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
 
 import { ACCENT } from '../hooks/theme'
-import { BAND, MINUTE, ROOT, TEST_SOURCE, editAt, fakeEngine, runTests, startSession, touchTest } from './engine'
-import type { FakeWorld } from './engine'
+import { BAND, MINUTE, ROOT, SOURCE, TEST_SOURCE, editAt, fakeEngine, fixUnderGuard, runTests, startSession, touchTest, writeAt } from './engine'
 
 const SURFACES = ['terminal', 'desktop'] as const
-const SOURCE = `${ROOT}/src/utils/formatDuration.ts`
-
-async function fixUnderGuard($: Engine, world: FakeWorld) {
-  world.fileContents.set(SOURCE, 'export const a = 1')
-  await touchTest($, world, 'utils/formatDuration')
-  await runTests($, world, 'fail')
-  await editAt($, 'src/utils/formatDuration.ts')
-}
 
 describe('band content', () => {
   test('stays hidden before any TDD activity', async ($, on) => {
@@ -154,7 +144,7 @@ describe('band verdict', () => {
     expect(await plain.find({ type: 'Text', text: /MODE/ })).toBeUndefined()
     await plain.unmount()
 
-    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"warn"}')
+    await writeAt($, 'dope-tdd.json', '{"mode":"warn"}')
     const warn = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await warn.find({ type: 'Text', text: 'MODE WARN' })).toBeDefined()
   })
@@ -269,7 +259,23 @@ describe('/tdd why', () => {
 
     const result = await $.command.run({ command: 'tdd', args: 'why' } as never)
 
-    for (const word of ['WRITING', 'RED', 'GREEN', 'SAW RED', 'NEVER SAW RED', 'CAUGHT', 'MISSED', 'UNVERIFIED', 'REFACTOR', 'UNGUARDED', 'BLOCKED', 'PAUSED', 'MODE']) {
+    for (const word of [
+      'WRITING',
+      'RED',
+      'RED ELSEWHERE',
+      'GREEN',
+      'SAW RED',
+      'NEVER SAW RED',
+      'TEST CHANGED',
+      'CAUGHT',
+      'MISSED',
+      'UNVERIFIED',
+      'REFACTOR',
+      'UNGUARDED',
+      'BLOCKED',
+      'PAUSED',
+      'MODE',
+    ]) {
       expect(result.text).toMatch(new RegExp(`^  ${word} `, 'm'))
     }
   })

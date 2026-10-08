@@ -93,3 +93,23 @@ export function describeConfig(config: GuardConfig): string[] {
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),
   ]
 }
+
+function listChange(name: string, before: readonly string[], after: readonly string[]): string[] {
+  const added = after.filter(entry => !before.includes(entry))
+  const removed = before.filter(entry => !after.includes(entry))
+  return [
+    ...(added.length === 0 ? [] : [`${name} +${added.join(' +')}`]),
+    ...(removed.length === 0 ? [] : [`${name} -${removed.join(' -')}`]),
+  ]
+}
+
+/** What an edit to the config file changed, in words, or null when nothing the guard reads moved. */
+export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
+  const parts = [
+    ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
+    ...listChange('exempt', before.exempt, after.exempt),
+    ...listChange('scope', before.scope, after.scope),
+    ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),
+  ]
+  return parts.length === 0 ? null : parts.join('; ')
+}

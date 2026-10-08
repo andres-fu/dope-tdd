@@ -7,6 +7,11 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites("sed -i 's/a/b/' src/utils/formatDuration.ts")).toEqual(['src/utils/formatDuration.ts'])
   })
 
+  test('sees a sed with two expressions, where the semicolon is inside the quotes', () => {
+    expect(findSourceWrites("sed -i 's/a/b/;s/c/d/' src/utils/a.ts")).toEqual(['src/utils/a.ts'])
+    expect(findSourceWrites("sed -i 's/a|b/c/' src/utils/a.ts")).toEqual(['src/utils/a.ts'])
+  })
+
   test('sees redirects and tee into source files', () => {
     expect(findSourceWrites('echo x > src/App.tsx')).toEqual(['src/App.tsx'])
     expect(findSourceWrites('cat <<END >> src/data/career.ts\nx\nEND')).toEqual(['src/data/career.ts'])
@@ -18,6 +23,13 @@ describe('findSourceWrites', () => {
     const node = "node -e \"require('fs').writeFileSync('src/theme/hueso.ts','x')\""
     expect(findSourceWrites(python)).toEqual(['src/components/CareerTimeline.tsx'])
     expect(findSourceWrites(node)).toEqual(['src/theme/hueso.ts'])
+  })
+
+  test('sees PowerShell writes', () => {
+    expect(findSourceWrites("Set-Content -Path src/utils/a.ts -Value 'x'")).toEqual(['src/utils/a.ts'])
+    expect(findSourceWrites("'x' | Out-File src\\utils\\a.ts")).toEqual(['src/utils/a.ts'])
+    expect(findSourceWrites('Add-Content src/utils/a.ts "y"')).toEqual(['src/utils/a.ts'])
+    expect(findSourceWrites('Get-Content src/utils/a.ts')).toEqual([])
   })
 
   test('sees copies and moves into src/', () => {
@@ -55,5 +67,10 @@ describe('findSourceWrites', () => {
 
   test('reports each written source file once, also with Windows separators', () => {
     expect(findSourceWrites("sed -i 's/a/b/' src\\App.tsx src/App.tsx")).toEqual(['src/App.tsx'])
+  })
+
+  test('refuses a path that climbs out with .., so nothing downstream writes outside the root', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' ../other/src/App.tsx")).toEqual([])
+    expect(findSourceWrites('echo x > src/../../src/App.tsx')).toEqual([])
   })
 })

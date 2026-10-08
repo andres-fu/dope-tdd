@@ -2,7 +2,8 @@ import { commandSegments } from './shell'
 
 export type SourceSnapshot = Readonly<Record<string, string>>
 
-const REWRITES_TREE = /^\s*git\s+(?:checkout|restore|stash|reset|switch|revert|merge|rebase|pull|cherry-pick|apply|clean)\b/
+// `git apply` is the agent's own edit arriving as a patch, so it is not here; `git stash list|show` only reads.
+const REWRITES_TREE = /^\s*git\s+(?:checkout|restore|stash(?!\s+(?:list|show)\b)|reset|switch|revert|merge|rebase|pull|cherry-pick|clean)\b/
 
 export function parseNumstat(output: string): Record<string, string> {
   const entries = output

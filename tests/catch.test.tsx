@@ -1,18 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, runTests, startSession, touchTest } from './engine'
-import type { FakeWorld } from './engine'
+import { ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, touchTest, writeAt } from './engine'
 
-const SOURCE = `${ROOT}/src/utils/formatDuration.ts`
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
-
-async function fixUnderGuard($: Engine, world: FakeWorld) {
-  world.fileContents.set(SOURCE, 'export const a = 1')
-  await touchTest($, world, 'utils/formatDuration')
-  await runTests($, world, 'fail')
-  await editAt($, 'src/utils/formatDuration.ts')
-}
 
 describe('catches the change', () => {
   test('at green: puts the source back, runs only that test, expects it to fail, restores the source', async ($, on) => {
@@ -60,6 +50,19 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/Could not verify.*timeout/)
   })
 
+  test('a runner that crashes with the change undone is unverified, never caught: an exit code is not evidence', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: 'Error: Cannot find module vitest.config.ts\n', exitCode: 1 }
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+    expect(status.text).toMatch(/caught 0 · missed 0 · unverified 1/)
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner summary/)
+  })
+
   test('a source changed outside the session is left alone', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
@@ -72,7 +75,21 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/Could not verify.*changed outside/)
   })
 
-  test('a cycle whose source edits all came through the shell is unchecked', async ($, on) => {
+  test('a new source file is unverified, not caught: undoing it would mean deleting it', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = 1')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([])
+    expect(status.text).toMatch(/unverified 1/)
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*new file/)
+  })
+
+  test('a shell edit to a file that could not be read before or after is not checked', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
@@ -102,7 +119,7 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/has proven nothing yet/)
   })
 
-  test('a refactor after a caught cycle is credited, not reverted', async ($, on) => {
+  test('a refactor after a caught cycle is named, not reverted', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     await runTests($, world, 'pass')
@@ -116,7 +133,7 @@ describe('catches the change', () => {
 
     expect(runsAfter).toBe(runsBefore)
     expect(status.text).toMatch(/refactors 1/)
-    expect(result.context?.join(' ')).toMatch(/Refactor credit/)
+    expect(result.context?.join(' ')).toMatch(/a refactor, not re-checked/)
   })
 
   test('restoring the original text after breaking it on purpose is not a change to check', async ($, on) => {
@@ -161,17 +178,6 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/its test catches the change/)
   })
 
-  test('an interrupted check is repaired at the next session start', async ($, on) => {
-    const world = fakeEngine(on, {
-      store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, text: 'export const b = 1' }] } },
-    })
-
-    await startSession($)
-
-    expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
-    expect(world.toasts.some(t => /restored/.test(t))).toBe(true)
-  })
-
   test('the test file for the runner is the relative path even when the test was named absolutely', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
@@ -181,5 +187,143 @@ describe('catches the change', () => {
     const run = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
     expect(run?.[3]).toBe('tests/utils/formatDuration.test.ts')
     expect(TEST.startsWith(ROOT)).toBe(true)
+  })
+})
+
+describe('one module at a time', () => {
+  const A = `${ROOT}/src/utils/a.ts`
+  const B = `${ROOT}/src/utils/b.ts`
+
+  test('only the module whose test ran is reverted and checked; the other waits for its own green', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(A, 'export const a = 1')
+    world.fileContents.set(B, 'export const value = 2')
+    await touchTest($, world, 'utils/a')
+    await touchTest($, world, 'utils/b')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/utils/a.ts')
+    await editAt($, 'src/utils/b.ts')
+    world.bashFails = false
+
+    await runBash($, 'npx vitest run tests/utils/b.test.ts')
+    const afterB = world.writes.slice()
+    await runBash($, 'npx vitest run tests/utils/a.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(afterB).toEqual([
+      [B, 'export const value = 2'],
+      [B, 'export const vblue = 2'],
+    ])
+    expect(world.writes.slice(2)).toEqual([
+      [A, 'export const a = 1'],
+      [A, 'export const b = 1'],
+    ])
+    expect(status.text).toMatch(/caught 2/)
+  })
+})
+
+describe('the revert is safe', () => {
+  test('a restore that fails is unverified, says so, keeps the journal, and does not leave the lock held', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.writeFails = (_path, text) => text === 'export const b = 1'
+
+    const result = await runTests($, world, 'pass')
+    const retry = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*restore failed/)
+    expect(world.toasts.some(t => /could not restore/.test(t))).toBe(true)
+    expect(retry.deny).toBeUndefined()
+    expect(status.text).toMatch(/unverified 1/)
+  })
+
+  test('a revert that fails is unverified and the file is untouched', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.writeFails = (_path, text) => text === 'export const a = 1'
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*revert failed/)
+  })
+
+  test('a file edited by hand while it was reverted is left as it is, never overwritten', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.onCatchRun = () => {
+      world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
+    }
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const a = 1 // hand edit during the check')
+    expect(world.writes).toEqual([[SOURCE, 'export const a = 1']])
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*changed during check/)
+    expect(world.toasts.some(t => /left as is/.test(t))).toBe(true)
+  })
+
+  test('an interrupted check is repaired at the next session start when the file is still reverted', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await startSession($)
+
+    expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
+    expect(world.toasts.some(t => /restored 1 file/.test(t))).toBe(true)
+  })
+
+  test('a file that moved since the interrupted check is left alone, and the user is told', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1 // fixed by hand')
+
+    await startSession($)
+
+    expect(world.writes).toEqual([])
+    expect(world.fileContents.get(SOURCE)).toBe('export const a = 1 // fixed by hand')
+    expect(world.toasts.some(t => /left 1 file/.test(t))).toBe(true)
+  })
+
+  test('a file already back at its text after an interrupted check needs nothing', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const b = 1')
+
+    await startSession($)
+
+    expect(world.writes).toEqual([])
+    expect(world.toasts).toEqual([])
+  })
+})
+
+describe('finding the runner', () => {
+  test('a runner hoisted to a parent directory is found, so a monorepo package gets checked', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.existingFiles.add('C:/work/node_modules/vitest/vitest.mjs')
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+
+    const run = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
+    expect(run?.[1]).toBe('C:/work/node_modules/vitest/vitest.mjs')
+  })
+
+  test('with no runner anywhere the check is unverified and says so', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    await fixUnderGuard($, world)
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.writes).toEqual([])
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner found/)
   })
 })

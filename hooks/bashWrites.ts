@@ -4,14 +4,16 @@ const PATH_TO_SOURCE = String.raw`((?:[A-Za-z]:)?(?:[\w.~-]*\/)*src\/[\w./-]+?\.
 const SOURCE_PATH = new RegExp(String.raw`(?:^|[\s'"=(])` + PATH_TO_SOURCE + String.raw`(?=$|[\s'"),;])`, 'g')
 const IN_PLACE_SED = /\bsed\s+(?:-\w+\s+)*-i/
 const SCRIPT_WRITE = /open\([^)]*['"][wa]\+?['"]|writeFileSync|writeFile\(|(?<!stdout|stderr)\.write\(|write_text\(/
+const POWERSHELL_WRITE = /\b(?:Set-Content|Add-Content|Out-File)\b/i
 const REDIRECT_TARGET = new RegExp(String.raw`(?:>>?|\btee\s+(?:-a\s+)?)\s*['"]?` + PATH_TO_SOURCE, 'g')
 const COPY_OR_MOVE_TARGET = new RegExp(
   String.raw`\b(?:cp|mv)\b[^|;&\n]*\s['"]?` + PATH_TO_SOURCE + String.raw`['"]?\s*(?:$|[;&|\n])`,
   'g',
 )
+const PARENT_SEGMENT = /(?:^|\/)\.\.(?:\/|$)/
 
 function isSourceFile(path: string): boolean {
-  return !path.endsWith('.d.ts')
+  return !path.endsWith('.d.ts') && !PARENT_SEGMENT.test(path)
 }
 
 function captures(pattern: RegExp, text: string): string[] {
@@ -19,7 +21,7 @@ function captures(pattern: RegExp, text: string): string[] {
 }
 
 function writesIn(segment: string): string[] {
-  const writesEveryMention = IN_PLACE_SED.test(segment) || SCRIPT_WRITE.test(segment)
+  const writesEveryMention = IN_PLACE_SED.test(segment) || SCRIPT_WRITE.test(segment) || POWERSHELL_WRITE.test(segment)
   return [
     ...(writesEveryMention ? captures(SOURCE_PATH, segment) : []),
     ...captures(REDIRECT_TARGET, segment),

@@ -1,20 +1,26 @@
-import type { CatchOutcome, CurrentTest, EventKind, TddEvent, TddStats } from '../types'
+import type { BeforeState, CatchOutcome, CurrentTest, EventKind, TddEvent, TddStats } from '../types'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
 const CURRENT_EXPIRY_MS = 15 * 60_000
+/** Longer than the catch check's hardest budget (a minute) plus the restore; a lock older than this is a crash, not a check. */
+export const CHECK_LOCK_TTL_MS = 2 * 60_000
 
 export const INITIAL_STATS: TddStats = {
   phase: 'idle',
   paused: false,
   passes: 0,
   fails: 0,
+  unreadRuns: 0,
   history: [],
   cycles: 0,
   cycleMsTotal: 0,
   cycleStartMs: null,
   sawRed: false,
+  redElsewhere: [],
+  testChangedAfterRed: false,
   neverSawRed: 0,
+  testChanged: 0,
   unproven: [],
   testFirst: 0,
   unguarded: 0,
@@ -23,7 +29,7 @@ export const INITIAL_STATS: TddStats = {
   inherited: {},
   reminded: [],
   changes: {},
-  checking: false,
+  checking: null,
   caught: 0,
   missed: 0,
   unverified: 0,
@@ -41,6 +47,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value)
+}
+
 export function normalizeStats(stored: unknown): TddStats {
   if (!isRecord(stored)) {
     return INITIAL_STATS
@@ -49,34 +59,41 @@ export function normalizeStats(stored: unknown): TddStats {
   const pick = <K extends keyof TddStats>(key: K, isValid: (v: unknown) => boolean): TddStats[K] =>
     isValid(merged[key]) ? merged[key] : INITIAL_STATS[key]
   const isNumber = (v: unknown) => typeof v === 'number'
+  const isBoolean = (v: unknown) => typeof v === 'boolean'
   const isNumberOrNull = (v: unknown) => v === null || typeof v === 'number'
+  const strings = (list: unknown[]) => list.filter((entry): entry is string => typeof entry === 'string')
 
   return {
     phase: PHASES.includes(merged.phase) ? merged.phase : 'idle',
-    paused: pick('paused', v => typeof v === 'boolean'),
+    paused: pick('paused', isBoolean),
     passes: pick('passes', isNumber),
     fails: pick('fails', isNumber),
+    unreadRuns: pick('unreadRuns', isNumber),
     history: pick('history', Array.isArray).filter(outcome => outcome === 'pass' || outcome === 'fail'),
     cycles: pick('cycles', isNumber),
     cycleMsTotal: pick('cycleMsTotal', isNumber),
     cycleStartMs: pick('cycleStartMs', isNumberOrNull),
-    sawRed: pick('sawRed', v => typeof v === 'boolean'),
+    sawRed: pick('sawRed', isBoolean),
+    redElsewhere: strings(pick('redElsewhere', isStringList)),
+    testChangedAfterRed: pick('testChangedAfterRed', isBoolean),
     neverSawRed: pick('neverSawRed', isNumber),
-    unproven: pick('unproven', Array.isArray).filter(module => typeof module === 'string'),
+    testChanged: pick('testChanged', isNumber),
+    unproven: strings(pick('unproven', isStringList)),
     testFirst: pick('testFirst', isNumber),
     unguarded: pick('unguarded', isNumber),
     blocked: pick('blocked', isNumber),
     unlocked: pick('unlocked', isRecord),
     inherited: pick('inherited', isRecord),
-    reminded: pick('reminded', Array.isArray).filter(module => typeof module === 'string'),
+    reminded: strings(pick('reminded', isStringList)),
     changes: pick('changes', isRecord),
-    checking: pick('checking', v => typeof v === 'boolean'),
+    // An older version stored a boolean here; a stuck `true` from a crash is exactly what must not survive.
+    checking: pick('checking', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.sinceMs === 'number')),
     caught: pick('caught', isNumber),
     missed: pick('missed', isNumber),
     unverified: pick('unverified', isNumber),
     refactors: pick('refactors', isNumber),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
-    lastCycle: pick('lastCycle', v => v === null || isRecord(v)),
+    lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
     events: pick('events', Array.isArray).filter(
       (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
@@ -90,8 +107,13 @@ function without<T>(record: Readonly<Record<string, T>>, key: string): Record<st
   return rest
 }
 
-function logged(s: TddStats, kind: EventKind, atMs: number, module?: string): TddStats {
-  const event = module === undefined ? { atMs, kind } : { atMs, kind, module }
+function logged(s: TddStats, kind: EventKind, atMs: number, module?: string, detail?: string): TddStats {
+  const event: TddEvent = {
+    atMs,
+    kind,
+    ...(module === undefined ? {} : { module }),
+    ...(detail === undefined ? {} : { detail }),
+  }
   return {
     ...s,
     events: [...s.events, event].slice(-EVENT_LOG_LENGTH),
@@ -107,6 +129,8 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
       phase: s.phase === 'red' ? 'red' : 'writing',
       cycleStartMs: isCycleOpen ? s.cycleStartMs : nowMs,
       sawRed: isCycleOpen ? s.sawRed : false,
+      // A test edited after this cycle's red: at green, if the code did not change, the green came from the test.
+      testChangedAfterRed: isCycleOpen ? s.testChangedAfterRed || s.sawRed : false,
       current: touched,
       unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
       unproven: s.unproven.filter(module => module !== touched.module),
@@ -119,8 +143,22 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
   )
 }
 
-export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats {
+/**
+ * `elsewhere` names the test files that failed when none of them was the current
+ * module's own test: the suite is red, the module is not. Its phase does not move.
+ */
+export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[] = []): TddStats {
   const history = [...s.history, passed ? 'pass' : 'fail'].slice(-HISTORY_LENGTH) as TddStats['history']
+
+  if (!passed && elsewhere.length > 0) {
+    return logged(
+      { ...s, fails: s.fails + 1, history, redElsewhere: elsewhere },
+      'elsewhere',
+      nowMs,
+      s.current?.module,
+      elsewhere.join(', '),
+    )
+  }
 
   if (!passed) {
     const provesPin = s.current !== null && s.unproven.includes(s.current.module)
@@ -132,6 +170,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
         history,
         cycleStartMs: s.cycleStartMs ?? nowMs,
         sawRed: true,
+        redElsewhere: [],
         neverSawRed: provesPin ? s.neverSawRed - 1 : s.neverSawRed,
         unproven: provesPin ? s.unproven.filter(module => module !== s.current?.module) : s.unproven,
       },
@@ -151,16 +190,34 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
       history,
       cycleStartMs: null,
       sawRed: false,
+      redElsewhere: [],
+      testChangedAfterRed: false,
       cycles: completesCycle ? s.cycles + 1 : s.cycles,
       cycleMsTotal: completesCycle ? s.cycleMsTotal + (nowMs - (s.cycleStartMs ?? nowMs)) : s.cycleMsTotal,
       neverSawRed: greenFirst ? s.neverSawRed + 1 : s.neverSawRed,
       unproven: greenFirst && s.current !== null ? [...s.unproven, s.current.module] : s.unproven,
-      lastCycle: completesCycle && s.current !== null ? { module: s.current.module, sawRed: s.sawRed } : s.lastCycle,
+      lastCycle:
+        completesCycle && s.current !== null ? { module: s.current.module, sawRed: s.sawRed, testChanged: false } : s.lastCycle,
     },
     'pass',
     nowMs,
     s.current?.module,
   )
+}
+
+/** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */
+export function recordUnreadRun(s: TddStats, nowMs: number): TddStats {
+  return logged({ ...s, unreadRuns: s.unreadRuns + 1 }, 'unread', nowMs, s.current?.module)
+}
+
+/** Green reached after red with the test edited and the code untouched: the green came from the test. */
+export function recordTestChanged(s: TddStats, module: string, nowMs: number): TddStats {
+  const lastCycle = s.lastCycle?.module === module ? { ...s.lastCycle, testChanged: true } : s.lastCycle
+  return logged({ ...s, testChanged: s.testChanged + 1, lastCycle }, 'test-changed', nowMs, module)
+}
+
+export function recordConfigChange(s: TddStats, detail: string, nowMs: number): TddStats {
+  return logged(s, 'config', nowMs, undefined, detail)
 }
 
 export function recordSourceEdit(s: TddStats, module: string, isGuarded: boolean, nowMs: number): TddStats {
@@ -199,19 +256,44 @@ export function markReminded(s: TddStats, module: string): TddStats {
   return s.reminded.includes(module) ? s : { ...s, reminded: [...s.reminded, module] }
 }
 
-export function recordChange(s: TddStats, module: string, path: string, before: string | null, after: string): TddStats {
+export function recordChange(
+  s: TddStats,
+  module: string,
+  path: string,
+  before: string | null,
+  after: string,
+  beforeState?: BeforeState,
+): TddStats {
   const existing = s.changes[module]
   const kindNow = s.phase === 'green' && !s.unproven.includes(module) ? 'refactor' : 'fix'
   const kind = existing?.kind === 'fix' ? 'fix' : kindNow
-  return { ...s, changes: { ...s.changes, [module]: { path, before: existing === undefined ? before : existing.before, after, kind } } }
+  const first = existing === undefined ? { before, beforeState } : { before: existing.before, beforeState: existing.beforeState }
+  const change = {
+    path,
+    before: first.before,
+    after,
+    kind,
+    ...(first.before === null && first.beforeState !== undefined ? { beforeState: first.beforeState } : {}),
+  }
+  return { ...s, changes: { ...s.changes, [module]: change } }
 }
 
-export function setChecking(s: TddStats, checking: boolean): TddStats {
-  return { ...s, checking }
+export function isChecking(s: TddStats, nowMs: number): boolean {
+  return s.checking !== null && nowMs - s.checking.sinceMs < CHECK_LOCK_TTL_MS
 }
 
+/** Takes the lock in one update; the caller owns it only if the returned lock is its own module and time. */
+export function acquireCheck(s: TddStats, module: string, nowMs: number): TddStats {
+  return isChecking(s, nowMs) ? s : { ...s, checking: { module, sinceMs: nowMs } }
+}
+
+export function releaseCheck(s: TddStats): TddStats {
+  return { ...s, checking: null }
+}
+
+/** Counts the outcome for `module` and clears only that module's pending change; other modules wait for their own green. */
 export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome | 'unchecked' | 'refactor', nowMs: number): TddStats {
-  const cleared = { ...s, changes: {} }
+  const cleared = { ...s, changes: without(s.changes, module) }
   if (outcome === 'unchecked') {
     return cleared
   }

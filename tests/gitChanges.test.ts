@@ -47,4 +47,11 @@ describe('isRevertCommand', () => {
       expect(isRevertCommand(command)).toBe(false)
     }
   })
+
+  test('a patch the agent applies is its own edit, and listing the stash only reads', () => {
+    expect(isRevertCommand("git apply <<'EOF'\n--- a/src/App.tsx\n+++ b/src/App.tsx\nEOF")).toBe(false)
+    expect(isRevertCommand('git apply fix.patch')).toBe(false)
+    expect(isRevertCommand('git stash list')).toBe(false)
+    expect(isRevertCommand('git stash show -p')).toBe(false)
+  })
 })

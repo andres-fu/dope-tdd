@@ -65,8 +65,8 @@ function drawCatchWord(el: AnyElements, outcome: CatchOutcome | { kind: 'refacto
 
 function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest) {
   const { Box, Text } = el
-  const openCycleSawRed = s.phase !== 'green' && s.sawRed
-  const closedCycle = s.phase === 'green' && s.lastCycle?.module === current.module
+  const closedCycle = s.phase === 'green' && s.lastCycle?.module === current.module ? s.lastCycle : null
+  const sawRed = (s.phase !== 'green' && s.sawRed) || closedCycle?.sawRed === true
   const neverSawRed = s.unproven.includes(current.module)
   const catchWord = s.phase === 'green' && s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
 
@@ -74,7 +74,9 @@ function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest) {
     <Box flexDirection="row" gap={2}>
       <Text bold>{current.module.toUpperCase()}</Text>
       {neverSawRed && <Text bold color={ACCENT.paused}>NEVER SAW RED</Text>}
-      {!neverSawRed && (openCycleSawRed || closedCycle) && <Text dimColor>SAW RED</Text>}
+      {!neverSawRed && sawRed && <Text dimColor>SAW RED</Text>}
+      {s.redElsewhere.length > 0 && <Text dimColor>RED ELSEWHERE</Text>}
+      {closedCycle?.testChanged === true && <Text bold color={ACCENT.paused}>TEST CHANGED</Text>}
       {catchWord !== null && drawCatchWord(el, catchWord)}
     </Box>
   )
@@ -115,6 +117,7 @@ function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
       {drawCount(el, s.missed, 'MISSED', ACCENT.ember)}
       {s.refactors > 0 && drawCount(el, s.refactors, 'REFACTOR', ACCENT.pass)}
       {s.neverSawRed > 0 && drawCount(el, s.neverSawRed, 'NEVER SAW RED', ACCENT.paused)}
+      {s.testChanged > 0 && drawCount(el, s.testChanged, 'TEST CHANGED', ACCENT.paused)}
       {drawCount(el, s.unguarded, 'UNGUARDED', ACCENT.paused)}
       {drawCount(el, s.blocked, 'BLOCKED', ACCENT.paused)}
       {showMode && <Text bold color={ACCENT.paused}>{`MODE ${config.mode.toUpperCase()}${scoped ? ' (SCOPED)' : ''}`}</Text>}

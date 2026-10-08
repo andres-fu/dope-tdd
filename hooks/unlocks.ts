@@ -2,7 +2,8 @@ export const UNLOCK_TTL_MS = 7 * 24 * 60 * 60_000
 
 export type StoredUnlock = { testPath: string; atMs: number }
 
-const ASSERTION = /\bexpect\s*\(|\bassert\b|\.should\b|\bshould\s*\(/
+// A call, not a mention: `import assert from 'node:assert'` asserts nothing, `assertEquals(...)` and `assert.ok(...)` do.
+const ASSERTION = /\bexpect\s*\(|\bassert\w*\s*\(|\bassert\.\w+\s*\(|\.should\b|\bshould\s*\(|\bt\.(?:is|deepEqual|true|false|truthy|falsy|throws|like|snapshot|regex)\s*\(/
 
 function isStoredUnlock(value: unknown): value is StoredUnlock {
   return (

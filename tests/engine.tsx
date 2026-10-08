@@ -35,15 +35,19 @@ export type FakeWorld = {
   toasts: string[]
   numstat: string
   untracked: string
-  gitCalls: string[][]
+  gitCalls: (readonly string[])[]
+  /** When true the engine cannot say where the project is, so every guard throws before it decides. */
+  rootFails: boolean
   writes: [string, string][]
   catchRun: { text: string; exitCode: number } | 'reject'
   hasVitest: boolean
   onBash: (command: string) => void
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
-  onCatchRun: () => void
+  onCatchRun: () => void | Promise<void>
   /** Return true to make a write to that path fail. */
   writeFails: (path: string, text: string) => boolean
+  /** Paths that exist but cannot be read (too large, locked). */
+  unreadable: Set<string>
 }
 
 export type FakeOptions = { store?: Readonly<Record<string, unknown>> }
@@ -62,16 +66,18 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
     hasVitest: true,
     onBash: () => {},
     onCatchRun: () => {},
     writeFails: () => false,
+    unreadable: new Set(),
   }
 
   mock.store(on, options.store)
-  on('session.root', () => ({ value: ROOT }))
+  on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('ui.log', (_$, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
@@ -83,10 +89,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__dope-tdd__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
-  on('process.run', (_$, e) => {
+  on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
     if (e.argv.some(arg => arg.includes('vitest.mjs') || arg.includes('jest.js'))) {
-      world.onCatchRun()
+      await world.onCatchRun()
       return world.catchRun === 'reject'
         ? { deny: 'timed out' }
         : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
@@ -113,7 +119,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   })
   on('fs.exists', (_$, e) => {
     const path = e.path.replace(/\\/g, '/')
-    return { value: world.fileContents.has(path) || world.existingFiles.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')) } as never
+    return {
+      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')),
+    } as never
   })
   on('fs.stat', () => ({
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
@@ -135,6 +143,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   })
   on('fs.read', (_$, e) => {
     const path = e.path.replace(/\\/g, '/')
+    if (world.unreadable.has(path)) {
+      return { deny: `EFBIG: ${e.path}` }
+    }
     const custom = world.fileContents.get(path)
     if (custom !== undefined) {
       return { value: custom }

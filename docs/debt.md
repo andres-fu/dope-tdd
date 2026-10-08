@@ -4,7 +4,8 @@ Known shortcuts and deferred work, one line each, so nothing is lost and
 nothing slows the current pass down. Add when you take a shortcut; strike
 when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 `review` = the same night's code review, `owner` = the owner's asks,
-`live` = a live playground run.
+`live` = a live playground run, `arch2` = the second architect review (2026-10-08),
+`docs` = the official plugin and mods docs at code.claude.com.
 
 ## Correctness
 
@@ -14,6 +15,11 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `arch 2` The window between the Edit/Write gate read and the actual write is narrowed (re-read right before the write), not closed; a truly concurrent Edit during a check can still land on a reverted file and be left alone rather than restored.
 - [ ] `arch 11` CRLF/BOM round trip through `$.fs.read`/`$.fs.write` is unverified; the revert flickers files under any watcher.
 - [ ] `live` The unread-run line assumes the command ran; a held or refused command is now read as "did not run", but the detection is a text match on Claude Code's wording and will need a corpus.
+- [ ] `arch2 6` "Unread" is wrong, and repeats, for every runner that is not Vitest or Jest: mocha, node:test and playwright print a summary the reader cannot parse, and skipped-only runs read as unknown. One honest "cannot read this runner" line, said once.
+- [ ] `arch2 7` Shell cwd drift: relative paths resolve against the session root while the shell cwd persists, so `cd packages/app && sed -i ... src/x.ts` guards the wrong file.
+- [ ] `arch2 5` Pending changes for non-current modules never surface: two modules changed, `npm test` run, only the current one is checked; the other sits in `changes` with no line and no `/tdd` row.
+- [ ] `docs` After `/clear`, `$.state` resets to its defaults and `session.start` does not fire again, so remembered unlocks and the repair of an interrupted check wait for the next session. Hook `classic.SessionStart` with `source: 'clear'` and re-seed from the store (mods reference, Session events).
+- [ ] `docs` `$.fs.write` is not atomic (mods reference): the catch check's revert and restore can be read half-written by another process. The store is shared by every session on the machine, so the journal keyed by root and module is the right shape, but two sessions in one repo share one lock.
 
 ## Product
 
@@ -24,6 +30,10 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `owner` Candidate mechanism: Dope TDD runs the module's own test after each edit, so RED and GREEN come from its own runs rather than from reading the agent's output.
 - [ ] `arch 5` Cut Pause in favour of a session-scoped `/tdd mode warn` that keeps counting.
 - [ ] `arch` Uninstall path: `/tdd off`, a clean store, nothing left in the repo but the JSON.
+- [ ] `arch2 8` No catch-check opt-out: `"catchCheck": false` in `dope-tdd.json` for a repo with a dev server or `tsc --watch` that sees every revert.
+- [ ] `arch2 9` REFACTOR on the band is coloured like green; it is a fact about the change, not a verdict on it.
+- [ ] `docs` In the VS Code extension's chat panel hooks run but nothing draws (mods overview, Where mods run): the band is invisible there and the tool results, `/tdd` and the status tool are the whole face. Say so in the README, and keep every verdict in the tool result.
+- [ ] `docs` Publish checklist (plugins/publish): `version` is 0.1.0 and never bumped, so `claude plugin update` would report "already at the latest version"; either bump on every release or omit it so the commit SHA is the version. `homepage` and `repository` are unset. No LICENSE. No eval suite: `claude plugin eval` with the playground's planted bugs as cases, scored against a no-plugin baseline, is the scripted live harness `arch 4` asks for.
 
 ## Structure and tests
 
@@ -35,3 +45,5 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `arch 10` CI on windows and ubuntu running `claude plugin test .` and `validate`; a LICENSE.
 - [ ] `review` `guard.test.tsx` carries a vestigial helper; `types/index.d.ts` and `hooks/runOutcome.ts` no longer share a `RunOutcome` name but the history type is still a string union.
 - [ ] Markdown lint in `docs/decisions/` (blank lines around headings and lists); cosmetic.
+- [ ] `arch2 10` Session-start log noise for each remembered test that is gone; config strings echoed unsanitised in `describeConfig`.
+- [ ] `docs` A type-check is part of the documented loop (`tsc -p` against the engine-written `.claude-plugin/types`); it is run by hand from a scratch tsconfig and should be in CI next to `claude plugin test` and `validate --strict`.

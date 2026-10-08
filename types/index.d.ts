@@ -35,6 +35,24 @@ export type CycleVerdict = { module: string; sawRed: boolean; testChanged: boole
 /** Held while the catch check has a source file reverted on disk. Expires, so a crash cannot leave it stuck. */
 export type CheckLock = { module: string; sinceMs: number }
 
+/**
+ * One module's own cycle. The band shows the current module and the global
+ * phase fields mirror it; every verdict word is computed from this record,
+ * so a red on one module is never charged to another.
+ */
+export type ModuleState = {
+  phase: Phase
+  cycleStartMs: number | null
+  /** This module's test failed in its open cycle. */
+  sawRed: boolean
+  /** Its test was edited after that red. */
+  testTouchedAfterRed: boolean
+  /** Its test has failed at some point: a change while it is green can be a refactor. */
+  everSawRed: boolean
+  /** A source edit, captured or not, since its last run. */
+  editedSinceRun: boolean
+}
+
 export type CurrentTest = {
   module: string
   testPath: string
@@ -65,6 +83,7 @@ export type TddStats = {
   /** Ways around the guard, on the record: total and by kind. */
   workarounds: number
   workaroundsBy: Readonly<Record<string, number>>
+  modules: Readonly<Record<string, ModuleState>>
   unproven: readonly string[]
   testFirst: number
   unguarded: number

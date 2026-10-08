@@ -8,6 +8,7 @@ import {
   isChecking,
   markReminded,
   normalizeStats,
+  otherOpenModules,
   recordBlocked,
   recordCatch,
   recordChange,
@@ -83,6 +84,35 @@ describe('phases', () => {
     expect(s.history).toHaveLength(10)
     expect(s.history[0]).toBe('pass')
     expect(s.history[9]).toBe('fail')
+  })
+})
+
+describe('per-module cycles', () => {
+  test('touching another module while one is red gives it its own cycle and leaves the red where it was', () => {
+    const aRed = recordRun(touch(), false, T0 + 1)
+    const bTouched = recordTestTouch(aRed, { module: 'utils/b', testPath: 'tb' }, T0 + 2)
+    expect(bTouched.modules[MODULE]?.phase).toBe('red')
+    expect(bTouched.modules['utils/b']?.sawRed).toBe(false)
+    expect(bTouched.phase).toBe('writing')
+    expect(bTouched.sawRed).toBe(false)
+
+    const bGreen = recordRun(bTouched, true, T0 + 3)
+    expect(bGreen.neverSawRed).toBe(1)
+    expect(bGreen.lastCycle).toEqual({ module: 'utils/b', sawRed: false, testChanged: false })
+    expect(bGreen.modules[MODULE]?.cycleStartMs).toBe(T0)
+    expect(otherOpenModules(bGreen)).toEqual([{ module: MODULE, phase: 'red' }])
+  })
+
+  test('a source edit marks the module edited since its last run, and its next run clears it', () => {
+    const edited = recordSourceEdit(touch(), MODULE, true, T0 + 1)
+    expect(edited.modules[MODULE]?.editedSinceRun).toBe(true)
+    expect(recordRun(edited, false, T0 + 2).modules[MODULE]?.editedSinceRun).toBe(false)
+  })
+
+  test('a change on a module that never saw red is a fix even when another module is green after red', () => {
+    const aProven = recordRun(recordRun(touch(), false, T0 + 1), true, T0 + 2)
+    const bInherited = seedUnlocks(aProven, { 'utils/b': { testPath: 'tb', atMs: 0 } })
+    expect(recordChange(bInherited, 'utils/b', 'p', 'v0', 'v1').changes['utils/b']?.kind).toBe('fix')
   })
 })
 

@@ -284,6 +284,45 @@ describe('honest runs', () => {
   })
 })
 
+describe('one module at a time', () => {
+  test('a red on one module is never charged to another: B green after A red is never saw red, not test changed', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/a')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'utils/b')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/GREEN on utils\/b but it never saw red/)
+    expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
+    expect(status.text).toMatch(/never saw red 1/)
+    expect(status.text).not.toMatch(/test changed/)
+    expect(status.text).toMatch(/also open: utils\/a \(red\)/)
+    expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeUndefined()
+    await ui.unmount()
+
+    await runBash($, 'npx vitest run tests/utils/a.test.ts')
+    const later = await runCommand($, 'tdd')
+
+    expect(later.text).toMatch(/cycles: 2 \(avg .*never saw red 1\)/)
+    expect(later.text).not.toMatch(/also open/)
+  })
+
+  test('a hold text without an error flag is still not a run', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashText = "Claude requested permissions to use Bash, but you haven't granted it yet."
+
+    const result = await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context).toBeUndefined()
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail\)/)
+  })
+})
+
 describe('a test changed after red', () => {
   test('green with the test edited and the code untouched says the green came from the test', async ($, on) => {
     const world = fakeEngine(on)

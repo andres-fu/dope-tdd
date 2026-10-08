@@ -1,6 +1,7 @@
 import type { TddStats } from '../types'
 import { describeConfig } from './config'
 import type { GuardConfig } from './config'
+import { otherOpenModules } from './stats'
 import { formatAgo, formatSpan } from './timeText'
 import { WORKAROUND_KINDS } from './workarounds'
 
@@ -32,6 +33,12 @@ function phaseLine(s: TddStats, nowMs: number): string {
   const open = s.cycleStartMs === null ? '' : ` for ${formatSpan(nowMs - s.cycleStartMs)}`
   const elsewhere = s.redElsewhere.length === 0 ? '' : ` (red elsewhere: ${s.redElsewhere.join(', ')})`
   return `phase: ${s.phase.toUpperCase()}${open}${elsewhere}`
+}
+
+/** Other modules with a cycle still open: a red or a test waiting somewhere the band is not looking. */
+function openLine(s: TddStats): string[] {
+  const others = otherOpenModules(s)
+  return others.length === 0 ? [] : [`also open: ${others.map(({ module, phase }) => `${module} (${phase})`).join(', ')}`]
 }
 
 function eventLines(s: TddStats, nowMs: number): string[] {
@@ -76,6 +83,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
     `module: ${s.current?.module ?? 'none'}`,
+    ...openLine(s),
     runsLine(s),
     cycleLine(s),
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,

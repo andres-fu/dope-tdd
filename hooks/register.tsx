@@ -20,7 +20,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isTestRun, relativePath } from './mirror'
-import { failedFiles, isTruncated, runOutcome } from './runOutcome'
+import { failedFiles, isTruncated, neverRan, runOutcome } from './runOutcome'
 import {
   INITIAL_STATS,
   acquireCheck,
@@ -524,7 +524,9 @@ async function guardShell(
     .map(source => source.path)
 
   const output = result.text ?? ''
-  const outcome = isTestRun(command) ? runOutcome(output) : 'none'
+  // A command held for approval or refused never ran: no run to read, nothing to count.
+  const ran = isTestRun(command) && !(result.isError === true && neverRan(output))
+  const outcome = ran ? runOutcome(output) : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
   if (outcome === 'unknown') {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { failedFiles, isTruncated, runOutcome, stripAnsi } from '../hooks/runOutcome'
+import { failedFiles, isTruncated, neverRan, runOutcome, stripAnsi } from '../hooks/runOutcome'
 
 const VITEST_FAIL = `
  FAIL  tests/money/formatCents.test.ts > puts the minus sign before the dollar sign
@@ -81,6 +81,19 @@ describe('failedFiles', () => {
   test('normalises Windows separators and strips colour', () => {
     expect(failedFiles(' FAIL  tests\\money\\formatCents.test.ts > x\n')).toEqual(['tests/money/formatCents.test.ts'])
     expect(failedFiles('\u001b[31m FAIL \u001b[39m tests/a.test.ts\n')).toEqual(['tests/a.test.ts'])
+  })
+})
+
+describe('neverRan', () => {
+  test('recognises the texts Claude Code returns when a command was held for approval or refused', () => {
+    expect(neverRan('This PowerShell command contains multiple operations. The following part requires approval: npx vitest run tests/text/slugify.test.ts')).toBe(true)
+    expect(neverRan("Claude requested permissions to use Bash, but you haven't granted it yet.")).toBe(true)
+    expect(neverRan('Permission for this action was denied by the Claude Code auto mode classifier.')).toBe(true)
+  })
+
+  test('does not mistake a runner output for a hold', () => {
+    expect(neverRan(VITEST_FAIL)).toBe(false)
+    expect(neverRan('Error: Cannot find module vitest')).toBe(false)
   })
 })
 

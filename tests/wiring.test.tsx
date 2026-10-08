@@ -259,6 +259,20 @@ describe('honest runs', () => {
     expect(result.context?.join(' ')).toMatch(/summary line was not in the output, so nothing was counted/)
   })
 
+  test('a test command held for permission approval never ran, so it is not a run and nothing is said', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+    world.bashText = 'This PowerShell command contains multiple operations. The following part requires approval: npx vitest run tests/money/formatCents.test.ts'
+
+    const result = await runPowerShell($, 'npx vitest run tests/money/formatCents.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context).toBeUndefined()
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail\)/)
+    expect(status.text).not.toMatch(/unread/)
+  })
+
   test('a truncated tool result is named as the reason', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'money/formatCents')

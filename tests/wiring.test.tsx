@@ -95,6 +95,15 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/phase: IDLE/)
   })
 
+  test('asks git for paths relative to the session root, so a project inside a bigger repo works', async ($, on) => {
+    const world = fakeEngine(on)
+
+    await runBash($, 'git status')
+
+    const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
+    expect(numstat).toContain('--relative')
+  })
+
   test('ignores shell calls that change nothing under src/', async ($, on) => {
     fakeEngine(on)
 
@@ -103,6 +112,31 @@ describe('bash bypass', () => {
 
     expect(result.context).toBeUndefined()
     expect(status.text).toMatch(/unguarded 0/)
+  })
+})
+
+describe('honest runs', () => {
+  test('a failing run piped through tail is still RED, because the runner summary says so', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashText = ' FAIL  tests/money/formatCents.test.ts\n\n Test Files  1 failed (1)\n      Tests  2 failed | 1 passed (3)\n'
+
+    await runBash($, 'npx vitest run tests/money/formatCents.test.ts 2>&1 | tail -30')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(status.text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
+  })
+
+  test('a run that found no test files is not counted', async ($, on) => {
+    const world = fakeEngine(on)
+    world.bashFails = true
+    world.bashText = 'No test files found, exiting with code 1\n'
+
+    await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/runs: 0/)
   })
 })
 

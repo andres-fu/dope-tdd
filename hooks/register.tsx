@@ -7,6 +7,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isTestRun } from './mirror'
+import { runOutcome } from './runOutcome'
 import {
   INITIAL_STATS,
   expireCurrent,
@@ -110,7 +111,7 @@ function changedOfKind(root: string, paths: string[], kind: 'source' | 'test'): 
 }
 
 async function snapshotWatched($: EngineInterface, root: string): Promise<SourceSnapshot | null> {
-  const numstat = await runGit($, root, ['diff', '--numstat', '--', ...WATCHED_DIRS])
+  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', '--', ...WATCHED_DIRS])
   const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...WATCHED_DIRS])
   if (numstat === null || untracked === null) {
     return null
@@ -168,13 +169,14 @@ async function guardBash(
     .filter(source => updated.unlocked[source.module] === undefined)
     .map(source => source.path)
 
-  if (isTestRun(command)) {
+  const outcome = isTestRun(command) ? runOutcome(result.text ?? '', result.isError === true) : 'none'
+  if (outcome !== 'none') {
     const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
     const target = named === undefined ? null : classifyPath(root, /^([A-Za-z]:)?[\\/]/.test(named) ? named : `${root}/${named}`)
     if (target?.kind === 'test') {
       await change($, s => recordRunTarget(s, target.module))
     }
-    await change($, s => recordRun(s, result.isError !== true, nowMs))
+    await change($, s => recordRun(s, outcome === 'pass', nowMs))
   }
 
   const reminders = current.paused

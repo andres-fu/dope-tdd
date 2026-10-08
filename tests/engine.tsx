@@ -22,6 +22,7 @@ export const BAND = {
 export type FakeWorld = {
   clock: MockClock
   bashFails: boolean
+  bashText: string
   testModifiedAt: number
   existingFiles: Set<string>
   openedPanes: string[]
@@ -29,6 +30,7 @@ export type FakeWorld = {
   toasts: string[]
   numstat: string
   untracked: string
+  gitCalls: string[][]
   onBash: (command: string) => void
 }
 
@@ -36,6 +38,7 @@ export function fakeEngine(on: On): FakeWorld {
   const world: FakeWorld = {
     clock: mock.clock(on, { now: T0 }),
     bashFails: false,
+    bashText: '',
     testModifiedAt: T0,
     existingFiles: new Set(),
     openedPanes: [],
@@ -43,6 +46,7 @@ export function fakeEngine(on: On): FakeWorld {
     toasts: [],
     numstat: '',
     untracked: '',
+    gitCalls: [],
     onBash: () => {},
   }
 
@@ -59,6 +63,7 @@ export function fakeEngine(on: On): FakeWorld {
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__red-first__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', (_$, e) => {
+    world.gitCalls.push(e.argv)
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never
   })
@@ -83,8 +88,8 @@ export function fakeEngine(on: On): FakeWorld {
       world.onBash(e.command)
     }
     return e.tool === 'Bash' && world.bashFails
-      ? { isError: true as const, result: 'FAIL', text: 'Tests 1 failed' }
-      : { result: {} as never }
+      ? { isError: true as const, result: 'FAIL', text: world.bashText || 'Tests 1 failed' }
+      : { result: {} as never, text: world.bashText }
   })
   return world
 }

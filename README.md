@@ -17,7 +17,7 @@ and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c
 ## Install (local)
 
 ```bash
-claude plugin marketplace add C:/Users/fuent/dope-tdd
+claude plugin marketplace add C:/Users/fuent/red-first
 claude plugin install dope-tdd@dope-tdd
 ```
 

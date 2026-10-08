@@ -1,7 +1,9 @@
 # 2026-10-08 — "Catches the change": the test is proven against the change it guards
 
 Supersedes the overnight DRAFT of the same name; the shape is the draft's
-recommendation with three simplifications noted below.
+recommendation with three simplifications noted below. Amended the same day
+by `2026-10-08_honesty-pass.md`: the lock, the journal, new files, shell
+edits and the exit-code fallback all changed there.
 
 ## What was decided
 When a passing run completes a cycle on module M, Red First proves M's test
@@ -53,5 +55,6 @@ nothing, or a test of the mock all come back `missed`. It is one mutant
 ## Trade-offs accepted
 - One extra test-file run per green cycle, synchronous in the Bash hook.
 - Full file text per edited module is held in session state for the cycle.
-- Shell-made source edits stay unchecked in this version.
+- Shell-made source edits stayed unchecked in this version (captured since
+  the shell-edit commit the same day).
 - pytest and other runners fall through to "no runner found" until added.

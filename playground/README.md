@@ -63,6 +63,7 @@ Watch the band above the prompt. It tells a story in four words:
 | **✎ WRITING** | A test file for this module exists but hasn't run yet. |
 | **■ RED** | The test ran and failed. The bug is now reproduced in a file, which is the clearest bug report you will ever get. Press **VIEW TEST** to read it. |
 | **■ GREEN** | The fix is in and the same test passes. **CYCLES 1** means one full red-to-green loop happened. |
+| **CAUGHT** | Right after the green, Dope TDD undid the fix for a moment, ran the test, and it failed. The test guards this change. **MISSED** means it still passed with the fix undone, so the test proves nothing yet; ask Claude to fix the test. |
 
 Type `/tdd` for the full event log. Read it from the bottom up: touched, fail,
 edited, pass.
@@ -72,9 +73,9 @@ edited, pass.
 > The test is green. Clean up formatCents: clear names, no duplication, nothing
 > clever. Keep the test green and don't touch it.
 
-Watch two things: the band stays **GREEN** across the cleanup, and the test
-file's **UPDATED** time doesn't move. Code changed, behaviour didn't, and you
-didn't have to read the diff to know that. This is the step most people skip
+Watch two things: the band stays **GREEN** across the cleanup, and it says
+**REFACTOR**: the code changed while green with the test untouched. Code
+changed, behaviour didn't, and you didn't have to read the diff to know that. This is the step most people skip
 and the one that keeps a codebase healthy.
 
 **If you're QA:** open the test file in `tests/money/`. Does it say what the
@@ -113,8 +114,9 @@ Tell Claude:
 > Fix Bug 2. Skip the test, just change the code.
 
 Claude will be blocked, and the band will say so. Now tell it to do it
-properly and watch the counts: **BLOCKED 1**, then **TEST-FIRST 1/2**. The
-ratio counts attempts, so a shortcut that was stopped still shows.
+properly and watch the counts: **BLOCKED 1** stays on the band, and `/tdd`
+shows `test-first: 1/2`. The ratio counts attempts, so a shortcut that was
+stopped still shows.
 
 If you ever see **UNGUARDED**, a source file changed through a shell command
 without a test being touched first. Dope TDD saw it in the git diff and told

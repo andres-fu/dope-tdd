@@ -103,6 +103,16 @@ function listChange(name: string, before: readonly string[], after: readonly str
   ]
 }
 
+const MODE_STRENGTH: Readonly<Record<GuardMode, number>> = { enforce: 2, warn: 1, observe: 0 }
+
+/** True when the edit made the guard do less: a weaker mode, a new exemption, or a scope that leaves more out. */
+export function isLoosening(before: GuardConfig, after: GuardConfig): boolean {
+  const weakerMode = MODE_STRENGTH[after.mode] < MODE_STRENGTH[before.mode]
+  const moreExempt = after.exempt.some(glob => !before.exempt.includes(glob))
+  const narrowerScope = (before.scope.length === 0 && after.scope.length > 0) || (before.scope.length > 0 && after.scope.length > 0 && before.scope.some(glob => !after.scope.includes(glob)))
+  return weakerMode || moreExempt || narrowerScope
+}
+
 /** What an edit to the config file changed, in words, or null when nothing the guard reads moved. */
 export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
   const parts = [

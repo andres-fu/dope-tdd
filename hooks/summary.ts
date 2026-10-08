@@ -2,6 +2,16 @@ import type { TddStats } from '../types'
 import { describeConfig } from './config'
 import type { GuardConfig } from './config'
 import { formatAgo, formatSpan } from './timeText'
+import { WORKAROUND_KINDS } from './workarounds'
+
+const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
+  config: 'config loosened',
+  pause: 'paused',
+  'test-changed': 'test changed',
+  skipped: 'skipped',
+  'assertion-removed': 'assertions removed',
+  'commented-out': 'commented out',
+}
 
 const RECENT_EVENTS = 10
 
@@ -43,6 +53,14 @@ function catchLine(s: TddStats): string[] {
     : [`catch check: caught ${s.caught} · missed ${s.missed} · unverified ${s.unverified} · refactors ${s.refactors}`]
 }
 
+function workaroundLine(s: TddStats): string[] {
+  if (s.workarounds === 0) {
+    return []
+  }
+  const parts = WORKAROUND_KINDS.filter(kind => (s.workaroundsBy[kind] ?? 0) > 0).map(kind => `${WORKAROUND_WORDS[kind]} ${s.workaroundsBy[kind]}`)
+  return [`workarounds: ${s.workarounds} (${parts.join(', ')})`]
+}
+
 function inheritedLine(s: TddStats, nowMs: number): string[] {
   const entries = Object.entries(s.inherited)
   if (entries.length === 0) {
@@ -62,6 +80,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
     cycleLine(s),
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
+    ...workaroundLine(s),
     ...inheritedLine(s, nowMs),
     'recent events:',
     ...eventLines(s, nowMs),
@@ -83,6 +102,7 @@ export function formatGlossary(): string {
     '  UNVERIFIED     the catch check could not run; /tdd has the reason',
     '  REFACTOR       code changed while green with the test untouched; not re-checked',
     '  UNGUARDED      a source file changed with no test touched first',
+    '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out',
     '  BLOCKED        an edit was refused until the test is written',
     '  PAUSED         the guard is off; edits are not counted',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',

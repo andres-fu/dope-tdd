@@ -17,6 +17,9 @@ export type EventKind =
   | 'refactor'
   | 'test-changed'
   | 'config'
+  | 'skipped'
+  | 'assertion-removed'
+  | 'commented-out'
 
 export type CatchOutcome = { kind: 'caught' } | { kind: 'missed' } | { kind: 'unverified'; reason: string }
 
@@ -59,6 +62,9 @@ export type TddStats = {
   testChangedAfterRed: boolean
   neverSawRed: number
   testChanged: number
+  /** Ways around the guard, on the record: total and by kind. */
+  workarounds: number
+  workaroundsBy: Readonly<Record<string, number>>
   unproven: readonly string[]
   testFirst: number
   unguarded: number

@@ -345,6 +345,81 @@ describe('the config file is watched', () => {
   })
 })
 
+describe('workarounds are on the record', () => {
+  const TEST = 'tests/money/formatCents.test.ts'
+  const HONEST = "import { expect, test } from 'vitest'\n\ntest('formats', () => {\n  expect(formatCents(-1250)).toBe('-$12.50')\n  expect(formatCents(-50)).toBe('-$0.50')\n})\n"
+
+  test('a skip marker added to a test is recorded, counted and said', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
+    await writeAt($, TEST, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace("test('formats'", "test.skip('formats'"))
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/tests\/money\/formatCents\.test\.ts gained 1 skip\/only marker\. A skipped test guards nothing\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(skipped 1\)/)
+    expect(status.text).toMatch(/skipped\s+money\/formatCents \(\+1\)/)
+    expect(await ui.find({ type: 'Text', text: '1 WORKAROUNDS' })).toBeDefined()
+  })
+
+  test('an assertion removed from a test is recorded with before and after counts', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace("  expect(formatCents(-50)).toBe('-$0.50')\n", ''))
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/went from 2 to 1 assertion\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(assertions removed 1\)/)
+  })
+
+  test('code commented out by a source edit is recorded and said', async ($, on) => {
+    const world = fakeEngine(on)
+    const SRC = `${ROOT}/src/money/formatCents.ts`
+    world.fileContents.set(SRC, 'export function f(a: number) {\n  if (a < 0) {\n    throw new Error("negative")\n  }\n  return a\n}\n')
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await $.tool.call({
+      tool: 'Edit',
+      file_path: SRC,
+      old_string: '  if (a < 0) {\n    throw new Error("negative")\n  }\n',
+      new_string: '  // if (a < 0) {\n  //   throw new Error("negative")\n  // }\n',
+    } as never)
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/src\/money\/formatCents\.ts: 2 lines of code commented out by this edit\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(commented out 1\)/)
+    expect(status.text).toMatch(/commented-out\s+money\/formatCents \(2 lines\)/)
+  })
+
+  test('pausing the guard and loosening the config count; tightening the config does not', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    await ui.press({ key: 'pause' })
+    await ui.press({ key: 'pause' })
+    await writeAt($, 'dope-tdd.json', '{"mode":"warn"}')
+    await writeAt($, 'dope-tdd.json', '{"mode":"enforce"}')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/workarounds: 2 \(config loosened 1, paused 1\)/)
+  })
+
+  test('an honest test edit is not a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace('})\n', "  expect(formatCents(0)).toBe('$0.00')\n})\n"))
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).not.toMatch(/Recorded; say why/)
+    expect(status.text).not.toMatch(/workarounds/)
+  })
+})
+
 describe('the agent is told', () => {
   test('touching a test tells the agent the module is unlocked and to see it fail first', async ($, on) => {
     const world = fakeEngine(on)

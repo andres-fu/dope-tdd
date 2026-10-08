@@ -1,4 +1,5 @@
 import type { BeforeState, CatchOutcome, CurrentTest, EventKind, TddEvent, TddStats } from '../types'
+import type { WorkaroundKind } from './workarounds'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
@@ -21,6 +22,8 @@ export const INITIAL_STATS: TddStats = {
   testChangedAfterRed: false,
   neverSawRed: 0,
   testChanged: 0,
+  workarounds: 0,
+  workaroundsBy: {},
   unproven: [],
   testFirst: 0,
   unguarded: 0,
@@ -78,6 +81,8 @@ export function normalizeStats(stored: unknown): TddStats {
     testChangedAfterRed: pick('testChangedAfterRed', isBoolean),
     neverSawRed: pick('neverSawRed', isNumber),
     testChanged: pick('testChanged', isNumber),
+    workarounds: pick('workarounds', isNumber),
+    workaroundsBy: pick('workaroundsBy', isRecord),
     unproven: strings(pick('unproven', isStringList)),
     testFirst: pick('testFirst', isNumber),
     unguarded: pick('unguarded', isNumber),
@@ -210,14 +215,30 @@ export function recordUnreadRun(s: TddStats, nowMs: number): TddStats {
   return logged({ ...s, unreadRuns: s.unreadRuns + 1 }, 'unread', nowMs, s.current?.module)
 }
 
+function countWorkaround(s: TddStats, kind: WorkaroundKind): TddStats {
+  return { ...s, workarounds: s.workarounds + 1, workaroundsBy: { ...s.workaroundsBy, [kind]: (s.workaroundsBy[kind] ?? 0) + 1 } }
+}
+
 /** Green reached after red with the test edited and the code untouched: the green came from the test. */
 export function recordTestChanged(s: TddStats, module: string, nowMs: number): TddStats {
   const lastCycle = s.lastCycle?.module === module ? { ...s.lastCycle, testChanged: true } : s.lastCycle
-  return logged({ ...s, testChanged: s.testChanged + 1, lastCycle }, 'test-changed', nowMs, module)
+  return logged(countWorkaround({ ...s, testChanged: s.testChanged + 1, lastCycle }, 'test-changed'), 'test-changed', nowMs, module)
 }
 
-export function recordConfigChange(s: TddStats, detail: string, nowMs: number): TddStats {
-  return logged(s, 'config', nowMs, undefined, detail)
+/** A config edit is always logged; only one that loosens the guard counts as a workaround. */
+export function recordConfigChange(s: TddStats, detail: string, loosened: boolean, nowMs: number): TddStats {
+  return logged(loosened ? countWorkaround(s, 'config') : s, 'config', nowMs, undefined, detail)
+}
+
+/** A skip/only marker added to a test, an assertion removed, or code commented out: recorded with what was seen. */
+export function recordWorkaround(
+  s: TddStats,
+  kind: 'skipped' | 'assertion-removed' | 'commented-out',
+  module: string,
+  detail: string,
+  nowMs: number,
+): TddStats {
+  return logged(countWorkaround(s, kind), kind, nowMs, module, detail)
 }
 
 export function recordSourceEdit(s: TddStats, module: string, isGuarded: boolean, nowMs: number): TddStats {
@@ -310,7 +331,8 @@ export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome |
 }
 
 export function togglePause(s: TddStats, nowMs: number): TddStats {
-  return logged({ ...s, paused: !s.paused }, s.paused ? 'resumed' : 'paused', nowMs)
+  const toggled = { ...s, paused: !s.paused }
+  return s.paused ? logged(toggled, 'resumed', nowMs) : logged(countWorkaround(toggled, 'pause'), 'paused', nowMs)
 }
 
 export function expireCurrent(s: TddStats, nowMs: number): TddStats {

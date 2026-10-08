@@ -38,6 +38,18 @@ export function configChangedAdvice(detail: string): string {
   return `dope-tdd: dope-tdd.json changed (${detail}). This is recorded in /tdd; say why in your reply.`
 }
 
+export function skippedAdvice(testPath: string, added: number): string {
+  return `dope-tdd: ${testPath} gained ${added} skip/only marker${added === 1 ? '' : 's'}. A skipped test guards nothing. Recorded; say why in your reply.`
+}
+
+export function assertionsRemovedAdvice(testPath: string, before: number, after: number): string {
+  return `dope-tdd: ${testPath} went from ${before} to ${after} assertion${after === 1 ? '' : 's'}. Recorded; say why in your reply.`
+}
+
+export function commentedOutAdvice(sourcePath: string, lines: number): string {
+  return `dope-tdd: ${sourcePath}: ${lines} line${lines === 1 ? '' : 's'} of code commented out by this edit. Recorded; say why in your reply.`
+}
+
 function elsewhereAdvice(module: string, files: readonly string[], sawRed: boolean): string {
   const failed = `${files.join(', ')} failed; ${module}'s own test did not fail this run.`
   return sawRed

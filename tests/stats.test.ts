@@ -17,6 +17,7 @@ import {
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
+  recordWorkaround,
   releaseCheck,
   resetStats,
   seedUnlocks,
@@ -132,9 +133,35 @@ describe('runs that could not be read', () => {
 })
 
 describe('config changes', () => {
-  test('are logged with what changed', () => {
-    const s = recordConfigChange(INITIAL_STATS, 'mode enforce → observe', T0)
-    expect(s.events.at(-1)).toEqual({ atMs: T0, kind: 'config', detail: 'mode enforce → observe' })
+  test('are logged with what changed, and count as a workaround only when they loosen the guard', () => {
+    const loosened = recordConfigChange(INITIAL_STATS, 'mode enforce → observe', true, T0)
+    const tightened = recordConfigChange(loosened, 'mode observe → enforce', false, T0 + 1)
+    expect(loosened.events.at(-1)).toEqual({ atMs: T0, kind: 'config', detail: 'mode enforce → observe' })
+    expect(loosened.workarounds).toBe(1)
+    expect(tightened.workarounds).toBe(1)
+    expect(tightened.workaroundsBy).toEqual({ config: 1 })
+  })
+})
+
+describe('workarounds', () => {
+  test('each kind is counted in the total and by kind, with its detail on the event', () => {
+    const skipped = recordWorkaround(INITIAL_STATS, 'skipped', MODULE, '+1', T0)
+    const weakened = recordWorkaround(skipped, 'assertion-removed', MODULE, '2 → 1', T0 + 1)
+    const commented = recordWorkaround(weakened, 'commented-out', MODULE, '3 lines', T0 + 2)
+    expect(commented.workarounds).toBe(3)
+    expect(commented.workaroundsBy).toEqual({ skipped: 1, 'assertion-removed': 1, 'commented-out': 1 })
+    expect(commented.events.at(-1)).toEqual({ atMs: T0 + 2, kind: 'commented-out', module: MODULE, detail: '3 lines' })
+  })
+
+  test('pausing counts once; resuming does not', () => {
+    const paused = togglePause(INITIAL_STATS, T0)
+    const resumed = togglePause(paused, T0 + 1)
+    expect(paused.workaroundsBy).toEqual({ pause: 1 })
+    expect(resumed.workarounds).toBe(1)
+  })
+
+  test('a test changed after red counts too', () => {
+    expect(recordTestChanged(INITIAL_STATS, MODULE, T0).workaroundsBy).toEqual({ 'test-changed': 1 })
   })
 })
 

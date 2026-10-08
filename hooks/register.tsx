@@ -5,13 +5,16 @@ import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { catchOutcome, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
-import { CONFIG_FILE, describeConfigChange, parseConfig, policyFor } from './config'
+import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor } from './config'
 import type { GuardConfig } from './config'
 import {
+  assertionsRemovedAdvice,
+  commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
   inheritedAdvice,
   runAdvice,
+  skippedAdvice,
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
@@ -38,6 +41,7 @@ import {
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
+  recordWorkaround,
   releaseCheck,
   resetStats,
   seedUnlocks,
@@ -45,6 +49,7 @@ import {
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
 import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
+import { commentedOutLines, testEditSignals } from './workarounds'
 
 const MINUTE = 60_000
 const TEST_PANE = 'dope-tdd-test'
@@ -328,6 +333,50 @@ function beforeState(file: FileRead): BeforeState | undefined {
   return file.kind === 'text' ? undefined : file.kind
 }
 
+/** Code commented out by an edit is recorded and said; the count is the detail. */
+async function noteCommentedOut(
+  $: EngineInterface,
+  root: string,
+  module: string,
+  path: string,
+  before: string | null,
+  after: string,
+  nowMs: number,
+): Promise<string[]> {
+  const lines = before === null ? 0 : commentedOutLines(before, after)
+  if (lines === 0) {
+    return []
+  }
+  await change($, s => recordWorkaround(s, 'commented-out', module, `${lines} line${lines === 1 ? '' : 's'}`, nowMs))
+  return [commentedOutAdvice(relativePath(root, path), lines)]
+}
+
+/** Skip/only markers added or assertions lost in a test edit are recorded and said. */
+async function noteTestEdit(
+  $: EngineInterface,
+  root: string,
+  module: string,
+  path: string,
+  before: string | null,
+  after: string | null,
+  nowMs: number,
+): Promise<string[]> {
+  if (before === null || after === null) {
+    return []
+  }
+  const lines: string[] = []
+  for (const signal of testEditSignals(before, after)) {
+    if (signal.kind === 'skipped') {
+      await change($, s => recordWorkaround(s, 'skipped', module, `+${signal.added}`, nowMs))
+      lines.push(skippedAdvice(relativePath(root, path), signal.added))
+    } else {
+      await change($, s => recordWorkaround(s, 'assertion-removed', module, `${signal.before} → ${signal.after}`, nowMs))
+      lines.push(assertionsRemovedAdvice(relativePath(root, path), signal.before, signal.after))
+    }
+  }
+  return lines
+}
+
 async function guardFileWrite(
   $: EngineInterface,
   filePath: string,
@@ -351,7 +400,7 @@ async function guardFileWrite(
     return { deny: lockedMessage(target.module) }
   }
 
-  const before = target.kind === 'source' && !current.paused ? await readFile($, filePath) : undefined
+  const before = target.kind !== 'other' && !current.paused ? await readFile($, filePath) : undefined
   if (target.kind !== 'other') {
     // Read again right before the write: a check that started since must not have this file reverted under the edit.
     const latest = await readStats($)
@@ -366,11 +415,12 @@ async function guardFileWrite(
 
   const nowMs = await $.clock.now()
   if (isConfig) {
-    const detail = describeConfigChange(config, await loadConfig($, root))
+    const after = await loadConfig($, root)
+    const detail = describeConfigChange(config, after)
     if (detail === null) {
       return result
     }
-    await change($, s => recordConfigChange(s, detail, nowMs))
+    await change($, s => recordConfigChange(s, detail, isLoosening(config, after), nowMs))
     $.ui.toast(`dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
     return withContext(result, [configChangedAdvice(detail)])
   }
@@ -386,20 +436,22 @@ async function guardFileWrite(
     if (edited.paused) {
       return result
     }
+    const commented = before === undefined || after === null ? [] : await noteCommentedOut($, root, target.module, filePath, beforeText(before), after, nowMs)
     if (isLocked) {
-      return tell(quiet, result, policy === 'warn' ? [unguardedAdvice(target.module)] : [])
+      return tell(quiet, result, [...(policy === 'warn' ? [unguardedAdvice(target.module)] : []), ...commented])
     }
     const testPath = edited.unlocked[target.module]
-    return inheritedAt === undefined || testPath === undefined
-      ? result
-      : tell(quiet, result, [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)])
+    const inherited =
+      inheritedAt === undefined || testPath === undefined ? [] : [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)]
+    return tell(quiet, result, [...inherited, ...commented])
   }
   if (target.kind === 'test') {
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
     await rememberUnlock($, root, target.module, filePath, nowMs)
     const source = await readWhole($, filePath)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module), ...hollow])
+    const signals = before === undefined ? [] : await noteTestEdit($, root, target.module, filePath, beforeText(before), source, nowMs)
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module), ...hollow, ...signals])
   }
   return result
 }
@@ -519,6 +571,12 @@ async function guardShell(
   for (const { path, module } of touchedTests) {
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
+  const commented: string[] = []
+  for (const write of captured) {
+    if (write.after !== null) {
+      commented.push(...(await noteCommentedOut($, root, write.module, write.path, beforeText(write.before), write.after, nowMs)))
+    }
+  }
   const unguardedPaths = changedSources
     .filter(source => updated.unlocked[source.module] === undefined && policyFor(config, source.path) !== 'observe')
     .map(source => source.path)
@@ -564,6 +622,7 @@ async function guardShell(
     ? []
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...commented,
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)

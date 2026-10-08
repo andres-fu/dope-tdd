@@ -1,6 +1,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_CONFIG, describeConfigChange, parseConfig } from '../hooks/config'
+import { DEFAULT_CONFIG, describeConfigChange, isLoosening, parseConfig } from '../hooks/config'
+
+describe('isLoosening', () => {
+  test('a weaker mode, a new exemption, or a scope that leaves more out loosens the guard', () => {
+    expect(isLoosening(DEFAULT_CONFIG, parseConfig('{"mode":"warn"}'))).toBe(true)
+    expect(isLoosening(DEFAULT_CONFIG, parseConfig('{"exempt":["src/main.tsx"]}'))).toBe(true)
+    expect(isLoosening(DEFAULT_CONFIG, parseConfig('{"scope":["src/billing/**"]}'))).toBe(true)
+    expect(isLoosening(parseConfig('{"scope":["src/billing/**","src/cart/**"]}'), parseConfig('{"scope":["src/billing/**"]}'))).toBe(true)
+  })
+
+  test('a stronger mode, a dropped exemption, or a wider scope does not', () => {
+    expect(isLoosening(parseConfig('{"mode":"observe"}'), DEFAULT_CONFIG)).toBe(false)
+    expect(isLoosening(parseConfig('{"exempt":["src/main.tsx"]}'), DEFAULT_CONFIG)).toBe(false)
+    expect(isLoosening(parseConfig('{"scope":["src/billing/**"]}'), DEFAULT_CONFIG)).toBe(false)
+    expect(isLoosening(parseConfig('{"scope":["src/billing/**"]}'), parseConfig('{"scope":["src/billing/**","src/cart/**"]}'))).toBe(false)
+  })
+})
 
 describe('describeConfigChange', () => {
   test('names a mode change', () => {

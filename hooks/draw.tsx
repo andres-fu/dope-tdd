@@ -118,6 +118,7 @@ function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
       {s.refactors > 0 && drawCount(el, s.refactors, 'REFACTOR', ACCENT.pass)}
       {s.neverSawRed > 0 && drawCount(el, s.neverSawRed, 'NEVER SAW RED', ACCENT.paused)}
       {s.testChanged > 0 && drawCount(el, s.testChanged, 'TEST CHANGED', ACCENT.paused)}
+      {s.workarounds > 0 && drawCount(el, s.workarounds, 'WORKAROUNDS', ACCENT.paused)}
       {drawCount(el, s.unguarded, 'UNGUARDED', ACCENT.paused)}
       {drawCount(el, s.blocked, 'BLOCKED', ACCENT.paused)}
       {showMode && <Text bold color={ACCENT.paused}>{`MODE ${config.mode.toUpperCase()}${scoped ? ' (SCOPED)' : ''}`}</Text>}

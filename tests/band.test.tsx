@@ -272,6 +272,7 @@ describe('/tdd why', () => {
       'UNVERIFIED',
       'REFACTOR',
       'UNGUARDED',
+      'WORKAROUNDS',
       'BLOCKED',
       'PAUSED',
       'MODE',

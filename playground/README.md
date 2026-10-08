@@ -18,11 +18,15 @@ Three honest things about tests:
 2. **A test you have never seen fail proves nothing.** It might pass no matter
    what the code does. Writing the test first means you watch it fail before
    the fix exists, so you know it can catch the bug.
-3. **It's slower today and faster next month.** The next person to change this
+3. **Green is not the finish line.** Test-driven development has three steps:
+   red, green, refactor. Once the test passes, you clean the code up: better
+   names, smaller functions, no duplication. The test is what makes that
+   safe. Skip the third step and the codebase gets worse one fix at a time.
+4. **It's slower today and faster next month.** The next person to change this
    code, human or agent, works with a net under them. That is what
    "maintainable" means in practice.
 
-Red First makes those three things visible while an agent works, so you don't
+Red First makes those four things visible while an agent works, so you don't
 have to take its word for it.
 
 ## Setup
@@ -59,6 +63,16 @@ Watch the band above the prompt. It tells a story in four words:
 Type `/tdd` for the full event log. Read it from the bottom up: touched, fail,
 edited, pass.
 
+**Now the third step.** Tell Claude:
+
+> The test is green. Clean up formatCents: clear names, no duplication, nothing
+> clever. Keep the test green and don't touch it.
+
+Watch two things: the band stays **GREEN** across the cleanup, and the test
+file's **UPDATED** time doesn't move. Code changed, behaviour didn't, and you
+didn't have to read the diff to know that. This is the step most people skip
+and the one that keeps a codebase healthy.
+
 **If you're QA:** open the test file in `tests/money/`. Does it say what the
 bug report said? Would it have caught the bug before it shipped? That test
 now runs every time anyone changes `formatCents`, forever.
@@ -84,6 +98,9 @@ What to watch for:
   follows is a real one. If Claude skips that step, ask it why.
 - During the refactor the test file doesn't change and stays green. That is
   what a safe refactor looks like from the outside.
+- Read the result. Single-letter names should be gone, the loop should say
+  what it does, and it should need no comments to follow. If it still looks
+  like the original with new variable names, ask Claude to go further.
 
 ## Walk 3 · Watch it catch a shortcut (3 minutes)
 
@@ -105,13 +122,27 @@ Press **PAUSE GUARD**. Edits go through, the band says **⏸ PAUSED**, and
 nothing counts as test-first while paused. Press **RESUME GUARD** when you're
 back. `/tdd` always shows which state you're in.
 
+## What "clean" means here
+
+Four rules, in order, from Kent Beck. Code is clean when it:
+
+1. passes all the tests;
+2. says what it means, so the next reader doesn't have to guess;
+3. has no duplicated knowledge, so a change happens in one place;
+4. has nothing it doesn't need.
+
+Plus one habit: leave every file a little cleaner than you found it. That is
+the whole hygiene routine. Red First can't judge a name, but it can show you
+that the tests stayed green and untouched while the cleanup happened, which is
+the proof that the cleanup was safe.
+
 ## For team leads
 
 Nothing here leaves the laptop. The band, the event log and `/tdd` are for
 the person at the keyboard and for Claude. What's worth taking to the team is
 the habit the walks teach: a bug fix starts with a failing test, a refactor
-starts with a pinned behaviour, and "green" only means something if it was
-red first.
+starts with a pinned behaviour, "green" only means something if it was red
+first, and the work isn't done until the code is cleaner than before.
 
 ## Reset the playground
 

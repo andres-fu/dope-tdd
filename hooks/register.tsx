@@ -25,6 +25,7 @@ const MINUTE = 60_000
 const TEST_PANE = 'red-first-test'
 const STATUS_TOOL = /^mcp__red-first__status$/
 const MAX_SOURCE_CHARS = 10_000
+const WATCHED_DIRS = ['src', 'tests']
 const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
 
 const stats = atom({ plugin: 'red-first', key: 'stats' } as const, INITIAL_STATS)
@@ -99,9 +100,18 @@ async function runGit($: EngineInterface, root: string, args: string[]): Promise
   }
 }
 
-async function snapshotSource($: EngineInterface, root: string): Promise<SourceSnapshot | null> {
-  const numstat = await runGit($, root, ['diff', '--numstat', '--', 'src'])
-  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', 'src'])
+type ChangedFile = { path: string; module: string }
+
+function changedOfKind(root: string, paths: string[], kind: 'source' | 'test'): ChangedFile[] {
+  return paths.flatMap(path => {
+    const target = classifyPath(root, `${root}/${path}`)
+    return target.kind === kind ? [{ path, module: target.module }] : []
+  })
+}
+
+async function snapshotWatched($: EngineInterface, root: string): Promise<SourceSnapshot | null> {
+  const numstat = await runGit($, root, ['diff', '--numstat', '--', ...WATCHED_DIRS])
+  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...WATCHED_DIRS])
   if (numstat === null || untracked === null) {
     return null
   }
@@ -133,28 +143,30 @@ async function guardBash(
     return { deny: locked.map(lockedMessage).join('\n') }
   }
 
-  const before = await snapshotSource($, root)
+  const before = await snapshotWatched($, root)
   const result = await proceed()
   if (result.deny !== undefined) {
     return result
   }
-  const after = before === null ? null : await snapshotSource($, root)
+  const after = before === null ? null : await snapshotWatched($, root)
   const nowMs = await $.clock.now()
 
-  const changedSources = before === null || after === null
-    ? []
-    : (await Promise.all(
-        changedPaths(before, after).map(async path => ({ path, module: await sourceModuleOf($, root, path) })),
-      )).filter((source): source is { path: string; module: string } => source.module !== null)
-  const unguardedPaths = changedSources
-    .filter(source => current.unlocked[source.module] === undefined)
-    .map(source => source.path)
-  await change($, s =>
-    changedSources.reduce(
-      (acc, { module }) => recordSourceEdit(acc, module, acc.unlocked[module] !== undefined, nowMs),
+  const changed = before === null || after === null ? [] : changedPaths(before, after)
+  const touchedTests = changedOfKind(root, changed, 'test')
+  const changedSources = changedOfKind(root, changed, 'source')
+  const updated = await change($, s => {
+    const withTouches = touchedTests.reduce(
+      (acc, { path, module }) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs),
       s,
-    ),
-  )
+    )
+    return changedSources.reduce(
+      (acc, { module }) => recordSourceEdit(acc, module, acc.unlocked[module] !== undefined, nowMs),
+      withTouches,
+    )
+  })
+  const unguardedPaths = changedSources
+    .filter(source => updated.unlocked[source.module] === undefined)
+    .map(source => source.path)
 
   if (isTestRun(command)) {
     const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]

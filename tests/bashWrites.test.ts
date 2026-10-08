@@ -37,6 +37,17 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites('echo x >> src/index.css')).toEqual([])
   })
 
+  test('a write in one part of a command does not make every other mentioned path a write', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' tests/utils/a.test.ts && cat src/utils/b.ts")).toEqual([])
+    expect(findSourceWrites("cat src/utils/b.ts | sed -i 's/a/b/' src/utils/c.ts")).toEqual(['src/utils/c.ts'])
+    expect(findSourceWrites("grep -n x src/App.tsx; echo done > src/main.tsx")).toEqual(['src/main.tsx'])
+  })
+
+  test('printing a source file to stdout from a script is a read', () => {
+    expect(findSourceWrites("node -e \"process.stdout.write(require('fs').readFileSync('src/App.tsx','utf8'))\"")).toEqual([])
+    expect(findSourceWrites("python -c \"import sys; sys.stdout.write(open('src/App.tsx').read())\"")).toEqual([])
+  })
+
   test('keeps absolute and drive-letter paths whole so the caller can tell which repo they are in', () => {
     expect(findSourceWrites("sed -i 's/a/b/' /c/Users/me/throughline/src/App.tsx")).toEqual(['/c/Users/me/throughline/src/App.tsx'])
     expect(findSourceWrites("python - <<'PY'\nopen('C:/Users/me/throughline/src/App.tsx','w')\nPY")).toEqual(['C:/Users/me/throughline/src/App.tsx'])

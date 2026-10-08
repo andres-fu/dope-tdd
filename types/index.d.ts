@@ -33,6 +33,7 @@ export type TddStats = {
   cycleStartMs: number | null
   sawRed: boolean
   neverSawRed: number
+  unproven: readonly string[]
   testFirst: number
   unguarded: number
   blocked: number

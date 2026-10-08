@@ -4,7 +4,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import type { TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { drawBand, drawTestPane } from './draw'
-import { changedPaths, parseNumstat } from './gitChanges'
+import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isTestRun } from './mirror'
 import { runOutcome } from './runOutcome'
@@ -117,13 +117,12 @@ async function snapshotWatched($: EngineInterface, root: string): Promise<Source
     return null
   }
 
-  const untrackedEntries = await Promise.all(
-    untracked
-      .split(/\r?\n/)
-      .filter(path => path !== '')
-      .map(async path => [path, `untracked:${(await lastModifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const),
-  )
-  return { ...parseNumstat(numstat), ...Object.fromEntries(untrackedEntries) }
+  const stamped = async (path: string, signature: string) =>
+    [path, `${signature}:${(await lastModifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const
+  const tracked = await Promise.all(Object.entries(parseNumstat(numstat)).map(([path, counts]) => stamped(path, counts)))
+  const untrackedPaths = untracked.split(/\r?\n/).filter(path => path !== '')
+  const untrackedEntries = await Promise.all(untrackedPaths.map(path => stamped(path, 'untracked')))
+  return Object.fromEntries([...tracked, ...untrackedEntries])
 }
 
 async function guardBash(
@@ -152,7 +151,7 @@ async function guardBash(
   const after = before === null ? null : await snapshotWatched($, root)
   const nowMs = await $.clock.now()
 
-  const changed = before === null || after === null ? [] : changedPaths(before, after)
+  const changed = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
   const touchedTests = changedOfKind(root, changed, 'test')
   const changedSources = changedOfKind(root, changed, 'source')
   const updated = await change($, s => {

@@ -157,3 +157,28 @@ describe('event log and housekeeping', () => {
     expect(s.current?.module).toBe(MODULE)
   })
 })
+
+describe('proving a pin later', () => {
+  test('a module that went green first, then sees red with its test untouched, is no longer counted as never saw red', () => {
+    const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
+    const touched = recordTestTouch(INITIAL_STATS, { module: 'text/wrapLines', testPath: 'tests/text/wrapLines.test.ts' }, at(0))
+    const pinned = recordRun(touched, true, at(1))
+    const broken = recordSourceEdit(pinned, 'text/wrapLines', true, at(2))
+    const red = recordRun(broken, false, at(3))
+    const restored = recordRun(recordSourceEdit(red, 'text/wrapLines', true, at(4)), true, at(5))
+
+    expect(pinned.neverSawRed).toBe(1)
+    expect(red.neverSawRed).toBe(0)
+    expect(restored.neverSawRed).toBe(0)
+    expect(restored.cycles).toBe(2)
+  })
+})
+
+describe('corrupted stored state', () => {
+  test('drops events and run outcomes that are not well formed instead of crashing later', () => {
+    const s = normalizeStats({ events: [{ atMs: 1, kind: 'pass' }, { bogus: true }, null], history: ['pass', 'maybe'] })
+
+    expect(s.events).toEqual([{ atMs: 1, kind: 'pass' }])
+    expect(s.history).toEqual(['pass'])
+  })
+})

@@ -104,6 +104,32 @@ describe('bash bypass', () => {
     expect(numstat).toContain('--relative')
   })
 
+  test('a shell edit that keeps the same line counts is still seen, through the file stamp', async ($, on) => {
+    const world = fakeEngine(on)
+    world.numstat = '1\t1\tsrc/App.tsx\n'
+    world.onBash = () => {
+      world.testModifiedAt = world.testModifiedAt + 1
+    }
+
+    await runBash($, './scripts/codemod.sh')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 1/)
+  })
+
+  test('restoring a source file with git is not an edit', async ($, on) => {
+    const world = fakeEngine(on)
+    world.numstat = '3\t1\tsrc/App.tsx\n'
+    world.onBash = () => {
+      world.numstat = ''
+    }
+
+    await runBash($, 'git checkout -- src/App.tsx')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+  })
+
   test('ignores shell calls that change nothing under src/', async ($, on) => {
     fakeEngine(on)
 

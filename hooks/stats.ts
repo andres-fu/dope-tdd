@@ -1,4 +1,4 @@
-import type { CurrentTest, EventKind, TddStats } from '../types'
+import type { CurrentTest, EventKind, TddEvent, TddStats } from '../types'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
@@ -15,6 +15,7 @@ export const INITIAL_STATS: TddStats = {
   cycleStartMs: null,
   sawRed: false,
   neverSawRed: 0,
+  unproven: [],
   testFirst: 0,
   unguarded: 0,
   blocked: 0,
@@ -45,18 +46,21 @@ export function normalizeStats(stored: unknown): TddStats {
     paused: pick('paused', v => typeof v === 'boolean'),
     passes: pick('passes', isNumber),
     fails: pick('fails', isNumber),
-    history: pick('history', Array.isArray),
+    history: pick('history', Array.isArray).filter(outcome => outcome === 'pass' || outcome === 'fail'),
     cycles: pick('cycles', isNumber),
     cycleMsTotal: pick('cycleMsTotal', isNumber),
     cycleStartMs: pick('cycleStartMs', isNumberOrNull),
     sawRed: pick('sawRed', v => typeof v === 'boolean'),
     neverSawRed: pick('neverSawRed', isNumber),
+    unproven: pick('unproven', Array.isArray).filter(module => typeof module === 'string'),
     testFirst: pick('testFirst', isNumber),
     unguarded: pick('unguarded', isNumber),
     blocked: pick('blocked', isNumber),
     unlocked: pick('unlocked', isRecord),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
-    events: pick('events', Array.isArray),
+    events: pick('events', Array.isArray).filter(
+      (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
+    ),
     lastEventMs: pick('lastEventMs', isNumberOrNull),
   }
 }
@@ -80,6 +84,7 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
       sawRed: isCycleOpen ? s.sawRed : false,
       current: touched,
       unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
+      unproven: s.unproven.filter(module => module !== touched.module),
     },
     'touched',
     nowMs,
@@ -91,6 +96,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
   const history = [...s.history, passed ? 'pass' : 'fail'].slice(-HISTORY_LENGTH) as TddStats['history']
 
   if (!passed) {
+    const provesPin = s.current !== null && s.unproven.includes(s.current.module)
     return logged(
       {
         ...s,
@@ -99,6 +105,8 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
         history,
         cycleStartMs: s.cycleStartMs ?? nowMs,
         sawRed: true,
+        neverSawRed: provesPin ? s.neverSawRed - 1 : s.neverSawRed,
+        unproven: provesPin ? s.unproven.filter(module => module !== s.current?.module) : s.unproven,
       },
       'fail',
       nowMs,
@@ -107,6 +115,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
   }
 
   const completesCycle = s.cycleStartMs !== null
+  const greenFirst = completesCycle && !s.sawRed
   return logged(
     {
       ...s,
@@ -117,7 +126,8 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
       sawRed: false,
       cycles: completesCycle ? s.cycles + 1 : s.cycles,
       cycleMsTotal: completesCycle ? s.cycleMsTotal + (nowMs - (s.cycleStartMs ?? nowMs)) : s.cycleMsTotal,
-      neverSawRed: completesCycle && !s.sawRed ? s.neverSawRed + 1 : s.neverSawRed,
+      neverSawRed: greenFirst ? s.neverSawRed + 1 : s.neverSawRed,
+      unproven: greenFirst && s.current !== null ? [...s.unproven, s.current.module] : s.unproven,
     },
     'pass',
     nowMs,

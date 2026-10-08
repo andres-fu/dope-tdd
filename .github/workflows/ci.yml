@@ -1,0 +1,33 @@
+# The two checks the mods docs name, on both platforms the plugin claims:
+# `claude plugin validate` reads the manifest and the hooks module the way the
+# engine will; `claude plugin test` runs tests/ with no session, sign-in or
+# network. Validation is not --strict because the manifest omits `version` on
+# purpose (git-hosted marketplace: the commit is the version, so every push
+# reaches testers as an update); strict mode would fail on that alone.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  plugin:
+    name: validate and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Claude Code version
+        run: claude --version
+      - name: Validate the plugin the way the engine reads it
+        run: claude plugin validate .
+      - name: Run the plugin's tests
+        run: claude plugin test .

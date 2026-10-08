@@ -122,3 +122,13 @@ claude plugin validate .
 
 Tests live in `tests/`; the hooks module is `hooks/register.tsx`, with the
 logic in small pure modules beside it.
+
+## Try it, and tell us
+
+Testers start at `docs/testers.md`. Report with the **Tester report** issue
+template; the one moment the plugin was wrong, silent or annoying is the most
+useful thing you can send.
+
+## License
+
+MIT. Copyright (c) 2026 Andres Fuentes. See `LICENSE`.

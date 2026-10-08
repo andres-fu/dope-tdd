@@ -33,7 +33,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `arch2 8` No catch-check opt-out: `"catchCheck": false` in `dope-tdd.json` for a repo with a dev server or `tsc --watch` that sees every revert.
 - [ ] `arch2 9` REFACTOR on the band is coloured like green; it is a fact about the change, not a verdict on it.
 - [ ] `docs` In the VS Code extension's chat panel hooks run but nothing draws (mods overview, Where mods run): the band is invisible there and the tool results, `/tdd` and the status tool are the whole face. Say so in the README, and keep every verdict in the tool result.
-- [ ] `docs` Publish checklist (plugins/publish): `version` is 0.1.0 and never bumped, so `claude plugin update` would report "already at the latest version"; either bump on every release or omit it so the commit SHA is the version. `homepage` and `repository` are unset. No LICENSE. No eval suite: `claude plugin eval` with the playground's planted bugs as cases, scored against a no-plugin baseline, is the scripted live harness `arch 4` asks for.
+- [x] `docs` Publish checklist (plugins/publish): paid 2026-10-08. `version` omitted on purpose so the commit is the version and every push reaches testers (CI validates non-strict for that reason); `license`, `homepage`, `repository` and `keywords` set; LICENSE (MIT); CI on windows and ubuntu; tester brief in `docs/testers.md`. Left over: an eval suite with `claude plugin eval` using the playground planted bugs as cases against a no-plugin baseline, the scripted live harness `arch 4` asks for; it runs only on Linux or WSL2, since a Bash grant needs a sandbox backend.
 
 ## Structure and tests
 

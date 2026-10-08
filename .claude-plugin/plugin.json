@@ -1,12 +1,13 @@
 {
   "name": "dope-tdd",
   "displayName": "Dope TDD",
-  "version": "0.1.0",
   "description": "Dope TDD, the TDD companion for Claude Code: Deny, Observe, Prove, Evidence. Keeps Claude test-first, proves each test catches its change, and shows the evidence above the prompt",
   "author": {
     "name": "Andres Fuentes"
   },
   "homepage": "https://github.com/andres-fu/dope-tdd",
   "repository": "https://github.com/andres-fu/dope-tdd",
+  "license": "MIT",
+  "keywords": ["tdd", "testing", "test-first", "vitest", "jest", "mod"],
   "types": "./types/index.d.ts"
 }

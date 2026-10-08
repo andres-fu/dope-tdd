@@ -12,8 +12,14 @@ describe('parseConfig', () => {
       mode: 'warn',
       scope: ['src/billing/**'],
       exempt: ['src/main.tsx'],
+      layout: DEFAULT_CONFIG.layout,
+      roots: [],
       error: null,
     })
+    expect(parseConfig('{"layout":"colocated","roots":["packages/*"]}').layout.name).toBe('colocated')
+    expect(parseConfig('{"layout":{"source":"lib/{module}.{ext}","test":"spec/{module}.spec.{ext}"}}').layout.name).toBe('custom')
+    expect(parseConfig('{"layout":"nested"}').error).toMatch(/layout must be one of mirror, colocated, __tests__/)
+    expect(parseConfig('{"layout":{"source":"lib/{module}.ts","test":"x"}}').error).toMatch(/must contain \{ext\}/)
   })
 
   test('a bad file falls back to enforce and says why', () => {
@@ -51,12 +57,14 @@ describe('policyFor', () => {
 
 describe('describeConfig', () => {
   test('says the mode, the scope, the exemptions and any error in plain lines', () => {
-    expect(describeConfig(parseConfig('{"mode":"enforce","scope":["src/billing/**"],"exempt":["src/main.tsx"]}'))).toEqual([
+    expect(describeConfig(parseConfig('{"mode":"enforce","scope":["src/billing/**"],"exempt":["src/main.tsx"],"roots":["packages/*"]}'))).toEqual([
       'mode: enforce in src/billing/**',
       'exempt: src/main.tsx',
+      'layout: mirror (src/{module}.{ext} ↔ tests/{module}.test.{ext})',
+      'roots: packages/*',
     ])
     const broken = describeConfig(parseConfig('nope'))
     expect(broken[0]).toBe('mode: enforce')
-    expect(broken[1]).toMatch(/^config: dope-tdd\.json: .*\(using defaults\)$/)
+    expect(broken.at(-1)).toMatch(/^config: dope-tdd\.json: .*\(using defaults\)$/)
   })
 })

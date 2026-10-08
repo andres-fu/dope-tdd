@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ACCENT, LAYER_COLOR } from '../hooks/theme'
+import { ACCENT } from '../hooks/theme'
 
 const DARK_SURFACE = '#1F1E1D'
 const LIGHT_SURFACE = '#FFFFFF'
@@ -19,7 +19,7 @@ function contrast(a: string, b: string): number {
 
 describe('accent colors', () => {
   test('every accent reads at 3:1 on both a dark and a light app background', () => {
-    const accents = [...Object.values(ACCENT), ...Object.values(LAYER_COLOR).filter((c): c is NonNullable<typeof c> => c !== null)]
+    const accents = Object.values(ACCENT)
     for (const color of accents) {
       expect(contrast(color, DARK_SURFACE), `${color} on dark`).toBeGreaterThanOrEqual(3)
       expect(contrast(color, LIGHT_SURFACE), `${color} on light`).toBeGreaterThanOrEqual(3)

@@ -1,4 +1,6 @@
 import type { TddStats } from '../types'
+import { describeConfig } from './config'
+import type { GuardConfig } from './config'
 import { formatAgo, formatSpan } from './timeText'
 
 const RECENT_EVENTS = 10
@@ -7,12 +9,19 @@ function cycleLine(s: TddStats): string {
   if (s.cycles === 0) {
     return 'cycles: 0'
   }
-  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, never saw red ${s.neverSawRed})`
+  const testChanged = s.testChanged === 0 ? '' : `, test changed ${s.testChanged}`
+  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, never saw red ${s.neverSawRed}${testChanged})`
+}
+
+function runsLine(s: TddStats): string {
+  const unread = s.unreadRuns === 0 ? '' : `, ${s.unreadRuns} unread`
+  return `runs: ${s.passes + s.fails} (${s.passes} pass, ${s.fails} fail${unread})`
 }
 
 function phaseLine(s: TddStats, nowMs: number): string {
   const open = s.cycleStartMs === null ? '' : ` for ${formatSpan(nowMs - s.cycleStartMs)}`
-  return `phase: ${s.phase.toUpperCase()}${open}`
+  const elsewhere = s.redElsewhere.length === 0 ? '' : ` (red elsewhere: ${s.redElsewhere.join(', ')})`
+  return `phase: ${s.phase.toUpperCase()}${open}${elsewhere}`
 }
 
 function eventLines(s: TddStats, nowMs: number): string[] {
@@ -22,19 +31,61 @@ function eventLines(s: TddStats, nowMs: number): string[] {
   return s.events
     .slice(-RECENT_EVENTS)
     .reverse()
-    .map(e => `  ${formatAgo(nowMs - e.atMs).padEnd(9)} ${e.kind.padEnd(10)} ${e.module ?? ''}`.trimEnd())
+    .map(e => {
+      const what = [e.module ?? '', e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
+      return `  ${formatAgo(nowMs - e.atMs).padEnd(9)} ${e.kind.padEnd(12)} ${what}`.trimEnd()
+    })
 }
 
-export function formatStatus(s: TddStats, nowMs: number): string {
+function catchLine(s: TddStats): string[] {
+  return s.caught + s.missed + s.unverified + s.refactors === 0
+    ? []
+    : [`catch check: caught ${s.caught} · missed ${s.missed} · unverified ${s.unverified} · refactors ${s.refactors}`]
+}
+
+function inheritedLine(s: TddStats, nowMs: number): string[] {
+  const entries = Object.entries(s.inherited)
+  if (entries.length === 0) {
+    return []
+  }
+  return [`unlocked earlier: ${entries.map(([module, atMs]) => `${module} (${formatAgo(nowMs - atMs)})`).join(', ')}`]
+}
+
+export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): string {
   return [
-    'red-first',
+    'dope-tdd',
     `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
+    ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
     `module: ${s.current?.module ?? 'none'}`,
-    `runs: ${s.passes + s.fails} (${s.passes} pass, ${s.fails} fail)`,
+    runsLine(s),
     cycleLine(s),
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    ...catchLine(s),
+    ...inheritedLine(s, nowMs),
     'recent events:',
     ...eventLines(s, nowMs),
+  ].join('\n')
+}
+
+export function formatGlossary(): string {
+  return [
+    'dope-tdd: what the words mean',
+    '  WRITING        a test was created or edited and has not run yet',
+    '  RED            the last run of that test failed: the bug or the missing behaviour is reproduced',
+    '  RED ELSEWHERE  the last run failed in other test files, not in this module\'s test',
+    '  GREEN          the last run passed',
+    '  SAW RED        this cycle\'s test failed before the code made it pass, so it can catch something',
+    '  NEVER SAW RED  the test went green without ever failing; it has proven nothing yet',
+    '  TEST CHANGED   the test was edited after red and the code was not; the green came from the test',
+    '  CAUGHT         with the change undone, the test fails: it guards this change',
+    '  MISSED         with the change undone, the test still passes: it does not guard this change',
+    '  UNVERIFIED     the catch check could not run; /tdd has the reason',
+    '  REFACTOR       code changed while green with the test untouched; not re-checked',
+    '  UNGUARDED      a source file changed with no test touched first',
+    '  BLOCKED        an edit was refused until the test is written',
+    '  PAUSED         the guard is off; edits are not counted',
+    '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
+    "  DOPE           Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar",
   ].join('\n')
 }

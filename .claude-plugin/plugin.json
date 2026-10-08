@@ -1,8 +1,10 @@
 {
-  "name": "red-first",
-  "displayName": "Red First",
+  "name": "dope-tdd",
+  "displayName": "Dope TDD",
   "version": "0.1.0",
-  "description": "TDD companion for Claude Code: keeps Claude test-first, verifies the evidence, and shows it above the prompt",
-  "author": { "name": "Andres Fuentes" },
+  "description": "Dope TDD, the TDD companion for Claude Code: Deny, Observe, Prove, Evidence. Keeps Claude test-first, proves each test catches its change, and shows the evidence above the prompt",
+  "author": {
+    "name": "Andres Fuentes"
+  },
   "types": "./types/index.d.ts"
 }

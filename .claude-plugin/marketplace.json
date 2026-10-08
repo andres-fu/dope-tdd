@@ -1,8 +1,14 @@
 {
-  "name": "red-first",
-  "description": "Red First, the TDD companion for Claude Code",
-  "owner": { "name": "Andres Fuentes" },
+  "name": "dope-tdd",
+  "description": "Dope TDD, the TDD companion for Claude Code: Deny, Observe, Prove, Evidence.",
+  "owner": {
+    "name": "Andres Fuentes"
+  },
   "plugins": [
-    { "name": "red-first", "source": "./", "description": "Keeps Claude test-first and shows the evidence" }
+    {
+      "name": "dope-tdd",
+      "source": "./",
+      "description": "Keeps Claude test-first, proves each test catches its change, and shows the evidence"
+    }
   ]
 }

@@ -1,0 +1,159 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, touchAdvice, unreadRunAdvice } from '../hooks/advice'
+import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch } from '../hooks/stats'
+
+const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
+const touched = recordTestTouch(INITIAL_STATS, { module: 'money/formatCents', testPath: 'tests/money/formatCents.test.ts' }, at(0))
+
+describe('touchAdvice', () => {
+  test('tells the agent the module is unlocked and what to do before editing', () => {
+    expect(touchAdvice('money/formatCents')).toBe(
+      'dope-tdd: money/formatCents unlocked. Run its test and see it fail before editing src/money/formatCents.',
+    )
+  })
+})
+
+describe('runAdvice', () => {
+  test('after a failing run, says RED and what comes next', () => {
+    const red = recordRun(touched, false, at(1))
+
+    expect(runAdvice(touched, red)).toBe('dope-tdd: RED on money/formatCents. Make it pass with the smallest change, then run it again.')
+  })
+
+  test('after a green that saw red, says so and gives the next step', () => {
+    const red = recordRun(touched, false, at(1))
+    const edited = recordSourceEdit(red, 'money/formatCents', true, at(2))
+    const green = recordRun(edited, true, at(3))
+
+    expect(runAdvice(edited, green)).toBe('dope-tdd: GREEN on money/formatCents, saw red. Now refactor with the test untouched.')
+  })
+
+  test('after a green that never saw red, says so and how to prove the test', () => {
+    const green = recordRun(touched, true, at(1))
+
+    expect(runAdvice(touched, green)).toBe(
+      'dope-tdd: GREEN on money/formatCents but it never saw red. Break the code on purpose and run again to prove the test can fail.',
+    )
+  })
+
+  test('says nothing after a pass that completes no cycle', () => {
+    const idlePass = recordRun(INITIAL_STATS, true, at(1))
+
+    expect(runAdvice(INITIAL_STATS, idlePass)).toBeNull()
+  })
+})
+
+describe('runAdvice when the red is elsewhere', () => {
+  test('names the files that failed and says the module has not seen red', () => {
+    const elsewhere = recordRun(touched, false, at(1), ['tests/cart/applyDiscount.test.ts'])
+
+    expect(runAdvice(touched, elsewhere, undefined, { elsewhere: ['tests/cart/applyDiscount.test.ts'] })).toBe(
+      "dope-tdd: RED, but not on money/formatCents: tests/cart/applyDiscount.test.ts failed; money/formatCents's own test did not fail this run. money/formatCents has not seen red yet. Make its test fail before editing src/money/formatCents.",
+    )
+  })
+
+  test('after the module did see red, only names the files', () => {
+    const red = recordRun(touched, false, at(1))
+    const elsewhere = recordRun(red, false, at(2), ['tests/cart/applyDiscount.test.ts'])
+
+    expect(runAdvice(red, elsewhere, undefined, { elsewhere: ['tests/cart/applyDiscount.test.ts'] })).toBe(
+      "dope-tdd: RED, but not on money/formatCents: tests/cart/applyDiscount.test.ts failed; money/formatCents's own test did not fail this run.",
+    )
+  })
+})
+
+describe('runAdvice when the test changed after red and the code did not', () => {
+  test('says the green came from the test', () => {
+    const red = recordRun(touched, false, at(1))
+    const retouched = recordTestTouch(red, { module: 'money/formatCents', testPath: 'tests/money/formatCents.test.ts' }, at(2))
+    const green = recordRun(retouched, true, at(3))
+
+    expect(runAdvice(retouched, green, undefined, { testChanged: true })).toBe(
+      'dope-tdd: GREEN on money/formatCents, saw red, but the test changed after red and src/money/formatCents did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.',
+    )
+  })
+})
+
+describe('unreadRunAdvice', () => {
+  test('says nothing was counted and how to get a readable result', () => {
+    expect(unreadRunAdvice(false)).toBe(
+      'dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. Run the one test file, or pipe through tail -40, so the summary survives.',
+    )
+    expect(unreadRunAdvice(true)).toMatch(/\(the result was truncated\)/)
+  })
+})
+
+describe('configChangedAdvice', () => {
+  test('names the change and asks the agent to say why', () => {
+    expect(configChangedAdvice('mode enforce → observe')).toBe(
+      'dope-tdd: dope-tdd.json changed (mode enforce → observe). This is recorded in /tdd; say why in your reply.',
+    )
+  })
+})
+
+describe('inheritedAdvice', () => {
+  test('gives the agent the history behind an unlock from an earlier session', () => {
+    expect(inheritedAdvice('money/formatCents', 'tests/money/formatCents.test.ts', 2 * 60 * 60_000)).toBe(
+      'dope-tdd: src/money/formatCents is unlocked because tests/money/formatCents.test.ts was touched 2H AGO in an earlier session. Run that test first if you have not this session.',
+    )
+  })
+})
+
+describe('hollowAdvice', () => {
+  test('names the test file and says why an assertion-free test is worthless', () => {
+    expect(hollowAdvice('tests/money/formatCents.test.ts')).toBe(
+      'dope-tdd: tests/money/formatCents.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.',
+    )
+  })
+})
+
+describe('runAdvice with the catch check', () => {
+  const red = recordRun(touched, false, at(1))
+  const edited = recordSourceEdit(red, 'money/formatCents', true, at(2))
+  const green = recordRun(edited, true, at(3))
+
+  test('green, saw red, and the test catches the change', () => {
+    expect(runAdvice(edited, green, { kind: 'caught' })).toBe(
+      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change. Now refactor with the test untouched.',
+    )
+  })
+
+  test('green, saw red, but the test misses the change: fix the test first', () => {
+    expect(runAdvice(edited, green, { kind: 'missed' })).toBe(
+      'dope-tdd: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
+    )
+  })
+
+  test('green that never saw red, but the test catches the change, is a real test after all', () => {
+    const greenFirst = recordRun(recordSourceEdit(touched, 'money/formatCents', true, at(1)), true, at(2))
+
+    expect(runAdvice(touched, greenFirst, { kind: 'caught' })).toBe(
+      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails. Now refactor with the test untouched.',
+    )
+  })
+
+  test('when the check could not run, says why and moves on', () => {
+    expect(runAdvice(edited, green, { kind: 'unverified', reason: 'timeout' })).toBe(
+      'dope-tdd: GREEN on money/formatCents, saw red. Could not verify that its test catches the change (timeout). Now refactor with the test untouched.',
+    )
+  })
+})
+
+describe('runAdvice on a pass that completes no cycle', () => {
+  test('a refactor that kept the test green is named as a fact, not praised', () => {
+    const green = recordRun(recordRun(touched, false, at(1)), true, at(2))
+    const again = recordRun(green, true, at(4))
+
+    expect(runAdvice(green, again, 'refactor')).toBe(
+      'dope-tdd: GREEN on money/formatCents with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before.',
+    )
+  })
+
+  test('a test written after the code that misses the change is still called out', () => {
+    const green = recordRun(touched, true, at(1))
+    const again = recordRun(recordSourceEdit(green, 'money/formatCents', true, at(2)), true, at(3))
+
+    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/has proven nothing yet/)
+  })
+})

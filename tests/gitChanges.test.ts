@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { changedPaths, parseNumstat } from '../hooks/gitChanges'
+import { changedPaths, isRevertCommand, parseNumstat } from '../hooks/gitChanges'
 
 describe('parseNumstat', () => {
   test('keys each changed path by its add/delete counts', () => {
@@ -25,5 +25,33 @@ describe('changedPaths', () => {
 
   test('is empty when nothing changed', () => {
     expect(changedPaths({ 'src/a.ts': '1/0' }, { 'src/a.ts': '1/0' })).toEqual([])
+  })
+})
+
+describe('isRevertCommand', () => {
+  test('git commands that rewrite the working tree are reverts, not edits', () => {
+    for (const command of [
+      'git checkout -- src/App.tsx',
+      'git restore src/utils/a.ts',
+      'git stash',
+      'git stash pop',
+      'git reset --hard HEAD~1',
+      'cd packages/app && git switch main',
+    ]) {
+      expect(isRevertCommand(command)).toBe(true)
+    }
+  })
+
+  test('other git commands and ordinary shell commands are not', () => {
+    for (const command of ['git status', 'git diff src/App.tsx', 'git commit -m x', "sed -i 's/a/b/' src/App.tsx", 'npx vitest run']) {
+      expect(isRevertCommand(command)).toBe(false)
+    }
+  })
+
+  test('a patch the agent applies is its own edit, and listing the stash only reads', () => {
+    expect(isRevertCommand("git apply <<'EOF'\n--- a/src/App.tsx\n+++ b/src/App.tsx\nEOF")).toBe(false)
+    expect(isRevertCommand('git apply fix.patch')).toBe(false)
+    expect(isRevertCommand('git stash list')).toBe(false)
+    expect(isRevertCommand('git stash show -p')).toBe(false)
   })
 })

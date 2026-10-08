@@ -2,17 +2,19 @@ import { mock } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-export const ROOT = 'C:/work/throughline'
+/** Every fixture path lives on this drive, including a runner hoisted above the root. */
+export const FIXTURE_DRIVE = 'C:/'
+export const ROOT = `${FIXTURE_DRIVE}work/throughline`
 
 /**
- * The fixture root is Windows-shaped. On a POSIX host it is not absolute, so
- * the engine resolves it against the real cwd before an fs event reaches
- * these stubs; a path is therefore read from where the fixture root starts,
- * whatever the host put in front of it, and with forward slashes.
+ * The fixture paths are Windows-shaped. On a POSIX host they are not
+ * absolute, so the engine resolves them against the real cwd before an fs
+ * event reaches these stubs; a path is therefore read from where the fixture
+ * drive starts, whatever the host put in front of it, with forward slashes.
  */
 export function fakePath(path: string): string {
   const slashed = path.replace(/\\/g, '/')
-  const at = slashed.indexOf(ROOT)
+  const at = slashed.indexOf(FIXTURE_DRIVE)
   return at >= 0 ? slashed.slice(at) : slashed
 }
 export const T0 = Date.UTC(2026, 9, 6, 12, 0, 0)

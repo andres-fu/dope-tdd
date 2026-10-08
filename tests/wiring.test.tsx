@@ -166,6 +166,35 @@ describe('honest runs', () => {
   })
 })
 
+describe('the agent is told', () => {
+  test('touching a test tells the agent the module is unlocked and to see it fail first', async ($, on) => {
+    const world = fakeEngine(on)
+
+    const result = await touchTest($, world, 'money/formatCents')
+
+    expect(result.context?.join(' ')).toMatch(/money.formatCents unlocked/)
+  })
+
+  test('a failing run tells the agent it is RED, even when the shell reported the error', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await runTests($, world, 'fail')
+
+    expect(result.isError).toBe(true)
+    expect(result.context?.join(' ')).toMatch(/RED on money.formatCents/)
+  })
+
+  test('a green that never saw red tells the agent to prove the test', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await runTests($, world, 'pass')
+
+    expect(result.context?.join(' ')).toMatch(/never saw red/)
+  })
+})
+
 describe('checkable state', () => {
   test('/tdd reports the guard state and recent events', async ($, on) => {
     const world = fakeEngine(on)

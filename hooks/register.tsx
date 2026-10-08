@@ -3,6 +3,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
+import { runAdvice, touchAdvice } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
@@ -34,6 +35,12 @@ const tick = atom({ plugin: 'red-first', key: 'tick' } as const, 0)
 
 function succeeded(result: ToolCallResult): boolean {
   return result.deny === undefined && result.isError !== true
+}
+
+function withContext(result: ToolCallResult, lines: string[]): ToolCallResult {
+  return lines.length === 0 || result.deny !== undefined
+    ? result
+    : { ...result, context: [...(result.context ?? []), ...lines] }
 }
 
 function hasActivity(s: TddStats): boolean {
@@ -82,7 +89,8 @@ async function guardFileWrite(
     await change($, s => recordSourceEdit(s, target.module, true, nowMs))
   }
   if (target.kind === 'test') {
-    await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
+    const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
+    return touched.paused ? result : withContext(result, [touchAdvice(target.module)])
   }
   return result
 }
@@ -169,22 +177,24 @@ async function guardBash(
     .map(source => source.path)
 
   const outcome = isTestRun(command) ? runOutcome(result.text ?? '', result.isError === true) : 'none'
+  let afterRun = updated
   if (outcome !== 'none') {
     const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
     const target = named === undefined ? null : classifyPath(root, /^([A-Za-z]:)?[\\/]/.test(named) ? named : `${root}/${named}`)
     if (target?.kind === 'test') {
       await change($, s => recordRunTarget(s, target.module))
     }
-    await change($, s => recordRun(s, outcome === 'pass', nowMs))
+    afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs))
   }
+  const advice = outcome === 'none' ? null : runAdvice(updated, afterRun)
 
   const reminders = current.paused
     ? []
-    : unguardedPaths.map(path => `red-first: ${path} changed through a shell command without a test touched first.`)
-  if (reminders.length === 0 || result.isError === true) {
-    return result
-  }
-  return { ...result, context: [...(result.context ?? []), ...reminders] }
+    : [
+        ...unguardedPaths.map(path => `red-first: ${path} changed through a shell command without a test touched first.`),
+        ...(advice === null ? [] : [advice]),
+      ]
+  return withContext(result, reminders)
 }
 
 async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {

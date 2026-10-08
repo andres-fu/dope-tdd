@@ -1,5 +1,7 @@
 export function formatCents(cents: number): string {
-  const dollars = Math.trunc(cents / 100)
-  const remainder = Math.abs(cents % 100)
-  return `$${dollars}.${String(remainder).padStart(2, '0')}`
+  const sign = cents < 0 ? '-' : ''
+  const abs = Math.abs(cents)
+  const dollars = Math.trunc(abs / 100)
+  const remainder = abs % 100
+  return `${sign}$${dollars}.${String(remainder).padStart(2, '0')}`
 }

@@ -169,6 +169,13 @@ Then give Claude a real bug or a small feature and watch the words.
 - It is a prototype. Some words will be wrong sometimes. The plugin's rule
   for itself is that every verdict says why, so when a word is wrong you
   should be able to see what it was looking at.
+- One Claude Code session per checkout, for now. The catch check reverts a
+  file for a moment, and the lock that says so is per session: a second
+  session in the same folder, another agent say, could edit or test that file
+  while it is reverted. If you run several agents, give each its own git
+  worktree; the plugin keeps worktrees apart. A shared lock is on the list.
+- Observe mode watches without refusing, but the catch check still runs in
+  it. If you want nothing touched on disk, there is no switch for that yet.
 
 ## What to tell us
 

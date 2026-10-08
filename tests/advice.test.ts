@@ -9,7 +9,7 @@ const touched = recordTestTouch(INITIAL_STATS, { module: 'money/formatCents', te
 describe('touchAdvice', () => {
   test('tells the agent the module is unlocked and what to do before editing', () => {
     expect(touchAdvice('money/formatCents')).toBe(
-      'red-first: money/formatCents unlocked. Run its test and see it fail before editing src/money/formatCents.',
+      'dope-tdd: money/formatCents unlocked. Run its test and see it fail before editing src/money/formatCents.',
     )
   })
 })
@@ -18,7 +18,7 @@ describe('runAdvice', () => {
   test('after a failing run, says RED and what comes next', () => {
     const red = recordRun(touched, false, at(1))
 
-    expect(runAdvice(touched, red)).toBe('red-first: RED on money/formatCents. Make it pass with the smallest change, then run it again.')
+    expect(runAdvice(touched, red)).toBe('dope-tdd: RED on money/formatCents. Make it pass with the smallest change, then run it again.')
   })
 
   test('after a green that saw red, gives refactor credit and the next step', () => {
@@ -26,14 +26,14 @@ describe('runAdvice', () => {
     const edited = recordSourceEdit(red, 'money/formatCents', true, at(2))
     const green = recordRun(edited, true, at(3))
 
-    expect(runAdvice(edited, green)).toBe('red-first: GREEN on money/formatCents, saw red. Now refactor with the test untouched.')
+    expect(runAdvice(edited, green)).toBe('dope-tdd: GREEN on money/formatCents, saw red. Now refactor with the test untouched.')
   })
 
   test('after a green that never saw red, says so and how to prove the test', () => {
     const green = recordRun(touched, true, at(1))
 
     expect(runAdvice(touched, green)).toBe(
-      'red-first: GREEN on money/formatCents but it never saw red. Break the code on purpose and run again to prove the test can fail.',
+      'dope-tdd: GREEN on money/formatCents but it never saw red. Break the code on purpose and run again to prove the test can fail.',
     )
   })
 
@@ -47,7 +47,7 @@ describe('runAdvice', () => {
 describe('inheritedAdvice', () => {
   test('gives the agent the history behind an unlock from an earlier session', () => {
     expect(inheritedAdvice('money/formatCents', 'tests/money/formatCents.test.ts', 2 * 60 * 60_000)).toBe(
-      'red-first: src/money/formatCents is unlocked because tests/money/formatCents.test.ts was touched 2H AGO in an earlier session. Run that test first if you have not this session.',
+      'dope-tdd: src/money/formatCents is unlocked because tests/money/formatCents.test.ts was touched 2H AGO in an earlier session. Run that test first if you have not this session.',
     )
   })
 })
@@ -55,7 +55,7 @@ describe('inheritedAdvice', () => {
 describe('hollowAdvice', () => {
   test('names the test file and says why an assertion-free test is worthless', () => {
     expect(hollowAdvice('tests/money/formatCents.test.ts')).toBe(
-      'red-first: tests/money/formatCents.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.',
+      'dope-tdd: tests/money/formatCents.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.',
     )
   })
 })
@@ -67,13 +67,13 @@ describe('runAdvice with the catch check', () => {
 
   test('green, saw red, and the test catches the change', () => {
     expect(runAdvice(edited, green, { kind: 'caught' })).toBe(
-      'red-first: GREEN on money/formatCents, saw red, and its test catches the change. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change. Now refactor with the test untouched.',
     )
   })
 
   test('green, saw red, but the test misses the change: fix the test first', () => {
     expect(runAdvice(edited, green, { kind: 'missed' })).toBe(
-      'red-first: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
+      'dope-tdd: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
     )
   })
 
@@ -81,13 +81,13 @@ describe('runAdvice with the catch check', () => {
     const greenFirst = recordRun(recordSourceEdit(touched, 'money/formatCents', true, at(1)), true, at(2))
 
     expect(runAdvice(touched, greenFirst, { kind: 'caught' })).toBe(
-      'red-first: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails. Now refactor with the test untouched.',
     )
   })
 
   test('when the check could not run, says why and moves on', () => {
     expect(runAdvice(edited, green, { kind: 'unverified', reason: 'timeout' })).toBe(
-      'red-first: GREEN on money/formatCents, saw red. Could not verify that its test catches the change (timeout). Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red. Could not verify that its test catches the change (timeout). Now refactor with the test untouched.',
     )
   })
 })
@@ -98,7 +98,7 @@ describe('runAdvice on a pass that completes no cycle', () => {
     const again = recordRun(green, true, at(4))
 
     expect(runAdvice(green, again, 'refactor')).toBe(
-      'red-first: GREEN on money/formatCents: the refactor kept the test green with the test untouched. Refactor credit.',
+      'dope-tdd: GREEN on money/formatCents: the refactor kept the test green with the test untouched. Refactor credit.',
     )
   })
 

@@ -34,15 +34,15 @@ import { formatGlossary, formatStatus } from './summary'
 import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
 
 const MINUTE = 60_000
-const TEST_PANE = 'red-first-test'
-const STATUS_TOOL = /^mcp__red-first__status$/
+const TEST_PANE = 'dope-tdd-test'
+const STATUS_TOOL = /^mcp__dope-tdd__status$/
 const MAX_SOURCE_CHARS = 10_000
 const WATCHED_DIRS = ['src', 'tests']
 const JOURNAL_PREFIX = 'catch-journal:'
 const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
 
-const stats = atom({ plugin: 'red-first', key: 'stats' } as const, INITIAL_STATS)
-const tick = atom({ plugin: 'red-first', key: 'tick' } as const, 0)
+const stats = atom({ plugin: 'dope-tdd', key: 'stats' } as const, INITIAL_STATS)
+const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
 
 function succeeded(result: ToolCallResult): boolean {
   return result.deny === undefined && result.isError !== true
@@ -85,7 +85,7 @@ function absolutePath(root: string, path: string): string {
 }
 
 function checkingMessage(module: string): string {
-  return `red-first is verifying that the test for ${module} catches the change; retry in a moment.`
+  return `dope-tdd is verifying that the test for ${module} catches the change; retry in a moment.`
 }
 
 async function readWhole($: EngineInterface, path: string): Promise<string | null> {
@@ -122,7 +122,7 @@ async function repairInterruptedCheck($: EngineInterface): Promise<void> {
     await $.fs.write(file.path, file.text)
   }
   await $.store.delete(key)
-  $.ui.toast(`red-first restored ${journal.files.length} file(s) after an interrupted check`)
+  $.ui.toast(`dope-tdd restored ${journal.files.length} file(s) after an interrupted check`)
 }
 
 async function verifyCatch(
@@ -181,8 +181,8 @@ async function verifyCatch(
 
   const restored = await Promise.all(revertible.map(async cycleChange => (await readWhole($, cycleChange.path)) === cycleChange.after))
   if (!restored.every(Boolean)) {
-    $.ui.toast('red-first could not restore a source file after the catch check; see /tdd')
-    $.ui.log(`red-first: restore failed for ${revertible.map(cycleChange => cycleChange.path).join(', ')}; journal kept under ${journalKey}`)
+    $.ui.toast('dope-tdd could not restore a source file after the catch check; see /tdd')
+    $.ui.log(`dope-tdd: restore failed for ${revertible.map(cycleChange => cycleChange.path).join(', ')}; journal kept under ${journalKey}`)
     return { kind: 'unverified', reason: 'restore failed' }
   }
   await $.store.delete(journalKey)
@@ -190,7 +190,7 @@ async function verifyCatch(
 }
 
 function lockedMessage(module: string): string {
-  return `red-first: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
+  return `dope-tdd: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
 }
 
 async function sourceModuleOf($: EngineInterface, root: string, path: string): Promise<string | null> {
@@ -263,12 +263,12 @@ async function runGit($: EngineInterface, root: string, args: string[]): Promise
   try {
     const { exitCode, stdout, stderr } = await $.process.run(['git', ...args], { cwd: root })
     if (exitCode !== 0) {
-      $.ui.log(`red-first: git ${args.join(' ')} exited ${exitCode}: ${stderr.trim()}`)
+      $.ui.log(`dope-tdd: git ${args.join(' ')} exited ${exitCode}: ${stderr.trim()}`)
       return null
     }
     return stdout
   } catch (error) {
-    $.ui.log(`red-first: could not run git ${args.join(' ')}: ${String(error)}`)
+    $.ui.log(`dope-tdd: could not run git ${args.join(' ')}: ${String(error)}`)
     return null
   }
 }
@@ -389,7 +389,7 @@ async function guardBash(
   const reminders = current.paused
     ? []
     : [
-        ...unguardedPaths.map(path => `red-first: ${path} changed through a shell command without a test touched first.`),
+        ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
@@ -399,7 +399,7 @@ async function lastModifiedMs($: EngineInterface, path: string): Promise<number 
   try {
     return (await $.fs.stat(path)).mtimeMs
   } catch (error) {
-    $.ui.log(`red-first: could not stat ${path}: ${String(error)}`)
+    $.ui.log(`dope-tdd: could not stat ${path}: ${String(error)}`)
     return null
   }
 }
@@ -408,7 +408,7 @@ async function readSource($: EngineInterface, path: string): Promise<string | nu
   try {
     return (await $.fs.read(path)).slice(0, MAX_SOURCE_CHARS)
   } catch (error) {
-    $.ui.log(`red-first: could not read ${path}: ${String(error)}`)
+    $.ui.log(`dope-tdd: could not read ${path}: ${String(error)}`)
     return null
   }
 }

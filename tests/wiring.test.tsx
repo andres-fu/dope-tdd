@@ -277,7 +277,7 @@ describe('checkable state', () => {
     await startSession($)
     await runTests($, world, 'fail')
 
-    const result = await $.tool.call({ tool: 'mcp__red-first__status' } as never)
+    const result = await $.tool.call({ tool: 'mcp__dope-tdd__status' } as never)
 
     expect(JSON.stringify(result)).toMatch(/phase: RED/)
   })
@@ -285,7 +285,7 @@ describe('checkable state', () => {
   test('pause and resume confirm themselves with a toast', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'desktop', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
 
     await ui.press({ key: 'pause' })
     await ui.press({ key: 'pause' })
@@ -299,7 +299,7 @@ describe('honest phases on the band', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /■ RED/ })).toBeUndefined()
@@ -314,7 +314,7 @@ describe('honest phases on the band', () => {
     }
     await runBash($, './scripts/codemod.sh')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     expect(await ui.find({ type: 'Text', text: /1 UNGUARDED/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1 NEVER SAW RED/ })).toBeDefined()
@@ -327,7 +327,7 @@ describe('honest phases on the band', () => {
 
     await runBash($, `npx vitest run ${ROOT}/tests/utils/formatDuration.test.ts`)
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
   })
 
@@ -338,7 +338,7 @@ describe('honest phases on the band', () => {
 
     await editAt($, 'src/utils/formatDuration.ts')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
   })
 })

@@ -7,7 +7,7 @@ import { formatSpan } from './timeText'
 
 type AnyElements = Elements[RenderSurface]
 
-const TITLE = 'RED FIRST'
+const TITLE = 'DOPE TDD'
 
 export type BandModel = {
   stats: TddStats
@@ -22,7 +22,7 @@ export type BandModel = {
 function drawLogo(el: AnyElements, logo: string | null) {
   if (logo !== null && 'Svg' in el) {
     const { Svg } = el
-    return <Svg source={logo} alt="Red First skull" width={16} height={17} />
+    return <Svg source={logo} alt="Dope TDD skull" width={16} height={17} />
   }
   const { Text } = el
   return <Text bold color={ACCENT.ember}>☠</Text>

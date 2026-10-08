@@ -4,10 +4,10 @@ import { ROOT, editAt, fakeEngine, runBash, runCommand, touchTest } from './engi
 import type { FakeWorld } from './engine'
 
 function configure(world: FakeWorld, json: string) {
-  world.fileContents.set(`${ROOT}/red-first.json`, json)
+  world.fileContents.set(`${ROOT}/dope-tdd.json`, json)
 }
 
-describe('guard modes from red-first.json', () => {
+describe('guard modes from dope-tdd.json', () => {
   test('observe: nothing is denied, nothing is said, everything is counted', async ($, on) => {
     const world = fakeEngine(on)
     configure(world, '{"mode":"observe"}')
@@ -75,7 +75,7 @@ describe('guard modes from red-first.json', () => {
     const status = await runCommand($, 'tdd')
 
     expect(edit.deny).toBeDefined()
-    expect(status.text).toMatch(/config: red-first\.json: mode must be one of/)
+    expect(status.text).toMatch(/config: dope-tdd\.json: mode must be one of/)
   })
 
   test('shell writes follow the same policy', async ($, on) => {

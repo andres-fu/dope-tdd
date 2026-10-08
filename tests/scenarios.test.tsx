@@ -53,7 +53,7 @@ describe('scenario: the escape hatch', () => {
   test('a paused guard allows edits but does not call them test-first', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'money/formatCents')
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     await ui.press({ key: 'pause' })
     const edit = await editAt($, 'src/cart/applyDiscount.ts')

@@ -8,7 +8,7 @@ export type GuardConfig = {
   error: string | null
 }
 
-export const CONFIG_FILE = 'red-first.json'
+export const CONFIG_FILE = 'dope-tdd.json'
 export const DEFAULT_CONFIG: GuardConfig = { mode: 'enforce', scope: [], exempt: [], error: null }
 
 const MODES: readonly GuardMode[] = ['enforce', 'warn', 'observe']

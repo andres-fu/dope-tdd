@@ -71,7 +71,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     world.toasts.push(e.text)
     return { value: undefined } as never
   })
-  on('tool.register', (_$, e) => ({ value: { tool: `mcp__red-first__${e.name}` } }) as never)
+  on('tool.register', (_$, e) => ({ value: { tool: `mcp__dope-tdd__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', (_$, e) => {
     world.gitCalls.push(e.argv)

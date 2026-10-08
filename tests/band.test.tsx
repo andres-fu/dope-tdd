@@ -19,7 +19,7 @@ describe('band content', () => {
   test('stays hidden before any TDD activity', async ($, on) => {
     fakeEngine(on)
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ plugin: 'red-first', surface, ...BAND })
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
       expect(await ui.find({ type: 'Text', text: /RED|GREEN|PAUSED|IDLE/ })).toBeUndefined()
       await ui.unmount()
     }
@@ -30,10 +30,10 @@ describe('band content', () => {
     await touchTest($, world, 'utils/formatDuration')
 
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ plugin: 'red-first', surface, ...BAND })
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
       expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: 'RED FIRST' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'DOPE TDD' })).toBeDefined()
       await ui.unmount()
     }
   })
@@ -42,7 +42,7 @@ describe('band content', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'pass')
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     await ui.press({ key: 'reset' })
 
@@ -54,7 +54,7 @@ describe('band content', () => {
     const world = fakeEngine(on)
     await startSession($)
     await touchTest($, world, 'utils/formatDuration')
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     await world.clock.advance(3 * MINUTE)
 
@@ -67,7 +67,7 @@ describe('band content', () => {
     await runTests($, world, 'fail')
     await runTests($, world, 'pass')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'CYCLES 1' })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: '✗' }))?.props.color).toBe(ACCENT.ember)
@@ -78,12 +78,12 @@ describe('band content', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
-    const red = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const red = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await red.find({ type: 'Text', text: /■ RED/ }))?.props.color).toBe(ACCENT.ember)
     await red.unmount()
 
     await runTests($, world, 'pass')
-    const green = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const green = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await green.find({ type: 'Text', text: /GREEN/ }))?.props.color).toBe(ACCENT.pass)
   })
 
@@ -91,11 +91,11 @@ describe('band content', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
-    const desktop = await $.ui.mount({ plugin: 'red-first', surface: 'desktop', ...BAND })
+    const desktop = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
     expect(await desktop.find({ type: 'Svg' })).toBeDefined()
     await desktop.unmount()
 
-    const terminal = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const terminal = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await terminal.find({ type: 'Text', text: '☠' }))?.props.color).toBe(ACCENT.ember)
   })
 })
@@ -107,7 +107,7 @@ describe('band verdict', () => {
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'SAW RED' })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: 'CAUGHT' }))?.props.color).toBe(ACCENT.pass)
     expect(await ui.find({ type: 'Text', text: '1 CAUGHT' })).toBeDefined()
@@ -119,7 +119,7 @@ describe('band verdict', () => {
     world.catchRun = { text: ' Tests  3 passed (3)\n', exitCode: 0 }
     await runTests($, world, 'pass')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'MISSED' }))?.props.color).toBe(ACCENT.ember)
     expect((await ui.find({ type: 'Text', text: '1 MISSED' }))?.props.bold).toBe(true)
   })
@@ -129,7 +129,7 @@ describe('band verdict', () => {
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'pass')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'NEVER SAW RED' }))?.props.color).toBe(ACCENT.paused)
     expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeDefined()
   })
@@ -142,7 +142,7 @@ describe('band verdict', () => {
     await $.tool.call({ tool: 'Edit', file_path: SOURCE, old_string: ' // still b', new_string: ' // renamed' } as never)
     await runTests($, world, 'pass')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'REFACTOR' }))?.props.color).toBe(ACCENT.pass)
     expect(await ui.find({ type: 'Text', text: '1 REFACTOR' })).toBeDefined()
   })
@@ -150,12 +150,12 @@ describe('band verdict', () => {
   test('shows the mode only when it is not plain enforce', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
-    const plain = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const plain = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await plain.find({ type: 'Text', text: /MODE/ })).toBeUndefined()
     await plain.unmount()
 
-    world.fileContents.set(`${ROOT}/red-first.json`, '{"mode":"warn"}')
-    const warn = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"warn"}')
+    const warn = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await warn.find({ type: 'Text', text: 'MODE WARN' })).toBeDefined()
   })
 })
@@ -166,7 +166,7 @@ describe('band theming', () => {
     await touchTest($, world, 'utils/formatDuration')
 
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ plugin: 'red-first', surface, ...BAND })
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
       const root = await ui.drawn()
       const props: Record<string, unknown> = 'props' in root && root.props ? { ...root.props } : {}
       expect(props.backgroundColor).toBeUndefined()
@@ -178,7 +178,7 @@ describe('band theming', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'desktop', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
     const module = await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })
     const cycles = await ui.find({ type: 'Text', text: 'CYCLES 0' })
     expect(module?.props.color).toBeUndefined()
@@ -193,7 +193,7 @@ describe('band buttons', () => {
     await touchTest($, world, 'utils/formatDuration')
 
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ plugin: 'red-first', surface, ...BAND })
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
       await ui.press({ key: 'pause' })
       expect(await ui.find({ type: 'Text', text: /PAUSED/ })).toBeDefined()
 
@@ -215,7 +215,7 @@ describe('band buttons', () => {
     await runTests($, world, 'pass')
     await editAt($, 'src/utils/calculateDuration.ts')
 
-    const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     await ui.press({ key: 'reset' })
 
     expect(await ui.find({ type: 'Text', text: '1 BLOCKED' })).toBeUndefined()
@@ -228,16 +228,16 @@ describe('band buttons', () => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
-    const band = await $.ui.mount({ plugin: 'red-first', surface: 'desktop', ...BAND })
+    const band = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
     await band.press({ key: 'view-test' })
-    expect(world.openedPanes).toContain('red-first-test')
+    expect(world.openedPanes).toContain('dope-tdd-test')
 
     for (const surface of SURFACES) {
       const pane = await $.ui.mount({
-        plugin: 'red-first',
+        plugin: 'dope-tdd',
         surface,
         component: 'Pane',
-        requestId: 'red-first-test',
+        requestId: 'dope-tdd-test',
         props: {} as never,
       })
       const code = await pane.find({ type: 'Code' })
@@ -253,10 +253,10 @@ describe('band buttons', () => {
     world.existingFiles.clear()
 
     const pane = await $.ui.mount({
-      plugin: 'red-first',
+      plugin: 'dope-tdd',
       surface: 'terminal',
       component: 'Pane',
-      requestId: 'red-first-test',
+      requestId: 'dope-tdd-test',
       props: {} as never,
     })
     expect(await pane.find({ type: 'Text', text: /NOT FOUND/ })).toBeDefined()

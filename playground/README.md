@@ -1,6 +1,6 @@
-# Red First playground
+# Dope TDD playground
 
-A tiny project with three planted bugs and no tests. Use it to see Red First
+A tiny project with three planted bugs and no tests. Use it to see Dope TDD
 work in about ten minutes, and to feel why writing the test first is worth the
 trouble. You don't write code here. You give Claude a task and watch.
 
@@ -26,7 +26,7 @@ Three honest things about tests:
    code, human or agent, works with a net under them. That is what
    "maintainable" means in practice.
 
-Red First makes those four things visible while an agent works, so you don't
+Dope TDD makes those four things visible while an agent works, so you don't
 have to take its word for it.
 
 ## Setup
@@ -36,7 +36,7 @@ cd playground
 npm install
 ```
 
-Then start Claude Code here. If Red First is installed, just run `claude`.
+Then start Claude Code here. If Dope TDD is installed, just run `claude`.
 To try it for one session without installing anything:
 
 ```bash
@@ -91,7 +91,7 @@ Tell Claude:
 What to watch for:
 
 - The first test run goes straight to **GREEN**, because the code already
-  works. The band says **1 NEVER SAW RED**. That's Red First being honest: a
+  works. The band says **1 NEVER SAW RED**. That's Dope TDD being honest: a
   test that has never failed hasn't proven anything yet.
 - A careful agent then breaks the code on purpose, sees **RED**, restores it,
   and refactors. The warning stays in the count as history, but the cycle that
@@ -113,14 +113,14 @@ properly and watch the counts: **BLOCKED 1**, then **TEST-FIRST 1/2**. The
 ratio counts attempts, so a shortcut that was stopped still shows.
 
 If you ever see **UNGUARDED**, a source file changed through a shell command
-without a test being touched first. Red First saw it in the git diff and told
+without a test being touched first. Dope TDD saw it in the git diff and told
 Claude. Ask Claude what it did.
 
 ## When the guard is in the way
 
 Two honest answers, in order of preference:
 
-1. **Make the exception explicit.** A `red-first.json` in the project root
+1. **Make the exception explicit.** A `dope-tdd.json` in the project root
    can exempt files that have no business being unit tested (an entry file,
    generated code) or switch the guard to `warn` mode, where nothing is
    denied but every untested edit is counted and Claude is told what to write
@@ -142,7 +142,7 @@ Four rules, in order, from Kent Beck. Code is clean when it:
 4. has nothing it doesn't need.
 
 Plus one habit: leave every file a little cleaner than you found it. That is
-the whole hygiene routine. Red First can't judge a name, but it can show you
+the whole hygiene routine. Dope TDD can't judge a name, but it can show you
 that the tests stayed green and untouched while the cleanup happened, which is
 the proof that the cleanup was safe.
 

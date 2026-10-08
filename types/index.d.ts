@@ -66,6 +66,6 @@ export type TddStats = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'red-first': { stats: TddStats; tick: number }
+    'dope-tdd': { stats: TddStats; tick: number }
   }
 }

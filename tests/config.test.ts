@@ -57,6 +57,6 @@ describe('describeConfig', () => {
     ])
     const broken = describeConfig(parseConfig('nope'))
     expect(broken[0]).toBe('mode: enforce')
-    expect(broken[1]).toMatch(/^config: red-first\.json: .*\(using defaults\)$/)
+    expect(broken[1]).toMatch(/^config: dope-tdd\.json: .*\(using defaults\)$/)
   })
 })

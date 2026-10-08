@@ -1,4 +1,4 @@
-# Red First
+# Dope TDD
 
 A TDD companion for Claude Code (working name). It keeps Claude test-first,
 verifies the evidence per change, and shows it in a band above the prompt.
@@ -9,8 +9,8 @@ and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c
 ## Install (local)
 
 ```bash
-claude plugin marketplace add C:/Users/fuent/red-first
-claude plugin install red-first@red-first
+claude plugin marketplace add C:/Users/fuent/dope-tdd
+claude plugin install dope-tdd@dope-tdd
 ```
 
 Requires Claude Code v2.1.287+ in the terminal (or the Desktop app's Code tab).
@@ -48,7 +48,7 @@ results as it works.
 
 ## Settings, checked into the repo
 
-An optional `red-first.json` at the repository root sets how strict the guard
+An optional `dope-tdd.json` at the repository root sets how strict the guard
 is and where. Every setting shows in `/tdd`, so nothing is hidden.
 
 ```json

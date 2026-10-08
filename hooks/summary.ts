@@ -43,7 +43,7 @@ function inheritedLine(s: TddStats, nowMs: number): string[] {
 
 export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): string {
   return [
-    'red-first',
+    'dope-tdd',
     `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
@@ -60,7 +60,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
 
 export function formatGlossary(): string {
   return [
-    'red-first: what the words mean',
+    'dope-tdd: what the words mean',
     '  WRITING        a test was created or edited and has not run yet',
     '  RED            the last run of that test failed: the bug or the missing behaviour is reproduced',
     '  GREEN          the last run passed',
@@ -73,6 +73,6 @@ export function formatGlossary(): string {
     '  UNGUARDED      a source file changed with no test touched first',
     '  BLOCKED        an edit was refused until the test is written',
     '  PAUSED         the guard is off; edits are not counted',
-    '  MODE           enforce denies, warn tells, observe only records (red-first.json)',
+    '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
   ].join('\n')
 }

@@ -1,6 +1,6 @@
 # Playground conventions
 
-This is a small practice project with planted bugs (see `BUGS.md`). Red First
+This is a small practice project with planted bugs (see `BUGS.md`). Dope TDD
 guards it: a file under `src/` cannot be edited until its test exists.
 
 - Tests live in `tests/` and mirror `src/`: `src/money/formatCents.ts` is

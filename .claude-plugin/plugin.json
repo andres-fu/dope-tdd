@@ -6,5 +6,7 @@
   "author": {
     "name": "Andres Fuentes"
   },
+  "homepage": "https://github.com/andres-fu/dope-tdd",
+  "repository": "https://github.com/andres-fu/dope-tdd",
   "types": "./types/index.d.ts"
 }

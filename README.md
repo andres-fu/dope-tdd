@@ -14,14 +14,26 @@ the catch check hears it. Every bar is every change.
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
 
-## Install (local)
+## Install
+
+From GitHub (the repository is private for now, so you need access to it):
 
 ```bash
-claude plugin marketplace add C:/Users/fuent/red-first
+claude plugin marketplace add andres-fu/dope-tdd
 claude plugin install dope-tdd@dope-tdd
 ```
 
-Requires Claude Code v2.1.287+ in the terminal (or the Desktop app's Code tab).
+Or from a clone, which loads the folder in place so edits apply live:
+
+```bash
+claude plugin marketplace add C:/path/to/dope-tdd
+claude plugin install dope-tdd@dope-tdd
+```
+
+Requires Claude Code v2.1.287+. The hooks run everywhere the plugin loads.
+The band above the prompt draws in the terminal and in the Desktop app's Code
+tab; in the VS Code extension's chat panel nothing draws, so there the
+evidence is in the tool results, `/tdd` and the status tool.
 
 ## Where your tests live
 

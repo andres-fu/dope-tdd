@@ -1,7 +1,12 @@
 # Dope TDD
 
-A TDD companion for Claude Code (working name). It keeps Claude test-first,
-verifies the evidence per change, and shows it in a band above the prompt.
+**D.O.P.E.** Don't Overdub, Prove Every bar.
+
+The TDD companion for Claude Code. It keeps Claude test-first, proves that
+each test catches the change it guards, and shows the evidence in a band
+above the prompt. In the studio an overdub covers a bad take instead of
+recording it again; here, bending a test until it passes is the overdub, and
+the catch check hears it. Every bar is every change.
 
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d

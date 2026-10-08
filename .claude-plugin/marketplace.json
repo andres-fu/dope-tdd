@@ -1,8 +1,14 @@
 {
   "name": "dope-tdd",
-  "description": "Dope TDD, the TDD companion for Claude Code",
-  "owner": { "name": "Andres Fuentes" },
+  "description": "Dope TDD, the TDD companion for Claude Code. Don't Overdub, Prove Every bar.",
+  "owner": {
+    "name": "Andres Fuentes"
+  },
   "plugins": [
-    { "name": "dope-tdd", "source": "./", "description": "Keeps Claude test-first and shows the evidence" }
+    {
+      "name": "dope-tdd",
+      "source": "./",
+      "description": "Keeps Claude test-first, proves each test catches its change, and shows the evidence"
+    }
   ]
 }

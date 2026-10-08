@@ -19,6 +19,25 @@ reads back carries the verdict. A rule in CLAUDE.md is advice Claude can
 forget or argue with; this is a gate it has to pass, and every refusal says
 why, so it can.
 
+## What it enforces
+
+It stands in the path of four tools: Edit, Write, Bash and PowerShell. At
+each moment it decides before the action runs:
+
+| Claude is about to... | Dope TDD... | Word |
+| --- | --- | --- |
+| Edit untested source | Refuses, names the test to write first | BLOCKED |
+| Touch a test | Unlocks the module; see it fail first | WRITING |
+| Run the tests | Reads the runner's summary, not the exit code | RED, GREEN |
+| Go green without a red | Says the test has proven nothing yet | NEVER SAW RED |
+| Go green after red | Reverts, runs that test, restores, attaches the verdict | CAUGHT, MISSED |
+| Bend the test, skip, comment out, loosen config | Counts it and asks why | WORKAROUNDS |
+
+The mechanism is the one Anthropic describes under
+[Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call);
+`claude plugin validate .` prints the actions it steps into. The full table,
+with what you see on each surface, is in `docs/testers.md`.
+
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
 

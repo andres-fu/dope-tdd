@@ -20,6 +20,40 @@ catch check has finished, so the line Claude reads carries the verdict. A
 rule in CLAUDE.md is advice Claude can forget or argue with. This is a gate
 it has to pass, and every refusal says why.
 
+## What it steps into, and what happens there
+
+Claude Code lets a plugin stand in the path of specific actions and decide
+what happens before the action runs. Anthropic describes the mechanism
+under [Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call).
+Dope TDD stands in the path of four of Claude's tools: **Edit**, **Write**,
+**Bash** and **PowerShell**. Nothing else. Here is what it enforces at each
+moment, and what you see:
+
+| Claude is about to... | Dope TDD... | You see |
+| --- | --- | --- |
+| Edit or write a source file whose module has no test | Refuses the call before it runs, and names the test file to write first | **BLOCKED**; Claude's reply says why |
+| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out. | **WRITING** |
+| Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **RED** or **GREEN**, with the count |
+| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **NEVER SAW RED** |
+| Go green after red | Holds the result. Undoes Claude's change on disk, runs only that module's test, restores the change, and attaches the verdict to what Claude reads. | **CAUGHT**, **MISSED**, or **unverified** with the reason |
+| Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **TEST CHANGED** |
+| Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **REFACTOR** |
+| Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **unverified: change not captured** |
+| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or press pause | Lets it through, counts it, and asks Claude to say why in its reply | **N WORKAROUNDS**, each one named |
+
+Every verdict is written into the tool result Claude reads, in the same
+call, so Claude cannot miss it and you can ask it what it saw.
+
+What it does **not** do: it never calls a model, never writes code or tests
+for Claude, never runs anything but your own test file, and never changes a
+file except to undo and restore Claude's change during a catch check. If one
+of its own checks fails internally, the call goes through unobserved and it
+says so in the log and a toast; it fails open, on the record.
+
+To see this list from the engine itself, run `claude plugin validate .` in
+the clone. The `hooks:` line names the exact actions it steps into, and the
+`calls:` line names everything it touches.
+
 ## What you need
 
 - Claude Code v2.1.287 or later (`claude --version`). The terminal or the

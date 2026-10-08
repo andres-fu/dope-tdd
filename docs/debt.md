@@ -17,7 +17,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 
 ## Product
 
-- [ ] `arch 5` Test-location conventions (co-located `*.test.ts`, `__tests__/`, custom pairs, per-package roots) and `/tdd setup`. Adoption blocker; also why this repo's own `hooks/` edits get advice lines that say `src/<module>`.
+- [x] `arch 5` Test-location conventions (co-located `*.test.ts`, `__tests__/`, custom pairs, per-package roots) and `/tdd setup`. Paid 2026-10-09 (`docs/decisions/2026-10-08_conventions.md`). Left over: one layout per repo; `{ext}` is TS/JS only; this repo could set a custom layout for `hooks/`.
 - [x] `owner` Workaround tally: config loosened, pause, test bent, skip/only markers, assertion removed, code commented out. Paid 2026-10-08 (`docs/decisions/2026-10-08_workarounds.md`). Left over: test edits made through the shell have no before-text, so skip and assertion signals come only from Edit and Write.
 - [ ] `owner` Function-level story in the catch line: name the function the change touched, from the diff.
 - [ ] `owner` Module map: new import edge in an edited file as a signal with a reason; `boundaries` in `dope-tdd.json` for hard rules.

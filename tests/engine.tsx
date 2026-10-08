@@ -118,6 +118,21 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('fs.stat', () => ({
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
   }) as never)
+  on('fs.list', (_$, e) => {
+    const dir = (e.path ?? ROOT).replace(/\\/g, '/').replace(/\/$/, '')
+    const names = new Map<string, 'file' | 'dir'>()
+    for (const path of [...world.fileContents.keys(), ...world.existingFiles]) {
+      if (!path.startsWith(`${dir}/`)) {
+        continue
+      }
+      const [name, ...deeper] = path.slice(dir.length + 1).split('/')
+      if (name !== undefined && name !== '') {
+        names.set(name, deeper.length > 0 ? 'dir' : names.get(name) ?? 'file')
+      }
+    }
+    const entries = [...names].map(([name, kind]) => ({ name, kind, size: 1, mtimeMs: world.testModifiedAt, isLink: false }))
+    return { value: entries } as never
+  })
   on('fs.read', (_$, e) => {
     const path = e.path.replace(/\\/g, '/')
     const custom = world.fileContents.get(path)

@@ -23,6 +23,26 @@ claude plugin install dope-tdd@dope-tdd
 
 Requires Claude Code v2.1.287+ in the terminal (or the Desktop app's Code tab).
 
+## Where your tests live
+
+Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`.
+If your tests sit elsewhere, say so once in `dope-tdd.json`:
+
+```json
+{ "layout": "colocated" }
+```
+
+`mirror` (the default), `colocated` (`src/a.test.ts` next to `src/a.ts`),
+`__tests__` (`src/__tests__/a.test.ts`), or your own pair of templates:
+
+```json
+{ "layout": { "source": "lib/{module}.{ext}", "test": "spec/{module}.spec.{ext}" } }
+```
+
+A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
+Not sure? `/tdd setup` reads the repo and shows the layout it finds with the
+JSON to use; `/tdd setup write` saves it.
+
 ## Try it in ten minutes
 
 `playground/` is a tiny project with planted bugs and no tests. Its

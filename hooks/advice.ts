@@ -11,22 +11,32 @@ export type RunContext = {
   elsewhere?: readonly string[]
   /** The test was edited after this cycle's red and the code did not change. */
   testChanged?: boolean
+  /** How messages name the module's source under the project's layout; `src/<module>` by default. */
+  sourcePath?: string
 }
 
-export function touchAdvice(module: string): string {
-  return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing src/${module}.`
+function defaultSource(module: string): string {
+  return `src/${module}`
 }
 
-export function inheritedAdvice(module: string, testPath: string, ageMs: number): string {
-  return `dope-tdd: src/${module} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
+function defaultTest(module: string): string {
+  return `tests/${module}.test.ts(x)`
+}
+
+export function touchAdvice(module: string, sourcePath = defaultSource(module)): string {
+  return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing ${sourcePath}.`
+}
+
+export function inheritedAdvice(module: string, testPath: string, ageMs: number, sourcePath = defaultSource(module)): string {
+  return `dope-tdd: ${sourcePath} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
 }
 
 export function hollowAdvice(testPath: string): string {
   return `dope-tdd: ${testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`
 }
 
-export function unguardedAdvice(module: string): string {
-  return `dope-tdd: src/${module} was edited with no test touched first. Write tests/${module}.test.ts(x) next and see it fail.`
+export function unguardedAdvice(module: string, sourcePath = defaultSource(module), testPath = defaultTest(module)): string {
+  return `dope-tdd: ${sourcePath} was edited with no test touched first. Write ${testPath} next and see it fail.`
 }
 
 export function unreadRunAdvice(truncated: boolean): string {
@@ -50,15 +60,15 @@ export function commentedOutAdvice(sourcePath: string, lines: number): string {
   return `dope-tdd: ${sourcePath}: ${lines} line${lines === 1 ? '' : 's'} of code commented out by this edit. Recorded; say why in your reply.`
 }
 
-function elsewhereAdvice(module: string, files: readonly string[], sawRed: boolean): string {
+function elsewhereAdvice(module: string, files: readonly string[], sawRed: boolean, sourcePath: string): string {
   const failed = `${files.join(', ')} failed; ${module}'s own test did not fail this run.`
   return sawRed
     ? `dope-tdd: RED, but not on ${module}: ${failed}`
-    : `dope-tdd: RED, but not on ${module}: ${failed} ${module} has not seen red yet. Make its test fail before editing src/${module}.`
+    : `dope-tdd: RED, but not on ${module}: ${failed} ${module} has not seen red yet. Make its test fail before editing ${sourcePath}.`
 }
 
-function testChangedAdvice(module: string): string {
-  return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and src/${module} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.`
+function testChangedAdvice(module: string, sourcePath: string): string {
+  return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and ${sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.`
 }
 
 function missedAdvice(module: string, sawRed: boolean): string {
@@ -67,7 +77,14 @@ function missedAdvice(module: string, sawRed: boolean): string {
     : `dope-tdd: GREEN on ${module}. Its test has never failed, and it still passes with your change undone, so it has proven nothing yet. If the change was a fix, the test is missing an assertion for it; if it was a refactor, break the code on purpose and run again to prove the test.`
 }
 
-function greenAdvice(module: string, sawRed: boolean, check: Check | undefined, cycleCompleted: boolean, testChanged: boolean): string | null {
+function greenAdvice(
+  module: string,
+  sawRed: boolean,
+  check: Check | undefined,
+  cycleCompleted: boolean,
+  testChanged: boolean,
+  sourcePath: string,
+): string | null {
   if (check === 'refactor') {
     return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before.`
   }
@@ -83,7 +100,7 @@ function greenAdvice(module: string, sawRed: boolean, check: Check | undefined, 
     return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}. Could not verify that its test catches the change (${check.reason}). ${REFACTOR}`
   }
   if (testChanged) {
-    return testChangedAdvice(module)
+    return testChangedAdvice(module, sourcePath)
   }
   if (!cycleCompleted) {
     return null
@@ -98,11 +115,12 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   if (module === undefined) {
     return null
   }
+  const sourcePath = context.sourcePath ?? defaultSource(module)
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
-    return elsewhereAdvice(module, context.elsewhere, before.sawRed)
+    return elsewhereAdvice(module, context.elsewhere, before.sawRed, sourcePath)
   }
   if (after.phase === 'red') {
     return `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
   }
-  return greenAdvice(module, before.sawRed, check, after.cycles > before.cycles, context.testChanged === true)
+  return greenAdvice(module, before.sawRed, check, after.cycles > before.cycles, context.testChanged === true, sourcePath)
 }

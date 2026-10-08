@@ -1,5 +1,4 @@
 export type Phase = 'idle' | 'writing' | 'red' | 'green'
-export type Layer = 'frontend' | 'backend' | 'logic'
 export type RunOutcome = 'pass' | 'fail'
 export type EventKind =
   | 'touched'
@@ -20,6 +19,8 @@ export type CatchOutcome = { kind: 'caught' } | { kind: 'missed' } | { kind: 'un
 export type ChangeKind = 'fix' | 'refactor'
 
 export type CycleChange = { path: string; before: string | null; after: string; kind: ChangeKind }
+
+export type CycleVerdict = { module: string; sawRed: boolean }
 
 export type CurrentTest = {
   module: string
@@ -56,7 +57,8 @@ export type TddStats = {
   missed: number
   unverified: number
   refactors: number
-  lastCatch: { module: string; outcome: CatchOutcome } | null
+  lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' } } | null
+  lastCycle: CycleVerdict | null
   current: CurrentTest | null
   events: readonly TddEvent[]
   lastEventMs: number | null

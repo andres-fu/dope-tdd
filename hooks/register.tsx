@@ -30,7 +30,7 @@ import {
   setChecking,
   togglePause,
 } from './stats'
-import { formatStatus } from './summary'
+import { formatGlossary, formatStatus } from './summary'
 import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
 
 const MINUTE = 60_000
@@ -454,7 +454,7 @@ export const register: Register = on => {
     const started = await next(e)
     await repairInterruptedCheck($)
     await seedRememberedUnlocks($)
-    await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events' })
+    await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band' })
     await $.tool.register({
       name: 'status',
       description: 'Report the TDD guard state: paused or on, phase, current module, counts, and the recent event log.',
@@ -462,7 +462,10 @@ export const register: Register = on => {
     return started
   })
 
-  on('command.run', { command: 'tdd' }, async $ => ({ text: await currentStatus($) }))
+  on('command.run', { command: 'tdd' }, async ($, e) => {
+    const wantsGlossary = String((e as { args?: unknown }).args ?? '').trim().toLowerCase() === 'why'
+    return { text: wantsGlossary ? formatGlossary() : await currentStatus($) }
+  })
 
   on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult)
 
@@ -486,13 +489,13 @@ export const register: Register = on => {
     }
 
     const nowMs = await $.clock.now()
-    const modifiedMs = current.current ? await lastModifiedMs($, current.current.testPath) : null
+    const config = await loadConfig($, await $.session.root())
     const logo = e.surface === 'terminal' ? null : await loadLogo($)
 
     return drawBand($.ui.resolve(e), {
       stats: current,
+      config,
       nowMs,
-      modifiedMs,
       logo,
       onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current?.module ?? ''}` }),
       onTogglePause: async () => {

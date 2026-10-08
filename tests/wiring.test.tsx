@@ -302,7 +302,7 @@ describe('honest phases on the band', () => {
     const ui = await $.ui.mount({ plugin: 'red-first', surface: 'terminal', ...BAND })
 
     expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /RED/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /■ RED/ })).toBeUndefined()
   })
 
   test('shows unguarded edits and cycles that never saw red', async ($, on) => {

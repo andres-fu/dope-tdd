@@ -57,3 +57,22 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
     ...eventLines(s, nowMs),
   ].join('\n')
 }
+
+export function formatGlossary(): string {
+  return [
+    'red-first: what the words mean',
+    '  WRITING        a test was created or edited and has not run yet',
+    '  RED            the last run of that test failed: the bug or the missing behaviour is reproduced',
+    '  GREEN          the last run passed',
+    '  SAW RED        this cycle\'s test failed before the code made it pass, so it can catch something',
+    '  NEVER SAW RED  the test went green without ever failing; it has proven nothing yet',
+    '  CAUGHT         with the change undone, the test fails: it guards this change',
+    '  MISSED         with the change undone, the test still passes: it does not guard this change',
+    '  UNVERIFIED     the catch check could not run; /tdd has the reason',
+    '  REFACTOR       code changed while green with the test untouched: a safe refactor',
+    '  UNGUARDED      a source file changed with no test touched first',
+    '  BLOCKED        an edit was refused until the test is written',
+    '  PAUSED         the guard is off; edits are not counted',
+    '  MODE           enforce denies, warn tells, observe only records (red-first.json)',
+  ].join('\n')
+}

@@ -37,6 +37,15 @@ fixture.
 - The project must be a git repository; without one the shell backstop
   records nothing.
 
+## What the band says
+
+Above the prompt, three rows: the phase (WRITING, RED, GREEN, PAUSED, IDLE)
+with the run trail; the current module with its verdict (SAW RED or NEVER
+SAW RED, then CAUGHT, MISSED, UNVERIFIED or REFACTOR from the catch check);
+and the session tally. `/tdd why` explains every word, `/tdd` prints the
+full status and event log, and Claude reads the same lines in its tool
+results as it works.
+
 ## Settings, checked into the repo
 
 An optional `red-first.json` at the repository root sets how strict the guard

@@ -29,6 +29,7 @@ export const INITIAL_STATS: TddStats = {
   unverified: 0,
   refactors: 0,
   lastCatch: null,
+  lastCycle: null,
   current: null,
   events: [],
   lastEventMs: null,
@@ -75,6 +76,7 @@ export function normalizeStats(stored: unknown): TddStats {
     unverified: pick('unverified', isNumber),
     refactors: pick('refactors', isNumber),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
+    lastCycle: pick('lastCycle', v => v === null || isRecord(v)),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
     events: pick('events', Array.isArray).filter(
       (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
@@ -153,6 +155,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number): TddStats
       cycleMsTotal: completesCycle ? s.cycleMsTotal + (nowMs - (s.cycleStartMs ?? nowMs)) : s.cycleMsTotal,
       neverSawRed: greenFirst ? s.neverSawRed + 1 : s.neverSawRed,
       unproven: greenFirst && s.current !== null ? [...s.unproven, s.current.module] : s.unproven,
+      lastCycle: completesCycle && s.current !== null ? { module: s.current.module, sawRed: s.sawRed } : s.lastCycle,
     },
     'pass',
     nowMs,
@@ -213,7 +216,7 @@ export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome |
     return cleared
   }
   if (outcome === 'refactor') {
-    return logged({ ...cleared, refactors: s.refactors + 1 }, 'refactor', nowMs, module)
+    return logged({ ...cleared, refactors: s.refactors + 1, lastCatch: { module, outcome: { kind: 'refactor' } } }, 'refactor', nowMs, module)
   }
   const counted =
     outcome.kind === 'caught'

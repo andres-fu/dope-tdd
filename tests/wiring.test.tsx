@@ -68,6 +68,33 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/test-first: 1\/1/)
   })
 
+  test('a test written through the shell counts as a touch and unlocks its module', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = command => {
+      if (command.includes('tests/utils/calculateDuration.test.ts')) {
+        world.untracked = 'tests/utils/calculateDuration.test.ts\n'
+      }
+    }
+
+    await runBash($, "cat > tests/utils/calculateDuration.test.ts <<'EOT'\nit('x', () => {})\nEOT")
+    const status = await runCommand($, 'tdd')
+    const result = await runBash($, "sed -i 's/a/b/' src/utils/calculateDuration.ts")
+
+    expect(status.text).toMatch(/touched\s+utils\/calculateDuration/)
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(result.deny).toBeUndefined()
+  })
+
+  test('reading a runner config file is not a test run', async ($, on) => {
+    fakeEngine(on)
+
+    await runBash($, 'cat vitest.config.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/runs: 0/)
+    expect(status.text).toMatch(/phase: IDLE/)
+  })
+
   test('ignores shell calls that change nothing under src/', async ($, on) => {
     fakeEngine(on)
 

@@ -1,6 +1,10 @@
 const SOURCE_FILE = /^src\/(.+)\.(ts|tsx)$/
 const TEST_FILE = /^tests\/(.+)\.test\.(ts|tsx)$/
-const TEST_RUN = /\b(vitest|npm (run )?test)\b/
+
+const COMMAND_START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
+const RUNNER_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
+const PACKAGE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
+const TEST_RUN = new RegExp(`${COMMAND_START}(?:${RUNNER_BINARY}|${PACKAGE_SCRIPT})`)
 
 export type ClassifiedPath =
   | { kind: 'source'; module: string }

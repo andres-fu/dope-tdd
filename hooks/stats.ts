@@ -1,4 +1,4 @@
-import type { CurrentTest, EventKind, TddEvent, TddStats } from '../types'
+import type { CatchOutcome, CurrentTest, EventKind, TddEvent, TddStats } from '../types'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
@@ -22,6 +22,13 @@ export const INITIAL_STATS: TddStats = {
   unlocked: {},
   inherited: {},
   reminded: [],
+  changes: {},
+  checking: false,
+  caught: 0,
+  missed: 0,
+  unverified: 0,
+  refactors: 0,
+  lastCatch: null,
   current: null,
   events: [],
   lastEventMs: null,
@@ -61,6 +68,13 @@ export function normalizeStats(stored: unknown): TddStats {
     unlocked: pick('unlocked', isRecord),
     inherited: pick('inherited', isRecord),
     reminded: pick('reminded', Array.isArray).filter(module => typeof module === 'string'),
+    changes: pick('changes', isRecord),
+    checking: pick('checking', v => typeof v === 'boolean'),
+    caught: pick('caught', isNumber),
+    missed: pick('missed', isNumber),
+    unverified: pick('unverified', isNumber),
+    refactors: pick('refactors', isNumber),
+    lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
     events: pick('events', Array.isArray).filter(
       (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
@@ -182,6 +196,34 @@ export function markReminded(s: TddStats, module: string): TddStats {
   return s.reminded.includes(module) ? s : { ...s, reminded: [...s.reminded, module] }
 }
 
+export function recordChange(s: TddStats, module: string, path: string, before: string | null, after: string): TddStats {
+  const existing = s.changes[module]
+  const kindNow = s.phase === 'green' && !s.unproven.includes(module) ? 'refactor' : 'fix'
+  const kind = existing?.kind === 'fix' ? 'fix' : kindNow
+  return { ...s, changes: { ...s.changes, [module]: { path, before: existing === undefined ? before : existing.before, after, kind } } }
+}
+
+export function setChecking(s: TddStats, checking: boolean): TddStats {
+  return { ...s, checking }
+}
+
+export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome | 'unchecked' | 'refactor', nowMs: number): TddStats {
+  const cleared = { ...s, changes: {} }
+  if (outcome === 'unchecked') {
+    return cleared
+  }
+  if (outcome === 'refactor') {
+    return logged({ ...cleared, refactors: s.refactors + 1 }, 'refactor', nowMs, module)
+  }
+  const counted =
+    outcome.kind === 'caught'
+      ? { ...cleared, caught: s.caught + 1 }
+      : outcome.kind === 'missed'
+        ? { ...cleared, missed: s.missed + 1 }
+        : { ...cleared, unverified: s.unverified + 1 }
+  return logged({ ...counted, lastCatch: { module, outcome } }, outcome.kind, nowMs, module)
+}
+
 export function togglePause(s: TddStats, nowMs: number): TddStats {
   return logged({ ...s, paused: !s.paused }, s.paused ? 'resumed' : 'paused', nowMs)
 }
@@ -199,6 +241,7 @@ export function resetStats(s: TddStats): TddStats {
     unlocked: s.unlocked,
     inherited: s.inherited,
     reminded: s.reminded,
+    changes: s.changes,
     current: s.current,
   }
 }

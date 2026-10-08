@@ -6,6 +6,8 @@ import {
   markReminded,
   normalizeStats,
   recordBlocked,
+  recordCatch,
+  recordChange,
   recordRun,
   recordSourceEdit,
   recordTestTouch,
@@ -207,5 +209,53 @@ describe('unlocks remembered from earlier sessions', () => {
     expect(reminded.reminded).toEqual(['utils/a'])
     expect(reminded.inherited['utils/a']).toBe(5)
     expect(reminded.unlocked['utils/a']).toBe('tests/utils/a.test.ts')
+  })
+})
+
+describe('catch check bookkeeping', () => {
+  test('recordChange keeps the first before and the latest after for a module in the open cycle', () => {
+    const once = recordChange(INITIAL_STATS, 'utils/a', 'C:/w/src/utils/a.ts', 'v0', 'v1')
+    const twice = recordChange(once, 'utils/a', 'C:/w/src/utils/a.ts', 'v1', 'v2')
+
+    expect(twice.changes['utils/a']).toEqual({ path: 'C:/w/src/utils/a.ts', before: 'v0', after: 'v2', kind: 'fix' })
+  })
+
+  test('a change made while green on a proven module is a refactor; one on an unproven module, or after red, is a fix', () => {
+    const touched = recordTestTouch(INITIAL_STATS, { module: 'utils/a', testPath: 'tests/utils/a.test.ts' }, 1)
+    const greenFirst = recordRun(touched, true, 2)
+    const afterRed = recordRun(recordRun(touched, false, 2), true, 3)
+
+    expect(recordChange(greenFirst, 'utils/a', 'p', 'v0', 'v1').changes['utils/a']?.kind).toBe('fix')
+    expect(recordChange(afterRed, 'utils/a', 'p', 'v0', 'v1').changes['utils/a']?.kind).toBe('refactor')
+    expect(recordChange(recordRun(touched, false, 2), 'utils/a', 'p', 'v0', 'v1').changes['utils/a']?.kind).toBe('fix')
+  })
+
+  test('once a module has a fix change, later edits keep it a fix', () => {
+    const red = recordRun(recordTestTouch(INITIAL_STATS, { module: 'utils/a', testPath: 't' }, 1), false, 2)
+    const fixed = recordChange(red, 'utils/a', 'p', 'v0', 'v1')
+    const green = recordRun(fixed, true, 3)
+
+    expect(recordChange(green, 'utils/a', 'p', 'v1', 'v2').changes['utils/a']?.kind).toBe('fix')
+  })
+
+  test('recordCatch gives refactor credit without a check', () => {
+    const credited = recordCatch(INITIAL_STATS, 'utils/a', 'refactor', 4)
+
+    expect(credited.refactors).toBe(1)
+    expect(credited.events.at(-1)?.kind).toBe('refactor')
+  })
+
+  test('recordCatch counts the outcome, logs it with the module, and clears the cycle changes', () => {
+    const changed = recordChange(INITIAL_STATS, 'utils/a', 'C:/w/src/utils/a.ts', 'v0', 'v1')
+    const caught = recordCatch(changed, 'utils/a', { kind: 'caught' }, 5)
+    const missed = recordCatch(caught, 'utils/a', { kind: 'missed' }, 6)
+    const unverified = recordCatch(missed, 'utils/a', { kind: 'unverified', reason: 'timeout' }, 7)
+
+    expect(caught.changes).toEqual({})
+    expect(unverified.caught).toBe(1)
+    expect(unverified.missed).toBe(1)
+    expect(unverified.unverified).toBe(1)
+    expect(unverified.events.slice(-3).map(e => e.kind)).toEqual(['caught', 'missed', 'unverified'])
+    expect(unverified.lastCatch).toEqual({ module: 'utils/a', outcome: { kind: 'unverified', reason: 'timeout' } })
   })
 })

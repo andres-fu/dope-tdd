@@ -59,3 +59,53 @@ describe('hollowAdvice', () => {
     )
   })
 })
+
+describe('runAdvice with the catch check', () => {
+  const red = recordRun(touched, false, at(1))
+  const edited = recordSourceEdit(red, 'money/formatCents', true, at(2))
+  const green = recordRun(edited, true, at(3))
+
+  test('green, saw red, and the test catches the change', () => {
+    expect(runAdvice(edited, green, { kind: 'caught' })).toBe(
+      'red-first: GREEN on money/formatCents, saw red, and its test catches the change. Now refactor with the test untouched.',
+    )
+  })
+
+  test('green, saw red, but the test misses the change: fix the test first', () => {
+    expect(runAdvice(edited, green, { kind: 'missed' })).toBe(
+      'red-first: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes. Fix the test before moving on.',
+    )
+  })
+
+  test('green that never saw red, but the test catches the change, is a real test after all', () => {
+    const greenFirst = recordRun(recordSourceEdit(touched, 'money/formatCents', true, at(1)), true, at(2))
+
+    expect(runAdvice(touched, greenFirst, { kind: 'caught' })).toBe(
+      'red-first: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails. Now refactor with the test untouched.',
+    )
+  })
+
+  test('when the check could not run, says why and moves on', () => {
+    expect(runAdvice(edited, green, { kind: 'unverified', reason: 'timeout' })).toBe(
+      'red-first: GREEN on money/formatCents, saw red. Could not verify that its test catches the change (timeout). Now refactor with the test untouched.',
+    )
+  })
+})
+
+describe('runAdvice on a pass that completes no cycle', () => {
+  test('a refactor that kept the test green earns credit', () => {
+    const green = recordRun(recordRun(touched, false, at(1)), true, at(2))
+    const again = recordRun(green, true, at(4))
+
+    expect(runAdvice(green, again, 'refactor')).toBe(
+      'red-first: GREEN on money/formatCents: the refactor kept the test green with the test untouched. Refactor credit.',
+    )
+  })
+
+  test('a test written after the code that misses the change is still called out', () => {
+    const green = recordRun(touched, true, at(1))
+    const again = recordRun(recordSourceEdit(green, 'money/formatCents', true, at(2)), true, at(3))
+
+    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/does NOT catch the change/)
+  })
+})

@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
-import type { TddStats } from '../types'
+import type { CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
+import { catchOutcome, runnerArgv, timeBudgetMs } from './catchCheck'
+import type { RunnerKind } from './catchCheck'
 import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
@@ -15,12 +17,15 @@ import {
   markReminded,
   normalizeStats,
   recordBlocked,
+  recordCatch,
+  recordChange,
   recordRun,
   recordRunTarget,
   recordSourceEdit,
   recordTestTouch,
   resetStats,
   seedUnlocks,
+  setChecking,
   togglePause,
 } from './stats'
 import { formatStatus } from './summary'
@@ -31,6 +36,7 @@ const TEST_PANE = 'red-first-test'
 const STATUS_TOOL = /^mcp__red-first__status$/
 const MAX_SOURCE_CHARS = 10_000
 const WATCHED_DIRS = ['src', 'tests']
+const JOURNAL_PREFIX = 'catch-journal:'
 const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
 
 const stats = atom({ plugin: 'red-first', key: 'stats' } as const, INITIAL_STATS)
@@ -64,6 +70,111 @@ async function rememberUnlock($: EngineInterface, root: string, module: string, 
   await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
 }
 
+function checkingMessage(module: string): string {
+  return `red-first is verifying that the test for ${module} catches the change; retry in a moment.`
+}
+
+async function readWhole($: EngineInterface, path: string): Promise<string | null> {
+  try {
+    return await $.fs.read(path)
+  } catch {
+    return null
+  }
+}
+
+async function detectRunner($: EngineInterface, root: string): Promise<RunnerKind | null> {
+  if (await $.fs.exists(`${root}/node_modules/vitest/vitest.mjs`)) {
+    return 'vitest'
+  }
+  if (await $.fs.exists(`${root}/node_modules/jest/bin/jest.js`)) {
+    return 'jest'
+  }
+  return null
+}
+
+type Journal = { files: { path: string; text: string }[] }
+
+function isJournal(value: unknown): value is Journal {
+  return typeof value === 'object' && value !== null && Array.isArray((value as Journal).files)
+}
+
+async function repairInterruptedCheck($: EngineInterface): Promise<void> {
+  const key = `${JOURNAL_PREFIX}${await $.session.root()}`
+  const journal = await $.store.get(key)
+  if (!isJournal(journal) || journal.files.length === 0) {
+    return
+  }
+  for (const file of journal.files) {
+    await $.fs.write(file.path, file.text)
+  }
+  await $.store.delete(key)
+  $.ui.toast(`red-first restored ${journal.files.length} file(s) after an interrupted check`)
+}
+
+async function verifyCatch(
+  $: EngineInterface,
+  root: string,
+  s: TddStats,
+  module: string,
+  greenRunMs: number,
+): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
+  const changes = Object.values(s.changes)
+  const testPath = s.unlocked[module]
+  if (changes.length === 0 || testPath === undefined || changes.every(cycleChange => cycleChange.before === cycleChange.after)) {
+    return 'unchecked'
+  }
+  if (changes.every(cycleChange => cycleChange.kind === 'refactor')) {
+    return 'refactor'
+  }
+  for (const cycleChange of changes) {
+    if ((await readWhole($, cycleChange.path)) !== cycleChange.after) {
+      return { kind: 'unverified', reason: 'changed outside' }
+    }
+  }
+  const runner = await detectRunner($, root)
+  if (runner === null) {
+    return catchOutcome('no-runner')
+  }
+  const revertible = changes.filter((cycleChange): cycleChange is { path: string; before: string; after: string } => cycleChange.before !== null)
+  if (revertible.length === 0) {
+    return { kind: 'caught' }
+  }
+
+  const journalKey = `${JOURNAL_PREFIX}${root}`
+  await $.store.set(journalKey, { files: revertible.map(cycleChange => ({ path: cycleChange.path, text: cycleChange.after })) })
+  await change($, state => setChecking(state, true))
+  let outcome: CatchOutcome
+  try {
+    for (const cycleChange of revertible) {
+      await $.fs.write(cycleChange.path, cycleChange.before)
+    }
+    try {
+      const run = await $.process.run(runnerArgv(root, runner, relativePath(root, testPath)), {
+        cwd: root,
+        env: { CI: '1' },
+        timeoutMs: timeBudgetMs(greenRunMs),
+      })
+      outcome = catchOutcome(run)
+    } catch {
+      outcome = catchOutcome('timeout')
+    }
+  } finally {
+    for (const cycleChange of revertible) {
+      await $.fs.write(cycleChange.path, cycleChange.after)
+    }
+    await change($, state => setChecking(state, false))
+  }
+
+  const restored = await Promise.all(revertible.map(async cycleChange => (await readWhole($, cycleChange.path)) === cycleChange.after))
+  if (!restored.every(Boolean)) {
+    $.ui.toast('red-first could not restore a source file after the catch check; see /tdd')
+    $.ui.log(`red-first: restore failed for ${revertible.map(cycleChange => cycleChange.path).join(', ')}; journal kept under ${journalKey}`)
+    return { kind: 'unverified', reason: 'restore failed' }
+  }
+  await $.store.delete(journalKey)
+  return outcome
+}
+
 function lockedMessage(module: string): string {
   return `red-first: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
 }
@@ -88,7 +199,11 @@ async function guardFileWrite(
     await change($, s => recordBlocked(s, target.module, nowMs))
     return { deny: lockedMessage(target.module) }
   }
+  if (current.checking && target.kind !== 'other') {
+    return { deny: checkingMessage(current.current?.module ?? target.module) }
+  }
 
+  const before = target.kind === 'source' && !current.paused ? await readWhole($, filePath) : undefined
   const result = await proceed()
   if (!succeeded(result)) {
     return result
@@ -97,7 +212,11 @@ async function guardFileWrite(
   const nowMs = await $.clock.now()
   if (target.kind === 'source') {
     const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
-    const edited = await change($, s => markReminded(recordSourceEdit(s, target.module, true, nowMs), target.module))
+    const after = before === undefined ? null : await readWhole($, filePath)
+    const edited = await change($, s => {
+      const recorded = markReminded(recordSourceEdit(s, target.module, true, nowMs), target.module)
+      return before === undefined || after === null ? recorded : recordChange(recorded, target.module, filePath, before, after)
+    })
     const testPath = edited.unlocked[target.module]
     return inheritedAt === undefined || testPath === undefined || edited.paused
       ? result
@@ -168,8 +287,12 @@ async function guardBash(
     await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
     return { deny: locked.map(lockedMessage).join('\n') }
   }
+  if (current.checking && writtenModules.some(module => module !== null)) {
+    return { deny: checkingMessage(current.current?.module ?? 'this module') }
+  }
 
   const before = await snapshotWatched($, root)
+  const startedMs = await $.clock.now()
   const result = await proceed()
   if (result.deny !== undefined) {
     return result
@@ -207,7 +330,12 @@ async function guardBash(
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs))
   }
-  const advice = outcome === 'none' ? null : runAdvice(updated, afterRun)
+  const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
+  const check = passedModule === undefined ? 'unchecked' : await verifyCatch($, root, afterRun, passedModule, nowMs - startedMs)
+  if (passedModule !== undefined) {
+    await change($, s => recordCatch(s, passedModule, check, nowMs))
+  }
+  const advice = outcome === 'none' ? null : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check)
 
   const reminders = current.paused
     ? []
@@ -274,6 +402,7 @@ export const register: Register = on => {
       )
     })
     const started = await next(e)
+    await repairInterruptedCheck($)
     await seedRememberedUnlocks($)
     await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events' })
     await $.tool.register({

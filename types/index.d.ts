@@ -10,6 +10,16 @@ export type EventKind =
   | 'fail'
   | 'paused'
   | 'resumed'
+  | 'caught'
+  | 'missed'
+  | 'unverified'
+  | 'refactor'
+
+export type CatchOutcome = { kind: 'caught' } | { kind: 'missed' } | { kind: 'unverified'; reason: string }
+
+export type ChangeKind = 'fix' | 'refactor'
+
+export type CycleChange = { path: string; before: string | null; after: string; kind: ChangeKind }
 
 export type CurrentTest = {
   module: string
@@ -40,6 +50,13 @@ export type TddStats = {
   unlocked: Readonly<Record<string, string>>
   inherited: Readonly<Record<string, number>>
   reminded: readonly string[]
+  changes: Readonly<Record<string, CycleChange>>
+  checking: boolean
+  caught: number
+  missed: number
+  unverified: number
+  refactors: number
+  lastCatch: { module: string; outcome: CatchOutcome } | null
   current: CurrentTest | null
   events: readonly TddEvent[]
   lastEventMs: number | null

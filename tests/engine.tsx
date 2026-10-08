@@ -32,6 +32,9 @@ export type FakeWorld = {
   numstat: string
   untracked: string
   gitCalls: string[][]
+  writes: [string, string][]
+  catchRun: { text: string; exitCode: number } | 'reject'
+  hasVitest: boolean
   onBash: (command: string) => void
 }
 
@@ -51,6 +54,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    writes: [],
+    catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
+    hasVitest: true,
     onBash: () => {},
   }
 
@@ -69,6 +75,11 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', (_$, e) => {
     world.gitCalls.push(e.argv)
+    if (e.argv.some(arg => arg.includes('vitest.mjs') || arg.includes('jest.js'))) {
+      return world.catchRun === 'reject'
+        ? { deny: 'timed out' }
+        : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
+    }
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never
   })
@@ -79,6 +90,15 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('ui.open', (_$, e) => {
     world.openedPanes.push(e.id)
     return { value: { isOpen: true } } as never
+  })
+  on('fs.write', (_$, e) => {
+    world.fileContents.set(e.path.replace(/\\/g, '/'), e.text)
+    world.writes.push([e.path.replace(/\\/g, '/'), e.text])
+    return { value: undefined } as never
+  })
+  on('fs.exists', (_$, e) => {
+    const path = e.path.replace(/\\/g, '/')
+    return { value: world.fileContents.has(path) || world.existingFiles.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')) } as never
   })
   on('fs.stat', () => ({
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
@@ -96,6 +116,17 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('tool.call', (_$, e) => {
     if (e.tool === 'Bash') {
       world.onBash(e.command)
+    }
+    const input = e as { file_path?: string; content?: string; old_string?: string; new_string?: string }
+    const target = input.file_path?.replace(/\\/g, '/')
+    if (e.tool === 'Write' && target !== undefined && input.content !== undefined) {
+      world.fileContents.set(target, input.content)
+    }
+    if (e.tool === 'Edit' && target !== undefined && input.old_string !== undefined && input.new_string !== undefined) {
+      const current = world.fileContents.get(target)
+      if (current !== undefined) {
+        world.fileContents.set(target, current.replace(input.old_string, input.new_string))
+      }
     }
     return e.tool === 'Bash' && world.bashFails
       ? { isError: true as const, result: 'FAIL', text: world.bashText || 'Tests 1 failed' }

@@ -105,7 +105,7 @@ What to watch for:
   what it does, and it should need no comments to follow. If it still looks
   like the original with new variable names, ask Claude to go further.
 
-## Walk 3 · Watch it catch a shortcut (3 minutes)
+## Walk 3 · Protect ya neck: watch it catch a shortcut (3 minutes)
 
 Tell Claude:
 

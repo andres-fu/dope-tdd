@@ -136,6 +136,31 @@ describe('catches the change', () => {
     expect(status.text).toMatch(/never saw red 0/)
   })
 
+  test('a source edit made through the shell is captured and checked too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    world.onBash = command => {
+      if (command.includes('sed')) {
+        world.fileContents.set(SOURCE, 'export const b = 1')
+        world.numstat = '1\t1\tsrc/utils/formatDuration.ts\n'
+      }
+    }
+    await runBash($, "sed -i 's/a/b/' src/utils/formatDuration.ts")
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([
+      [SOURCE, 'export const a = 1'],
+      [SOURCE, 'export const b = 1'],
+    ])
+    expect(status.text).toMatch(/caught 1/)
+    expect(result.context?.join(' ')).toMatch(/its test catches the change/)
+  })
+
   test('an interrupted check is repaired at the next session start', async ($, on) => {
     const world = fakeEngine(on, {
       store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, text: 'export const b = 1' }] } },

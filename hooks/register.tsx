@@ -80,6 +80,10 @@ function tell(quiet: boolean, result: ToolCallResult, lines: string[]): ToolCall
   return quiet ? result : withContext(result, lines)
 }
 
+function absolutePath(root: string, path: string): string {
+  return /^([A-Za-z]:|[\\/])/.test(path) ? path : `${root}/${path}`
+}
+
 function checkingMessage(module: string): string {
   return `red-first is verifying that the test for ${module} catches the change; retry in a moment.`
 }
@@ -305,6 +309,7 @@ async function guardBash(
 
   const writes = await Promise.all(
     findSourceWrites(command).map(async path => ({
+      path: absolutePath(root, path),
       module: await sourceModuleOf($, root, path),
       policy: policyFor(config, relativePath(root, path)),
     })),
@@ -322,6 +327,10 @@ async function guardBash(
   }
 
   const before = await snapshotWatched($, root)
+  const expectedWrites = current.paused
+    ? []
+    : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
+  const textsBefore = await Promise.all(expectedWrites.map(async write => ({ ...write, before: await readWhole($, write.path) })))
   const startedMs = await $.clock.now()
   const result = await proceed()
   if (result.deny !== undefined) {
@@ -333,14 +342,24 @@ async function guardBash(
   const changed = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
   const touchedTests = changedOfKind(root, changed, 'test')
   const changedSources = changedOfKind(root, changed, 'source').filter(({ path }) => policyFor(config, path) !== 'exempt')
+  const changedModules = new Set(changedSources.map(({ module }) => module))
+  const captured = await Promise.all(
+    textsBefore
+      .filter(write => changedModules.has(write.module))
+      .map(async write => ({ ...write, after: await readWhole($, write.path) })),
+  )
   const updated = await change($, s => {
     const withTouches = touchedTests.reduce(
       (acc, { path, module }) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs),
       s,
     )
-    return changedSources.reduce(
+    const withEdits = changedSources.reduce(
       (acc, { module }) => recordSourceEdit(acc, module, acc.unlocked[module] !== undefined, nowMs),
       withTouches,
+    )
+    return captured.reduce(
+      (acc, write) => (write.after === null ? acc : recordChange(acc, write.module, write.path, write.before, write.after)),
+      withEdits,
     )
   })
   for (const { path, module } of touchedTests) {

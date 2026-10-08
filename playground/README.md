@@ -1,7 +1,8 @@
 # Dope TDD playground
 
-*Don't Overdub, Prove Every bar.* An overdub covers a bad take; bending a
-test until it passes is the overdub, and the catch check hears it.
+*Deny, Observe, Prove, Evidence. Don't overdub, prove every bar.* An overdub
+covers a bad take; bending a test until it passes is the overdub, and the
+catch check hears it.
 
 A tiny project with three planted bugs and no tests. Use it to see Dope TDD
 work in about ten minutes, and to feel why writing the test first is worth the

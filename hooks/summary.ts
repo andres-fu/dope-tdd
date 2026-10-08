@@ -74,6 +74,6 @@ export function formatGlossary(): string {
     '  BLOCKED        an edit was refused until the test is written',
     '  PAUSED         the guard is off; edits are not counted',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
-    "  DOPE           Don't Overdub, Prove Every bar: never bend a test to pass; prove every change is caught",
+    "  DOPE           Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar",
   ].join('\n')
 }

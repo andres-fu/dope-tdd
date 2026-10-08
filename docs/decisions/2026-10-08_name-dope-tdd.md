@@ -9,6 +9,12 @@ owner renames them; the marketplace is registered by path, so nothing
 depends on the folder name. Decision notes and the dogfood log keep the
 names in use at the time they were written.
 
+D.O.P.E. stands for **Deny, Observe, Prove, Evidence**: the four mechanisms
+in the order they apply to a change (enforce mode denies, the git backstop
+and observe mode observe, the catch check proves, `/tdd` and the receipts are
+the evidence). The motto under it is *don't overdub, prove every bar*: an
+overdub covers a bad take; bending a test to pass is the overdub.
+
 ## Why
 The owner's pick. It says what the tool is without explanation, which "Red
 First" and "sawred" did not, and it sounds like the person who made it,

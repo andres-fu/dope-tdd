@@ -1,11 +1,14 @@
 # Dope TDD
 
-**D.O.P.E.** Don't Overdub, Prove Every bar.
+**D.O.P.E.** Deny, Observe, Prove, Evidence.
+*Don't overdub, prove every bar.*
 
-The TDD companion for Claude Code. It keeps Claude test-first, proves that
-each test catches the change it guards, and shows the evidence in a band
-above the prompt. In the studio an overdub covers a bad take instead of
-recording it again; here, bending a test until it passes is the overdub, and
+The TDD companion for Claude Code. It **denies** a source edit until its test
+exists, **observes** every edit and every run, through the shell too,
+**proves** that each test catches the change it guards by undoing the change
+and running the test, and keeps the **evidence** where you and Claude can
+both read it. The motto: in the studio an overdub covers a bad take instead
+of recording it again; bending a test until it passes is the overdub, and
 the catch check hears it. Every bar is every change.
 
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`

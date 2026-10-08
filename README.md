@@ -11,6 +11,14 @@ both read it. The motto: in the studio an overdub covers a bad take instead
 of recording it again; bending a test until it passes is the overdub, and
 the catch check hears it. Every bar is every change.
 
+It is a Claude Code mod, so it runs inside Claude Code, in the path of every
+Edit, Write and shell call. An edit to untested source is refused before it
+happens, not flagged after. A test run's result is held until the catch check
+has reverted the change, run the test and restored it, so the line Claude
+reads back carries the verdict. A rule in CLAUDE.md is advice Claude can
+forget or argue with; this is a gate it has to pass, and every refusal says
+why, so it can.
+
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
 

@@ -47,3 +47,4 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] Markdown lint in `docs/decisions/` (blank lines around headings and lists); cosmetic.
 - [ ] `arch2 10` Session-start log noise for each remembered test that is gone; config strings echoed unsanitised in `describeConfig`.
 - [ ] `docs` A type-check is part of the documented loop (`tsc -p` against the engine-written `.claude-plugin/types`); it is run by hand from a scratch tsconfig and should be in CI next to `claude plugin test` and `validate --strict`.
+- [ ] `ci` The suite runs under one Windows-shaped fixture root; the fakes tolerate a POSIX host, but no test runs the plugin against a POSIX root (`/work/...`, no drive letter). Add a second pass or a second root, since the first Linux CI run failed 53 tests on exactly this.

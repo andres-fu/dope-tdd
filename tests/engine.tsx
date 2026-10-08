@@ -3,6 +3,18 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 export const ROOT = 'C:/work/throughline'
+
+/**
+ * The fixture root is Windows-shaped. On a POSIX host it is not absolute, so
+ * the engine resolves it against the real cwd before an fs event reaches
+ * these stubs; a path is therefore read from where the fixture root starts,
+ * whatever the host put in front of it, and with forward slashes.
+ */
+export function fakePath(path: string): string {
+  const slashed = path.replace(/\\/g, '/')
+  const at = slashed.indexOf(ROOT)
+  return at >= 0 ? slashed.slice(at) : slashed
+}
 export const T0 = Date.UTC(2026, 9, 6, 12, 0, 0)
 export const MINUTE = 60_000
 export const TEST_SOURCE = "it('formats months', () => {\n  expect(formatDuration(14)).toBe('1y 2m')\n})\n"
@@ -109,7 +121,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     return { value: { isOpen: true } } as never
   })
   on('fs.write', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = fakePath(e.path)
     if (world.writeFails(path, e.text)) {
       return { deny: `EBUSY: ${path}` }
     }
@@ -118,7 +130,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     return { value: undefined } as never
   })
   on('fs.exists', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = fakePath(e.path)
     return {
       value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')),
     } as never
@@ -127,7 +139,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
   }) as never)
   on('fs.list', (_$, e) => {
-    const dir = (e.path ?? ROOT).replace(/\\/g, '/').replace(/\/$/, '')
+    const dir = fakePath(e.path ?? ROOT).replace(/\/$/, '')
     const names = new Map<string, 'file' | 'dir'>()
     for (const path of [...world.fileContents.keys(), ...world.existingFiles]) {
       if (!path.startsWith(`${dir}/`)) {
@@ -142,7 +154,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     return { value: entries } as never
   })
   on('fs.read', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = fakePath(e.path)
     if (world.unreadable.has(path)) {
       return { deny: `EFBIG: ${e.path}` }
     }
@@ -160,7 +172,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       world.onBash(String((e as { command?: unknown }).command ?? ''))
     }
     const input = e as { file_path?: string; content?: string; old_string?: string; new_string?: string }
-    const target = input.file_path?.replace(/\\/g, '/')
+    const target = input.file_path === undefined ? undefined : fakePath(input.file_path)
     if (e.tool === 'Write' && target !== undefined && input.content !== undefined) {
       world.fileContents.set(target, input.content)
     }

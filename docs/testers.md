@@ -13,6 +13,13 @@ where you and Claude can both read it. It never calls a model of its own: it
 runs inside your session, on your plan, and `claude plugin validate .` lists
 every file, process and store call it makes before you install it.
 
+How it does that: it is a Claude Code mod, which runs inside Claude Code in
+the path of every Edit, Write and shell call. The edit is refused before it
+happens, not flagged after; after a green run the result is held until the
+catch check has finished, so the line Claude reads carries the verdict. A
+rule in CLAUDE.md is advice Claude can forget or argue with. This is a gate
+it has to pass, and every refusal says why.
+
 ## What you need
 
 - Claude Code v2.1.287 or later (`claude --version`). The terminal or the
@@ -58,6 +65,51 @@ What a good run looks like: Claude is refused when it tries to edit source
 first, writes a test, runs it and sees it fail (RED), fixes the code, sees
 it pass (GREEN), and the plugin reports `caught` after undoing the fix and
 watching the test fail again. The `/tdd` output at the end is the receipt.
+
+## How you know it is on, and working
+
+1. **It loaded.** In a terminal, `/plugin` shows a dim line `1 mod active ·
+   dope-tdd`. On every surface, `/tdd` answers with `guard: ON` and the mode.
+   If `/tdd` is not a command, the plugin did not load: `/reload-plugins`,
+   then `claude plugin validate .` in the clone, are the first things to try.
+2. **It is watching.** In the playground, ask Claude to change a source file
+   before any test exists. In a terminal the band shows **BLOCKED**; on every
+   surface Claude's reply says it was refused and what to write first, and
+   `/tdd` shows `blocked 1`. That first refusal is the handshake.
+3. **It is proving.** After a red-then-green cycle, `/tdd` shows `caught 1`,
+   or `missed`, or `unverified` with the reason. In a terminal the band says
+   **CAUGHT**.
+
+Where you see it, by surface:
+
+| Where you run Claude Code | Band above the prompt | `/tdd`, `/tdd why` | `dope-tdd:` lines in tool results |
+| --- | --- | --- | --- |
+| Terminal | yes | yes | yes, dim, under the tool call |
+| Desktop app, Code tab | yes | yes | yes |
+| VS Code extension, chat panel | no | yes | only if you expand the tool call |
+
+In VS Code, `/tdd` is the view to trust. Claude reads every line the plugin
+writes, so you can also ask it directly: "what did dope-tdd say about that
+edit?"
+
+## With it and without it
+
+The playground is built for a before-and-after. Do the **without** run
+first, because the plugin remembers which tests were touched for a week and
+would not refuse the same module twice.
+
+- **Without:** in the `playground` folder, start `claude --safe-mode`, which
+  turns every plugin off for that session, and give it Walk 1 from the
+  playground README. Watch what Claude does first. Usually it edits the
+  code, then maybe writes a test, and never sees that test fail.
+- **Reset:** from the `playground` folder, `git checkout -- src` and delete
+  the `tests` folder it created.
+- **With:** a normal session, same task. The refusal comes first, then the
+  test, then red, then the fix, then the catch check. `/tdd` at the end is
+  the receipt; the first run has no equivalent.
+
+The difference is not the result, both fixes probably work. It is whether a
+test that can fail existed before the fix, and whether anyone proved it.
 
 ## Then: a small project of your own
 

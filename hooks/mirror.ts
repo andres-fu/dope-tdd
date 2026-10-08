@@ -24,6 +24,10 @@ function relativeTo(root: string, path: string): string | undefined {
   return isInside ? normalized.slice(prefix.length) : undefined
 }
 
+export function relativePath(root: string, path: string): string {
+  return relativeTo(root, path) ?? path
+}
+
 export function classifyPath(root: string, path: string): ClassifiedPath {
   const relative = relativeTo(root, path)
   if (relative === undefined || relative.endsWith('.d.ts')) {

@@ -3,12 +3,14 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   INITIAL_STATS,
   expireCurrent,
+  markReminded,
   normalizeStats,
   recordBlocked,
   recordRun,
   recordSourceEdit,
   recordTestTouch,
   resetStats,
+  seedUnlocks,
   togglePause,
 } from '../hooks/stats'
 
@@ -180,5 +182,30 @@ describe('corrupted stored state', () => {
 
     expect(s.events).toEqual([{ atMs: 1, kind: 'pass' }])
     expect(s.history).toEqual(['pass'])
+  })
+})
+
+describe('unlocks remembered from earlier sessions', () => {
+  test('seeding unlocks a module and remembers when its test was touched', () => {
+    const s = seedUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } })
+
+    expect(s.unlocked['utils/a']).toBe('tests/utils/a.test.ts')
+    expect(s.inherited['utils/a']).toBe(5)
+  })
+
+  test('a fresh touch in this session supersedes the inherited one', () => {
+    const seeded = seedUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } })
+    const touched = recordTestTouch(seeded, { module: 'utils/a', testPath: 'tests/utils/a.test.ts' }, 10)
+
+    expect(touched.inherited['utils/a']).toBeUndefined()
+  })
+
+  test('marking a module as reminded keeps the unlock and its origin, and is idempotent', () => {
+    const seeded = seedUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } })
+    const reminded = markReminded(markReminded(seeded, 'utils/a'), 'utils/a')
+
+    expect(reminded.reminded).toEqual(['utils/a'])
+    expect(reminded.inherited['utils/a']).toBe(5)
+    expect(reminded.unlocked['utils/a']).toBe('tests/utils/a.test.ts')
   })
 })

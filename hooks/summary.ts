@@ -25,6 +25,14 @@ function eventLines(s: TddStats, nowMs: number): string[] {
     .map(e => `  ${formatAgo(nowMs - e.atMs).padEnd(9)} ${e.kind.padEnd(10)} ${e.module ?? ''}`.trimEnd())
 }
 
+function inheritedLine(s: TddStats, nowMs: number): string[] {
+  const entries = Object.entries(s.inherited)
+  if (entries.length === 0) {
+    return []
+  }
+  return [`unlocked earlier: ${entries.map(([module, atMs]) => `${module} (${formatAgo(nowMs - atMs)})`).join(', ')}`]
+}
+
 export function formatStatus(s: TddStats, nowMs: number): string {
   return [
     'red-first',
@@ -34,6 +42,7 @@ export function formatStatus(s: TddStats, nowMs: number): string {
     `runs: ${s.passes + s.fails} (${s.passes} pass, ${s.fails} fail)`,
     cycleLine(s),
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    ...inheritedLine(s, nowMs),
     'recent events:',
     ...eventLines(s, nowMs),
   ].join('\n')

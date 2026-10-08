@@ -38,6 +38,8 @@ export type TddStats = {
   unguarded: number
   blocked: number
   unlocked: Readonly<Record<string, string>>
+  inherited: Readonly<Record<string, number>>
+  reminded: readonly string[]
   current: CurrentTest | null
   events: readonly TddEvent[]
   lastEventMs: number | null

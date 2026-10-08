@@ -25,6 +25,7 @@ export type FakeWorld = {
   bashText: string
   testModifiedAt: number
   existingFiles: Set<string>
+  fileContents: Map<string, string>
   openedPanes: string[]
   logs: string[]
   toasts: string[]
@@ -34,13 +35,16 @@ export type FakeWorld = {
   onBash: (command: string) => void
 }
 
-export function fakeEngine(on: On): FakeWorld {
+export type FakeOptions = { store?: Readonly<Record<string, unknown>> }
+
+export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
     clock: mock.clock(on, { now: T0 }),
     bashFails: false,
     bashText: '',
     testModifiedAt: T0,
     existingFiles: new Set(),
+    fileContents: new Map(),
     openedPanes: [],
     logs: [],
     toasts: [],
@@ -50,6 +54,7 @@ export function fakeEngine(on: On): FakeWorld {
     onBash: () => {},
   }
 
+  mock.store(on, options.store)
   on('session.root', () => ({ value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('ui.log', (_$, e) => {
@@ -78,11 +83,16 @@ export function fakeEngine(on: On): FakeWorld {
   on('fs.stat', () => ({
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
   }) as never)
-  on('fs.read', (_$, e) =>
-    world.existingFiles.has(e.path.replace(/\\/g, '/')) || e.path.endsWith('.svg')
+  on('fs.read', (_$, e) => {
+    const path = e.path.replace(/\\/g, '/')
+    const custom = world.fileContents.get(path)
+    if (custom !== undefined) {
+      return { value: custom }
+    }
+    return world.existingFiles.has(path) || e.path.endsWith('.svg')
       ? { value: e.path.endsWith('.svg') ? '<svg xmlns="http://www.w3.org/2000/svg"/>' : TEST_SOURCE }
-      : { deny: `ENOENT: ${e.path}` },
-  )
+      : { deny: `ENOENT: ${e.path}` }
+  })
   on('tool.call', (_$, e) => {
     if (e.tool === 'Bash') {
       world.onBash(e.command)

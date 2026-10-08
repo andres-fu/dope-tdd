@@ -20,6 +20,8 @@ export const INITIAL_STATS: TddStats = {
   unguarded: 0,
   blocked: 0,
   unlocked: {},
+  inherited: {},
+  reminded: [],
   current: null,
   events: [],
   lastEventMs: null,
@@ -57,12 +59,19 @@ export function normalizeStats(stored: unknown): TddStats {
     unguarded: pick('unguarded', isNumber),
     blocked: pick('blocked', isNumber),
     unlocked: pick('unlocked', isRecord),
+    inherited: pick('inherited', isRecord),
+    reminded: pick('reminded', Array.isArray).filter(module => typeof module === 'string'),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
     events: pick('events', Array.isArray).filter(
       (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
     ),
     lastEventMs: pick('lastEventMs', isNumberOrNull),
   }
+}
+
+function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
+  const { [key]: _dropped, ...rest } = record
+  return rest
 }
 
 function logged(s: TddStats, kind: EventKind, atMs: number, module?: string): TddStats {
@@ -85,6 +94,8 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
       current: touched,
       unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
       unproven: s.unproven.filter(module => module !== touched.module),
+      inherited: without(s.inherited, touched.module),
+      reminded: s.reminded.filter(module => module !== touched.module),
     },
     'touched',
     nowMs,
@@ -155,6 +166,22 @@ export function recordRunTarget(s: TddStats, module: string): TddStats {
   return testPath === undefined ? s : { ...s, current: { module, testPath } }
 }
 
+export function seedUnlocks(
+  s: TddStats,
+  entries: Readonly<Record<string, { testPath: string; atMs: number }>>,
+): TddStats {
+  const pairs = Object.entries(entries)
+  return {
+    ...s,
+    unlocked: { ...s.unlocked, ...Object.fromEntries(pairs.map(([module, entry]) => [module, entry.testPath])) },
+    inherited: { ...s.inherited, ...Object.fromEntries(pairs.map(([module, entry]) => [module, entry.atMs])) },
+  }
+}
+
+export function markReminded(s: TddStats, module: string): TddStats {
+  return s.reminded.includes(module) ? s : { ...s, reminded: [...s.reminded, module] }
+}
+
 export function togglePause(s: TddStats, nowMs: number): TddStats {
   return logged({ ...s, paused: !s.paused }, s.paused ? 'resumed' : 'paused', nowMs)
 }
@@ -170,6 +197,8 @@ export function resetStats(s: TddStats): TddStats {
     ...INITIAL_STATS,
     paused: s.paused,
     unlocked: s.unlocked,
+    inherited: s.inherited,
+    reminded: s.reminded,
     current: s.current,
   }
 }

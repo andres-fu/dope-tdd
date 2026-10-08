@@ -3,15 +3,16 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
-import { runAdvice, touchAdvice } from './advice'
+import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
-import { classifyPath, isTestRun } from './mirror'
+import { classifyPath, isTestRun, relativePath } from './mirror'
 import { runOutcome } from './runOutcome'
 import {
   INITIAL_STATS,
   expireCurrent,
+  markReminded,
   normalizeStats,
   recordBlocked,
   recordRun,
@@ -19,9 +20,11 @@ import {
   recordSourceEdit,
   recordTestTouch,
   resetStats,
+  seedUnlocks,
   togglePause,
 } from './stats'
 import { formatStatus } from './summary'
+import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
 
 const MINUTE = 60_000
 const TEST_PANE = 'red-first-test'
@@ -55,6 +58,12 @@ async function readStats($: EngineInterface): Promise<TddStats> {
   return normalizeStats(await read($, stats))
 }
 
+async function rememberUnlock($: EngineInterface, root: string, module: string, testPath: string, nowMs: number): Promise<void> {
+  const key = unlockKey(root)
+  const stored = freshUnlocks(await $.store.get(key), nowMs)
+  await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
+}
+
 function lockedMessage(module: string): string {
   return `red-first: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
 }
@@ -70,7 +79,8 @@ async function guardFileWrite(
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
-  const target = classifyPath(await $.session.root(), filePath)
+  const root = await $.session.root()
+  const target = classifyPath(root, filePath)
   const current = await readStats($)
 
   if (target.kind === 'source' && !current.paused && current.unlocked[target.module] === undefined) {
@@ -86,11 +96,19 @@ async function guardFileWrite(
 
   const nowMs = await $.clock.now()
   if (target.kind === 'source') {
-    await change($, s => recordSourceEdit(s, target.module, true, nowMs))
+    const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
+    const edited = await change($, s => markReminded(recordSourceEdit(s, target.module, true, nowMs), target.module))
+    const testPath = edited.unlocked[target.module]
+    return inheritedAt === undefined || testPath === undefined || edited.paused
+      ? result
+      : withContext(result, [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)])
   }
   if (target.kind === 'test') {
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
-    return touched.paused ? result : withContext(result, [touchAdvice(target.module)])
+    await rememberUnlock($, root, target.module, filePath, nowMs)
+    const source = await readSource($, filePath)
+    const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
+    return touched.paused ? result : withContext(result, [touchAdvice(target.module), ...hollow])
   }
   return result
 }
@@ -172,6 +190,9 @@ async function guardBash(
       withTouches,
     )
   })
+  for (const { path, module } of touchedTests) {
+    await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
+  }
   const unguardedPaths = changedSources
     .filter(source => updated.unlocked[source.module] === undefined)
     .map(source => source.path)
@@ -224,6 +245,21 @@ async function loadLogo($: EngineInterface): Promise<string | null> {
   return logoSource
 }
 
+async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
+  const root = await $.session.root()
+  const nowMs = await $.clock.now()
+  const stored = freshUnlocks(await $.store.get(unlockKey(root)), nowMs)
+  const present = await Promise.all(
+    Object.entries(stored).map(async ([module, entry]) =>
+      (await lastModifiedMs($, entry.testPath)) === null ? [] : [[module, entry] as const],
+    ),
+  )
+  const entries = Object.fromEntries(present.flat())
+  if (Object.keys(entries).length > 0) {
+    await change($, s => seedUnlocks(s, entries))
+  }
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   return formatStatus(await readStats($), await $.clock.now())
 }
@@ -238,6 +274,7 @@ export const register: Register = on => {
       )
     })
     const started = await next(e)
+    await seedRememberedUnlocks($)
     await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events' })
     await $.tool.register({
       name: 'status',

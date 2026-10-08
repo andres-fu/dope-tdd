@@ -1,7 +1,16 @@
 import type { TddStats } from '../types'
+import { formatAgo } from './timeText'
 
 export function touchAdvice(module: string): string {
   return `red-first: ${module} unlocked. Run its test and see it fail before editing src/${module}.`
+}
+
+export function inheritedAdvice(module: string, testPath: string, ageMs: number): string {
+  return `red-first: src/${module} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
+}
+
+export function hollowAdvice(testPath: string): string {
+  return `red-first: ${testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`
 }
 
 export function runAdvice(before: TddStats, after: TddStats): string | null {

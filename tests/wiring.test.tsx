@@ -2,7 +2,9 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   BAND,
+  MINUTE,
   ROOT,
+  T0,
   editAt,
   fakeEngine,
   runBash,
@@ -192,6 +194,68 @@ describe('the agent is told', () => {
     const result = await runTests($, world, 'pass')
 
     expect(result.context?.join(' ')).toMatch(/never saw red/)
+  })
+})
+
+describe('memory across sessions', () => {
+  const HOUR = 60 * MINUTE
+  const DAY = 24 * HOUR
+  const remembered = (ageMs: number) => ({
+    [`unlocks:${ROOT}`]: {
+      'utils/formatDuration': { testPath: `${ROOT}/tests/utils/formatDuration.test.ts`, atMs: T0 - ageMs },
+    },
+  })
+
+  test('a test touched in an earlier session still unlocks its module, and the agent is told once', async ($, on) => {
+    fakeEngine(on, { store: remembered(2 * HOUR) })
+    await startSession($)
+
+    const first = await editAt($, 'src/utils/formatDuration.ts')
+    const second = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(first.deny).toBeUndefined()
+    expect(first.context?.join(' ')).toMatch(/touched 2H AGO in an earlier session/)
+    expect(second.context).toBeUndefined()
+    expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
+  })
+
+  test('touching a test is remembered for the next session', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/calculateDuration')
+
+    await startSession($)
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unlocked earlier: utils.calculateDuration/)
+  })
+
+  test('an unlock older than seven days is forgotten', async ($, on) => {
+    fakeEngine(on, { store: remembered(8 * DAY) })
+    await startSession($)
+
+    const result = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(result.deny).toBeDefined()
+  })
+})
+
+describe('hollow tests', () => {
+  test('a touched test with no assertion is called out to the agent', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/tests/utils/formatDuration.test.ts`, "it('works', () => {\\n  formatDuration(14)\\n})\\n")
+
+    const result = await touchTest($, world, 'utils/formatDuration')
+
+    expect(result.context?.join(' ')).toMatch(/no assertion/)
+  })
+
+  test('a touched test that asserts something is not', async ($, on) => {
+    const world = fakeEngine(on)
+
+    const result = await touchTest($, world, 'utils/formatDuration')
+
+    expect(result.context?.join(' ')).not.toMatch(/no assertion/)
   })
 })
 

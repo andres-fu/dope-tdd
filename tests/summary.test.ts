@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordRun, recordTestTouch, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordRun, recordTestTouch, seedUnlocks, togglePause } from '../hooks/stats'
 
 const T0 = 1_000_000
 
@@ -25,5 +25,14 @@ describe('formatStatus', () => {
     expect(text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
     expect(text).toMatch(/1M AGO\s+touched\s+utils\/a/)
     expect(text).toMatch(/JUST NOW\s+paused/)
+  })
+})
+
+describe('unlocks from earlier sessions', () => {
+  test('are listed with their age so the agent and the person know where the unlock came from', () => {
+    const s = seedUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'C:/w/tests/utils/a.test.ts', atMs: T0 - 3 * 60 * 60_000 } })
+    const text = formatStatus(s, T0)
+
+    expect(text).toMatch(/unlocked earlier: utils\/a \(3H AGO\)/)
   })
 })

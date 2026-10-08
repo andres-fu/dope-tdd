@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { runAdvice, touchAdvice } from '../hooks/advice'
+import { hollowAdvice, inheritedAdvice, runAdvice, touchAdvice } from '../hooks/advice'
 import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch } from '../hooks/stats'
 
 const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
@@ -41,5 +41,21 @@ describe('runAdvice', () => {
     const idlePass = recordRun(INITIAL_STATS, true, at(1))
 
     expect(runAdvice(INITIAL_STATS, idlePass)).toBeNull()
+  })
+})
+
+describe('inheritedAdvice', () => {
+  test('gives the agent the history behind an unlock from an earlier session', () => {
+    expect(inheritedAdvice('money/formatCents', 'tests/money/formatCents.test.ts', 2 * 60 * 60_000)).toBe(
+      'red-first: src/money/formatCents is unlocked because tests/money/formatCents.test.ts was touched 2H AGO in an earlier session. Run that test first if you have not this session.',
+    )
+  })
+})
+
+describe('hollowAdvice', () => {
+  test('names the test file and says why an assertion-free test is worthless', () => {
+    expect(hollowAdvice('tests/money/formatCents.test.ts')).toBe(
+      'red-first: tests/money/formatCents.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.',
+    )
   })
 })

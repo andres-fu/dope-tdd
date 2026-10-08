@@ -64,8 +64,12 @@ evidence is in the tool results, `/tdd` and the status tool.
 
 ## Where your tests live
 
-Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`.
-If your tests sit elsewhere, say so once in `dope-tdd.json`:
+Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`
+in a Node project, `src/pkg/calc.py` with `tests/pkg/test_calc.py` in a Python
+project, and `scripts/player.gd` with `test/scripts/player_test.gd` in a Godot
+project, which is gdUnit4's own rule. The project's root files say which it is
+(`package.json`, `pyproject.toml`, `project.godot`, `pom.xml`); `"stack"` in
+`dope-tdd.json` pins it. If your tests sit elsewhere, say so once:
 
 ```json
 { "layout": "colocated" }
@@ -79,8 +83,25 @@ If your tests sit elsewhere, say so once in `dope-tdd.json`:
 ```
 
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
-Not sure? `/tdd setup` reads the repo and shows the layout it finds with the
-JSON to use; `/tdd setup write` saves it.
+Not sure? `/tdd setup` reads the repo and shows the stack and layout it finds
+with the JSON to use; `/tdd setup write` saves it.
+
+## Languages
+
+| Stack | Runner for the catch check | Summary reader | Layout presets |
+| --- | --- | --- | --- |
+| Node | Vitest, Jest | from real output | `mirror`, `colocated`, `__tests__` |
+| Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated` |
+| Godot 4 | gdUnit4, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH | provisional | `godot`, `godot-src`, `godot-pascal` |
+| Java | Maven, Gradle | provisional | `maven` |
+| .NET | `dotnet test` | provisional | `dotnet` |
+
+A provisional reader was written from the runner's own source or docs, not
+from a run, and is replaced the first time a real run is on record. Until
+then a run it cannot read is reported as unread, never guessed. Adding a
+language is a row in `hooks/stacks.ts`, a row in `hooks/runners.ts`, a
+fixture of real output and a test; the hooks module reads the tables and
+knows no language by name.
 
 ## Try it in ten minutes
 

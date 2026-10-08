@@ -60,8 +60,9 @@ the clone. The `hooks:` line names the exact actions it steps into, and the
   Desktop app's Code tab show the band above the prompt. The VS Code
   extension's chat panel runs the plugin but draws nothing, so there you
   read the `dope-tdd:` lines in tool results and `/tdd`.
-- A project that runs its tests with Vitest or Jest. Other runners work for
-  the deny and observe parts, but the catch check needs one of those two.
+- A project in Node (Vitest or Jest), Python (pytest), Godot 4 (gdUnit4),
+  Java (Maven or Gradle) or .NET. The first two are read from real runner
+  output; the others are provisional, see the rough edges.
 - Node and git.
 - Access to the repository (it is private for now) and git credentials that
   can clone it.
@@ -164,8 +165,13 @@ Then give Claude a real bug or a small feature and watch the words.
   and restores it. Your editor may flicker. Don't save that file during a
   check. If anything ever goes wrong there, the plugin keeps your text
   beside the file as `<file>.dope-tdd.kept` and says so.
-- Vitest and Jest only for the catch check, and TypeScript or JavaScript
-  only for the layout engine.
+- Godot, Java and .NET are provisional: their summary readers were written
+  from the runners' own source and docs, not from a run. If you are on one
+  of those, the whole output of one real test run, pass and fail, is the most
+  valuable thing you can send. A run the reader cannot read shows as unread,
+  never as a verdict.
+- A Godot project needs `godot` on PATH, `GODOT_BIN` set, or `"godot"` in
+  `dope-tdd.json` pointing at the binary, for the catch check to run.
 - It is a prototype. Some words will be wrong sometimes. The plugin's rule
   for itself is that every verdict says why, so when a word is wrong you
   should be able to see what it was looking at.

@@ -2,14 +2,17 @@
  * Where tests live relative to sources, as two path templates. Tokens:
  * `{module}` (the part shared by a source and its test, may contain slashes),
  * `{dir}` and `{name}` (the module split at its last slash; `{dir}` keeps its
- * trailing slash or is empty), `{ext}` (ts, tsx, js, jsx, mts, cts, mjs, cjs).
+ * trailing slash or is empty), `{ext}` (the stack's extensions: for Node ts,
+ * tsx, js, jsx, mts, cts, mjs, cjs; for Python py; for Godot gd; and so on,
+ * see `stacks.ts`).
  */
 
-export type LayoutName = 'mirror' | 'colocated' | '__tests__' | 'custom'
+export type NodeLayoutName = 'mirror' | 'colocated' | '__tests__'
+export type LayoutName = NodeLayoutName | 'custom' | string
 
 export type Layout = { name: LayoutName; source: string; test: string }
 
-export const LAYOUTS: Readonly<Record<Exclude<LayoutName, 'custom'>, Layout>> = {
+export const LAYOUTS: Readonly<Record<NodeLayoutName, Layout>> = {
   mirror: { name: 'mirror', source: 'src/{module}.{ext}', test: 'tests/{module}.test.{ext}' },
   colocated: { name: 'colocated', source: 'src/{module}.{ext}', test: 'src/{module}.test.{ext}' },
   __tests__: { name: '__tests__', source: 'src/{module}.{ext}', test: 'src/{dir}__tests__/{name}.test.{ext}' },
@@ -17,15 +20,17 @@ export const LAYOUTS: Readonly<Record<Exclude<LayoutName, 'custom'>, Layout>> = 
 
 export const MIRROR: Layout = LAYOUTS.mirror
 
+/** What `{ext}` accepts when no stack is named: the Node extensions. */
+export const NODE_EXTS: readonly string[] = ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs']
+
 const TOKEN = /\{(module|dir|name|ext)\}/g
-const EXT = '(?:[cm]?[jt]sx?)'
 const DISPLAY_EXT = 'ts(x)'
 
 function escape(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function tokenPattern(token: string): string {
+function tokenPattern(token: string, exts: readonly string[]): string {
   switch (token) {
     case 'module':
       return '(?<module>.+?)'
@@ -34,24 +39,24 @@ function tokenPattern(token: string): string {
     case 'name':
       return '(?<name>[^/]+?)'
     default:
-      return `(?<ext>${EXT})`
+      return `(?<ext>(?:${exts.map(escape).join('|')}))`
   }
 }
 
-export function templateToRegExp(template: string): RegExp {
+export function templateToRegExp(template: string, exts: readonly string[] = NODE_EXTS): RegExp {
   let source = '^'
   let last = 0
   for (const match of template.matchAll(TOKEN)) {
     const at = match.index ?? 0
-    source += escape(template.slice(last, at)) + tokenPattern(match[1] ?? '')
+    source += escape(template.slice(last, at)) + tokenPattern(match[1] ?? '', exts)
     last = at + match[0].length
   }
   return new RegExp(`${source}${escape(template.slice(last))}$`)
 }
 
 /** The module a relative path names under this template, or null when the path is not of that shape. */
-export function matchTemplate(template: string, relative: string): { module: string; ext: string } | null {
-  const groups = templateToRegExp(template).exec(relative)?.groups
+export function matchTemplate(template: string, relative: string, exts: readonly string[] = NODE_EXTS): { module: string; ext: string } | null {
+  const groups = templateToRegExp(template, exts).exec(relative)?.groups
   if (groups === undefined) {
     return null
   }
@@ -67,8 +72,8 @@ export function fillTemplate(template: string, module: string, ext: string): str
 }
 
 /** The test path as a person reads it in a message: `tests/utils/a.test.ts(x)`. */
-export function describeTestPath(layout: Layout, module: string): string {
-  return fillTemplate(layout.test, module, DISPLAY_EXT)
+export function describeTestPath(layout: Layout, module: string, displayExt: string = DISPLAY_EXT): string {
+  return fillTemplate(layout.test, module, displayExt)
 }
 
 /** The source path without its extension, as a person reads it: `src/utils/a`. */
@@ -78,6 +83,12 @@ export function describeSourcePath(layout: Layout, module: string): string {
 
 export function firstSegment(template: string): string {
   return template.split('/')[0] ?? template
+}
+
+/** The directory a template starts with when that is a literal, or null when it starts with a token (`{module}.gd` sits anywhere). */
+export function literalRoot(template: string): string | null {
+  const segment = firstSegment(template)
+  return segment.includes('{') ? null : segment
 }
 
 /** A template is usable when it has an extension and names the module one way or the other. */

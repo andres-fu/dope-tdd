@@ -14,6 +14,9 @@ describe('parseConfig', () => {
       exempt: ['src/main.tsx'],
       layout: DEFAULT_CONFIG.layout,
       roots: [],
+      stack: 'node',
+      stackSource: 'default',
+      godot: null,
       error: null,
     })
     expect(parseConfig('{"layout":"colocated","roots":["packages/*"]}').layout.name).toBe('colocated')

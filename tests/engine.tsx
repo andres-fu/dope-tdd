@@ -64,7 +64,7 @@ export type FakeWorld = {
   unreadable: Set<string>
 }
 
-export type FakeOptions = { store?: Readonly<Record<string, unknown>> }
+export type FakeOptions = { store?: Readonly<Record<string, unknown>>; env?: Readonly<Record<string, string>> }
 
 export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
@@ -91,6 +91,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   }
 
   mock.store(on, options.store)
+  mock.env(on, options.env ?? {})
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('ui.log', (_$, e) => {
@@ -105,7 +106,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
-    if (e.argv.some(arg => arg.includes('vitest.mjs') || arg.includes('jest.js'))) {
+    if (e.argv[0] !== 'git') {
       await world.onCatchRun()
       return world.catchRun === 'reject'
         ? { deny: 'timed out' }

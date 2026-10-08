@@ -1,8 +1,11 @@
-import { LAYOUTS, MIRROR, templateError } from './layout'
+import { MIRROR, templateError } from './layout'
 import type { Layout } from './layout'
+import { STACKS, defaultLayoutOf, isStackName, layoutNamed, stackOf } from './stacks'
+import type { StackName } from './stacks'
 
 export type GuardMode = 'enforce' | 'warn' | 'observe'
 export type Policy = GuardMode | 'exempt'
+export type StackSource = 'config' | 'detected' | 'default'
 
 export type GuardConfig = {
   mode: GuardMode
@@ -10,11 +13,26 @@ export type GuardConfig = {
   exempt: readonly string[]
   layout: Layout
   roots: readonly string[]
+  /** The language whose conventions apply: named in the file, detected from the project root, or Node by default. */
+  stack: StackName
+  stackSource: StackSource
+  /** The Godot binary for a gdUnit4 run, when `godot` is not on PATH. */
+  godot: string | null
   error: string | null
 }
 
 export const CONFIG_FILE = 'dope-tdd.json'
-export const DEFAULT_CONFIG: GuardConfig = { mode: 'enforce', scope: [], exempt: [], layout: MIRROR, roots: [], error: null }
+export const DEFAULT_CONFIG: GuardConfig = {
+  mode: 'enforce',
+  scope: [],
+  exempt: [],
+  layout: MIRROR,
+  roots: [],
+  stack: 'node',
+  stackSource: 'default',
+  godot: null,
+  error: null,
+}
 
 const MODES: readonly GuardMode[] = ['enforce', 'warn', 'observe']
 
@@ -32,14 +50,15 @@ function pathList(value: unknown, field: string): string[] {
   return value
 }
 
-function parseLayout(value: unknown): Layout {
+function parseLayout(value: unknown, stack: StackName): Layout {
+  const presets = stackOf(stack)
   if (value === undefined) {
-    return MIRROR
+    return defaultLayoutOf(presets)
   }
   if (typeof value === 'string') {
-    const preset = (LAYOUTS as Record<string, Layout | undefined>)[value]
+    const preset = layoutNamed(presets, value)
     if (preset === undefined) {
-      throw new Error(`layout must be one of ${Object.keys(LAYOUTS).join(', ')}, or { source, test } templates`)
+      throw new Error(`layout must be one of ${Object.keys(presets.layouts).join(', ')} for ${stack}, or { source, test } templates`)
     }
     return preset
   }
@@ -57,9 +76,43 @@ function parseLayout(value: unknown): Layout {
   return { name: 'custom', source, test }
 }
 
-export function parseConfig(text: string | null): GuardConfig {
-  if (text === null) {
+function parseStack(value: unknown, detected: StackName | undefined): { stack: StackName; stackSource: StackSource } {
+  if (value === undefined) {
+    return detected === undefined ? { stack: 'node', stackSource: 'default' } : { stack: detected, stackSource: 'detected' }
+  }
+  if (!isStackName(value)) {
+    throw new Error(`stack must be one of ${Object.keys(STACKS).join(', ')}`)
+  }
+  return { stack: value, stackSource: 'config' }
+}
+
+function parseGodot(value: unknown): string | null {
+  if (value === undefined) {
+    return null
+  }
+  if (typeof value !== 'string' || value === '') {
+    throw new Error('godot must be the path of the Godot binary')
+  }
+  return value
+}
+
+/** The defaults for a stack that was detected rather than configured, with the stack's own exemptions. */
+function defaultsFor(detected: StackName | undefined): GuardConfig {
+  if (detected === undefined) {
     return DEFAULT_CONFIG
+  }
+  const stack = stackOf(detected)
+  return { ...DEFAULT_CONFIG, stack: detected, stackSource: 'detected', layout: defaultLayoutOf(stack), exempt: stack.exempt }
+}
+
+/**
+ * `detected` is the stack the project root's files point at, when the file
+ * does not name one. The stack decides which layout presets exist and what
+ * `{ext}` accepts.
+ */
+export function parseConfig(text: string | null, detected?: StackName): GuardConfig {
+  if (text === null) {
+    return defaultsFor(detected)
   }
   try {
     const raw: unknown = JSON.parse(text)
@@ -71,17 +124,22 @@ export function parseConfig(text: string | null): GuardConfig {
     if (!isMode(mode)) {
       throw new Error(`mode must be one of ${MODES.join(', ')}`)
     }
+    const { stack, stackSource } = parseStack(fields.stack, detected)
+    const own = pathList(fields.exempt, 'exempt')
     return {
       mode,
       scope: pathList(fields.scope, 'scope'),
-      exempt: pathList(fields.exempt, 'exempt'),
-      layout: parseLayout(fields.layout),
+      exempt: [...own, ...stackOf(stack).exempt.filter(glob => !own.includes(glob))],
+      layout: parseLayout(fields.layout, stack),
       roots: pathList(fields.roots, 'roots'),
+      stack,
+      stackSource,
+      godot: parseGodot(fields.godot),
       error: null,
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    return { ...DEFAULT_CONFIG, error: `${CONFIG_FILE}: ${reason}` }
+    return { ...defaultsFor(detected), error: `${CONFIG_FILE}: ${reason}` }
   }
 }
 
@@ -126,13 +184,20 @@ export function describeLayout(layout: Layout): string {
   return `${layout.name} (${layout.source} ↔ ${layout.test})`
 }
 
+export function describeStack(config: GuardConfig): string {
+  const how = config.stackSource === 'config' ? `from ${CONFIG_FILE}` : config.stackSource === 'detected' ? 'detected' : 'default'
+  return `stack: ${config.stack} (${how})`
+}
+
 export function describeConfig(config: GuardConfig): string[] {
   const scope = config.scope.length === 0 ? '' : ` in ${config.scope.join(', ')}`
   return [
     `mode: ${config.mode}${scope}`,
     ...(config.exempt.length === 0 ? [] : [`exempt: ${config.exempt.join(', ')}`]),
+    ...(config.stack === 'node' && config.stackSource === 'default' ? [] : [describeStack(config)]),
     `layout: ${describeLayout(config.layout)}`,
     ...(config.roots.length === 0 ? [] : [`roots: ${config.roots.join(', ')}`]),
+    ...(config.godot === null ? [] : [`godot: ${config.godot}`]),
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),
   ]
 }
@@ -166,8 +231,10 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
     ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
     ...listChange('exempt', before.exempt, after.exempt),
     ...listChange('scope', before.scope, after.scope),
+    ...(before.stack === after.stack ? [] : [`stack ${before.stack} → ${after.stack}`]),
     ...(sameLayout(before.layout, after.layout) ? [] : [`layout ${before.layout.name} → ${after.layout.name}`]),
     ...listChange('roots', before.roots, after.roots),
+    ...(before.godot === after.godot ? [] : [`godot ${before.godot ?? 'PATH'} → ${after.godot ?? 'PATH'}`]),
     ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),
   ]
   return parts.length === 0 ? null : parts.join('; ')

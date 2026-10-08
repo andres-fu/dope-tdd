@@ -1,26 +1,48 @@
-import { CONFIG_FILE, describeLayout } from './config'
+import { CONFIG_FILE, describeLayout, globMatches } from './config'
 import type { GuardConfig } from './config'
 import { LAYOUTS } from './layout'
-import type { Layout, LayoutName } from './layout'
+import type { Layout, NodeLayoutName } from './layout'
 import { classifyPath, sourcePathFor, splitRoot, testFileFor } from './mirror'
 import type { LayoutConfig } from './mirror'
+import { STACKS, defaultLayoutOf, detectStackFrom, isCodeFileAny, isCodeFileIn, isTestFileIn, stackMarker } from './stacks'
+import type { Stack, StackName } from './stacks'
 
-/** What a walk of the project found: every code file and every directory with a package.json, relative to the root. */
-export type Survey = { files: readonly string[]; packageDirs: readonly string[] }
+/** What a walk of the project found: every code file and every directory with a package.json, relative to the root, and the names at the root. */
+export type Survey = { files: readonly string[]; packageDirs: readonly string[]; rootEntries?: readonly string[] }
 
-export type Inference = { layout: Layout; roots: string[]; testFiles: number; reason: string }
-
-const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/
-const CODE_FILE = /\.[cm]?[jt]sx?$/
-const EXTS = ['ts', 'tsx', 'js', 'jsx']
-const EXAMPLES = 3
-
-export function isTestFile(path: string): boolean {
-  return TEST_FILE.test(path)
+export type Inference = {
+  stack: StackName
+  stackReason: string
+  layout: Layout
+  roots: string[]
+  testFiles: number
+  reason: string
 }
 
-export function isCodeFile(path: string): boolean {
-  return CODE_FILE.test(path) && !path.endsWith('.d.ts')
+const EXAMPLES = 3
+
+export function isTestFile(path: string, stack: Stack = STACKS.node): boolean {
+  return isTestFileIn(stack, path)
+}
+
+/** Code of the given stack, or of any stack when none is given (a survey before the stack is known). */
+export function isCodeFile(path: string, stack?: Stack): boolean {
+  return stack === undefined ? isCodeFileAny(path) : isCodeFileIn(stack, path)
+}
+
+/** The stack a survey points at: a marker at the root first, then whichever stack owns most of the code files, then Node. */
+export function inferStack(survey: Survey): { stack: StackName; reason: string } {
+  const entries = survey.rootEntries ?? []
+  const marked = detectStackFrom(entries)
+  if (marked !== null) {
+    return { stack: marked, reason: `${stackMarker(entries, marked) ?? 'a marker'} at the root` }
+  }
+  const counts = Object.values(STACKS).map(stack => ({ stack, count: survey.files.filter(file => isCodeFileIn(stack, file)).length }))
+  const most = counts.reduce((best, entry) => (entry.count > best.count ? entry : best), { stack: STACKS.node, count: 0 })
+  if (most.count === 0) {
+    return { stack: 'node', reason: 'no code found, assuming Node' }
+  }
+  return { stack: most.stack.name, reason: `${most.count} ${most.stack.name} file${most.count === 1 ? '' : 's'}, no marker at the root` }
 }
 
 /** Package directories that hold a `src/`, grouped into `parent/*` globs when siblings share a parent. */
@@ -36,7 +58,7 @@ function inferRoots(survey: Survey): string[] {
   return roots.sort()
 }
 
-function shapeOf(relative: string): Exclude<LayoutName, 'custom'> | null {
+function shapeOf(relative: string): NodeLayoutName | null {
   if (relative.startsWith('tests/')) {
     return 'mirror'
   }
@@ -49,11 +71,11 @@ function shapeOf(relative: string): Exclude<LayoutName, 'custom'> | null {
   return null
 }
 
-export function inferLayout(survey: Survey): Inference {
+function nodeInference(survey: Survey, stackReason: string): Inference {
   const roots = inferRoots(survey)
-  const tally: Record<Exclude<LayoutName, 'custom'>, number> = { mirror: 0, colocated: 0, __tests__: 0 }
+  const tally: Record<NodeLayoutName, number> = { mirror: 0, colocated: 0, __tests__: 0 }
   let testFiles = 0
-  for (const file of survey.files.filter(isTestFile)) {
+  for (const file of survey.files.filter(file => isTestFileIn(STACKS.node, file))) {
     const split = splitRoot(file, roots)
     if (split === null) {
       continue
@@ -64,26 +86,73 @@ export function inferLayout(survey: Survey): Inference {
       tally[shape]++
     }
   }
-  const order: Exclude<LayoutName, 'custom'>[] = ['mirror', 'colocated', '__tests__']
+  const order: NodeLayoutName[] = ['mirror', 'colocated', '__tests__']
   const best = order.reduce((winner, name) => (tally[name] > tally[winner] ? name : winner), 'mirror')
   const reason =
     testFiles === 0
       ? 'no test files found, assuming the default'
       : `${tally[best]} of ${testFiles} test file${testFiles === 1 ? '' : 's'} ${best === 'mirror' ? 'sit under tests/' : best === 'colocated' ? 'sit next to their source' : 'sit in __tests__ folders'}`
-  return { layout: LAYOUTS[best], roots, testFiles, reason }
+  return { stack: 'node', stackReason, layout: LAYOUTS[best], roots, testFiles, reason }
 }
 
-function examples(survey: Survey, config: LayoutConfig): string[] {
+/**
+ * For every other stack: the preset under which the most test files pair with
+ * a source file that exists, then the most that read as tests at all; ties go
+ * to the stack's default. Exempt paths (an addons folder) do not count.
+ */
+function presetInference(survey: Survey, stack: Stack, stackReason: string): Inference {
+  const root = 'R:'
+  const files = survey.files.filter(file => !stack.exempt.some(glob => globMatches(glob, file)))
+  const known = new Set(files)
+  const testFiles = files.filter(file => isTestFileIn(stack, file))
+  const fallback = defaultLayoutOf(stack)
+  if (testFiles.length === 0) {
+    return { stack: stack.name, stackReason, layout: fallback, roots: [], testFiles: 0, reason: 'no test files found, assuming the default' }
+  }
+  const score = (layout: Layout): { pairs: number; matched: number } => {
+    const config: LayoutConfig = { layout, roots: [], stack: stack.name }
+    let pairs = 0
+    let matched = 0
+    for (const file of testFiles) {
+      const target = classifyPath(root, `${root}/${file}`, config)
+      if (target.kind !== 'test') {
+        continue
+      }
+      matched++
+      if (stack.exts.some(ext => known.has(sourceFile(config, target.module, ext)))) {
+        pairs++
+      }
+    }
+    return { pairs, matched }
+  }
+  let best = { layout: fallback, ...score(fallback) }
+  for (const layout of Object.values(stack.layouts)) {
+    const candidate = { layout, ...score(layout) }
+    if (candidate.pairs > best.pairs || (candidate.pairs === best.pairs && candidate.matched > best.matched)) {
+      best = candidate
+    }
+  }
+  const reason = `${best.pairs} of ${testFiles.length} test file${testFiles.length === 1 ? '' : 's'} pair with a source under ${best.layout.name}`
+  return { stack: stack.name, stackReason, layout: best.layout, roots: [], testFiles: testFiles.length, reason }
+}
+
+/** `named` is the stack the config pins, when it does; otherwise the survey decides. */
+export function inferLayout(survey: Survey, named?: StackName): Inference {
+  const chosen = named === undefined ? inferStack(survey) : { stack: named, reason: `named in ${CONFIG_FILE}` }
+  return chosen.stack === 'node' ? nodeInference(survey, chosen.reason) : presetInference(survey, STACKS[chosen.stack], chosen.reason)
+}
+
+function examples(survey: Survey, config: LayoutConfig, stack: Stack): string[] {
   const root = 'R:'
   const known = new Set(survey.files)
   return survey.files
-    .filter(isTestFile)
+    .filter(file => isTestFileIn(stack, file))
     .flatMap(file => {
       const target = classifyPath(root, `${root}/${file}`, config)
       if (target.kind !== 'test') {
         return []
       }
-      const source = EXTS.map(ext => testFileFor(config, target.module, ext).replace(/^.*$/, () => sourceFile(config, target.module, ext))).find(candidate => known.has(candidate))
+      const source = stack.exts.map(ext => testFileFor(config, target.module, ext).replace(/^.*$/, () => sourceFile(config, target.module, ext))).find(candidate => known.has(candidate))
       return [`  ${file} ↔ ${source ?? `${sourcePathFor(config, target.module)}.* (no source file found)`}`]
     })
     .slice(0, EXAMPLES)
@@ -94,25 +163,35 @@ function sourceFile(config: LayoutConfig, module: string, ext: string): string {
 }
 
 export function suggestedConfig(current: GuardConfig, inferred: Inference): Record<string, unknown> {
+  const stack = STACKS[inferred.stack]
   return {
     ...(current.mode === 'enforce' ? {} : { mode: current.mode }),
     ...(current.scope.length === 0 ? {} : { scope: current.scope }),
-    ...(current.exempt.length === 0 ? {} : { exempt: current.exempt }),
-    ...(inferred.layout.name === 'mirror' ? {} : { layout: inferred.layout.name }),
+    ...(current.exempt.filter(glob => !stack.exempt.includes(glob)).length === 0 ? {} : { exempt: current.exempt.filter(glob => !stack.exempt.includes(glob)) }),
+    ...(inferred.stack === 'node' ? {} : { stack: inferred.stack }),
+    ...(inferred.layout.name === defaultLayoutOf(stack).name ? {} : { layout: inferred.layout.name }),
     ...(inferred.roots.length === 0 ? {} : { roots: inferred.roots }),
+    ...(current.godot === null ? {} : { godot: current.godot }),
   }
 }
 
 export function formatSetup(current: GuardConfig, inferred: Inference, survey: Survey, hasConfigFile: boolean): string {
-  const config: LayoutConfig = { layout: inferred.layout, roots: inferred.roots }
+  const stack = STACKS[inferred.stack]
+  const config: LayoutConfig = { layout: inferred.layout, roots: inferred.roots, stack: inferred.stack }
   const suggestion = JSON.stringify(suggestedConfig(current, inferred), null, 2)
-  const same = current.layout.source === inferred.layout.source && current.layout.test === inferred.layout.test && current.roots.join() === inferred.roots.join()
+  const same =
+    current.stack === inferred.stack &&
+    current.layout.source === inferred.layout.source &&
+    current.layout.test === inferred.layout.test &&
+    current.roots.join() === inferred.roots.join()
+  const currentStack = current.stack === 'node' && current.stackSource === 'default' ? '' : `; stack ${current.stack}`
   return [
     'dope-tdd setup',
+    ...(inferred.stack === 'node' && inferred.stackReason.startsWith('no code') ? [] : [`detected stack: ${inferred.stack} (${inferred.stackReason})`]),
     `detected layout: ${describeLayout(inferred.layout)}; ${inferred.reason}`,
     ...(inferred.roots.length === 0 ? [] : [`detected roots: ${inferred.roots.join(', ')}`]),
-    ...(inferred.testFiles === 0 ? [] : ['examples:', ...examples(survey, config)]),
-    `current ${CONFIG_FILE}: ${hasConfigFile ? describeLayout(current.layout) : 'none (mirror by default)'}${current.roots.length === 0 ? '' : `; roots ${current.roots.join(', ')}`}`,
+    ...(inferred.testFiles === 0 ? [] : ['examples:', ...examples(survey, config, stack)]),
+    `current ${CONFIG_FILE}: ${hasConfigFile ? describeLayout(current.layout) : 'none (mirror by default)'}${current.roots.length === 0 ? '' : `; roots ${current.roots.join(', ')}`}${currentStack}`,
     ...(same
       ? ['the current layout already matches; nothing to write']
       : [`suggested ${CONFIG_FILE}:`, suggestion, `/tdd setup write saves it (mode, scope and exempt are kept)`]),

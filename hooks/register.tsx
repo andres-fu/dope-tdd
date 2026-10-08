@@ -22,8 +22,11 @@ import {
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
-import { classifyPath, isTestRun, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFiles, isTruncated, neverRan, runOutcome } from './runOutcome'
+import { classifyPath, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { failedFilesIn, isTestRun, namedTestFile, readRun, runnersFor } from './runners'
+import { isTruncated, neverRan } from './runOutcome'
+import { detectStackFrom } from './stacks'
+import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
 import type { Survey } from './setup'
 import {
@@ -62,21 +65,17 @@ const MAX_SOURCE_CHARS = 10_000
 const JOURNAL_PREFIX = 'catch-journal:'
 /** Where a change left alone after a check is kept, next to its source, named in the toast. */
 const KEPT_SUFFIX = '.dope-tdd.kept'
-// Any test-looking file named in a command; the layout then says whether it is one of ours.
-const TEST_FILE_IN_COMMAND = /(?:^|[\s'"=])((?:[A-Za-z]:)?[\w./\\-]+\.(?:test|spec)\.[cm]?[jt]sx?)\b/
 const SURVEY_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', 'out', '.next', '.cache', 'target', 'vendor'])
 const SURVEY_DEPTH = 6
 const SURVEY_CAP = 5_000
-const RUNNER_FILES: readonly (readonly [RunnerKind, string])[] = [
-  ['vitest', 'node_modules/vitest/vitest.mjs'],
-  ['jest', 'node_modules/jest/bin/jest.js'],
-]
 
 const stats = atom({ plugin: 'dope-tdd', key: 'stats' } as const, INITIAL_STATS)
 const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
 
 /** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
 let cachedConfig: { root: string; config: GuardConfig } | null = null
+/** The stack each root's files pointed at when first listed; `/tdd setup` looks again. */
+const detectedStacks = new Map<string, StackName | undefined>()
 /** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
 const repairedRoots = new Set<string>()
 let guardFailureToasted = false
@@ -111,8 +110,33 @@ async function rememberUnlock($: EngineInterface, root: string, module: string, 
   await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
 }
 
+/** The stack the root's own files say the project is, when dope-tdd.json does not name one. */
+async function detectStack($: EngineInterface, root: string): Promise<StackName | undefined> {
+  if (detectedStacks.has(root)) {
+    return detectedStacks.get(root)
+  }
+  let detected: StackName | undefined
+  try {
+    detected = detectStackFrom((await $.fs.list(root)).map(entry => entry.name)) ?? undefined
+  } catch {
+    detected = undefined
+  }
+  detectedStacks.set(root, detected)
+  return detected
+}
+
+/** GODOT_BIN, the variable gdUnit4's own wrapper reads, when the config does not name the binary. */
+async function godotFromEnv($: EngineInterface): Promise<string | null> {
+  try {
+    const value = await $.env.get('GODOT_BIN')
+    return typeof value === 'string' && value !== '' ? value : null
+  } catch {
+    return null
+  }
+}
+
 async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
-  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`))
+  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`), await detectStack($, root))
   cachedConfig = { root, config }
   return config
 }
@@ -160,14 +184,23 @@ function parentDir(dir: string): string | null {
   return cut === trimmed || cut === '' ? null : cut
 }
 
-type Runner = { kind: RunnerKind; root: string }
+type Runner = { kind: RunnerKind; root: string; tool: string }
 
-/** Walks up from the project root, because a monorepo hoists the runner into a parent node_modules. */
-async function detectRunner($: EngineInterface, root: string): Promise<Runner | null> {
+/** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
+async function detectRunner($: EngineInterface, root: string, config: GuardConfig): Promise<Runner | null> {
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
-    for (const [kind, file] of RUNNER_FILES) {
-      if (await $.fs.exists(`${dir}/${file}`)) {
-        return { kind, root: dir }
+    for (const runner of runnersFor(config.stack)) {
+      for (const marker of runner.markers) {
+        if (await $.fs.exists(`${dir}/${marker}`)) {
+          let tool: string | null = null
+          for (const candidate of runner.tools) {
+            if (await $.fs.exists(`${dir}/${candidate}`)) {
+              tool = `${dir}/${candidate}`
+              break
+            }
+          }
+          return { kind: runner.kind, root: dir, tool: tool ?? runner.fallback }
+        }
       }
     }
   }
@@ -297,6 +330,7 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
 async function verifyCatch(
   $: EngineInterface,
   root: string,
+  config: GuardConfig,
   s: TddStats,
   module: string,
   editedSinceRun: boolean,
@@ -322,10 +356,11 @@ async function verifyCatch(
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
   }
-  const runner = await detectRunner($, root)
+  const runner = await detectRunner($, root, config)
   if (runner === null) {
     return catchOutcome('no-runner')
   }
+  const godot = config.godot ?? (await godotFromEnv($))
 
   // The lock first, then the journal: a check that loses the lock never touches another check's journal.
   const locked = await change($, state => acquireCheck(state, module, nowMs))
@@ -348,7 +383,7 @@ async function verifyCatch(
     await $.fs.write(path, before)
     reverted = true
     try {
-      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath)), {
+      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath), runner.tool, { godot }), {
         cwd: root,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
@@ -405,6 +440,7 @@ function sourceModuleOf(root: string, path: string, config: GuardConfig): string
 async function surveyProject($: EngineInterface, root: string): Promise<Survey> {
   const files: string[] = []
   const packageDirs: string[] = []
+  const rootEntries: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > SURVEY_DEPTH || files.length >= SURVEY_CAP) {
       return
@@ -417,6 +453,9 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
     }
     for (const entry of entries) {
       const relative = dir === '' ? entry.name : `${dir}/${entry.name}`
+      if (dir === '') {
+        rootEntries.push(entry.name)
+      }
       if (entry.kind === 'dir') {
         if (!SURVEY_SKIP.has(entry.name) && !entry.name.startsWith('.')) {
           await walk(relative, depth + 1)
@@ -431,7 +470,7 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
     }
   }
   await walk('', 0)
-  return { files, packageDirs }
+  return { files, packageDirs, rootEntries }
 }
 
 function parsedJson(text: string | null): Record<string, unknown> {
@@ -445,16 +484,17 @@ function parsedJson(text: string | null): Record<string, unknown> {
 
 /** `/tdd setup` shows what the project looks like and the config that fits; `/tdd setup write` saves it. */
 async function setupText($: EngineInterface, root: string, write: boolean, nowMs: number): Promise<string> {
+  detectedStacks.delete(root)
   const survey = await surveyProject($, root)
-  const inferred = inferLayout(survey)
   const configPath = `${root}/${CONFIG_FILE}`
   const existing = await readWhole($, configPath)
-  const current = parseConfig(existing)
+  const current = parseConfig(existing, await detectStack($, root))
+  const inferred = inferLayout(survey, current.stackSource === 'config' ? current.stack : undefined)
   const text = formatSetup(current, inferred, survey, existing !== null)
   if (!write) {
     return text
   }
-  const { layout: _layout, roots: _roots, ...kept } = parsedJson(existing)
+  const { layout: _layout, roots: _roots, stack: _stack, ...kept } = parsedJson(existing)
   const merged = { ...kept, ...suggestedConfig(current, inferred) }
   await $.fs.write(configPath, `${JSON.stringify(merged, null, 2)}\n`)
   const after = await loadConfig($, root)
@@ -738,17 +778,17 @@ async function guardShell(
   const output = result.text ?? ''
   // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
   const ran = isTestRun(command) && !neverRan(output)
-  const outcome = ran ? runOutcome(output) : 'none'
+  const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
-    const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
+    const named = namedTestFile(command, config.stack) ?? undefined
     const target = named === undefined ? null : classifyPath(root, absolutePath(root, named), config)
     const targeted = target?.kind === 'test' ? await change($, s => recordRunTarget(s, target.module)) : updated
     if (outcome === 'fail') {
-      const failed = failedFiles(output)
+      const failed = failedFilesIn(output)
       const own = targeted.current?.module
       // The suite is red; the module is red only if its own test is among the files that failed.
       elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed, config).includes(own) ? failed : []
@@ -759,7 +799,7 @@ async function guardShell(
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
   const check =
-    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs)
+    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs)
   // Red, then the test edited, then green with the module's code unchanged: the green came from the test.
   const testChanged = passedModule !== undefined && check === 'unchecked' && before_?.sawRed === true && before_.testTouchedAfterRed
   if (passedModule !== undefined) {

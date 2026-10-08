@@ -1,19 +1,18 @@
 import { globMatches } from './config'
-import { MIRROR, describeSourcePath, describeTestPath, fillTemplate, firstSegment, matchTemplate } from './layout'
+import { MIRROR, describeSourcePath, describeTestPath, fillTemplate, literalRoot, matchTemplate } from './layout'
 import type { Layout } from './layout'
+import { stackOf } from './stacks'
+import type { StackName } from './stacks'
 
-const COMMAND_START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
-const RUNNER_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
-const PACKAGE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
-const TEST_RUN = new RegExp(`${COMMAND_START}(?:${RUNNER_BINARY}|${PACKAGE_SCRIPT})`)
+export { isTestRun } from './runners'
 
 export type ClassifiedPath =
   | { kind: 'source'; module: string }
   | { kind: 'test'; module: string }
   | { kind: 'other' }
 
-/** The layout and the package roots it applies under; no roots means the session root itself. */
-export type LayoutConfig = { layout: Layout; roots: readonly string[] }
+/** The layout, the package roots it applies under (none means the session root itself), and the stack whose extensions it takes. */
+export type LayoutConfig = { layout: Layout; roots: readonly string[]; stack?: StackName }
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = { layout: MIRROR, roots: [] }
 
@@ -63,12 +62,18 @@ export function classifyPath(root: string, path: string, config: LayoutConfig = 
   if (split === null) {
     return { kind: 'other' }
   }
+  const exts = stackOf(config.stack).exts
   // The test template first: under a colocated layout a test file is also of the source's shape.
-  const test = matchTemplate(config.layout.test, split.rest)
+  const test = matchTemplate(config.layout.test, split.rest, exts)
   if (test !== null) {
     return { kind: 'test', module: withPkg(split.pkg, test.module) }
   }
-  const source = matchTemplate(config.layout.source, split.rest)
+  // A file inside a tests folder of its own that is not a test (a fixture, a conftest) is nobody's source.
+  const testsRoot = literalRoot(config.layout.test)
+  if (testsRoot !== null && testsRoot !== literalRoot(config.layout.source) && split.rest.startsWith(`${testsRoot}/`)) {
+    return { kind: 'other' }
+  }
+  const source = matchTemplate(config.layout.source, split.rest, exts)
   if (source !== null) {
     return { kind: 'source', module: withPkg(split.pkg, source.module) }
   }
@@ -87,7 +92,7 @@ function joined(pkg: string, relative: string): string {
 /** `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch. */
 export function testPathFor(config: LayoutConfig, module: string): string {
   const { pkg, rest } = moduleParts(module, config.roots)
-  return joined(pkg, describeTestPath(config.layout, rest))
+  return joined(pkg, describeTestPath(config.layout, rest, stackOf(config.stack).displayExt))
 }
 
 /** `src/utils/a`: how messages name the source of a module. */
@@ -102,12 +107,11 @@ export function testFileFor(config: LayoutConfig, module: string, ext: string): 
   return joined(pkg, fillTemplate(config.layout.test, rest, ext))
 }
 
-/** The top-level directories git is asked about: where the templates start, or where the roots start. */
+/** The top-level directories git is asked about: where the templates start, or where the roots start; the whole root when a template starts anywhere. */
 export function watchedDirs(config: LayoutConfig): string[] {
-  const dirs = config.roots.length > 0 ? config.roots.map(firstSegment) : [firstSegment(config.layout.source), firstSegment(config.layout.test)]
-  return [...new Set(dirs)]
-}
-
-export function isTestRun(command: string): boolean {
-  return TEST_RUN.test(command)
+  if (config.roots.length > 0) {
+    return [...new Set(config.roots.map(root => root.split('/')[0] ?? root))]
+  }
+  const dirs = [literalRoot(config.layout.source), literalRoot(config.layout.test)]
+  return dirs.includes(null) ? ['.'] : [...new Set(dirs as string[])]
 }

@@ -347,6 +347,8 @@ async function verifyCatch(
   editedSinceRun: boolean,
   greenRunMs: number,
   nowMs: number,
+  /** The module saw red in this cycle and its test was not edited after that red. */
+  provedByRed = false,
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
@@ -354,8 +356,13 @@ async function verifyCatch(
     // The backstop saw an edit (a patch, a formatter, a copy) that the text capture did not: say so, never stay silent.
     return editedSinceRun && testPath !== undefined ? { kind: 'unverified', reason: 'change not captured' } : 'unchecked'
   }
-  if (testPath === undefined || cycleChange.before === cycleChange.after) {
+  if (testPath === undefined) {
     return 'unchecked'
+  }
+  if (cycleChange.before === cycleChange.after) {
+    // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
+    // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
+    return provedByRed ? { kind: 'proven' } : 'unchecked'
   }
   if (cycleChange.kind === 'refactor') {
     return 'refactor'
@@ -847,7 +854,7 @@ async function guardShell(
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
   const check =
-    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs)
+    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed)
   // Red, then the test edited, then green with the module's code unchanged: the green came from the test.
   const testChanged = passedModule !== undefined && check === 'unchecked' && before_?.sawRed === true && before_.testTouchedAfterRed
   if (passedModule !== undefined) {

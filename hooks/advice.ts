@@ -110,6 +110,9 @@ function greenAdvice(
   if (check?.kind === 'missed') {
     return missedAdvice(module, sawRed, check.slipped)
   }
+  if (check?.kind === 'proven') {
+    return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN. ${REFACTOR}`
+  }
   if (check?.kind === 'caught') {
     return sawRed
       ? `dope-tdd: GREEN on ${module}, saw red, and its test catches the change. ${REFACTOR}`

@@ -54,6 +54,9 @@ function drawCatchWord(el: AnyElements, outcome: CatchOutcome | { kind: 'refacto
   if (outcome.kind === 'caught') {
     return <Text bold color={ACCENT.pass}>CAUGHT</Text>
   }
+  if (outcome.kind === 'proven') {
+    return <Text bold color={ACCENT.pass}>PROVEN</Text>
+  }
   if (outcome.kind === 'missed') {
     return <Text bold color={ACCENT.ember}>MISSED</Text>
   }
@@ -114,6 +117,7 @@ function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
     <Box flexDirection="row" gap={2}>
       <Text dimColor>{`CYCLES ${s.cycles}`}</Text>
       {drawCount(el, s.caught, 'CAUGHT', ACCENT.pass)}
+      {s.proven > 0 && drawCount(el, s.proven, 'PROVEN', ACCENT.pass)}
       {drawCount(el, s.missed, 'MISSED', ACCENT.ember)}
       {s.refactors > 0 && drawCount(el, s.refactors, 'REFACTOR', ACCENT.pass)}
       {s.neverSawRed > 0 && drawCount(el, s.neverSawRed, 'NEVER SAW RED', ACCENT.paused)}

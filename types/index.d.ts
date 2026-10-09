@@ -12,6 +12,7 @@ export type EventKind =
   | 'paused'
   | 'resumed'
   | 'caught'
+  | 'proven'
   | 'missed'
   | 'unverified'
   | 'refactor'
@@ -23,7 +24,8 @@ export type EventKind =
   | 'hollow-touch'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
-export type CatchOutcome = { kind: 'caught' } | { kind: 'missed'; slipped?: readonly string[] } | { kind: 'unverified'; reason: string }
+/** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */
+export type CatchOutcome = { kind: 'caught' } | { kind: 'proven' } | { kind: 'missed'; slipped?: readonly string[] } | { kind: 'unverified'; reason: string }
 
 export type ChangeKind = 'fix' | 'refactor'
 
@@ -96,6 +98,7 @@ export type TddStats = {
   changes: Readonly<Record<string, CycleChange>>
   checking: CheckLock | null
   caught: number
+  proven: number
   missed: number
   unverified: number
   refactors: number

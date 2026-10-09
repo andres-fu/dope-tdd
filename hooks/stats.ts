@@ -44,6 +44,7 @@ export const INITIAL_STATS: TddStats = {
   changes: {},
   checking: null,
   caught: 0,
+  proven: 0,
   missed: 0,
   unverified: 0,
   refactors: 0,
@@ -105,6 +106,7 @@ export function normalizeStats(stored: unknown): TddStats {
     // An older version stored a boolean here; a stuck `true` from a crash is exactly what must not survive.
     checking: pick('checking', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.sinceMs === 'number')),
     caught: pick('caught', isNumber),
+    proven: pick('proven', isNumber),
     missed: pick('missed', isNumber),
     unverified: pick('unverified', isNumber),
     refactors: pick('refactors', isNumber),
@@ -374,6 +376,8 @@ export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome |
   const counted =
     outcome.kind === 'caught'
       ? { ...cleared, caught: s.caught + 1 }
+      : outcome.kind === 'proven'
+        ? { ...cleared, proven: s.proven + 1 }
       : outcome.kind === 'missed'
         ? { ...cleared, missed: s.missed + 1 }
         : { ...cleared, unverified: s.unverified + 1 }

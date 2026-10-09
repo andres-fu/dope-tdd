@@ -56,9 +56,9 @@ function eventLines(s: TddStats, nowMs: number): string[] {
 }
 
 function catchLine(s: TddStats): string[] {
-  return s.caught + s.missed + s.unverified + s.refactors === 0
+  return s.caught + s.proven + s.missed + s.unverified + s.refactors === 0
     ? []
-    : [`catch check: caught ${s.caught} · missed ${s.missed} · unverified ${s.unverified} · refactors ${s.refactors}`]
+    : [`catch check: caught ${s.caught} · proven ${s.proven} · missed ${s.missed} · unverified ${s.unverified} · refactors ${s.refactors}`]
 }
 
 function workaroundLine(s: TddStats): string[] {
@@ -107,6 +107,7 @@ export function formatGlossary(): string {
     '  NEVER SAW RED  the test went green without ever failing; it has proven nothing yet',
     '  TEST CHANGED   the test was edited after red and the code was not; the green came from the test',
     '  CAUGHT         with the change undone, the test fails: it guards this change',
+    '  PROVEN         the code was broken on purpose, the test went red, and the code is back as it was: the red was the check',
     '  MISSED         with the change undone, the test still passes: it does not guard this change',
     '  UNVERIFIED     the catch check could not run; /tdd has the reason',
     '  REFACTOR       code changed while green with the test untouched; not re-checked',

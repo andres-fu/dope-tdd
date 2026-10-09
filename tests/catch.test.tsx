@@ -62,7 +62,7 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/caught 0 · missed 0 · unverified 1/)
+    expect(status.text).toMatch(/caught 0 · proven 0 · missed 0 · unverified 1/)
     expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner summary/)
   })
 
@@ -139,7 +139,7 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/a refactor, not re-checked/)
   })
 
-  test('restoring the original text after breaking it on purpose is not a change to check', async ($, on) => {
+  test('restoring the original text after breaking it on purpose leaves nothing to revert: no file is touched, and the red is the proof', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(SOURCE, 'export const a = 1')
     await touchTest($, world, 'utils/formatDuration')
@@ -152,7 +152,7 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.writes).toEqual([])
-    expect(status.text).not.toMatch(/catch check/)
+    expect(status.text).toMatch(/proven 1/)
     expect(status.text).toMatch(/never saw red 0/)
   })
 
@@ -452,5 +452,45 @@ describe('/tdd receipt', () => {
     const named = await $.command.run({ command: 'tdd', args: 'receipt utils/formatDuration' } as never)
     expect(named.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
     expect(named.text).toMatch(/No change to utils\/formatDuration is on record/)
+  })
+})
+
+describe('PROVEN: break, red, restore, green', () => {
+  async function restore($: Parameters<typeof runCommand>[0]) {
+    return $.tool.call({ tool: 'Edit', file_path: SOURCE, old_string: 'b', new_string: 'a' } as never)
+  }
+
+  test('pins that went red on a deliberate break and green on the restored code are proven, and the agent is told', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await restore($)
+
+    const green = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const a = 1')
+    expect(green.context?.join(' ')).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
+    expect(status.text).toMatch(/catch check: caught 0 · proven 1 · missed 0/)
+    // No runner was started: there was nothing to revert.
+    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+  })
+
+  test('a test edited after the red with the code restored is not proof: that stays TEST CHANGED', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'utils/formatDuration')
+    await restore($)
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/proven 1/)
   })
 })

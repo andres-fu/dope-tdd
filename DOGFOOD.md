@@ -128,3 +128,6 @@ from io.ts anyway, then wrote duplicate tests in test/io.test.ts to get through,
 after its file, and pairing by name connects nothing. A real engineer reads the import. Fixed: a test
 covers what it imports (type-only imports excluded; .js imports name .ts files; Python dotted and
 GDScript preload too). The replay test fails on the old plugin with the exact deny the agent got.
+Re-run of the gated leg with the import pairing live (3587b3a), same task and model: blocked 0, test-first
+1/1, only src/lib/io.ts and test/slugify.test.ts touched, caught 1 on io running test/slugify.test.ts,
+no dangling red. Before: blocked 1, a third file of duplicate tests, "also open: slugify (red)".

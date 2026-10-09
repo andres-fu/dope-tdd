@@ -51,7 +51,11 @@ export type Runner = {
 const START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
 const PATHED = String.raw`(?:[\w./\\-]*[\\/])?`
 const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
-const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
+// Flags before the script (`--filter api`, `-F @acme/api`, `-r`, `--recursive`) and `yarn workspace <name>`.
+const PM_FLAGS = String.raw`(?:\s+(?:--?[\w-]+(?:=\S+)?(?:\s+(?!(?:run|test)\b)[^\s;&|-]\S*)?|workspace\s+\S+))*`
+const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)${PM_FLAGS}\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
+// Monorepo task runners asked for the test task.
+const WORKSPACE_RUN = String.raw`(?:(?:npx|pnpm(?:\s+exec)?|yarn)\s+)?(?:turbo(?:\s+run)?\s+test(?::[\w-]+)?(?=\s|$)|nx\s+(?:test(?=\s|$)|run\s+[\w@/.-]+:test(?::[\w-]+)?(?=\s|$)|run-many\s+[^;&|\n]*?(?:-t|--targets?)[=\s]+test(?=[\s,]|$))|lerna\s+run\s+test(?=\s|$))`
 const PYTEST = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run\s+)?(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
 const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
 const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
@@ -61,7 +65,43 @@ function commandOf(body: string): RegExp {
   return new RegExp(`${START}(?:${body})`)
 }
 
-const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}`)
+const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}|${WORKSPACE_RUN}`)
+
+// turbo prefixes each line `api:test: `, pnpm -r `server test: `; the task starts with a letter, so `src/a.ts:12:` is no prefix.
+const TASK_PREFIX = /^(?:[@\w./-]+:[A-Za-z][\w-]*(?::[\w-]+)*:|[@\w./-]+ test(?::[\w-]+)?:)[ \t]?/gm
+
+const TARGETS = [
+  /(?:^|\s)(?:-w|--workspace)(?:=|\s+)(\S+)/,
+  /(?:^|\s)(?:--filter|-F)(?:=|\s+)(\S+)/,
+  /\byarn\s+workspace\s+(\S+)/,
+  /\bnx\s+test\s+([^\s-]\S*)/,
+  /\bnx\s+run\s+([\w@/.-]+):test\b/,
+]
+
+/**
+ * The package a workspace test run is aimed at (`npm test -w server`, `pnpm --filter @acme/api test`), as written:
+ * a folder or a package name. pnpm's `...` graph markers and quotes are dropped. Null for a run aimed at no one package.
+ */
+export function workspaceTarget(command: string): string | null {
+  for (const segment of commandSegments(command).map(executedText)) {
+    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+      continue
+    }
+    for (const pattern of TARGETS) {
+      const found = pattern.exec(segment)?.[1]
+      if (found !== undefined) {
+        return found.replace(/^['"]|['"]$/g, '').replace(/^\.\.\.|\.\.\.$/g, '')
+      }
+    }
+    return null
+  }
+  return null
+}
+
+/** The output with each line's workspace prefix taken off, so the runner's own lines read as they would alone. */
+export function withoutTaskPrefixes(output: string): string {
+  return output.replace(TASK_PREFIX, '')
+}
 
 function forwardSlashes(path: string): string {
   return path.replace(/\\/g, '/')
@@ -397,7 +437,7 @@ export function isTestRun(command: string): boolean {
 /** The first reader that recognises the output decides; readers that see nothing of theirs say unknown and pass. */
 export function readRun(output: string): RunOutcome {
   for (const runner of RUNNERS) {
-    const outcome = runner.read(output)
+    const outcome = runner.read(withoutTaskPrefixes(output))
     if (outcome !== 'unknown') {
       return outcome
     }
@@ -406,7 +446,7 @@ export function readRun(output: string): RunOutcome {
 }
 
 export function failedFilesIn(output: string): string[] {
-  return unique(RUNNERS.flatMap(runner => runner.failedFiles(output)))
+  return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }
 
 const TOKEN = /[\w./\\:-]+/g

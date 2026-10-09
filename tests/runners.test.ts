@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation } from '../hooks/runners'
+import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   DOTNET_FAIL,
@@ -227,5 +227,56 @@ describe('the fallback program when nothing in the project names one', () => {
     expect(fallbackTool(runnerNamed('pytest'), 'C:/work/app')).toBe('python')
     expect(fallbackTool(runnerNamed('pytest'), '/Users/beth/app')).toBe('python3')
     expect(fallbackTool(runnerNamed('vitest'), '/Users/beth/app')).toBe(runnerNamed('vitest').fallback)
+  })
+})
+
+describe('monorepo test commands and their prefixed output', () => {
+  test('workspace runs are test runs: pnpm filters and recursion, yarn and npm workspaces, turbo, nx, lerna', () => {
+    for (const command of [
+      'pnpm --filter api test',
+      'pnpm -F @acme/api test',
+      'pnpm -r test',
+      'pnpm --recursive run test',
+      'yarn workspace api test',
+      'npm test --workspace=server',
+      'npm run test -w server',
+      'turbo run test',
+      'npx turbo test --filter=api',
+      'nx test api',
+      'npx nx run api:test',
+      'nx run-many -t test',
+      'lerna run test',
+    ]) {
+      expect(isTestRun(command)).toBe(true)
+    }
+  })
+
+  test('other workspace tasks are not', () => {
+    for (const command of ['pnpm --filter api build', 'turbo run build', 'nx build api', 'pnpm -r lint', 'nx run api:build', 'yarn workspace api add vitest']) {
+      expect(isTestRun(command)).toBe(false)
+    }
+  })
+
+  test('turbo and pnpm -r prefix each line with the package and task; the summary and the failed files still read', () => {
+    const turbo = 'api:test: \napi:test:  FAIL  src/a.test.ts > adds\napi:test:  Test Files  1 failed (1)\napi:test:       Tests  1 failed (1)\n'
+    const pnpm = 'server test:  ✓ src/b.test.ts (2 tests)\nserver test:  Test Files  1 passed (1)\nserver test:       Tests  2 passed (2)\n'
+    expect(readRun(turbo)).toBe('fail')
+    expect(failedFilesIn(turbo)).toEqual(['src/a.test.ts'])
+    expect(readRun(pnpm)).toBe('pass')
+    expect(readRun('Test Suites: 1 failed, 1 total\nTests:       1 failed, 2 passed, 3 total\n')).toBe('fail')
+  })
+})
+
+describe('the package a workspace run targets', () => {
+  test('read from npm, pnpm, yarn and nx; none for a plain run', () => {
+    expect(workspaceTarget('npm test -w server')).toBe('server')
+    expect(workspaceTarget('npm run test --workspace=packages/api')).toBe('packages/api')
+    expect(workspaceTarget('pnpm --filter @acme/api test')).toBe('@acme/api')
+    expect(workspaceTarget('pnpm -F ./packages/api... test')).toBe('./packages/api')
+    expect(workspaceTarget('yarn workspace api test')).toBe('api')
+    expect(workspaceTarget('nx test api')).toBe('api')
+    expect(workspaceTarget('npx nx run api:test')).toBe('api')
+    expect(workspaceTarget('npx vitest run tests/x.test.ts')).toBe(null)
+    expect(workspaceTarget('pnpm -r test')).toBe(null)
   })
 })

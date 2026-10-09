@@ -29,7 +29,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
+import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -196,6 +196,44 @@ async function readWhole($: EngineInterface, path: string): Promise<string | nul
 }
 
 /** Tells a file that is not there from one that is there but cannot be read (too large, locked): only the first is a new file. */
+/**
+ * The folder of the package a workspace run names: a path from where the shell is, or a name matched against each
+ * package's package.json name, then its folder name, among the `roots` (a trailing `/*` is listed). Null when none.
+ */
+async function packageDirFor($: EngineInterface, root: string, start: string, config: GuardConfig, target: string): Promise<string | null> {
+  if (/^\.{1,2}\//.test(target) || (target.includes('/') && !target.startsWith('@'))) {
+    const dir = /^\.{1,2}\//.test(target) ? `${start}/${target.replace(/^\.\//, '')}` : `${root}/${target}`
+    return isInsideRoot(root, dir) && (await $.fs.exists(`${dir}/package.json`)) ? dir.replace(/\/$/, '') : null
+  }
+  const dirs: string[] = []
+  for (const entry of config.roots) {
+    if (entry.endsWith('/*')) {
+      const parent = entry.slice(0, -2)
+      try {
+        for (const item of await $.fs.list(`${root}/${parent}`)) {
+          if (item.kind === 'dir') {
+            dirs.push(`${parent}/${item.name}`)
+          }
+        }
+      } catch {
+        // A roots glob with nothing behind it names no package.
+      }
+    } else if (!entry.includes('*')) {
+      dirs.push(entry)
+    }
+  }
+  for (const dir of dirs) {
+    const manifest = await readWhole($, `${root}/${dir}/package.json`)
+    const name = manifest === null ? null : (/"name"\s*:\s*"([^"]+)"/.exec(manifest)?.[1] ?? null)
+    if (name === target) {
+      return `${root}/${dir}`
+    }
+  }
+  const bare = target.replace(/^@[^/]+\//, '')
+  const byFolder = dirs.find(dir => dir.split('/').pop() === bare)
+  return byFolder === undefined ? null : `${root}/${byFolder}`
+}
+
 async function readFile($: EngineInterface, path: string): Promise<FileRead> {
   try {
     return { kind: 'text', text: await $.fs.read(path) }
@@ -1028,7 +1066,10 @@ async function guardShell(
   const output = result.text ?? ''
   // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
   // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
-  const runLocation = testRunLocation(command, start)
+  // A workspace run (`npm test -w server`) runs in its package: the runner prints paths from there.
+  const plainLocation = testRunLocation(command, start)
+  const target = plainLocation === null ? null : workspaceTarget(command)
+  const runLocation = target === null ? plainLocation : ((await packageDirFor($, root, start, config, target)) ?? plainLocation)
   const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
   const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated

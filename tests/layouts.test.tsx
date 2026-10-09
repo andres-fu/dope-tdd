@@ -90,6 +90,39 @@ describe('a runner installed in the package, not hoisted', () => {
   })
 })
 
+describe('a workspace run names its package', () => {
+  const FAIL_IN_PACKAGE = ' FAIL  src/__tests__/utils/dice.test.ts > rolls\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+  test('npm test -w server: the failed path is the server package’s, so the red lands on its module', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/package.json`)
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+    world.bashFails = true
+    world.bashText = FAIL_IN_PACKAGE
+
+    const red = await runBash($, 'npm test -w server')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.context?.join(' ')).toMatch(/server\/utils\/dice unlocked by a red run/)
+    expect(status.text).not.toMatch(/elsewhere/)
+  })
+
+  test('pnpm --filter by package name: found through each package’s package.json', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["packages/*"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.fileContents.set(`${ROOT}/packages/game-server/package.json`, '{ "name": "@acme/server" }')
+    world.fileContents.set(`${ROOT}/packages/web/package.json`, '{ "name": "@acme/web" }')
+    world.existingFiles.add(`${ROOT}/packages/game-server/src/__tests__/utils/dice.test.ts`)
+    world.bashFails = true
+    world.bashText = FAIL_IN_PACKAGE
+
+    const red = await runBash($, 'pnpm --filter @acme/server test')
+
+    expect(red.context?.join(' ')).toMatch(/packages\/game-server\/utils\/dice unlocked by a red run/)
+  })
+})
+
 describe('package roots', () => {
   test('each package is its own project; a test in one does not unlock the same module in another', async ($, on) => {
     const world = fakeEngine(on)

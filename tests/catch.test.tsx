@@ -566,3 +566,74 @@ describe('the catch check stays out of the way', () => {
     expect(world.toasts.some(t => /your change is in C:\/Users\/tester\/\.dope-tdd\/kept\/throughline\/src\/utils\/formatDuration\.ts/.test(t))).toBe(true)
   })
 })
+
+describe('the catch check in a worktree, never in your files', () => {
+  const WT = `${ROOT}/.git/dope-tdd/wt`
+  const gitRepo = (world: ReturnType<typeof fakeEngine>) => world.existingFiles.add(`${ROOT}/.git/HEAD`)
+
+  test('a vitest project in a git checkout: your file is never written; the old code runs in a worktree that is removed after', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(world.writes).toContainEqual([`${WT}/src/utils/formatDuration.ts`, 'export const a = 1'])
+    const check = world.gitCalls.findIndex((argv, i) => argv.some(arg => arg.includes('vitest.mjs')) && world.runCwds[i] === WT)
+    expect(check).toBeGreaterThan(-1)
+    expect(world.gitCalls.some(argv => argv.join(' ').startsWith('git worktree add --detach'))).toBe(true)
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+    expect(status.text).toMatch(/caught 1/)
+    await $.session.end({ reason: 'other', sessionId: 'wt', resume: { id: 'wt' } } as never)
+    const record = world.writes.find(([path]) => path.includes('/.dope-tdd/sessions/'))
+    expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(1)
+  })
+
+  test('your uncommitted and untracked files go into the worktree with it, so the test runs on what you have', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    world.fileContents.set(`${ROOT}/src/other.ts`, 'export const other = 2')
+    world.fileContents.set(`${ROOT}/tests/utils/formatDuration.test.ts`, "it('x', () => {})")
+    world.dirty = 'src/other.ts\nsrc/utils/formatDuration.ts\n'
+    world.untracked = 'tests/utils/formatDuration.test.ts\n'
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+
+    expect(world.writes).toContainEqual([`${WT}/src/other.ts`, 'export const other = 2'])
+    expect(world.writes).toContainEqual([`${WT}/tests/utils/formatDuration.test.ts`, "it('x', () => {})"])
+  })
+
+  test('a test that is not green in the worktree as it stands falls back to the check in place, never to a verdict from a broken setup', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.baselineRunIn.set(WT, { text: ' Tests  1 failed (1)\n', exitCode: 1 })
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE).map(([, text]) => text)).toEqual(['export const a = 1', 'export const b = 1'])
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(status.text).toMatch(/caught 1/)
+  })
+
+  test('a run that crashes still removes the worktree, and is unverified', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.catchRun = 'reject'
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(status.text).toMatch(/unverified 1/)
+  })
+})

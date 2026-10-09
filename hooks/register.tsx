@@ -519,6 +519,113 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
  * modules wait for their own green. The lock is taken in one update and
  * released whatever happens; a file that moved while reverted is left alone.
  */
+/** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
+const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest'])
+const CHECK_WORKTREE = '.git/dope-tdd/wt'
+/** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
+const MAX_COPIED_FILES = 300
+
+type WorktreeCheck = {
+  module: string
+  path: string
+  before: string
+  after: string
+  runIn: string
+  relativeTest: string
+  argv: string[]
+  greenRunMs: number
+  nowMs: number
+}
+
+function listed(answer: { exitCode: number; stdout: string } | null): string[] | null {
+  return answer === null || answer.exitCode !== 0 ? null : answer.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '')
+}
+
+/**
+ * The catch check in a throwaway worktree inside .git: HEAD, plus the user's uncommitted and untracked files copied in,
+ * then the module's old code written there and its test run there. The user's files are never written, so an editor,
+ * a watcher or a parallel agent never sees a revert. The test must first pass there as the code stands; anything the
+ * worktree cannot reproduce returns null, and the check runs in place instead. The worktree is always removed.
+ */
+async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome | null> {
+  const { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs } = check
+  const wt = `${root}/${CHECK_WORKTREE}`
+  const locked = await change($, state => acquireCheck(state, module, nowMs))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
+    return { kind: 'unverified', reason: 'another check was running' }
+  }
+  const shared = await acquireSharedLock($, root, module, nowMs)
+  if (shared.kind === 'busy') {
+    await change($, releaseCheck)
+    return { kind: 'unverified', reason: `another session was checking ${shared.module}` }
+  }
+  const sharedSha = shared.kind === 'acquired' ? shared.sha : null
+  try {
+    await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+    const added = await gitQuiet($, root, ['worktree', 'add', '--detach', wt, 'HEAD'])
+    if (added === null || added.exitCode !== 0) {
+      return null
+    }
+    const dirty = listed(await gitQuiet($, root, ['diff', '--name-only', 'HEAD']))
+    const untracked = listed(await gitQuiet($, root, ['ls-files', '--others', '--exclude-standard']))
+    const deleted = listed(await gitQuiet($, root, ['diff', '--name-only', '--diff-filter=D', 'HEAD']))
+    if (dirty === null || untracked === null || deleted === null) {
+      return null
+    }
+    const gone = new Set(deleted)
+    const copies = [...new Set([...dirty, ...untracked])].filter(file => !gone.has(file))
+    if (copies.length > MAX_COPIED_FILES) {
+      return null
+    }
+    for (const file of copies) {
+      const text = await readWhole($, `${root}/${file}`)
+      if (text === null) {
+        return null
+      }
+      await $.fs.write(`${wt}/${file}`, text)
+    }
+    for (const file of gone) {
+      await gitQuiet($, wt, ['rm', '-q', '--', file])
+    }
+    const inTree = `${wt}/${relativePath(root, path)}`
+    const cwd = runIn === root ? wt : `${wt}/${relativePath(root, runIn)}`
+    const budget = timeBudgetMs(greenRunMs)
+    // The test must pass in the worktree as the code stands, or the worktree is not the user's project.
+    const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+    if (!baselined.has(baselineKey)) {
+      await $.fs.write(inTree, after)
+      let base: CatchOutcome
+      try {
+        base = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: budget }), relativeTest)
+      } catch (error) {
+        base = catchOutcome(runFailure(error))
+      }
+      if (base.kind !== 'missed') {
+        $.ui.log(`dope-tdd: the test is not green in the check worktree (${base.kind === 'unverified' ? base.reason : 'red'}); checking in place`)
+        return null
+      }
+      baselined.add(baselineKey)
+    }
+    await $.fs.write(inTree, before)
+    let outcome: CatchOutcome
+    try {
+      outcome = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest)
+    } catch (error) {
+      outcome = catchOutcome(runFailure(error))
+    }
+    return outcome.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : outcome
+  } catch (error) {
+    $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); checking in place`)
+    return null
+  } finally {
+    await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+    await change($, releaseCheck)
+    if (sharedSha !== null) {
+      await releaseSharedLock($, root, sharedSha)
+    }
+  }
+}
+
 async function verifyCatch(
   $: EngineInterface,
   root: string,
@@ -569,6 +676,15 @@ async function verifyCatch(
   const runIn = runner.root !== root && isInsideRoot(root, runner.root) ? runner.root : root
   const relativeTest = relativePath(runIn, testPath)
   const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot, ...(runner.launcher === undefined ? {} : { launcher: runner.launcher }) })
+
+  // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
+  if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
+    const isolated = await checkInWorktree($, root, { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs })
+    if (isolated !== null) {
+      await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
+      return isolated
+    }
+  }
 
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
   // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.

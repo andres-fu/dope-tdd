@@ -7,20 +7,20 @@
 //   node tools/pool/ab.mjs --repo C:/path/to/clone --task task.txt \
 //     --allow "Bash(npx vitest*)" [--allow ...] [--setup "npm ci"] \
 //     [--config '{"layout":"flat"}'] [--model claude-sonnet-5-5] [--max-turns 40]
-//     [--modes observe,enforce] [--ref upstream/main] [--keep]
+//     [--modes observe,enforce] [--ref upstream/main] [--clone] [--keep]
 //
 // Nothing is committed or pushed. Worktrees are removed afterwards unless
 // --keep is given. The ledger and reports live outside every repository, in
 // ~/.dope-tdd/pool, because task text names private code.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function parseArgs(argv) {
-  const args = { ref: 'HEAD', allow: [], modes: ['observe', 'enforce'], model: 'claude-sonnet-5-5', maxTurns: 40, keep: false, config: '{}' }
+  const args = { ref: 'HEAD', allow: [], modes: ['observe', 'enforce'], model: 'claude-sonnet-5-5', maxTurns: 40, keep: false, clone: false, config: '{}' }
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i]
     const next = () => argv[++i]
@@ -34,6 +34,7 @@ function parseArgs(argv) {
     else if (key === '--modes') args.modes = next().split(',')
     else if (key === '--ref') args.ref = next()
     else if (key === '--keep') args.keep = true
+    else if (key === '--clone') args.clone = true
     else throw new Error(`unknown argument ${key}`)
   }
   if (!args.repo || !args.task) throw new Error('--repo and --task are required')
@@ -129,7 +130,13 @@ async function main() {
 
   const legs = args.modes.map(mode => ({ mode, dir: resolve(args.repo, '..', `${repoName}-ab-${mode}-${stamp()}`) }))
   for (const leg of legs) {
-    git(args.repo, 'worktree', 'add', '--detach', leg.dir, args.ref)
+    if (args.clone) {
+      // A full local clone: its .git is a folder, as in a person's own checkout, not a linked worktree's file.
+      execFileSync('git', ['clone', '-q', args.repo, leg.dir], { stdio: 'ignore' })
+      git(leg.dir, 'checkout', '-q', '--detach', git(args.repo, 'rev-parse', args.ref))
+    } else {
+      git(args.repo, 'worktree', 'add', '--detach', leg.dir, args.ref)
+    }
     writeFileSync(join(leg.dir, 'dope-tdd.json'), `${JSON.stringify({ ...baseConfig, mode: leg.mode }, null, 2)}\n`)
     const exclude = join(git(leg.dir, 'rev-parse', '--git-common-dir'), 'info', 'exclude')
     const current = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
@@ -206,7 +213,8 @@ async function main() {
 
   if (!args.keep) {
     for (const leg of legs) {
-      execFileSync('git', ['worktree', 'remove', '--force', leg.dir], { cwd: args.repo, stdio: 'ignore' })
+      if (args.clone) rmSync(leg.dir, { recursive: true, force: true })
+      else execFileSync('git', ['worktree', 'remove', '--force', leg.dir], { cwd: args.repo, stdio: 'ignore' })
     }
     console.log('worktrees removed')
   } else {

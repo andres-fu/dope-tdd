@@ -30,6 +30,8 @@ export type SessionRecord = {
   workarounds: number
   /** Milliseconds spent in catch checks, baselines included. */
   checkMs: number
+  /** Catch checks that ran in a worktree, never in the user's files. */
+  worktreeChecks: number
   receipt: string
 }
 
@@ -59,6 +61,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     refactors: s.refactors,
     workarounds: s.workarounds,
     checkMs: s.checkMsTotal,
+    worktreeChecks: s.worktreeChecks,
     receipt,
   }
 }

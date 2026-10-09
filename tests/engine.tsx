@@ -65,6 +65,11 @@ export type FakeWorld = {
   /** The check's baseline: the test run as it stands, before anything is reverted. Green unless a test says otherwise. */
   baselineRun: { text: string; exitCode: number }
   baselineCalls: number
+  /** A baseline answered differently in one folder, by its cwd: the catch-check worktree, say. */
+  baselineRunIn: Map<string, { text: string; exitCode: number }>
+  /** Tracked files changed since HEAD, and deleted ones, as `git diff --name-only HEAD` lists them. */
+  dirty: string
+  deleted: string
   hasVitest: boolean
   onBash: (command: string) => void
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
@@ -103,6 +108,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
     baselineRun: { text: ' Tests  1 passed (1)\n', exitCode: 0 },
     baselineCalls: 0,
+    baselineRunIn: new Map(),
+    dirty: '',
+    deleted: '',
     hasVitest: true,
     onBash: () => {},
     readOnly: false,
@@ -132,7 +140,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     world.runCwds.push(fakePath(String((e as { init?: { cwd?: unknown } }).init?.cwd ?? '')))
     if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
       world.baselineCalls++
-      return { value: { exitCode: world.baselineRun.exitCode, stdout: world.baselineRun.text, stderr: '' } } as never
+      const run = world.baselineRunIn.get(world.runCwds[world.runCwds.length - 1] ?? '') ?? world.baselineRun
+      return { value: { exitCode: run.exitCode, stdout: run.text, stderr: '' } } as never
     }
     if (e.argv[0] !== 'git') {
       await world.onCatchRun()
@@ -177,6 +186,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     if (verb === 'config') {
       const url = world.remotes.get((rest[rest.length - 1] ?? '').replace(/^remote\.|\.url$/g, ''))
       return url === undefined ? answer(1) : answer(0, `${url}\n`)
+    }
+    if (verb === 'diff' && e.argv.includes('--name-only')) {
+      return answer(0, e.argv.includes('--diff-filter=D') ? world.deleted : world.dirty)
     }
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never

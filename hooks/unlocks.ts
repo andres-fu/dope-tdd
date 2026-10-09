@@ -13,7 +13,23 @@ function isStoredUnlock(value: unknown): value is StoredUnlock {
   )
 }
 
+/**
+ * One spelling of a root wherever it is a store key. Windows hands a session
+ * `C:\\x` or `c:\\x` depending on how it was launched, and the store is shared
+ * by every session on the machine, so a key with the raw root is a memory
+ * only half the sessions can find.
+ */
+export function storeRoot(root: string): string {
+  const slashed = root.replace(/\\/g, '/').replace(/\/+$/, '')
+  return slashed.replace(/^([A-Za-z]):/, (_whole, drive: string) => `${drive.toLowerCase()}:`)
+}
+
 export function unlockKey(root: string): string {
+  return `unlocks:${storeRoot(root)}`
+}
+
+/** The key an earlier build wrote, with the root as it was handed over; read once more so a week of memory is not lost on upgrade. */
+export function legacyUnlockKey(root: string): string {
   return `unlocks:${root}`
 }
 

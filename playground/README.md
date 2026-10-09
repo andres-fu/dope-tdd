@@ -49,6 +49,11 @@ claude --plugin-dir ..
 
 Type `/tdd`. You should see `guard: ON`. That's the whole setup.
 
+To start a walk over, or between walks, run `npm run reset` in your shell,
+not in Claude: it puts the source back and removes the tests Claude wrote.
+A walk that starts on a checkout with the fix already in it has nothing to
+show you.
+
 ## Walk 1 · Fix a bug the right way (5 minutes)
 
 Tell Claude:

@@ -90,10 +90,14 @@ three planted bugs and no tests, built so you can watch the plugin work
 without risking anything.
 
 1. Clone this repository, then `cd playground` and `npm install`.
-2. Open Claude Code in the `playground` folder and follow
+2. Whenever you start a walk over: `npm run reset`, in PowerShell or your
+   shell, not typed into Claude. It puts the source back and removes the
+   tests Claude wrote. A walk that starts with the fix already on disk has
+   nothing to show you.
+3. Open Claude Code in the `playground` folder and follow
    [playground/README.md](../playground/README.md): it gives you the task
    to hand to Claude and says what to watch for.
-3. Type `/tdd` at any point to see the state and the recent events, and
+4. Type `/tdd` at any point to see the state and the recent events, and
    `/tdd why` to have each word on the band explained.
 
 What a good run looks like: Claude is refused when it tries to edit source
@@ -137,8 +141,7 @@ would not refuse the same module twice.
   turns every plugin off for that session, and give it Walk 1 from the
   playground README. Watch what Claude does first. Usually it edits the
   code, then maybe writes a test, and never sees that test fail.
-- **Reset:** from the `playground` folder, `git checkout -- src` and delete
-  the `tests` folder it created.
+- **Reset:** `npm run reset` in the `playground` folder, in your shell.
 - **With:** a normal session, same task. The refusal comes first, then the
   test, then red, then the fix, then the catch check. `/tdd` at the end is
   the receipt; the first run has no equivalent.

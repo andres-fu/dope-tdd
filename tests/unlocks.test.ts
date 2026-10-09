@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { UNLOCK_TTL_MS, freshUnlocks, hasAssertion } from '../hooks/unlocks'
+import { UNLOCK_TTL_MS, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from '../hooks/unlocks'
+
+describe('store keys', () => {
+  test('one spelling of the root, whatever Windows handed the session', () => {
+    expect(storeRoot('C:\\Users\\x\\proj')).toBe('c:/Users/x/proj')
+    expect(storeRoot('c:/Users/x/proj/')).toBe('c:/Users/x/proj')
+    expect(storeRoot('/home/x/proj')).toBe('/home/x/proj')
+    expect(unlockKey('C:\\Users\\x\\proj')).toBe(unlockKey('c:/Users/x/proj'))
+    expect(legacyUnlockKey('C:\\Users\\x\\proj')).toBe('unlocks:C:\\Users\\x\\proj')
+  })
+})
 
 describe('hasAssertion', () => {
   test('sees the common assertion calls', () => {

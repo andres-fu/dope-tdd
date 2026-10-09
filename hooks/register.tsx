@@ -55,7 +55,7 @@ import {
   togglePause,
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
-import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
+import { freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from './unlocks'
 import { commentedOutLines, testEditSignals } from './workarounds'
 
 const MINUTE = 60_000
@@ -220,13 +220,15 @@ function journalFiles(value: unknown): JournalFile[] | null {
 }
 
 function journalKeyFor(root: string, module: string): string {
-  return `${JOURNAL_PREFIX}${root}:${module}`
+  return `${JOURNAL_PREFIX}${storeRoot(root)}:${module}`
 }
 
 async function journalKeys($: EngineInterface, root: string): Promise<string[]> {
   try {
     const all = await $.store.keys()
-    return all.filter(key => key === `${JOURNAL_PREFIX}${root}` || key.startsWith(`${JOURNAL_PREFIX}${root}:`))
+    // Both spellings: a journal an earlier build wrote under the raw root is a reverted file on disk until it is read.
+    const prefixes = [...new Set([`${JOURNAL_PREFIX}${storeRoot(root)}`, `${JOURNAL_PREFIX}${root}`])]
+    return all.filter(key => prefixes.some(prefix => key === prefix || key.startsWith(`${prefix}:`)))
   } catch (error) {
     $.ui.log(`dope-tdd: could not list the store: ${String(error)}`)
     return []
@@ -857,7 +859,8 @@ async function loadLogo($: EngineInterface): Promise<string | null> {
 async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
-  const stored = freshUnlocks(await $.store.get(unlockKey(root)), nowMs)
+  const legacy = legacyUnlockKey(root) === unlockKey(root) ? {} : freshUnlocks(await $.store.get(legacyUnlockKey(root)), nowMs)
+  const stored = { ...legacy, ...freshUnlocks(await $.store.get(unlockKey(root)), nowMs) }
   const present = await Promise.all(
     Object.entries(stored).map(async ([module, entry]) =>
       (await lastModifiedMs($, entry.testPath)) === null ? [] : [[module, entry] as const],

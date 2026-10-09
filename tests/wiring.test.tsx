@@ -511,6 +511,21 @@ describe('memory across sessions', () => {
     expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
   })
 
+  test('an unlock remembered under the normalised root is found by a session that spells the root the other way', async ($, on) => {
+    fakeEngine(on, {
+      store: {
+        [`unlocks:${ROOT.replace(/^C:/, 'c:')}`]: {
+          'utils/formatDuration': { testPath: `${ROOT}/tests/utils/formatDuration.test.ts`, atMs: T0 - 2 * HOUR },
+        },
+      },
+    })
+    await startSession($)
+
+    const result = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(result.deny).toBeUndefined()
+  })
+
   test('touching a test is remembered for the next session', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/calculateDuration')

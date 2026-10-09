@@ -297,6 +297,17 @@ describe('the revert is safe', () => {
     expect(world.toasts.some(t => /restored 1 file/.test(t))).toBe(true)
   })
 
+  test('a journal keyed by the normalised root (a lower-case drive) is repaired the same way', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT.replace(/^C:/, 'c:')}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await startSession($)
+
+    expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
+  })
+
   test('a file that moved since the interrupted check is left alone, the change is kept beside it, and the user is told', async ($, on) => {
     const world = fakeEngine(on, {
       store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },

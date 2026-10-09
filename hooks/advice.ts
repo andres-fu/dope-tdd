@@ -23,8 +23,9 @@ function defaultTest(module: string): string {
   return `tests/${module}.test.ts(x)`
 }
 
-export function touchAdvice(module: string, sourcePath = defaultSource(module)): string {
-  return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing ${sourcePath}.`
+export function touchAdvice(module: string, sourcePath = defaultSource(module), command?: string): string {
+  const run = command === undefined ? '' : ` Run it with: ${command}`
+  return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing ${sourcePath}.${run}`
 }
 
 export function inheritedAdvice(module: string, testPath: string, ageMs: number, sourcePath = defaultSource(module)): string {

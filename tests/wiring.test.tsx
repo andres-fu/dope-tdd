@@ -716,3 +716,26 @@ describe('a touch that changes nothing', () => {
     expect(status.text).toMatch(/workarounds: 1 \(touched unchanged 1\)/)
   })
 })
+
+describe('the briefing in the system prompt', () => {
+  test('a section is added after the engine\u2019s own, naming the rules and this project\u2019s test command', async ($, on) => {
+    fakeEngine(on)
+    await startSession($)
+
+    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Write', 'Bash'], outputStyle: null, traits: [] })) as { sections: { id: string; text: string; scope: string }[] }
+
+    expect(composed.sections[0]?.id).toBe('intro')
+    const briefing = composed.sections.find(section => section.id === 'dope-tdd:briefing')
+    expect(briefing?.scope).toBe('session')
+    expect(briefing?.text).toMatch(/Dope TDD is on in this project \(mode: enforce\)/)
+    expect(briefing?.text).toMatch(/node_modules\/vitest\/vitest\.mjs|npx vitest run <test file>/)
+  })
+
+  test('touching a test hands the agent the exact command to run it', async ($, on) => {
+    fakeEngine(on)
+
+    const touched = await writeAt($, 'tests/utils/formatDuration.test.ts', "it('x', () => { expect(1).toBe(2) })")
+
+    expect(touched.context?.join(' ')).toMatch(/Run it with: npx vitest run tests\/utils\/formatDuration\.test\.ts/)
+  })
+})

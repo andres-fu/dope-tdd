@@ -3,6 +3,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
+import { briefingText } from './briefing'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
 import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor } from './config'
@@ -27,7 +28,7 @@ import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
-import { detectStackFrom } from './stacks'
+import { detectStackFrom, stackOf } from './stacks'
 import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
 import type { Survey } from './setup'
@@ -658,7 +659,8 @@ async function guardFileWrite(
       await change($, s => recordWorkaround(s, 'hollow-touch', target.module, relativePath(root, filePath), nowMs))
     }
     const resaved = unchanged ? [hollowTouchAdvice(relativePath(root, filePath))] : []
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module)), ...hollow, ...signals, ...resaved])
+    const command = (await runCommandFor($, root, config, filePath)) ?? undefined
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module), command), ...hollow, ...signals, ...resaved])
   }
   return result
 }
@@ -912,6 +914,19 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   }
 }
 
+/** How one test file runs in this project, as a person types it, for a path relative to the root; null when no runner is found. */
+async function runCommandFor($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string | null> {
+  const runner = await detectRunner($, root, config, testPath)
+  return runner === null ? null : runnerNamed(runner.kind).describe(relativePath(root, testPath))
+}
+
+/** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */
+async function briefingCommand($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
+  const ext = config.layout.displayExt ?? stackOf(config.stack).exts[0] ?? 'ts'
+  const runner = await detectRunner($, root, config, `${root}/example.${ext}`)
+  return runner === null ? null : runnerNamed(runner.kind).describe('<test file>')
+}
+
 /**
  * The receipt for a module, ready for a pull request: the status as the band
  * reads it, then the two commands a reviewer runs to re-check the proof
@@ -995,6 +1010,15 @@ export const register: Register = on => {
       return { text: await receiptText($, root, await loadConfig($, root), raw[1], await $.clock.now()) }
     }
     return { text: await currentStatus($) }
+  })
+
+  // The briefing: the rules in Claude's system prompt, so the first refusal is an expected step, not a surprise.
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    const root = await $.session.root()
+    const config = await loadConfig($, root)
+    const text = briefingText(config, await briefingCommand($, root, config))
+    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })
 
   on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult).catch(($, _e, next) => {

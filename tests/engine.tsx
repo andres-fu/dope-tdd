@@ -92,6 +92,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
 
   mock.store(on, options.store)
   mock.env(on, options.env ?? {})
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('ui.log', (_$, e) => {

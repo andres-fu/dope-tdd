@@ -31,3 +31,5 @@ jobs:
         run: claude plugin validate .
       - name: Run the plugin's tests
         run: claude plugin test .
+      - name: Check the scorecard arithmetic
+        run: node --test tools/pool/scorecard.test.mjs

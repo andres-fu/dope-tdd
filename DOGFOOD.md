@@ -68,3 +68,13 @@ cycles 2, refactors 1, never saw red 0. PR: https://github.com/Ironwright-Labs/D
 Verification for a refactor PR: the same pins pass against the old handler (stash) and the new one.
 Note for the band: during the pin step the honest word was NEVER SAW RED, and the agent followed the
 advice to break the code on purpose; that is the walkthrough's Walk 2 happening unprompted.
+
+## 2026-10-09 — DungeonLobby, a security bug: a spoofable rate-limit key
+
+getSocketIp trusted x-forwarded-for unconditionally and the per-IP create/join limits were keyed on
+it, so any client could forge a fresh header per connection. Found by asking "what does the rate
+limiter key on, and who controls it" after the socket-id lesson. Fixed test-first (TRUST_PROXY opt-in),
+caught 1. PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/30. Also added to PR #28: the
+whisper label direction on the client was wrong after a refresh for the same socket-id reason.
+Hunting lessons so far: stored identifiers across events that change them; keys of limits and
+caches and who controls the input; trust boundaries on headers.

@@ -24,3 +24,18 @@ date · what happened · what it suggests. Keep entries short and honest.
 | 2026-10-08 | Warn-mode live run with an exempt file: a code-only fix was allowed, counted as unguarded, and Claude read "write tests/money/formatCents.test.ts(x) next"; the exempt rename raised nothing; `/tdd` showed `mode: warn` and the exemption | Modes and exemptions replace pause for legitimate non-test work, and the exception is on the record |
 | 2026-10-08 | Architect review plus a second code review of PR #3: the catch check minted CAUGHT from an exit code when the runner crashed, a new file was caught by construction, a failed restore could leave every edit denied, and the PowerShell tool was not hooked on the owner's own machine | Honesty pass (decision doc of the same name): no summary means unknown, per-module checks, an expiring lock, red attributed by FAIL lines, test-changed-after-red named, config edits recorded; every verdict word now has a falsifier test |
 | 2026-10-08 | Live run after the honesty pass (Bug 2, headless, tool allowlist): touched → fail → edited → pass → caught 1 on real Vitest output with the exit-code fallback gone; all four advice lines reached Claude and it acted on each. Its first test command went through the PowerShell tool, which was not on the allowlist, so it was held for approval and never ran; the plugin counted that result as an `unread` run and told Claude to pipe through tail | The reader is honest about what it saw, but a command that never ran is not a run: read the permission-held text as "did not run", count nothing, say nothing |
+
+## 2026-10-08 — DungeonLobby, the first receipt on a repo nobody built for the demo
+
+Repo: Ironwright-Labs/DungeonLobby (Vitest 4, roots client/server/shared, template
+src/{module} ↔ src/__tests__/{module}.test). Run: a headless `claude -p` session rooted in the
+clone with a tool allowlist, the plugin installed at user scope. Task: dice notation accepts
+spaces around the modifier sign. Receipt: touched → fail → edited → pass → caught; 1 cycle,
+caught 1, blocked 0. PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/27 (from the
+owner's fork), receipt verbatim in the description.
+
+Findings: (1) a test run invoked from inside `server/` with a package-relative path was read as
+"red elsewhere" because the path was resolved against the session root; the agent reran with
+the full path. Shell cwd drift, `arch2 7`, seen on a real repo. (2) The headless run was not
+refused by the auto-mode classifier when given `--allowedTools` instead of skipped
+permissions; that is the way to drive a plugin-watched session from another session.

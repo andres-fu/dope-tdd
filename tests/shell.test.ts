@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { commandSegments } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, locatedSegments } from '../hooks/shell'
 
 describe('commandSegments', () => {
   test('splits on the shell operators', () => {
@@ -38,5 +38,21 @@ describe('commandSegments', () => {
 
   test('drops empty segments', () => {
     expect(commandSegments('a;; b')).toEqual(['a', 'b'])
+  })
+})
+
+describe('locatedSegments', () => {
+  test('a cd moves the segments after it, relative or absolute, and resolves ..', () => {
+    const located = locatedSegments('cd server && npx vitest run src/a.test.ts; cd ../shared; npm test | tail -3', 'C:/work')
+    expect(located.map(({ cwd }) => cwd)).toEqual(['C:/work', 'C:/work/server', 'C:/work/server', 'C:/work/shared', 'C:/work/shared'])
+    expect(locatedSegments('cd /tmp/x && ls', 'C:/work')[1]?.cwd).toBe('/tmp/x')
+    expect(locatedSegments('cd "C:/other repo" && ls', 'C:/work')[1]?.cwd).toBe('C:/other repo')
+  })
+
+  test('cd alone, cd - and cd ~ go somewhere this cannot see', () => {
+    expect(locatedSegments('cd && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+    expect(locatedSegments('cd - && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+    expect(locatedSegments('cd ~/x && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+    expect(locatedSegments('cd ~ && cd C:/back && ls', 'C:/work')[2]?.cwd).toBe('C:/back')
   })
 })

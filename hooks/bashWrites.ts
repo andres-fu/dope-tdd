@@ -1,4 +1,4 @@
-import { commandSegments } from './shell'
+import { ELSEWHERE, commandSegments, locatedSegments } from './shell'
 
 const PATH_TO_SOURCE = String.raw`((?:[A-Za-z]:)?(?:[\w.~-]*\/)*src\/[\w./-]+?\.tsx?)`
 const SOURCE_PATH = new RegExp(String.raw`(?:^|[\s'"=(])` + PATH_TO_SOURCE + String.raw`(?=$|[\s'"),;])`, 'g')
@@ -29,8 +29,21 @@ function writesIn(segment: string): string[] {
   ]
 }
 
-export function findSourceWrites(command: string): string[] {
+/**
+ * Source files the command writes. With a `root`, each path is resolved
+ * against the directory its segment runs in (a `cd` earlier in the command
+ * moves it), so the result is absolute and a write in another repository
+ * resolves outside this one. Without a root, paths come back as written.
+ */
+export function findSourceWrites(command: string, root?: string): string[] {
   const normalized = command.replace(/\\/g, '/')
-  const written = commandSegments(normalized).flatMap(writesIn).filter(isSourceFile)
+  if (root === undefined) {
+    return [...new Set(commandSegments(normalized).flatMap(writesIn).filter(isSourceFile))]
+  }
+  const written = locatedSegments(normalized, root).flatMap(({ segment, cwd }) =>
+    writesIn(segment)
+      .filter(isSourceFile)
+      .map(path => (/^(?:[A-Za-z]:)?\//.test(path) ? path : cwd === ELSEWHERE ? `${ELSEWHERE}/${path}` : `${cwd}/${path}`)),
+  )
   return [...new Set(written)]
 }

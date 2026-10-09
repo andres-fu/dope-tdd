@@ -115,3 +115,10 @@ export function watchedDirs(config: LayoutConfig): string[] {
   const dirs = [literalRoot(config.layout.source), literalRoot(config.layout.test)]
   return dirs.includes(null) ? ['.'] : [...new Set(dirs as string[])]
 }
+
+/** True when `path` is the root or sits under it, whatever the spelling of the drive letter. */
+export function isInsideRoot(root: string, path: string): boolean {
+  const base = toForwardSlashes(root).replace(/\/$/, '').toLowerCase()
+  const candidate = toForwardSlashes(path).replace(/\/$/, '').toLowerCase()
+  return candidate === base || candidate.startsWith(`${base}/`)
+}

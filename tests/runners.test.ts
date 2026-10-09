@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { runnerArgv } from '../hooks/catchCheck'
-import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed } from '../hooks/runners'
+import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation } from '../hooks/runners'
+import { ELSEWHERE } from '../hooks/shell'
 import {
   DOTNET_FAIL,
   DOTNET_MTP_FAIL,
@@ -162,5 +163,20 @@ describe('the command that runs one test file', () => {
   test('vitest and jest still run through node on the runner found', () => {
     expect(runnerArgv('C:/work', 'vitest', 'tests/a.test.ts')).toEqual(['node', 'C:/work/node_modules/vitest/vitest.mjs', 'run', 'tests/a.test.ts'])
     expect(runnerArgv('C:/work', 'jest', 'tests/a.test.ts', 'C:/work/node_modules/jest/bin/jest.js')).toEqual(['node', 'C:/work/node_modules/jest/bin/jest.js', 'tests/a.test.ts'])
+  })
+})
+
+describe('where a run executes', () => {
+  test('the named test file comes from the segment that runs the tests, resolved against its directory', () => {
+    expect(namedTestFile('cd server && npx vitest run src/__tests__/utils/dice.test.ts', 'node', 'C:/work')).toBe('C:/work/server/src/__tests__/utils/dice.test.ts')
+    expect(namedTestFile('npx vitest run tests/a.test.ts', 'node', 'C:/work')).toBe('C:/work/tests/a.test.ts')
+    expect(namedTestFile('cat tests/b.test.ts && npx vitest run', 'node', 'C:/work')).toBe(null)
+  })
+
+  test('the run location is the directory of the test-run segment, or null, or elsewhere', () => {
+    expect(testRunLocation('cd server && npx vitest run', 'C:/work')).toBe('C:/work/server')
+    expect(testRunLocation('cd ../other && npx vitest run', 'C:/work')).toBe('C:/other')
+    expect(testRunLocation('cd && npx vitest run', 'C:/work')).toBe(ELSEWHERE)
+    expect(testRunLocation('git status', 'C:/work')).toBe(null)
   })
 })

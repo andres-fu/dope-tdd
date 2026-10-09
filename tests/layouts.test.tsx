@@ -170,3 +170,31 @@ describe('/tdd setup', () => {
     expect(result.text).toMatch(/"roots": \[\n\s+"packages\/\*"\n\s+\]/)
   })
 })
+
+describe('a command that changes directory', () => {
+  test('a run from inside a package names that package\u2019s test, so the red lands on the module and not elsewhere', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+    world.bashFails = true
+    world.bashText = ' FAIL  src/__tests__/utils/dice.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+    await runBash($, 'cd server && npx vitest run src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(status.text).toMatch(/module: server\/utils\/dice/)
+    expect(status.text).not.toMatch(/elsewhere/)
+  })
+
+  test('a run in another repository is not this project\u2019s run', async ($, on) => {
+    const world = fakeEngine(on)
+    world.bashFails = true
+
+    await runBash($, 'cd ../other && npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/runs: 0/)
+    expect(status.text).not.toMatch(/phase: RED/)
+  })
+})

@@ -79,3 +79,12 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites('echo x > src/../../src/App.tsx')).toEqual([])
   })
 })
+
+describe('findSourceWrites with a root', () => {
+  test('resolves a write against the directory its segment runs in, so a cd into a package or out of the repo is followed', () => {
+    expect(findSourceWrites("cd server && sed -i 's/a/b/' src/x.ts", 'C:/work')).toEqual(['C:/work/server/src/x.ts'])
+    expect(findSourceWrites("cd ../other && echo x > src/x.ts", 'C:/work')).toEqual(['C:/other/src/x.ts'])
+    expect(findSourceWrites('echo x > src/x.ts', 'C:/work')).toEqual(['C:/work/src/x.ts'])
+    expect(findSourceWrites('echo x > C:/work/src/y.ts', 'C:/work')).toEqual(['C:/work/src/y.ts'])
+  })
+})

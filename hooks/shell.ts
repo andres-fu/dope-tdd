@@ -85,3 +85,61 @@ export function commandSegments(command: string): string[] {
   segments.push(current)
   return segments.map(segment => segment.trim()).filter(segment => segment !== '')
 }
+
+export type LocatedSegment = { segment: string; cwd: string }
+
+/** The directory a command's segments run in: a `cd` moves every segment after it. Outside the root is still a place, named as it is. */
+export const ELSEWHERE = '~'
+
+function joinPath(base: string, target: string): string {
+  const slashed = target.replace(/\\/g, '/')
+  if (/^(?:[A-Za-z]:)?\//.test(slashed)) {
+    return normalizePath(slashed)
+  }
+  return normalizePath(`${base.replace(/\\/g, '/')}/${slashed}`)
+}
+
+function normalizePath(path: string): string {
+  const drive = /^([A-Za-z]:)(\/.*)?$/.exec(path)
+  const prefix = drive === null ? (path.startsWith('/') ? '/' : '') : `${drive[1]}/`
+  const rest = drive === null ? path.replace(/^\//, '') : (drive[2] ?? '').replace(/^\//, '')
+  const out: string[] = []
+  for (const part of rest.split('/')) {
+    if (part === '' || part === '.') {
+      continue
+    }
+    if (part === '..') {
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  return `${prefix}${out.join('/')}`
+}
+
+/**
+ * Each segment with the directory it runs in. `root` is where the command
+ * starts; a `cd` segment moves the segments after it (`cd` alone, `cd ~` and
+ * `cd -` go somewhere this cannot see, so they go ELSEWHERE). A pipe does not
+ * change directory; a subshell is not tracked.
+ */
+export function locatedSegments(command: string, root: string): LocatedSegment[] {
+  let cwd = root.replace(/\\/g, '/').replace(/\/$/, '')
+  const located: LocatedSegment[] = []
+  for (const segment of commandSegments(command)) {
+    located.push({ segment, cwd })
+    const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
+    if (cd === null) {
+      continue
+    }
+    const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
+    if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
+      cwd = ELSEWHERE
+    } else if (cwd === ELSEWHERE) {
+      cwd = /^(?:[A-Za-z]:)?[\\/]/.test(target) ? joinPath('', target) : ELSEWHERE
+    } else {
+      cwd = joinPath(cwd, target)
+    }
+  }
+  return located
+}

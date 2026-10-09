@@ -24,8 +24,8 @@ import {
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
-import { classifyPath, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, isTestRun, namedTestFile, readRun, runnersFor } from './runners'
+import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { failedFilesIn, isTestRun, namedTestFile, readRun, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
 import { detectStackFrom } from './stacks'
 import type { StackName } from './stacks'
@@ -717,7 +717,8 @@ async function guardShell(
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
 
-  const writes = findSourceWrites(command).map(path => ({
+  // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
+  const writes = findSourceWrites(command, root).map(path => ({
     path: absolutePath(root, path),
     module: sourceModuleOf(root, path, config),
     policy: policyFor(config, relativePath(root, path)),
@@ -789,7 +790,9 @@ async function guardShell(
 
   const output = result.text ?? ''
   // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
-  const ran = isTestRun(command) && !neverRan(output)
+  // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
+  const runLocation = testRunLocation(command, root)
+  const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
   const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
@@ -797,12 +800,12 @@ async function guardShell(
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
-    const named = namedTestFile(command, config.stack) ?? undefined
-    const target = named === undefined ? null : classifyPath(root, absolutePath(root, named), config)
+    const named = namedTestFile(command, config.stack, root) ?? undefined
+    const target = named === undefined ? null : classifyPath(root, named, config)
     let targeted = updated
     if (target?.kind === 'test' && named !== undefined) {
       // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
-      const testPath = absolutePath(root, named)
+      const testPath = named
       if (outcome === 'fail' && updated.unlocked[target.module] === undefined) {
         targeted = await change($, s => recordRedUnlock(s, target.module, testPath, true))
         await rememberUnlock($, root, target.module, testPath, nowMs)
@@ -812,7 +815,8 @@ async function guardShell(
       }
     }
     if (outcome === 'fail') {
-      const failed = failedFilesIn(output)
+      // The runner prints paths relative to where it ran; resolve them there, then name them from the root.
+      const failed = failedFilesIn(output).map(path => relativePath(root, /^(?:[A-Za-z]:|\/)/.test(path) ? path : `${runLocation}/${path}`))
       // Every test file the runner named as failed unlocks its module the same way, without becoming current.
       for (const path of failed) {
         const seen = classifyPath(root, absolutePath(root, path), config)

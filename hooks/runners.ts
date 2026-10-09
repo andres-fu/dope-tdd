@@ -1,5 +1,6 @@
 import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome'
 import type { RunOutcome } from './runOutcome'
+import { ELSEWHERE, locatedSegments } from './shell'
 import { STACKS } from './stacks'
 import type { StackName } from './stacks'
 
@@ -341,13 +342,46 @@ export function failedFilesIn(output: string): string[] {
 
 const TOKEN = /[\w./\\:-]+/g
 
-/** The test file a command names, by the stack's naming rule, as written (a `res://` prefix dropped). */
-export function namedTestFile(command: string, stack: StackName): string | null {
+function namedIn(text: string, stack: StackName): string | null {
   const rule = STACKS[stack].testFile
-  for (const match of command.matchAll(TOKEN)) {
+  for (const match of text.matchAll(TOKEN)) {
     const token = match[0].replace(/^res:\/\//, '')
     if (rule.test(forwardSlashes(token))) {
       return token
+    }
+  }
+  return null
+}
+
+/**
+ * The test file a command names, by the stack's naming rule. Without a root,
+ * as written (a `res://` prefix dropped). With a root, taken from the segment
+ * that runs the tests and resolved against the directory that segment runs
+ * in, so `cd server && npx vitest run src/x.test.ts` names `<root>/server/src/x.test.ts`.
+ */
+export function namedTestFile(command: string, stack: StackName, root?: string): string | null {
+  if (root === undefined) {
+    return namedIn(command, stack)
+  }
+  for (const { segment, cwd } of locatedSegments(command, root)) {
+    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+      continue
+    }
+    const named = namedIn(segment, stack)
+    if (named === null) {
+      return null
+    }
+    const slashed = forwardSlashes(named)
+    return /^(?:[A-Za-z]:)?\//.test(slashed) ? slashed : `${cwd}/${slashed}`
+  }
+  return null
+}
+
+/** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
+export function testRunLocation(command: string, root: string): string | null {
+  for (const { segment, cwd } of locatedSegments(command, root)) {
+    if (RUNNERS.some(runner => runner.command.test(segment))) {
+      return cwd === ELSEWHERE ? ELSEWHERE : cwd
     }
   }
   return null

@@ -153,6 +153,17 @@ export function locatedSegments(command: string, root: string): LocatedSegment[]
   return located
 }
 
+// Commands that only read. `find` with -exec or -delete and `git` verbs that write are not among them.
+const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|where|tree|stat|file|du|df|sort|uniq|true|find(?![^\n]*\s-(?:exec|execdir|delete|ok|fprint)\b)|git\s+(?:status|log|diff|show|branch|rev-parse|ls-files|blame|remote|config\s+--get))(?:\s|$)/
+// An output redirect writes, whatever the command: `echo x > src/a.ts`. Stderr to a file descriptor or /dev/null does not.
+const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
+
+/** Only commands that read: nothing in it can change a file, so there is nothing to snapshot around it. */
+export function isPureRead(command: string): boolean {
+  const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
+  return segments.length > 0 && segments.every(segment => READS.test(segment) && !WRITES_OUTPUT.test(segment))
+}
+
 /** Where the shell is after the whole command, starting from `start`: the next call starts there. */
 export function cwdAfter(command: string, start: string): string {
   return commandSegments(command).reduce(movedBy, start.replace(/\\/g, '/').replace(/\/$/, ''))

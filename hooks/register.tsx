@@ -33,7 +33,7 @@ import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, r
 import { isTruncated, neverRan } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
-import { ELSEWHERE, cwdAfter } from './shell'
+import { ELSEWHERE, cwdAfter, isPureRead } from './shell'
 import { detectStackFrom, stackOf } from './stacks'
 import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
@@ -320,6 +320,8 @@ const SHARED_LOCK_REF = 'refs/worktree/dope-tdd-check'
 let sharedLockUnavailableSaid = false
 /** Module and test pairs whose baseline (the check's own command, nothing reverted) was green in this load. */
 const baselined = new Set<string>()
+/** Each root's upstream (else origin) remote URL, or null, read once for the field guide. */
+const remotesByRoot = new Map<string, string | null>()
 
 type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy'; module: string } | { kind: 'unavailable' }
 
@@ -1001,7 +1003,9 @@ async function guardShell(
     }
   }
 
-  const before = await snapshotWatched($, root, config)
+  // A command that only reads, or only runs tests, cannot be the agent writing source: no snapshot around it, no git cost.
+  const watched = !isPureRead(command) && !isPureTestRun(command)
+  const before = watched ? await snapshotWatched($, root, config) : null
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
@@ -1301,13 +1305,18 @@ async function fieldGuide($: EngineInterface, root: string): Promise<string | nu
     if (home === undefined || home === '') {
       return null
     }
-    let remote: string | null = null
-    for (const name of ['upstream', 'origin']) {
-      const answer = await gitQuiet($, root, ['config', '--get', `remote.${name}.url`])
-      if (answer !== null && answer.exitCode === 0 && answer.stdout.trim() !== '') {
-        remote = answer.stdout.trim()
-        break
+    // The remote does not move within a session: asked once per root, not on every prompt.
+    let remote = remotesByRoot.get(root)
+    if (remote === undefined) {
+      remote = null
+      for (const name of ['upstream', 'origin']) {
+        const answer = await gitQuiet($, root, ['config', '--get', `remote.${name}.url`])
+        if (answer !== null && answer.exitCode === 0 && answer.stdout.trim() !== '') {
+          remote = answer.stdout.trim()
+          break
+        }
       }
+      remotesByRoot.set(root, remote)
     }
     const key = guideKey(remote, root)
     const path = guidePath(home, key)

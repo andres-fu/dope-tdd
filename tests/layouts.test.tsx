@@ -46,7 +46,7 @@ describe('colocated tests', () => {
     const world = fakeEngine(on)
     configure(world, '{"layout":"colocated"}')
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat?.slice(-1)).toEqual(['src'])
@@ -145,7 +145,7 @@ describe('package roots', () => {
     const world = fakeEngine(on)
     configure(world, '{"roots":["packages/*"]}')
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat?.slice(-1)).toEqual(['packages'])

@@ -43,6 +43,19 @@ describe("a repository's field guide in the briefing", () => {
     expect(guide?.text).toContain('bash test/run-tests.sh')
   })
 
+  test('the remote is asked once per session, not on every prompt', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    world.remotes.set('upstream', 'https://github.com/Atom-Powell/Roadhouse-Game.git')
+    world.fileContents.set(GUIDE, RULES)
+    await startSession($)
+
+    await compose($)
+    await compose($)
+    await compose($)
+
+    expect(world.gitCalls.filter(argv => argv[1] === 'config').length).toBe(1)
+  })
+
   test('no guide, no section; the briefing is unchanged', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME } })
     world.remotes.set('origin', 'https://github.com/Atom-Powell/Roadhouse-Game.git')

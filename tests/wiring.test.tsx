@@ -68,7 +68,7 @@ describe('bash bypass', () => {
       world.numstat = '3\t1\tsrc/App.tsx\n'
     }
 
-    const result = await runBash($, 'ls src')
+    const result = await runBash($, './scripts/inspect.sh')
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/unguarded 0/)
@@ -88,6 +88,21 @@ describe('bash bypass', () => {
 
     expect(quiet.text).toMatch(/unguarded 0/)
     expect(charged.text).toMatch(/unguarded [12]/)
+  })
+
+  test('reads and pure test runs cost no git snapshot; a command that may write still gets one', async ($, on) => {
+    const world = fakeEngine(on)
+    const snapshots = () => world.gitCalls.filter(argv => argv.includes('--numstat')).length
+
+    await runBash($, 'ls src && cat src/App.tsx | head -20')
+    await runBash($, 'git status && git diff src/App.tsx')
+    await runBash($, 'npx vitest run tests/App.test.tsx | tail -5')
+    const afterReads = snapshots()
+    await runBash($, './scripts/codemod.sh')
+    await runBash($, 'cat src/App.tsx > /tmp/copy.tsx')
+
+    expect(afterReads).toBe(0)
+    expect(snapshots()).toBe(4)
   })
 
   test('counts a shell change to an unlocked module as test-first', async ($, on) => {
@@ -133,7 +148,7 @@ describe('bash bypass', () => {
   test('asks git for paths relative to the session root, so a project inside a bigger repo works', async ($, on) => {
     const world = fakeEngine(on)
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat).toContain('--relative')

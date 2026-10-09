@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { classifyAiPolicy, repoProblem, scoreIssue, shortlistOf } from './find-bugs.mjs'
+import { classifyAiPolicy, repoProblem, scoreIssue, shortlistOf, soQuery } from './find-bugs.mjs'
 
 const NOW = Date.parse('2026-10-09T00:00:00Z')
 const good = {
@@ -66,4 +66,9 @@ test('feature requests and chores are not bugs either', () => {
   assert.equal(scoreIssue({ ...base, title: 'bump to python 3.14' }).drop, 'not a bug: a feature request or chore')
   assert.equal(scoreIssue({ ...base, title: 'Something', labels: [{ name: 'enhancement' }] }).drop, 'not a bug: a feature request or chore')
   assert.equal(scoreIssue({ ...base, title: 'toast.loading() ignores the dismissable prop' }).drop, null)
+})
+
+test('the Stack Overflow query names the project and the problem, without bracket tags or noise', () => {
+  assert.equal(soQuery({ repository: { name: 'medusa' }, title: '@medusajs/ui: toast.loading() ignores the dismissable prop (hardcoded to false)' }), 'medusa toast.loading() ignores dismissable prop hardcoded false')
+  assert.equal(soQuery({ repository: { name: 'jodit' }, title: "[Bug] Paste after a space deletes the space if it's after a tag" }), "jodit Paste after space deletes space if it's after")
 })

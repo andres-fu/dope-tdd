@@ -38,6 +38,32 @@ const FEATURE_OR_CHORE = /^\s*\[feat(?:ure)?\]|\bfeature request\b|^\s*(?:bump|c
 /** No one repository fills the shortlist: at most this many issues from each. */
 const PER_REPO = 2
 
+const STOPWORDS = new Set(['a', 'an', 'the', 'to', 'of', 'is', 'are', 'in', 'on', 'for', 'with', 'and', 'or', 'when', 'be', 'by'])
+
+/** A Stack Overflow search for this bug: the project's name, then up to eight words of the problem. */
+export function soQuery(issue) {
+  const words = issue.title
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/(^|\s)@[\w.-]+\/[\w.-]+:/g, ' ')
+    .replace(/\(([^)]+)\)/g, ' $1 ')
+    .split(/\s+/)
+    .filter(word => word !== '' && !STOPWORDS.has(word.toLowerCase()))
+  return [issue.repository.name, ...words.slice(0, 8)].join(' ')
+}
+
+/** Questions on Stack Overflow that match: a lead to read, never proof on its own. Null when the API cannot be reached. */
+async function stackOverflowHits(query) {
+  const url = `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&pagesize=3&q=${encodeURIComponent(query)}`
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const body = await response.json()
+    return { total: body.items?.length ?? 0, top: (body.items ?? []).slice(0, 2).map(item => ({ title: item.title, link: item.link })) }
+  } catch {
+    return null
+  }
+}
+
 /** The best-scored issues in order, at most PER_REPO from any one repository. */
 export function shortlistOf(ranked, top) {
   const taken = new Map()
@@ -156,7 +182,7 @@ function parseArgs(argv) {
   return args
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2))
   const started = Date.now()
   const seen = new Map()
@@ -191,11 +217,19 @@ function main() {
   }
   kept.sort((a, b) => b.score - a.score || b.repo.stargazerCount - a.repo.stargazerCount)
   const shortlist = shortlistOf(kept, args.top)
+  // Corroboration from outside the issue tracker: the same problem asked about on Stack Overflow.
+  for (const entry of shortlist) {
+    entry.so = await stackOverflowHits(soQuery(entry.issue))
+    if (entry.so !== null && entry.so.total > 0) {
+      entry.score += 1
+      entry.reasons.push('+1 asked about on Stack Overflow')
+    }
+  }
 
   const day = new Date(started).toISOString().slice(0, 10)
   const dir = join(homedir(), '.dope-tdd', 'pool', 'candidates')
   mkdirSync(dir, { recursive: true })
-  const line = entry => `| ${entry.score} | [${entry.issue.repository.nameWithOwner}#${entry.issue.number}](${entry.issue.url}) | ${entry.repo.stargazerCount} | ${entry.issue.lang} | ${entry.issue.title.replace(/\|/g, '/').slice(0, 90)} | ${entry.reasons.join('; ')} | ${entry.ai.policy}${entry.ai.quote ? `: "${entry.ai.quote.replace(/\|/g, '/')}"` : ''} |`
+  const line = entry => `| ${entry.score} | [${entry.issue.repository.nameWithOwner}#${entry.issue.number}](${entry.issue.url}) | ${entry.repo.stargazerCount} | ${entry.issue.lang} | ${entry.issue.title.replace(/\|/g, '/').slice(0, 90)} | ${entry.reasons.join('; ')} | ${entry.ai.policy}${entry.ai.quote ? `: "${entry.ai.quote.replace(/\|/g, '/')}"` : ''} | ${entry.so === null || entry.so === undefined ? 'not checked' : entry.so.total === 0 ? 'none' : entry.so.top.map(hit => `[${hit.title.replace(/[|\]\[]/g, '/').slice(0, 60)}](${hit.link})`).join('<br>')} |`
   const report = [
     `# Bug search ${day}`,
     '',
@@ -205,8 +239,8 @@ function main() {
     '',
     `## Shortlist (top ${shortlist.length})`,
     '',
-    '| Score | Issue | Stars | Language | Title | Why | AI policy |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| Score | Issue | Stars | Language | Title | Why | AI policy | Stack Overflow |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
     ...shortlist.map(line),
     '',
     '## Kept but not shortlisted',
@@ -225,7 +259,7 @@ function main() {
   for (const entry of shortlist) {
     appendFileSync(
       join(homedir(), '.dope-tdd', 'pool', 'candidates.jsonl'),
-      `${JSON.stringify({ at: new Date(started).toISOString(), repo: entry.issue.repository.nameWithOwner, issue: entry.issue.number, url: entry.issue.url, bug: entry.issue.title, lang: entry.issue.lang, found: 'search', verified: false, status: 'found', score: entry.score, reasons: entry.reasons, aiPolicy: entry.ai.policy, stars: entry.repo.stargazerCount })}\n`,
+      `${JSON.stringify({ at: new Date(started).toISOString(), repo: entry.issue.repository.nameWithOwner, issue: entry.issue.number, url: entry.issue.url, bug: entry.issue.title, lang: entry.issue.lang, found: 'search', verified: false, status: 'found', score: entry.score, reasons: entry.reasons, aiPolicy: entry.ai.policy, stars: entry.repo.stargazerCount, stackOverflow: entry.so ?? null })}\n`,
     )
   }
   console.log(report.split('## Kept but not shortlisted')[0])
@@ -233,5 +267,8 @@ function main() {
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main()
+  main().catch(error => {
+    console.error(String(error?.stack ?? error))
+    process.exit(1)
+  })
 }

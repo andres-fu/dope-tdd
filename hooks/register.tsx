@@ -190,9 +190,13 @@ function parentDir(dir: string): string | null {
 type Runner = { kind: RunnerKind; root: string; tool: string }
 
 /** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
-async function detectRunner($: EngineInterface, root: string, config: GuardConfig): Promise<Runner | null> {
+async function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
+  const candidates = runnersFor(config.stack, testPath)
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
-    for (const runner of runnersFor(config.stack)) {
+    for (const runner of candidates) {
+      if (runner.markers.length === 0) {
+        return { kind: runner.kind, root, tool: runner.fallback }
+      }
       for (const marker of runner.markers) {
         if (await $.fs.exists(`${dir}/${marker}`)) {
           let tool: string | null = null
@@ -361,7 +365,7 @@ async function verifyCatch(
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
   }
-  const runner = await detectRunner($, root, config)
+  const runner = await detectRunner($, root, config, testPath)
   if (runner === null) {
     return catchOutcome('no-runner')
   }

@@ -91,11 +91,18 @@ with the JSON to use; `/tdd setup write` saves it.
 
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
-| Node | Vitest, Jest | from real output | `mirror`, `colocated`, `__tests__` |
-| Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated` |
-| Godot 4 | gdUnit4, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH | provisional | `godot`, `godot-src`, `godot-pascal` |
+| Node | Vitest, Jest | from real output | `mirror`, `colocated`, `__tests__`, `flat` |
+| Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
+| Godot 4 | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH; `dotnet test` for C# | provisional | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
 | Java | Maven, Gradle | provisional | `maven` |
 | .NET | `dotnet test` | provisional | `dotnet` |
+
+Presets named `flat` and `godot-csharp` pair **by name**: the module is the
+file's basename, so `scripts/show/BeatDeck.cs` and `test/BeatDeckTest.cs`
+meet at `BeatDeck` wherever each sits. Your own templates can do the same
+with `"pairing": "name"` and a `{name}` token on the test side. The runner
+for the catch check is chosen by the test file's extension, so a C# test in
+a Godot project runs through `dotnet test` and a GDScript one through gdUnit4.
 
 A provisional reader was written from the runner's own source or docs, not
 from a run, and is replaced the first time a real run is on record. Until

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { ROOT, editAt, fakeEngine, runBash, runCommand, writeAt } from './engine'
 import type { FakeWorld } from './engine'
-import { GDUNIT_FAIL, GDUNIT_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
+import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 /** The project's own files at the root, which is how the guard learns the stack without a config file. */
 function godotProject(world: FakeWorld) {
@@ -103,5 +103,37 @@ describe('a Python project with pytest, no config file', () => {
     expect(check?.slice(-1)).toEqual(['tests/pkg/test_calc.py'])
     expect(green.text).toMatch(/caught 1/)
     expect(green.text).toMatch(/stack: python \(detected\)/)
+  })
+})
+
+describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
+  test('the deny names the C# test, the catch check runs through dotnet test with a filter, and the fix is caught', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.existingFiles.add(`${ROOT}/project.godot`)
+    world.existingFiles.add(`${ROOT}/addons/gdUnit4/bin/GdUnitCmdTool.gd`)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "layout": "godot-csharp" }')
+    world.fileContents.set(`${ROOT}/scripts/show/BeatDeck.cs`, 'public static class BeatDeck { public static int a = 1; }')
+
+    const blocked = await editAt($, 'scripts/show/BeatDeck.cs')
+    const touched = await writeAt($, 'test/BeatDeckTest.cs', '[TestSuite] public class BeatDeckTest { [TestCase] public void Draws() { AssertInt(1).IsEqual(1); } }')
+    world.bashText = DOTNET_FAIL
+    await runBash($, 'dotnet test --filter FullyQualifiedName~BeatDeckTest')
+    const red = await runCommand($, 'tdd')
+    const allowed = await editAt($, 'scripts/show/BeatDeck.cs')
+    world.bashText = DOTNET_PASS
+    world.catchRun = { text: DOTNET_FAIL, exitCode: 1 }
+    await runBash($, 'dotnet test --filter FullyQualifiedName~BeatDeckTest')
+    const green = await runCommand($, 'tdd')
+
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch test/BeatDeckTest.cs, or run it and see it fail, before editing BeatDeck.')
+    expect(touched.context?.join(' ')).toMatch(/BeatDeck unlocked/)
+    expect(red.text).toMatch(/phase: RED/)
+    expect(red.text).toMatch(/module: BeatDeck/)
+    expect(allowed.deny).toBeUndefined()
+    const check = world.gitCalls.find(argv => argv[0] === 'dotnet')
+    expect(check).toContain('--filter')
+    expect(check).toContain('FullyQualifiedName~BeatDeckTest')
+    expect(green.text).toMatch(/caught 1/)
   })
 })

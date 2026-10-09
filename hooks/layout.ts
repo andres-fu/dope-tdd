@@ -10,7 +10,16 @@
 export type NodeLayoutName = 'mirror' | 'colocated' | '__tests__'
 export type LayoutName = NodeLayoutName | 'custom' | string
 
-export type Layout = { name: LayoutName; source: string; test: string }
+/**
+ * `pairing` is how a test finds its source. By path (the default) the module is
+ * the path both templates share, so tests mirror the source tree. By name the
+ * module is the file's basename alone: `scripts/show/BeatDeck.cs` and
+ * `test/BeatDeckTest.cs` meet at `BeatDeck` wherever each sits, which is how
+ * gdUnit4, pytest's flat `tests/` folders and many Node projects lay tests out.
+ */
+export type Pairing = 'path' | 'name'
+
+export type Layout = { name: LayoutName; source: string; test: string; pairing?: Pairing; displayExt?: string }
 
 export const LAYOUTS: Readonly<Record<NodeLayoutName, Layout>> = {
   mirror: { name: 'mirror', source: 'src/{module}.{ext}', test: 'tests/{module}.test.{ext}' },
@@ -91,11 +100,19 @@ export function literalRoot(template: string): string | null {
   return segment.includes('{') ? null : segment
 }
 
-/** A template is usable when it has an extension and names the module one way or the other. */
-export function templateError(template: string): string | null {
+/** A template is usable when it has an extension and names the module one way or the other; by name, `{name}` alone is enough. */
+export function templateError(template: string, pairing: Pairing = 'path'): string | null {
   if (!template.includes('{ext}')) {
     return `${template} must contain {ext}`
   }
+  if (pairing === 'name') {
+    return template.includes('{name}') || template.includes('{module}') ? null : `${template} must contain {name}`
+  }
   const namesModule = template.includes('{module}') || (template.includes('{dir}') && template.includes('{name}'))
   return namesModule ? null : `${template} must contain {module}, or both {dir} and {name}`
+}
+
+/** The last segment of a module id: what a name-paired layout keys on. */
+export function baseName(module: string): string {
+  return module.slice(module.lastIndexOf('/') + 1)
 }

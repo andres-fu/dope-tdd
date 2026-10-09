@@ -1,5 +1,5 @@
 import { globMatches } from './config'
-import { MIRROR, describeSourcePath, describeTestPath, fillTemplate, literalRoot, matchTemplate } from './layout'
+import { MIRROR, baseName, describeSourcePath, describeTestPath, fillTemplate, literalRoot, matchTemplate } from './layout'
 import type { Layout } from './layout'
 import { stackOf } from './stacks'
 import type { StackName } from './stacks'
@@ -63,10 +63,12 @@ export function classifyPath(root: string, path: string, config: LayoutConfig = 
     return { kind: 'other' }
   }
   const exts = stackOf(config.stack).exts
+  // By name the module is the basename on both sides, wherever the files sit.
+  const reduce = (module: string): string => (config.layout.pairing === 'name' ? baseName(module) : module)
   // The test template first: under a colocated layout a test file is also of the source's shape.
   const test = matchTemplate(config.layout.test, split.rest, exts)
   if (test !== null) {
-    return { kind: 'test', module: withPkg(split.pkg, test.module) }
+    return { kind: 'test', module: withPkg(split.pkg, reduce(test.module)) }
   }
   // A file inside a tests folder of its own that is not a test (a fixture, a conftest) is nobody's source.
   const testsRoot = literalRoot(config.layout.test)
@@ -75,7 +77,7 @@ export function classifyPath(root: string, path: string, config: LayoutConfig = 
   }
   const source = matchTemplate(config.layout.source, split.rest, exts)
   if (source !== null) {
-    return { kind: 'source', module: withPkg(split.pkg, source.module) }
+    return { kind: 'source', module: withPkg(split.pkg, reduce(source.module)) }
   }
   return { kind: 'other' }
 }
@@ -92,7 +94,7 @@ function joined(pkg: string, relative: string): string {
 /** `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch. */
 export function testPathFor(config: LayoutConfig, module: string): string {
   const { pkg, rest } = moduleParts(module, config.roots)
-  return joined(pkg, describeTestPath(config.layout, rest, stackOf(config.stack).displayExt))
+  return joined(pkg, describeTestPath(config.layout, rest, config.layout.displayExt ?? stackOf(config.stack).displayExt))
 }
 
 /** `src/utils/a`: how messages name the source of a module. */

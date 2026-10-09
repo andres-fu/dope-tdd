@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { DEFAULT_CONFIG, describeConfig, parseConfig } from '../hooks/config'
 import { classifyPath, testPathFor, watchedDirs } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
+import { runnersFor } from '../hooks/runners'
 import { inferLayout, suggestedConfig } from '../hooks/setup'
 import { STACKS, detectStackFrom } from '../hooks/stacks'
 
@@ -43,7 +44,7 @@ describe('which stack a project is', () => {
 
   test('a layout preset belongs to a stack, and the error names the stack', () => {
     const wrong = parseConfig('{ "stack": "python", "layout": "__tests__" }')
-    expect(wrong.error).toMatch(/layout must be one of mirror, package, colocated for python/)
+    expect(wrong.error).toMatch(/layout must be one of mirror, package, colocated, flat for python/)
     expect(wrong.stack).toBe('node')
     const badStack = parseConfig('{ "stack": "cobol" }')
     expect(badStack.error).toMatch(/stack must be one of/)
@@ -153,5 +154,56 @@ describe('a real repo: DungeonLobby', () => {
     expect(classifyPath(ROOT, `${ROOT}/shared/src/__tests__/schemas/room.test.ts`, config)).toEqual({ kind: 'test', module: 'shared/schemas/room' })
     expect(classifyPath(ROOT, `${ROOT}/client/src/utils/.gitkeep`, config)).toEqual({ kind: 'other' })
     expect(testPathFor(config, 'server/utils/dice')).toBe('server/src/__tests__/utils/dice.test.ts(x)')
+  })
+})
+
+describe('pairing by name', () => {
+  test('a Godot .NET project with gdUnit4 in C#: the module is the basename, wherever each file sits', () => {
+    const config = layout('godot', 'godot-csharp')
+    expect(classifyPath(ROOT, `${ROOT}/scripts/show/BeatDeck.cs`, config)).toEqual({ kind: 'source', module: 'BeatDeck' })
+    expect(classifyPath(ROOT, `${ROOT}/autoloads/GameState.cs`, config)).toEqual({ kind: 'source', module: 'GameState' })
+    expect(classifyPath(ROOT, `${ROOT}/test/BeatDeckTest.cs`, config)).toEqual({ kind: 'test', module: 'BeatDeck' })
+    expect(classifyPath(ROOT, `${ROOT}/test/.gdignore`, config)).toEqual({ kind: 'other' })
+    expect(testPathFor(config, 'BeatDeck')).toBe('test/BeatDeckTest.cs')
+  })
+
+  test('a flat Node layout and a flat Python layout pair the same way', () => {
+    const node = layout('node', 'flat')
+    expect(classifyPath(ROOT, `${ROOT}/src/lib/io.ts`, node)).toEqual({ kind: 'source', module: 'io' })
+    expect(classifyPath(ROOT, `${ROOT}/test/io.test.ts`, node)).toEqual({ kind: 'test', module: 'io' })
+    const python = layout('python', 'flat')
+    expect(classifyPath(ROOT, `${ROOT}/pkg/calc.py`, python)).toEqual({ kind: 'source', module: 'calc' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/test_calc.py`, python)).toEqual({ kind: 'test', module: 'calc' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/conftest.py`, python)).toEqual({ kind: 'other' })
+  })
+
+  test('setup picks the name-paired preset when tests sit flat and are named after their sources', () => {
+    const godot = inferLayout({
+      files: ['scripts/show/BeatDeck.cs', 'autoloads/GameState.cs', 'test/BeatDeckTest.cs', 'test/GameStateTest.cs', 'test/HarnessTest.cs'],
+      packageDirs: [],
+      rootEntries: ['project.godot', 'scripts', 'autoloads', 'test', 'Roadhouse.csproj'],
+    })
+    expect(godot.stack).toBe('godot')
+    expect(godot.layout.name).toBe('godot-csharp')
+    expect(godot.reason).toMatch(/2 of 3 test files pair with a source under godot-csharp/)
+    const node = inferLayout({ files: ['src/lib/io.ts', 'src/cli.ts', 'test/io.test.ts', 'test/cli.test.ts'], packageDirs: [''], rootEntries: ['package.json', 'src', 'test'] })
+    expect(node.layout.name).toBe('flat')
+  })
+
+  test('custom templates may pair by name, and the config says so', () => {
+    const config = parseConfig('{"stack":"node","layout":{"source":"lib/{module}.{ext}","test":"spec/{name}.spec.{ext}","pairing":"name"}}')
+    expect(config.error).toBe(null)
+    expect(classifyPath(ROOT, `${ROOT}/lib/deep/thing.ts`, config)).toEqual({ kind: 'source', module: 'thing' })
+    expect(classifyPath(ROOT, `${ROOT}/spec/thing.spec.ts`, config)).toEqual({ kind: 'test', module: 'thing' })
+    expect(describeConfig(config).join(' ')).toMatch(/by name/)
+    expect(parseConfig('{"layout":{"source":"lib/{module}.{ext}","test":"spec/{name}.spec.{ext}","pairing":"sideways"}}').error).toMatch(/pairing must be/)
+  })
+})
+
+describe('runners by extension', () => {
+  test('a C# test in a Godot project runs through dotnet, a GDScript one through gdUnit4', () => {
+    expect(runnersFor('godot', 'test/BeatDeckTest.cs').map(runner => runner.kind)).toEqual(['dotnet'])
+    expect(runnersFor('godot', 'test/player_test.gd').map(runner => runner.kind)).toEqual(['gdunit4'])
+    expect(runnersFor('node', 'tests/a.test.ts').map(runner => runner.kind)).toEqual(['vitest', 'jest'])
   })
 })

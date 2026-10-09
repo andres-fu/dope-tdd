@@ -36,7 +36,11 @@ export const STACKS: Readonly<Record<StackName, Stack>> = {
     testFile: /\.(?:test|spec)\.[cm]?[jt]sx?$/,
     codeFile: /\.[cm]?[jt]sx?$/,
     markers: ['package.json'],
-    layouts: LAYOUTS,
+    layouts: {
+      ...LAYOUTS,
+      // Tests in one flat folder, named after the source they test, wherever it sits under src.
+      flat: { name: 'flat', source: 'src/{module}.{ext}', test: 'test/{name}.test.{ext}', pairing: 'name' },
+    },
     defaultLayout: 'mirror',
     exempt: [],
   },
@@ -52,23 +56,30 @@ export const STACKS: Readonly<Record<StackName, Stack>> = {
       mirror: { name: 'mirror', source: 'src/{module}.{ext}', test: 'tests/{dir}test_{name}.{ext}' },
       package: { name: 'package', source: '{module}.{ext}', test: 'tests/{dir}test_{name}.{ext}' },
       colocated: { name: 'colocated', source: '{module}.{ext}', test: '{dir}test_{name}.{ext}' },
+      // pytest's usual flat tests/ folder: tests/test_calc.py for pkg/calc.py.
+      flat: { name: 'flat', source: '{module}.{ext}', test: 'tests/test_{name}.{ext}', pairing: 'name' },
     },
     defaultLayout: 'mirror',
     exempt: [],
   },
   godot: {
     name: 'godot',
-    exts: ['gd'],
+    // GDScript, and C# for a Godot .NET project.
+    exts: ['gd', 'cs'],
     displayExt: 'gd',
-    // gdUnit4 generates foo_test.gd for foo.gd and FooTest.gd for Foo.gd; GUT looks for test_*.gd.
-    testFile: /(?:^|\/)(?:[^/]*_test|[^/]*Test|test_[^/]*)\.gd$/,
-    codeFile: /\.gd$/,
+    // gdUnit4 generates foo_test.gd for foo.gd, FooTest.gd for Foo.gd and FooTest.cs for Foo.cs; GUT looks for test_*.gd.
+    testFile: /(?:^|\/)(?:[^/]*_test|[^/]*Test|test_[^/]*)\.(?:gd|cs)$/,
+    codeFile: /\.(?:gd|cs)$/,
     markers: ['project.godot'],
     layouts: {
       // gdUnit4's own rule: res://x/foo.gd pairs with res://test/x/foo_test.gd, and res://src/x/foo.gd drops the src.
       godot: { name: 'godot', source: '{module}.{ext}', test: 'test/{module}_test.{ext}' },
       'godot-src': { name: 'godot-src', source: 'src/{module}.{ext}', test: 'test/{module}_test.{ext}' },
       'godot-pascal': { name: 'godot-pascal', source: '{module}.{ext}', test: 'test/{module}Test.{ext}' },
+      // One flat test/ folder, named after the script: test/player_test.gd for scripts/player.gd.
+      'godot-flat': { name: 'godot-flat', source: '{module}.{ext}', test: 'test/{name}_test.{ext}', pairing: 'name' },
+      // A Godot .NET project with gdUnit4's C# API: test/BeatDeckTest.cs for scripts/show/BeatDeck.cs.
+      'godot-csharp': { name: 'godot-csharp', source: '{module}.{ext}', test: 'test/{name}Test.{ext}', pairing: 'name', displayExt: 'cs' },
     },
     defaultLayout: 'godot',
     exempt: ['addons/**'],

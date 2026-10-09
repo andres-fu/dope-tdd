@@ -65,15 +65,18 @@ function parseLayout(value: unknown, stack: StackName): Layout {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('layout must be a preset name or { source, test } templates')
   }
-  const { source, test } = value as { source?: unknown; test?: unknown }
+  const { source, test, pairing } = value as { source?: unknown; test?: unknown; pairing?: unknown }
   if (typeof source !== 'string' || typeof test !== 'string') {
     throw new Error('layout templates need a source and a test string')
   }
-  const problem = templateError(source) ?? templateError(test)
+  if (pairing !== undefined && pairing !== 'path' && pairing !== 'name') {
+    throw new Error('layout pairing must be "path" or "name"')
+  }
+  const problem = templateError(source, pairing) ?? templateError(test, pairing)
   if (problem !== null) {
     throw new Error(`layout: ${problem}`)
   }
-  return { name: 'custom', source, test }
+  return pairing === undefined ? { name: 'custom', source, test } : { name: 'custom', source, test, pairing }
 }
 
 function parseStack(value: unknown, detected: StackName | undefined): { stack: StackName; stackSource: StackSource } {
@@ -181,7 +184,7 @@ export function policyFor(config: GuardConfig, relativeSourcePath: string): Poli
 }
 
 export function describeLayout(layout: Layout): string {
-  return `${layout.name} (${layout.source} ↔ ${layout.test})`
+  return `${layout.name} (${layout.source} ↔ ${layout.test}${layout.pairing === 'name' ? ', by name' : ''})`
 }
 
 export function describeStack(config: GuardConfig): string {
@@ -222,7 +225,7 @@ function listChange(name: string, before: readonly string[], after: readonly str
 }
 
 function sameLayout(a: Layout, b: Layout): boolean {
-  return a.source === b.source && a.test === b.test
+  return a.source === b.source && a.test === b.test && (a.pairing ?? 'path') === (b.pairing ?? 'path')
 }
 
 /** What an edit to the config file changed, in words, or null when nothing the guard reads moved. */

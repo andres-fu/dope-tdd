@@ -53,3 +53,17 @@ fixture, and a test; the .NET row is there largely to prove that holds.
   needs a lookup from a survey; today the package dirs must mirror.
 - C# under Godot, Kotlin under Gradle, GUT as a second Godot runner.
 - `/tdd setup` offering observe mode to a newcomer.
+
+## Update, 2026-10-09: pairing by name
+A layout may pair `by name`: the module is the file's basename, so
+`scripts/show/BeatDeck.cs` and `test/BeatDeckTest.cs` meet at `BeatDeck`
+wherever each sits, with no index to maintain. Presets: `flat` for Node
+(`test/{name}.test.ts`) and Python (`tests/test_{name}.py`), `godot-flat`
+and `godot-csharp` for Godot. The Godot stack now takes `.cs` as code, and
+the runner for a catch check is chosen by the test file's extension, so a
+C# test in a Godot .NET project runs through `dotnet test` (which needs no
+marker file) and a GDScript one through gdUnit4. Setup scores a name-paired
+preset by how many tests share a basename with a source. Known limit: two
+sources with the same basename in different folders collapse into one
+module; tests named after a feature rather than a class (Roadhouse's
+`BandCoreTest` tests `RecruitCost`) pair with nothing and unlock nothing.

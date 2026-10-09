@@ -20,6 +20,10 @@ export type RunnerOptions = { godot?: string | null }
 export type Runner = {
   kind: RunnerKind
   stack: StackName
+  /** Stacks whose projects this runner may serve besides its own: dotnet runs the C# tests of a Godot .NET project. */
+  alsoFor: readonly StackName[]
+  /** Test file extensions it runs, without the dot. */
+  exts: readonly string[]
   /** Files under a directory that say the runner lives there; checked walking up from the project root. */
   markers: readonly string[]
   /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
@@ -210,6 +214,8 @@ function noFailedFiles(): string[] {
 export const RUNNERS: readonly Runner[] = [
   {
     kind: 'vitest',
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
     stack: 'node',
     markers: ['node_modules/vitest/vitest.mjs'],
     tools: ['node_modules/vitest/vitest.mjs'],
@@ -222,6 +228,8 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'jest',
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
     stack: 'node',
     markers: ['node_modules/jest/bin/jest.js'],
     tools: ['node_modules/jest/bin/jest.js'],
@@ -234,6 +242,8 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'pytest',
+    alsoFor: [],
+    exts: ['py'],
     stack: 'python',
     markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
     tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
@@ -246,6 +256,8 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'gdunit4',
+    alsoFor: [],
+    exts: ['gd'],
     stack: 'godot',
     markers: ['addons/gdUnit4/bin/GdUnitCmdTool.gd'],
     tools: [],
@@ -272,6 +284,8 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'maven',
+    alsoFor: [],
+    exts: ['java'],
     stack: 'java',
     markers: ['pom.xml'],
     tools: ['mvnw.cmd', 'mvnw'],
@@ -284,6 +298,8 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'gradle',
+    alsoFor: [],
+    exts: ['java'],
     stack: 'java',
     markers: ['build.gradle', 'build.gradle.kts'],
     tools: ['gradlew.bat', 'gradlew'],
@@ -297,7 +313,10 @@ export const RUNNERS: readonly Runner[] = [
   {
     kind: 'dotnet',
     stack: 'dotnet',
-    markers: ['global.json', 'Directory.Build.props', 'Directory.Packages.props'],
+    alsoFor: ['godot'],
+    exts: ['cs'],
+    // No marker: `dotnet test` runs from the project root wherever the SDK is on PATH.
+    markers: [],
     tools: [],
     fallback: 'dotnet',
     command: commandOf(DOTNET),
@@ -316,8 +335,10 @@ export function runnerNamed(kind: RunnerKind): Runner {
   return runner
 }
 
-export function runnersFor(stack: StackName): readonly Runner[] {
-  return RUNNERS.filter(runner => runner.stack === stack)
+/** The runners that can run this stack's tests; with a test path, only those that run its extension. */
+export function runnersFor(stack: StackName, testPath?: string): readonly Runner[] {
+  const ext = testPath === undefined ? null : forwardSlashes(testPath).replace(/^.*\./, '')
+  return RUNNERS.filter(runner => (runner.stack === stack || runner.alsoFor.includes(stack)) && (ext === null || runner.exts.includes(ext)))
 }
 
 /** A shell command that runs any known runner, or a package's test script. */

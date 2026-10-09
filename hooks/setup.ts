@@ -1,6 +1,6 @@
 import { CONFIG_FILE, describeLayout, globMatches } from './config'
 import type { GuardConfig } from './config'
-import { LAYOUTS } from './layout'
+import { LAYOUTS, baseName } from './layout'
 import type { Layout, NodeLayoutName } from './layout'
 import { classifyPath, sourcePathFor, splitRoot, testFileFor } from './mirror'
 import type { LayoutConfig } from './mirror'
@@ -109,6 +109,8 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
   if (testFiles.length === 0) {
     return { stack: stack.name, stackReason, layout: fallback, roots: [], testFiles: 0, reason: 'no test files found, assuming the default' }
   }
+  // Under a name-paired layout a test pairs with any code file of that basename, wherever it sits.
+  const sourceNames = new Set(files.filter(file => !isTestFileIn(stack, file)).map(file => baseName(file).replace(/\.[^.]+$/, '')))
   const score = (layout: Layout): { pairs: number; matched: number } => {
     const config: LayoutConfig = { layout, roots: [], stack: stack.name }
     let pairs = 0
@@ -119,7 +121,9 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
         continue
       }
       matched++
-      if (stack.exts.some(ext => known.has(sourceFile(config, target.module, ext)))) {
+      const paired =
+        layout.pairing === 'name' ? sourceNames.has(baseName(target.module)) : stack.exts.some(ext => known.has(sourceFile(config, target.module, ext)))
+      if (paired) {
         pairs++
       }
     }
@@ -139,7 +143,13 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
 /** `named` is the stack the config pins, when it does; otherwise the survey decides. */
 export function inferLayout(survey: Survey, named?: StackName): Inference {
   const chosen = named === undefined ? inferStack(survey) : { stack: named, reason: `named in ${CONFIG_FILE}` }
-  return chosen.stack === 'node' ? nodeInference(survey, chosen.reason) : presetInference(survey, STACKS[chosen.stack], chosen.reason)
+  if (chosen.stack !== 'node') {
+    return presetInference(survey, STACKS[chosen.stack], chosen.reason)
+  }
+  const byShape = nodeInference(survey, chosen.reason)
+  // A flat test/ folder fits none of the mirrored shapes; then the presets are scored like any other stack's.
+  const noShapeFits = byShape.testFiles > 0 && byShape.reason.startsWith('0 of ')
+  return noShapeFits ? presetInference(survey, STACKS.node, chosen.reason) : byShape
 }
 
 function examples(survey: Survey, config: LayoutConfig, stack: Stack): string[] {

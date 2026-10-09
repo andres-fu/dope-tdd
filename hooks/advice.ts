@@ -109,7 +109,7 @@ function greenAdvice(
   sourcePath: string,
 ): string | null {
   if (check === 'refactor') {
-    return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before.`
+    return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.`
   }
   if (check?.kind === 'missed') {
     return missedAdvice(module, sawRed, check.slipped)

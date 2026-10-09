@@ -124,7 +124,7 @@ describe('band verdict', () => {
     expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeDefined()
   })
 
-  test('a refactor that kept the test green says REFACTOR', async ($, on) => {
+  test('a refactor that kept the test green says REFACTOR, in plain text: a fact about the change, not credit', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     await runTests($, world, 'pass')
@@ -133,7 +133,7 @@ describe('band verdict', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: 'REFACTOR' }))?.props.color).toBe(ACCENT.pass)
+    expect((await ui.find({ type: 'Text', text: 'REFACTOR' }))?.props.color).not.toBe(ACCENT.pass)
     expect(await ui.find({ type: 'Text', text: '1 REFACTOR' })).toBeDefined()
   })
 

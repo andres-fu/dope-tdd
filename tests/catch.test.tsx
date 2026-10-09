@@ -161,8 +161,11 @@ describe('catches the change', () => {
     const runsAfter = world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).length
 
     expect(runsAfter).toBe(runsBefore)
-    expect(status.text).toMatch(/refactors 1/)
+    // Never beside caught and proven: a refactor is not a verdict on the test.
+    expect(status.text).toMatch(/^refactors: 1 \(changed while green with the test untouched; not re-checked\)$/m)
+    expect(status.text).not.toMatch(/catch check:.*refactors/)
     expect(result.context?.join(' ')).toMatch(/a refactor, not re-checked/)
+    expect(result.context?.join(' ')).toMatch(/If it changed what the code does, that has no test yet: write one first/)
   })
 
   test('restoring the original text after breaking it on purpose leaves nothing to revert: no file is touched, and the red is the proof', async ($, on) => {

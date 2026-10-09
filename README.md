@@ -146,7 +146,7 @@ fixture.
 
 Above the prompt, three rows: the phase (WRITING, RED, GREEN, PAUSED, IDLE)
 with the run trail; the current module with its verdict (SAW RED or NEVER
-SAW RED, then CAUGHT, MISSED, UNVERIFIED or REFACTOR from the catch check);
+SAW RED, then CAUGHT, MISSED or UNVERIFIED from the catch check, or REFACTOR, in plain text, for a change made while green that was not re-checked);
 and the session tally. `/tdd why` explains every word, `/tdd` prints the
 full status and event log, and Claude reads the same lines in its tool
 results as it works.

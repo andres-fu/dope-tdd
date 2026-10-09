@@ -31,7 +31,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `arch 5` Cut Pause in favour of a session-scoped `/tdd mode warn` that keeps counting.
 - [ ] `arch` Uninstall path: `/tdd off`, a clean store, nothing left in the repo but the JSON.
 - [ ] `arch2 8` No catch-check opt-out: `"catchCheck": false` in `dope-tdd.json` for a repo with a dev server or `tsc --watch` that sees every revert.
-- [ ] `arch2 9` REFACTOR on the band is coloured like green; it is a fact about the change, not a verdict on it.
+- [x] `arch2 9` Paid 2026-10-09 with beth S7. REFACTOR on the band is coloured like green; it is a fact about the change, not a verdict on it.
 - [ ] `docs` In the VS Code extension's chat panel hooks run but nothing draws (mods overview, Where mods run): the band is invisible there and the tool results, `/tdd` and the status tool are the whole face. Say so in the README, and keep every verdict in the tool result.
 - [x] `docs` Publish checklist (plugins/publish): paid 2026-10-08. `version` omitted on purpose so the commit is the version and every push reaches testers (CI validates non-strict for that reason); `license`, `homepage`, `repository` and `keywords` set; LICENSE (MIT); CI on windows and ubuntu; tester brief in `docs/testers.md`. Left over: an eval suite with `claude plugin eval` using the playground planted bugs as cases against a no-plugin baseline, the scripted live harness `arch 4` asks for; it runs only on Linux or WSL2, since a Bash grant needs a sandbox backend.
 
@@ -84,7 +84,7 @@ A read-only review as a principal engineer running many agents on macOS with wat
 - [x] `beth S4` Paid 2026-10-09: a venv in the repo first, then the lockfile's launcher (uv, poetry, pdm, pipenv run python), then python3 outside Windows. S4: Python on macOS: the fallback is `python` (absent on stock macOS); poetry and pipenv venvs live outside the repo. Try `python3`, `uv run`, `poetry run`.
 - [x] `beth S5` Paid 2026-10-09: the shell gate sees writes to code files of every stack anywhere (py, gd, cs, java, kt, js, ts); the layout decides which are source; test-named files are dropped. S5: The shell write gate only knows `src/**/*.ts(x)` (bashWrites.ts); `sed -i app/models.py` passes in enforce.
 - [x] `beth S6` Paid 2026-10-09: the receipt re-checks with `git checkout <base> -- path`, run, `git checkout HEAD -- path`; base from origin/HEAD, else main. The receipt's re-check `git stash push -- path && run; git stash pop` pops the reviewer's own stash when the change is committed. Use `git checkout <base> -- path; run; git checkout HEAD -- path`.
-- [ ] `beth S7` REFACTOR is credited without a check; a behaviour change made while green after a proven cycle is never reverted.
+- [x] `beth S7` Paid 2026-10-09 the honest way: a refactor cannot be told from an untested behaviour change, so REFACTOR is no longer credit: plain text on the band, its own status line apart from the catch verdicts, and the advice says a behaviour change needs a test first. S7: REFACTOR is credited without a check; a behaviour change made while green after a proven cycle is never reverted.
 - [ ] `beth A1` Cost per tool call: 4 git spawns plus a stat of every dirty file on every shell call, observe included; up to 2 git calls per prompt for the field guide.
 - [ ] `beth A5` Path comparisons ignore case everywhere; wrong on Linux.
 - [ ] `beth Q` register.tsx 1360 lines; one Bash call makes about 10 separate state writes; the lock lives in three places; this ledger had contradicted the code (fixed).

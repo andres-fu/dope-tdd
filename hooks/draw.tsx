@@ -61,7 +61,8 @@ function drawCatchWord(el: AnyElements, outcome: CatchOutcome | { kind: 'refacto
     return <Text bold color={ACCENT.ember}>MISSED</Text>
   }
   if (outcome.kind === 'refactor') {
-    return <Text bold color={ACCENT.pass}>REFACTOR</Text>
+    // A fact about the change, not a verdict on the test: plain text, never the pass colour.
+    return <Text bold>REFACTOR</Text>
   }
   return <Text dimColor>UNVERIFIED</Text>
 }
@@ -119,7 +120,7 @@ function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
       {drawCount(el, s.caught, 'CAUGHT', ACCENT.pass)}
       {s.proven > 0 && drawCount(el, s.proven, 'PROVEN', ACCENT.pass)}
       {drawCount(el, s.missed, 'MISSED', ACCENT.ember)}
-      {s.refactors > 0 && drawCount(el, s.refactors, 'REFACTOR', ACCENT.pass)}
+      {s.refactors > 0 && <Text>{`${s.refactors} REFACTOR`}</Text>}
       {s.neverSawRed > 0 && drawCount(el, s.neverSawRed, 'NEVER SAW RED', ACCENT.paused)}
       {s.testChanged > 0 && drawCount(el, s.testChanged, 'TEST CHANGED', ACCENT.paused)}
       {s.workarounds > 0 && drawCount(el, s.workarounds, 'WORKAROUNDS', ACCENT.paused)}

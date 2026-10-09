@@ -166,3 +166,14 @@ describe('Python without a venv in the repo', () => {
     })
   }
 })
+
+describe('the shell gate knows every stack', () => {
+  test('an in-place sed on a Python source with no test touched is refused like an Edit', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonProject(world)
+
+    const result = await runBash($, "sed -i 's/a + b/a - b/' src/pkg/calc.py")
+
+    expect(result.deny).toMatch(/write the failing test first/)
+  })
+})

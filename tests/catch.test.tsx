@@ -36,6 +36,8 @@ describe('catches the change', () => {
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     expect(status.text).toMatch(/missed 1/)
     expect(result.context?.join(' ')).toMatch(/does NOT catch the change/)
+    // The agent is shown what slipped past the test, so it can write the assertion.
+    expect(result.context?.join(' ')).toMatch(/The change it did not notice:\n  - export const a = 1\n  \+ export const b = 1\nAdd an assertion that fails without it\./)
   })
 
   test('a check that times out is unverified and the source is still restored', async ($, on) => {

@@ -4,6 +4,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { briefingText } from './briefing'
+import { changedLines } from './changedLines'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
 import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor } from './config'
@@ -399,6 +400,10 @@ async function verifyCatch(
         timeoutMs: timeBudgetMs(greenRunMs),
       })
       outcome = catchOutcome(run)
+      if (outcome.kind === 'missed') {
+        // What the test did not notice: the agent needs the lines, not just the verdict, to write the assertion.
+        outcome = { kind: 'missed', slipped: changedLines(before, after) }
+      }
     } catch (error) {
       outcome = catchOutcome(runFailure(error))
     }

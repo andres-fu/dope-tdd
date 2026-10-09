@@ -80,7 +80,17 @@ function testChangedAdvice(module: string, sourcePath: string): string {
   return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and ${sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.`
 }
 
-function missedAdvice(module: string, sawRed: boolean): string {
+function slippedLines(slipped: readonly string[] | undefined): string {
+  return slipped === undefined || slipped.length === 0
+    ? ''
+    : ` The change it did not notice:\n${slipped.map(line => `  ${line}`).join('\n')}\nAdd an assertion that fails without it.`
+}
+
+function missedAdvice(module: string, sawRed: boolean, slipped?: readonly string[]): string {
+  return `${missedVerdict(module, sawRed)}${slippedLines(slipped)}`
+}
+
+function missedVerdict(module: string, sawRed: boolean): string {
   return sawRed
     ? `dope-tdd: GREEN on ${module}, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.`
     : `dope-tdd: GREEN on ${module}. Its test has never failed, and it still passes with your change undone, so it has proven nothing yet. If the change was a fix, the test is missing an assertion for it; if it was a refactor, break the code on purpose and run again to prove the test.`
@@ -98,7 +108,7 @@ function greenAdvice(
     return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before.`
   }
   if (check?.kind === 'missed') {
-    return missedAdvice(module, sawRed)
+    return missedAdvice(module, sawRed, check.slipped)
   }
   if (check?.kind === 'caught') {
     return sawRed

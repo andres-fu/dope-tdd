@@ -22,7 +22,8 @@ export type EventKind =
   | 'commented-out'
   | 'hollow-touch'
 
-export type CatchOutcome = { kind: 'caught' } | { kind: 'missed' } | { kind: 'unverified'; reason: string }
+/** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
+export type CatchOutcome = { kind: 'caught' } | { kind: 'missed'; slipped?: readonly string[] } | { kind: 'unverified'; reason: string }
 
 export type ChangeKind = 'fix' | 'refactor'
 

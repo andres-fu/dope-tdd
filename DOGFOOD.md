@@ -175,3 +175,14 @@ in the briefing: test-first, caught 1, all four numbers moved together (798, 432
 the guide, and `bash test/run-tests.sh` green at 798 of 798. $0.54 and 18 turns vs $0.34 and 12: the extra
 cost is the full guarded run the repo asks for. Lesson: the plugin proves the test; the guide carries the
 repo's own definition of done.
+
+## 2026-10-09 — The Beth-ready round, re-checked live
+
+After B2 B3 S1-S7 A1 (baseline before CAUGHT, test-named files never source, shell gate for every stack,
+cwd carried between calls, monorepo runners and workspace runs, honest REFACTOR, no snapshot around reads):
+Project-RESEARCH (vitest) and Roadhouse (Godot C#, dotnet) enforce runs from upstream main, in parallel:
+test-first 1/1, blocked 0, caught 1 on both, $0.17 and $0.55, unchanged from before. DungeonLobby earlier the
+same evening: the same. Harness note, not plugin: in the Roadhouse run Claude Code refused every form of
+`GODOT_BIN=... bash test/run-tests.sh` the agent tried, where the same allowlist passed an hour earlier, so the
+full guarded run did not happen; the agent said so and did not work around it. For launcher runs, set
+GODOT_BIN in the launcher's environment instead of asking the agent to.

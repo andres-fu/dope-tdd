@@ -523,3 +523,43 @@ describe('PROVEN: break, red, restore, green', () => {
     expect(status.text).not.toMatch(/proven 1/)
   })
 })
+
+describe('the catch check stays out of the way', () => {
+  test('"catchCheck": false in dope-tdd.json: a green is never reverted or re-run, and the status says the check is off', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"catchCheck":false}')
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(world.baselineCalls).toBe(0)
+    expect(status.text).toMatch(/catch check: off/)
+  })
+
+  test('a session that ends mid-check puts the change back on its way out', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await $.session.end({ reason: 'prompt_input_exit', sessionId: 's', resume: { id: 's' } } as never)
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+  })
+
+  test('a change kept aside goes under the home folder, never into the repository where git add -A would take it', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    await fixUnderGuard($, world)
+    world.onCatchRun = () => {
+      world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
+    }
+
+    await runTests($, world, 'pass')
+
+    const kept = world.writes.find(([, text]) => text === 'export const b = 1')
+    expect(kept?.[0]).toBe('C:/Users/tester/.dope-tdd/kept/throughline/src/utils/formatDuration.ts')
+    expect(world.toasts.some(t => /your change is in C:\/Users\/tester\/\.dope-tdd\/kept\/throughline\/src\/utils\/formatDuration\.ts/.test(t))).toBe(true)
+  })
+})

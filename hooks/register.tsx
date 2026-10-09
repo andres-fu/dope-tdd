@@ -354,9 +354,15 @@ async function forget($: EngineInterface, key: string): Promise<void> {
   }
 }
 
-/** A change that will not be written back is kept next to its file, so no text is ever only in the log. */
-async function keepAside($: EngineInterface, path: string, text: string): Promise<string | null> {
-  const kept = `${path}${KEPT_SUFFIX}`
+/**
+ * A change that will not be written back is kept, so no text is ever only in the log: under
+ * `~/.dope-tdd/kept/<repo>/<path>`, outside the repository where `git add -A` would take it; next to its
+ * file only when there is no home folder to name.
+ */
+async function keepAside($: EngineInterface, root: string, path: string, text: string): Promise<string | null> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  const repo = root.replace(/\\/g, '/').replace(/\/$/, '').split('/').pop() ?? 'repo'
+  const kept = home === undefined || home === '' ? `${path}${KEPT_SUFFIX}` : `${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd/kept/${repo}/${relativePath(root, path)}`
   try {
     await $.fs.write(kept, text)
     return kept
@@ -383,14 +389,14 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
         continue
       }
       if (onDisk !== file.before) {
-        left.push((await keepAside($, file.path, file.after)) ?? file.path)
+        left.push((await keepAside($, root, file.path, file.after)) ?? file.path)
         continue
       }
       try {
         await $.fs.write(file.path, file.after)
         restored.push(file.path)
       } catch {
-        left.push((await keepAside($, file.path, file.after)) ?? file.path)
+        left.push((await keepAside($, root, file.path, file.after)) ?? file.path)
       }
     }
     await forget($, key)
@@ -399,7 +405,7 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
     $.ui.toast(`dope-tdd restored ${restored.length} file(s) after an interrupted check`)
   }
   if (left.length > 0) {
-    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; the change is kept beside each, see the log`)
+    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; each change is kept, see the log`)
     $.ui.log(`dope-tdd: not restored, they no longer match the interrupted check; kept as: ${left.join(', ')}`)
   }
 }
@@ -472,7 +478,7 @@ async function verifyCatch(
   }
   // Observe touches nothing on disk: a module the config only watches (observe mode, or outside the scope) is never reverted.
   const policy = policyFor(config, relativePath(root, cycleChange.path))
-  if (policy === 'observe' || policy === 'exempt') {
+  if (policy === 'observe' || policy === 'exempt' || config.catchCheck === false) {
     return 'unchecked'
   }
   if (cycleChange.before === null) {
@@ -576,8 +582,8 @@ async function verifyCatch(
   }
 
   if (movedWhileReverted) {
-    const kept = await keepAside($, path, after)
-    const where = kept === null ? 'see the log' : `your change is in ${relativePath(root, kept)}`
+    const kept = await keepAside($, root, path, after)
+    const where = kept === null ? 'see the log' : `your change is in ${kept.startsWith(root) ? relativePath(root, kept) : kept}`
     $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
     $.ui.log(`dope-tdd: ${path} changed while reverted; the text after your change: ${kept ?? `(could not be written) ${after}`}`)
     await forget($, journalKey)
@@ -1278,6 +1284,16 @@ export const register: Register = on => {
 
   // The session's receipt stays on this machine. Exits stay fast: a log that cannot be written is skipped, never waited on.
   on('session.end', async ($, e, next) => {
+    try {
+      // A session that ends mid-check (an exit, a crash of the run) must not leave old code on disk: put the change back.
+      const root = await $.session.root()
+      const nowMs = await $.clock.now()
+      if (isChecking(await readStats($), nowMs) || (await checkInFlight($, root, nowMs)) === null) {
+        await repairInterruptedCheck($, root)
+      }
+    } catch {
+      // The next session start repairs what this could not.
+    }
     try {
       await writeSessionLog($, e.sessionId, e.reason)
     } catch {

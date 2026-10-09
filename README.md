@@ -176,6 +176,15 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `exempt`: paths the guard never touches or counts, such as an entry file
   or generated code. Prefer this to pausing; a pause hides edits, an
   exemption is on the record.
+- `catchCheck`: `false` turns the catch check off, for a repo whose dev
+  server, `tsc --watch` or test watcher would rebuild on every revert. A
+  green then stops at GREEN; turning it off is recorded as a loosening.
+
+The catch check writes the old code into your file for the length of one
+test run, then puts your change back. If the session ends mid-check, the
+change is put back on the way out (or at the next session start). If the
+file changed under it, your file is left alone and the change is kept in
+`~/.dope-tdd/kept/<repo>/`, never inside the repository.
 
 The counts run in every mode. Modes decide whether an edit is denied, whether
 Claude is told, and whether the catch check runs: `warn` and `enforce` check,

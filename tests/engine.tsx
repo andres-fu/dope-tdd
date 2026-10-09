@@ -50,6 +50,8 @@ export type FakeWorld = {
   numstat: string
   untracked: string
   gitCalls: (readonly string[])[]
+  /** The working directory of each process run, in order, beside `gitCalls`. */
+  runCwds: string[]
   /** Git refs and objects for the shared check lock; `gitUnavailable` makes the folder not a git checkout. */
   refs: Map<string, string>
   objects: Map<string, string>
@@ -91,6 +93,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    runCwds: [],
     refs: new Map(),
     objects: new Map(),
     gitUnavailable: false,
@@ -126,6 +129,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
+    world.runCwds.push(fakePath(String((e as { init?: { cwd?: unknown } }).init?.cwd ?? '')))
     if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
       world.baselineCalls++
       return { value: { exitCode: world.baselineRun.exitCode, stdout: world.baselineRun.text, stderr: '' } } as never
@@ -197,7 +201,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('fs.exists', (_$, e) => {
     const path = fakePath(e.path)
     return {
-      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')),
+      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path === `${ROOT}/node_modules/vitest/vitest.mjs`),
     } as never
   })
   on('fs.stat', () => ({

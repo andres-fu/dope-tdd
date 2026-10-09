@@ -219,6 +219,17 @@ type Runner = { kind: RunnerKind; root: string; tool: string; launcher?: readonl
 /** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
 async function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
   const candidates = runnersFor(config.stack, testPath)
+  // First a runner installed in the test's own package (a monorepo that does not hoist): from the test's folder up to the root.
+  const top = root.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+  for (let dir: string | null = parentDir(testPath.replace(/\\/g, '/')); dir !== null && dir.toLowerCase() !== top && isInsideRoot(root, dir); dir = parentDir(dir)) {
+    for (const runner of candidates) {
+      for (const candidate of runner.tools) {
+        if (await $.fs.exists(`${dir}/${candidate}`)) {
+          return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }
+        }
+      }
+    }
+  }
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
     for (const runner of candidates) {
       if (runner.markers.length === 0) {
@@ -514,7 +525,9 @@ async function verifyCatch(
     return catchOutcome('no-runner')
   }
   const godot = config.godot ?? (await godotFromEnv($))
-  const relativeTest = relativePath(root, testPath)
+  // A runner installed inside a package runs from that package, so its own config loads; otherwise from the root.
+  const runIn = runner.root !== root && isInsideRoot(root, runner.root) ? runner.root : root
+  const relativeTest = relativePath(runIn, testPath)
   const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot, ...(runner.launcher === undefined ? {} : { launcher: runner.launcher }) })
 
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
@@ -523,7 +536,7 @@ async function verifyCatch(
   if (!baselined.has(baselineKey)) {
     let base: CatchOutcome
     try {
-      const run = await $.process.run(argv, { cwd: root, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
+      const run = await $.process.run(argv, { cwd: runIn, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
       base = catchOutcome(run, relativeTest)
     } catch (error) {
       base = catchOutcome(runFailure(error))
@@ -572,7 +585,7 @@ async function verifyCatch(
     reverted = true
     try {
       const run = await $.process.run(argv, {
-        cwd: root,
+        cwd: runIn,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
       })

@@ -67,6 +67,29 @@ describe('__tests__ folders', () => {
   })
 })
 
+describe('a runner installed in the package, not hoisted', () => {
+  test('is found from the test file, and the check runs from that package with the path relative to it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    configure(world, '{"roots":["server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/node_modules/vitest/vitest.mjs`)
+    world.fileContents.set(`${ROOT}/server/src/utils/dice.ts`, 'export const a = 1')
+
+    await writeAt($, 'server/src/__tests__/utils/dice.test.ts', "it('x', () => { expect(1).toBe(2) })")
+    world.bashFails = true
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    await editAt($, 'server/src/utils/dice.ts')
+    world.bashFails = false
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    const at = world.gitCalls.findIndex(argv => argv.some(arg => arg.includes('vitest.mjs')))
+    expect(world.gitCalls[at]).toEqual(['node', `${ROOT}/server/node_modules/vitest/vitest.mjs`, 'run', 'src/__tests__/utils/dice.test.ts'])
+    expect(world.runCwds[at]).toBe(`${ROOT}/server`)
+    expect(status.text).toMatch(/caught 1/)
+  })
+})
+
 describe('package roots', () => {
   test('each package is its own project; a test in one does not unlock the same module in another', async ($, on) => {
     const world = fakeEngine(on)

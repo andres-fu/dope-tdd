@@ -98,9 +98,9 @@ with the JSON to use; `/tdd setup write` saves it.
 | --- | --- | --- | --- |
 | Node | Vitest, Jest | from real output | `mirror`, `colocated`, `__tests__`, `flat` |
 | Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
-| Godot 4 | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH; `dotnet test` for C# | provisional | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
+| Godot 4 | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
 | Java | Maven, Gradle | provisional | `maven` |
-| .NET | `dotnet test` | provisional | `dotnet` |
+| .NET | `dotnet test` | from real output | `dotnet` |
 
 Presets named `flat` and `godot-csharp` pair **by name**: the module is the
 file's basename, so `scripts/show/BeatDeck.cs` and `test/BeatDeckTest.cs`

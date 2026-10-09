@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { runnerArgv } from '../hooks/catchCheck'
+import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
 import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   DOTNET_FAIL,
   DOTNET_MTP_FAIL,
   DOTNET_PASS,
+  DOTNET_REAL_FAIL,
+  DOTNET_REAL_NO_MATCH,
+  DOTNET_REAL_PASS,
   GDUNIT_FAIL,
   GDUNIT_NONE,
   GDUNIT_PASS,
@@ -85,6 +88,7 @@ describe('Maven, Gradle and dotnet (provisional)', () => {
   test('says it is provisional', () => {
     expect(runnerNamed('gdunit4').provisional).toBe(true)
     expect(runnerNamed('maven').provisional).toBe(true)
+    expect(runnerNamed('dotnet').provisional).toBe(false)
     expect(runnerNamed('pytest').provisional).toBe(false)
     expect(runnerNamed('vitest').provisional).toBe(false)
   })
@@ -178,5 +182,25 @@ describe('where a run executes', () => {
     expect(testRunLocation('cd ../other && npx vitest run', 'C:/work')).toBe('C:/other')
     expect(testRunLocation('cd && npx vitest run', 'C:/work')).toBe(ELSEWHERE)
     expect(testRunLocation('git status', 'C:/work')).toBe(null)
+  })
+})
+
+describe('dotnet test, read from a real Roadhouse run', () => {
+  test('a pass, a failure, and a filter that matches nothing', () => {
+    expect(readRun(DOTNET_REAL_PASS)).toBe('pass')
+    expect(readRun(DOTNET_REAL_FAIL)).toBe('fail')
+    // Exit code 0 and no summary: the silent-absence shape. It must never read as a pass.
+    expect(readRun(DOTNET_REAL_NO_MATCH)).toBe('none')
+  })
+
+  test('names the failed test file from the stack trace, with forward slashes, and not a source file', () => {
+    expect(failedFilesIn(DOTNET_REAL_FAIL)).toEqual(['C:/work/Roadhouse-Game/test/BandCoreTest.cs'])
+    expect(failedFilesIn(DOTNET_REAL_PASS)).toEqual([])
+  })
+
+  test('a catch check over a filter that matched nothing is unverified, never missed', () => {
+    expect(catchOutcome({ stdout: DOTNET_REAL_NO_MATCH, stderr: '', exitCode: 0 })).toEqual({ kind: 'unverified', reason: 'no tests ran' })
+    expect(catchOutcome({ stdout: DOTNET_REAL_FAIL, stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
+    expect(catchOutcome({ stdout: DOTNET_REAL_PASS, stderr: '', exitCode: 0 })).toEqual({ kind: 'missed' })
   })
 })

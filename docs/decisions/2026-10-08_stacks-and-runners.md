@@ -32,7 +32,7 @@ Rows today:
 | python | pytest | real output, pytest 9.1.1, 2026-10-08 | mirror, package, colocated |
 | godot | gdunit4 | the reporter's format strings in its source; **provisional** | godot, godot-src, godot-pascal |
 | java | maven, gradle | documented formats; **provisional** | maven |
-| dotnet | dotnet test | documented formats; **provisional** | dotnet |
+| dotnet | dotnet test | real output, Roadhouse, SDK 8.0.425, 2026-10-09 (the testing-platform format stays provisional) | dotnet |
 
 A provisional reader is replaced the first time a real run is on record.
 The gdUnit4 row runs the suite headless through the command-line tool with
@@ -67,3 +67,14 @@ preset by how many tests share a basename with a source. Known limit: two
 sources with the same basename in different folders collapse into one
 module; tests named after a feature rather than a class (Roadhouse's
 `BandCoreTest` tests `RecruitCost`) pair with nothing and unlock nothing.
+
+## Update, 2026-10-09: the dotnet reader from a real run
+Run for real against Adam's Roadhouse (SDK 8.0.425, Godot 4.6.2 mono, gdUnit4 C#
+adapter): a pass, a failure with one assertion broken locally and restored, and a
+filter that names no suite. The summary line was as documented. Two things the
+documentation had not said: a filter that matches nothing prints "No test matches
+the given testcase filter" and exits 0, now read as no run, so a catch check over
+it is unverified and never "missed"; and a failed test's stack trace names its
+file, which is how the runner's failed files are known. Roadhouse's README warns
+that `dotnet test` can print Passed over a suite whose engine tests never ran; the
+reader's floor is a zero total reading as no run.

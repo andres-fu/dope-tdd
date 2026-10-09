@@ -173,11 +173,15 @@ function readGradle(output: string): RunOutcome {
   return 'unknown'
 }
 
-// --- dotnet test; provisional until a real run is on record. VSTest prints "Passed!/Failed! - Failed: n, Passed: n, Skipped: n, Total: n";
-// the newer testing platform prints "Test summary: total: n, failed: n, succeeded: n, skipped: n".
+// --- dotnet test, read from real output (Roadhouse, .NET SDK 8.0.425, gdUnit4 C# adapter 3.0.0, 2026-10-09): VSTest prints
+// "Passed!/Failed!  - Failed: n, Passed: n, Skipped: n, Total: n, Duration: ..."; a filter that matches nothing prints
+// "No test matches the given testcase filter `...`" and exits 0, which is no run, never a pass. The newer testing platform's
+// "Test summary: total: n, failed: n, succeeded: n, skipped: n" is still provisional.
 const DOTNET_VSTEST = /(?:Passed|Failed)!\s+-\s+Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)/
 const DOTNET_MTP = /Test summary:\s*total:\s*(\d+),\s*failed:\s*(\d+),\s*succeeded:\s*(\d+),\s*skipped:\s*(\d+)/
-const DOTNET_NO_TESTS = /No test is available/
+const DOTNET_NO_TESTS = /No test is available|No test matches the given testcase filter/
+// A failed test's stack trace names the file and line: `at Ns.Class.Method() in C:\path\FooTest.cs:line 15`.
+const DOTNET_TRACE_FILE = /\bin\s+((?:[A-Za-z]:)?[^\n]*?\.cs):line\s+\d+/g
 
 function readDotnet(output: string): RunOutcome {
   const text = stripAnsi(output)
@@ -194,6 +198,11 @@ function readDotnet(output: string): RunOutcome {
     return failed > 0 ? 'fail' : total === 0 ? 'none' : 'pass'
   }
   return DOTNET_NO_TESTS.test(text) ? 'none' : 'unknown'
+}
+
+function dotnetFailedFiles(output: string): string[] {
+  const paths = [...stripAnsi(output).matchAll(DOTNET_TRACE_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])]))
+  return unique(paths.filter(path => STACKS.dotnet.testFile.test(path)))
 }
 
 /** `src/test/java/com/x/FooTest.java` → `com.x.FooTest`; a path outside that layout keeps its stem. */
@@ -331,8 +340,8 @@ export const RUNNERS: readonly Runner[] = [
     command: commandOf(DOTNET),
     argv: (_root, testPath, tool) => [tool, 'test', '--nologo', '--filter', `FullyQualifiedName~${stem(testPath)}`],
     read: readDotnet,
-    failedFiles: noFailedFiles,
-    provisional: true,
+    failedFiles: dotnetFailedFiles,
+    provisional: false,
   },
 ]
 

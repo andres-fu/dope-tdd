@@ -188,3 +188,49 @@ export const DOTNET_MTP_FAIL = String.raw`failed Bar (3ms)
 
 Test summary: total: 3, failed: 1, succeeded: 2, skipped: 0, duration: 0.4s
 `
+
+// --- dotnet test, REAL: .NET SDK 8.0.425, Roadhouse (Godot 4.6.2 mono, gdUnit4.api 5.0.0, adapter 3.0.0), Windows, 2026-10-09.
+// `dotnet test Roadhouse.csproj --nologo --filter "FullyQualifiedName~BandCoreTest"`. Paths shortened.
+export const DOTNET_REAL_PASS = String.raw`  Determining projects to restore...
+  Restored C:\work\Roadhouse-Game\Roadhouse.csproj (in 18.07 sec).
+  Roadhouse -> C:\work\Roadhouse-Game\.godot\mono\temp\bin\Debug\Roadhouse.dll
+Test run for C:\work\Roadhouse-Game\.godot\mono\temp\bin\Debug\Roadhouse.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:     4, Skipped:     0, Total:     4, Duration: 20 ms - Roadhouse.dll (net8.0)
+`
+
+// Same run with one assertion in BandCoreTest broken (50.0 expected as 51.0); exit code 1.
+export const DOTNET_REAL_FAIL = String.raw`  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Roadhouse -> C:\work\Roadhouse-Game\.godot\mono\temp\bin\Debug\Roadhouse.dll
+Test run for C:\work\Roadhouse-Game\.godot\mono\temp\bin\Debug\Roadhouse.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+Error:
+	Expecting:
+	    '50'
+	 in range between
+	    '50.999999999' <> '51.000000001'
+  Failed TheFirstRecruitCostsFifty [121 ms]
+  Error Message:
+   Expecting:
+    '50'
+ in range between
+    '50.999999999' <> '51.000000001'
+  Stack Trace:
+     at Roadhouse.Tests.BandCoreTest.TheFirstRecruitCostsFifty() in C:\work\Roadhouse-Game\test\BandCoreTest.cs:line 15
+
+
+Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 38 ms - Roadhouse.dll (net8.0)
+`
+
+// A filter that names no suite: exit code 0, and not a word about passing. The silent-absence shape Roadhouse's own README warns about.
+export const DOTNET_REAL_NO_MATCH = [
+  '  Determining projects to restore...',
+  '  All projects are up-to-date for restore.',
+  '  Roadhouse -> C:\\work\\Roadhouse-Game\\.godot\\mono\\temp\\bin\\Debug\\Roadhouse.dll',
+  'Test run for C:\\work\\Roadhouse-Game\\.godot\\mono\\temp\\bin\\Debug\\Roadhouse.dll (.NETCoreApp,Version=v8.0)',
+  'A total of 1 test files matched the specified pattern.',
+  'No test matches the given testcase filter `FullyQualifiedName~NoSuchSuiteXyz` in C:\\work\\Roadhouse-Game\\.godot\\mono\\temp\\bin\\Debug\\Roadhouse.dll',
+  '',
+].join('\n')

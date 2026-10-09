@@ -31,6 +31,7 @@ import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
+import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
 import { detectStackFrom, stackOf } from './stacks'
 import type { StackName } from './stacks'
@@ -1171,6 +1172,33 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   return lines.join('\n')
 }
 
+/** This repository's field guide as a briefing section, or null when there is none. Never fails the prompt. */
+async function fieldGuide($: EngineInterface, root: string): Promise<string | null> {
+  try {
+    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+    if (home === undefined || home === '') {
+      return null
+    }
+    let remote: string | null = null
+    for (const name of ['upstream', 'origin']) {
+      const answer = await gitQuiet($, root, ['config', '--get', `remote.${name}.url`])
+      if (answer !== null && answer.exitCode === 0 && answer.stdout.trim() !== '') {
+        remote = answer.stdout.trim()
+        break
+      }
+    }
+    const key = guideKey(remote, root)
+    const path = guidePath(home, key)
+    if (!(await $.fs.exists(path))) {
+      return null
+    }
+    const text = await $.fs.read(path)
+    return typeof text === 'string' && text.trim() !== '' ? guideSection(key, text) : null
+  } catch {
+    return null
+  }
+}
+
 /** The session's record, left under the user's home when it ends; DOPE_TDD_LOG=off keeps it in memory. */
 async function writeSessionLog($: EngineInterface, sessionId: string, reason: string): Promise<void> {
   if ((await $.env.get('DOPE_TDD_LOG')) === 'off') {
@@ -1259,7 +1287,14 @@ export const register: Register = on => {
       return composed
     }
     const text = briefingText(config, await briefingCommand($, root, config))
-    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
+    const guide = await fieldGuide($, root)
+    return {
+      sections: [
+        ...composed.sections,
+        { id: 'dope-tdd:briefing', text, scope: 'session' as const },
+        ...(guide === null ? [] : [{ id: 'dope-tdd:field-guide', text: guide, scope: 'session' as const }]),
+      ],
+    }
   })
 
   on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult).catch(($, _e, next) => {

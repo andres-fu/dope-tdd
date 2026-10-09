@@ -54,6 +54,8 @@ export type FakeWorld = {
   refs: Map<string, string>
   objects: Map<string, string>
   gitUnavailable: boolean
+  /** Remote URLs by name, answered to `git config --get remote.<name>.url`. */
+  remotes: Map<string, string>
   /** When true the engine cannot say where the project is, so every guard throws before it decides. */
   rootFails: boolean
   writes: [string, string][]
@@ -87,6 +89,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     refs: new Map(),
     objects: new Map(),
     gitUnavailable: false,
+    remotes: new Map(),
     rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
@@ -154,6 +157,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       const sha = rest[rest.length - 1] ?? ''
       const body = world.objects.get(sha)
       return body === undefined ? answer(128) : answer(0, body)
+    }
+    if (verb === 'config') {
+      const url = world.remotes.get((rest[rest.length - 1] ?? '').replace(/^remote\.|\.url$/g, ''))
+      return url === undefined ? answer(1) : answer(0, `${url}\n`)
     }
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never

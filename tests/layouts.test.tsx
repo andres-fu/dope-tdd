@@ -187,6 +187,36 @@ describe('a command that changes directory', () => {
     expect(status.text).not.toMatch(/elsewhere/)
   })
 
+  test('the shell keeps its directory between calls: a cd in one call moves the run in the next', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+
+    await runBash($, 'cd server')
+    world.bashFails = true
+    world.bashText = ' FAIL  src/__tests__/utils/dice.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'npx vitest run src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(status.text).toMatch(/module: server\/utils\/dice/)
+  })
+
+  test('a cd out of the project resets to the root, as Claude Code resets the shell', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+
+    await runBash($, 'cd server')
+    await runBash($, 'cd ../../elsewhere')
+    world.bashFails = true
+    world.bashText = ' FAIL  server/src/__tests__/utils/dice.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/module: server\/utils\/dice/)
+  })
+
   test('a run in another repository is not this project\u2019s run', async ($, on) => {
     const world = fakeEngine(on)
     world.bashFails = true

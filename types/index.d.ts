@@ -112,6 +112,6 @@ export type TddStats = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'dope-tdd': { stats: TddStats; tick: number }
+    'dope-tdd': { stats: TddStats; tick: number; 'bash-cwd': string; 'powershell-cwd': string }
   }
 }

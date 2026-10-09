@@ -33,6 +33,7 @@ import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerN
 import { isTruncated, neverRan } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
+import { ELSEWHERE, cwdAfter } from './shell'
 import { detectStackFrom, stackOf } from './stacks'
 import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
@@ -84,6 +85,22 @@ const SURVEY_CAP = 5_000
 
 const stats = atom({ plugin: 'dope-tdd', key: 'stats' } as const, INITIAL_STATS)
 const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
+/** Where each of the agent's shells is: Claude Code keeps it between calls, and resets it to the root when a cd leaves the project. */
+const bashCwd = atom({ plugin: 'dope-tdd', key: 'bash-cwd' } as const, '')
+const powershellCwd = atom({ plugin: 'dope-tdd', key: 'powershell-cwd' } as const, '')
+type ShellName = 'bash' | 'powershell'
+
+function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
+  return shell === 'bash' ? read($, bashCwd) : read($, powershellCwd)
+}
+
+async function writeCwd($: EngineInterface, shell: ShellName, cwd: string): Promise<void> {
+  if (shell === 'bash') {
+    await update($, bashCwd, () => cwd)
+  } else {
+    await update($, powershellCwd, () => cwd)
+  }
+}
 
 /** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
 let cachedConfig: { root: string; config: GuardConfig } | null = null
@@ -896,15 +913,19 @@ async function guardShell(
   $: EngineInterface,
   command: string,
   proceed: () => Promise<ToolCallResult>,
+  shell: ShellName,
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
   await ensureRepaired($, root, await $.clock.now())
   const current = await readStats($)
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
+  // The command starts where the last one left the shell, when that is still inside the project.
+  const carried = await readCwd($, shell)
+  const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
 
   // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
-  const writes = findSourceWrites(command, root).map(path => ({
+  const writes = findSourceWrites(command, start).map(path => ({
     path: absolutePath(root, path),
     module: sourceModuleOf(root, path, config),
     policy: policyFor(config, relativePath(root, path)),
@@ -939,6 +960,8 @@ async function guardShell(
   if (result.deny !== undefined) {
     return result
   }
+  const moved = cwdAfter(command, start)
+  await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root)
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
@@ -984,7 +1007,7 @@ async function guardShell(
   const output = result.text ?? ''
   // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
   // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
-  const runLocation = testRunLocation(command, root)
+  const runLocation = testRunLocation(command, start)
   const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
   const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated
@@ -993,7 +1016,7 @@ async function guardShell(
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
-    const named = namedTestFile(command, config.stack, root) ?? undefined
+    const named = namedTestFile(command, config.stack, start) ?? undefined
     const target = named === undefined ? null : classifyPath(root, named, config)
     let targeted = updated
     const namedImports = named === undefined ? [] : await importedModules($, root, config, named)
@@ -1358,13 +1381,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardShell($, e.command, () => next(e))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardShell($, e.command, () => next(e), 'bash')).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardShell($, e.command, () => next(e))).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardShell($, e.command, () => next(e), 'powershell')).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

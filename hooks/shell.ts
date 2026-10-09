@@ -148,18 +148,27 @@ export function locatedSegments(command: string, root: string): LocatedSegment[]
   const located: LocatedSegment[] = []
   for (const segment of commandSegments(command)) {
     located.push({ segment, cwd })
-    const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
-    if (cd === null) {
-      continue
-    }
-    const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
-    if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
-      cwd = ELSEWHERE
-    } else if (cwd === ELSEWHERE) {
-      cwd = /^(?:[A-Za-z]:)?[\\/]/.test(target) ? joinPath('', target) : ELSEWHERE
-    } else {
-      cwd = joinPath(cwd, target)
-    }
+    cwd = movedBy(cwd, segment)
   }
   return located
+}
+
+/** Where the shell is after the whole command, starting from `start`: the next call starts there. */
+export function cwdAfter(command: string, start: string): string {
+  return commandSegments(command).reduce(movedBy, start.replace(/\\/g, '/').replace(/\/$/, ''))
+}
+
+function movedBy(cwd: string, segment: string): string {
+  const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
+  if (cd === null) {
+    return cwd
+  }
+  const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
+  if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
+    return ELSEWHERE
+  }
+  if (cwd === ELSEWHERE) {
+    return /^(?:[A-Za-z]:)?[\\/]/.test(target) ? joinPath('', target) : ELSEWHERE
+  }
+  return joinPath(cwd, target)
 }

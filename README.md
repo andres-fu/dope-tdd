@@ -177,8 +177,16 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   or generated code. Prefer this to pausing; a pause hides edits, an
   exemption is on the record.
 
-Everything else, including the catch check and the evidence, runs in every
-mode. Modes only decide whether an edit is denied and whether Claude is told.
+The counts run in every mode. Modes decide whether an edit is denied, whether
+Claude is told, and whether the catch check runs: `warn` and `enforce` check,
+`observe` only measures and touches nothing on disk in your project.
+
+## Your record
+
+When a session that did anything ends, Dope TDD writes its counts and
+receipt to one file on your machine, `~/.dope-tdd/sessions/<date>-<session>.json`.
+It never goes in the repository and never leaves your computer. Set
+`DOPE_TDD_LOG=off` to keep nothing.
 
 ## Develop
 

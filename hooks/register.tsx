@@ -31,6 +31,7 @@ import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
+import { sessionLogPath, sessionRecord } from './sessionLog'
 import { detectStackFrom, stackOf } from './stacks'
 import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
@@ -1170,6 +1171,27 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   return lines.join('\n')
 }
 
+/** The session's record, left under the user's home when it ends; DOPE_TDD_LOG=off keeps it in memory. */
+async function writeSessionLog($: EngineInterface, sessionId: string, reason: string): Promise<void> {
+  if ((await $.env.get('DOPE_TDD_LOG')) === 'off') {
+    return
+  }
+  const s = await readStats($)
+  if (!hasActivity(s)) {
+    return
+  }
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  if (home === undefined || home === '') {
+    return
+  }
+  const root = await $.session.root()
+  const config = await loadConfig($, root)
+  const nowMs = await $.clock.now()
+  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs }, formatStatus(s, nowMs, config))
+  await $.fs.write(sessionLogPath(home, nowMs, sessionId), `${JSON.stringify(record, null, 2)}
+`)
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   const config = await loadConfig($, await $.session.root())
   return formatStatus(await readStats($), await $.clock.now(), config)
@@ -1198,6 +1220,16 @@ export const register: Register = on => {
       description: 'Report the TDD guard state: paused or on, phase, current module, counts, and the recent event log.',
     })
     return started
+  })
+
+  // The session's receipt stays on this machine. Exits stay fast: a log that cannot be written is skipped, never waited on.
+  on('session.end', async ($, e, next) => {
+    try {
+      await writeSessionLog($, e.sessionId, e.reason)
+    } catch {
+      // The log is a record, not a gate.
+    }
+    return next(e)
   })
 
   on('command.run', { command: 'tdd' }, async ($, e) => {

@@ -102,6 +102,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('ui.log', (_$, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
     return { value: undefined } as never

@@ -33,3 +33,5 @@ jobs:
         run: claude plugin test .
       - name: Check the scorecard arithmetic
         run: node --test tools/pool/scorecard.test.mjs
+      - name: Check the bug-search rules
+        run: node --test tools/pool/find-bugs.test.mjs

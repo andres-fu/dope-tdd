@@ -122,6 +122,11 @@ describe('recognising a test run in a shell command', () => {
     const body = "cat > body.md <<'EOF'\nTo re-check:\nnpx vitest run server/a.test.ts\ndotnet test --filter Foo\nEOF\ngh pr create --body-file body.md"
     expect(isTestRun(body)).toBe(false)
     expect(testRunLocation(body, 'C:/work')).toBe(null)
+    const probe = "cat > /dev/null <<'EOF'\nnpx vitest run probe.test.ts\nEOF\necho probe done"
+    expect(isTestRun(probe)).toBe(false)
+    expect(testRunLocation(probe, 'C:/work')).toBe(null)
+    const commit = "git add a && git commit -q -F - <<'EOF'\nfix: quoted npx vitest run and dotnet test\nEOF\ngit push -q"
+    expect(testRunLocation(commit, 'C:/work')).toBe(null)
   })
 
   test('a heredoc fed to a shell runs, and a run after the terminator is still a run', () => {

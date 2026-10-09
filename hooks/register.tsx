@@ -29,7 +29,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
+import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -197,7 +197,7 @@ function parentDir(dir: string): string | null {
   return cut === trimmed || cut === '' ? null : cut
 }
 
-type Runner = { kind: RunnerKind; root: string; tool: string }
+type Runner = { kind: RunnerKind; root: string; tool: string; launcher?: readonly string[] }
 
 /** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
 async function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
@@ -205,18 +205,22 @@ async function detectRunner($: EngineInterface, root: string, config: GuardConfi
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
     for (const runner of candidates) {
       if (runner.markers.length === 0) {
-        return { kind: runner.kind, root, tool: runner.fallback }
+        return { kind: runner.kind, root, tool: fallbackTool(runner, root) }
       }
       for (const marker of runner.markers) {
         if (await $.fs.exists(`${dir}/${marker}`)) {
-          let tool: string | null = null
           for (const candidate of runner.tools) {
             if (await $.fs.exists(`${dir}/${candidate}`)) {
-              tool = `${dir}/${candidate}`
-              break
+              return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }
             }
           }
-          return { kind: runner.kind, root: dir, tool: tool ?? runner.fallback }
+          // No program in the repo: a lockfile may name the launcher that knows where the environment lives.
+          for (const launcher of runner.launchers ?? []) {
+            if (await $.fs.exists(`${dir}/${launcher.marker}`)) {
+              return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root), launcher: launcher.argv }
+            }
+          }
+          return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root) }
         }
       }
     }
@@ -494,7 +498,7 @@ async function verifyCatch(
   }
   const godot = config.godot ?? (await godotFromEnv($))
   const relativeTest = relativePath(root, testPath)
-  const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot })
+  const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot, ...(runner.launcher === undefined ? {} : { launcher: runner.launcher }) })
 
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
   // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.

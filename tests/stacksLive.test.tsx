@@ -137,3 +137,32 @@ describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
     expect(green.text).toMatch(/caught 1/)
   })
 })
+
+describe('Python without a venv in the repo', () => {
+  for (const [lock, launcher] of [
+    ['uv.lock', ['uv', 'run', 'python']],
+    ['poetry.lock', ['poetry', 'run', 'python']],
+    ['pdm.lock', ['pdm', 'run', 'python']],
+    ['Pipfile.lock', ['pipenv', 'run', 'python']],
+  ] as const) {
+    test(`${lock}: the catch check runs pytest through ${launcher[0]}, which knows where the environment lives`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.hasVitest = false
+      world.existingFiles.add(`${ROOT}/pyproject.toml`)
+      world.existingFiles.add(`${ROOT}/${lock}`)
+      world.fileContents.set(`${ROOT}/src/pkg/calc.py`, 'def add(a, b):\n    return a + b\n')
+      const ownFailure = PYTEST_FAIL.replace(/tests[\/]test_other\.py/g, 'tests/pkg/test_calc.py')
+
+      await writeAt($, 'tests/pkg/test_calc.py', 'from pkg.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
+      world.bashText = ownFailure
+      await runBash($, `${launcher[0]} run pytest tests/pkg/test_calc.py`)
+      await editAt($, 'src/pkg/calc.py')
+      world.bashText = PYTEST_PASS
+      world.catchRun = { text: ownFailure, exitCode: 1 }
+      await runBash($, `${launcher[0]} run pytest tests/pkg/test_calc.py`)
+
+      const check = world.gitCalls.find(argv => argv.includes('pytest'))
+      expect(check?.slice(0, 5)).toEqual([...launcher, '-m', 'pytest'])
+    })
+  }
+})

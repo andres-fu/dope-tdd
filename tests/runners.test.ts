@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation } from '../hooks/runners'
+import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   DOTNET_FAIL,
@@ -219,5 +219,13 @@ describe('dotnet test, read from a real Roadhouse run', () => {
     expect(catchOutcome({ stdout: DOTNET_REAL_NO_MATCH, stderr: '', exitCode: 0 })).toEqual({ kind: 'unverified', reason: 'no tests ran' })
     expect(catchOutcome({ stdout: DOTNET_REAL_FAIL, stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
     expect(catchOutcome({ stdout: DOTNET_REAL_PASS, stderr: '', exitCode: 0 })).toEqual({ kind: 'missed' })
+  })
+})
+
+describe('the fallback program when nothing in the project names one', () => {
+  test('python on Windows, python3 elsewhere: stock macOS has no python', () => {
+    expect(fallbackTool(runnerNamed('pytest'), 'C:/work/app')).toBe('python')
+    expect(fallbackTool(runnerNamed('pytest'), '/Users/beth/app')).toBe('python3')
+    expect(fallbackTool(runnerNamed('vitest'), '/Users/beth/app')).toBe(runnerNamed('vitest').fallback)
   })
 })

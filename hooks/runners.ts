@@ -15,7 +15,11 @@ import type { StackName } from './stacks'
 
 export type RunnerKind = 'vitest' | 'jest' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
 
-export type RunnerOptions = { godot?: string | null }
+/** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
+export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
+
+/** A lockfile that names how this project runs its tools: `uv.lock` means `uv run python`. */
+export type Launcher = { marker: string; argv: readonly string[] }
 
 export type Runner = {
   kind: RunnerKind
@@ -29,6 +33,10 @@ export type Runner = {
   /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
   tools: readonly string[]
   fallback: string
+  /** The fallback outside Windows, when it differs: stock macOS has `python3` and no `python`. */
+  fallbackPosix?: string
+  /** Lockfiles that name a launcher, tried when none of `tools` is found: the environment lives outside the repo. */
+  launchers?: readonly Launcher[]
   /** A shell command that runs this runner, anchored at a command start. */
   command: RegExp
   /** `tool` is an absolute path when one of `tools` was found, else `fallback`. `testPath` is relative to the project root. */
@@ -262,8 +270,15 @@ export const RUNNERS: readonly Runner[] = [
     markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
     tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
     fallback: 'python',
+    fallbackPosix: 'python3',
+    launchers: [
+      { marker: 'uv.lock', argv: ['uv', 'run', 'python'] },
+      { marker: 'poetry.lock', argv: ['poetry', 'run', 'python'] },
+      { marker: 'pdm.lock', argv: ['pdm', 'run', 'python'] },
+      { marker: 'Pipfile.lock', argv: ['pipenv', 'run', 'python'] },
+    ],
     command: commandOf(PYTEST),
-    argv: (_root, testPath, tool) => [tool, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', testPath],
+    argv: (_root, testPath, tool, options) => [...(options.launcher ?? [tool]), '-m', 'pytest', '-q', '-p', 'no:cacheprovider', testPath],
     read: readPytest,
     failedFiles: pytestFailedFiles,
     provisional: false,
@@ -351,6 +366,11 @@ export function runnerNamed(kind: RunnerKind): Runner {
     throw new Error(`no runner named ${kind}`)
   }
   return runner
+}
+
+/** The program on PATH when the project names none: a root with a drive letter is Windows, anything else is POSIX. */
+export function fallbackTool(runner: Runner, root: string): string {
+  return /^[A-Za-z]:/.test(root) ? runner.fallback : (runner.fallbackPosix ?? runner.fallback)
 }
 
 /** The runners that can run this stack's tests; with a test path, only those that run its extension. */

@@ -81,7 +81,7 @@ A read-only review as a principal engineer running many agents on macOS with wat
 - [ ] `beth S1` The shell backstop charges every change seen during a command to the agent (an IDE save, codegen, another session): false accusation or false unlock. Attribute only what the command names; report the rest as cause unknown.
 - [ ] `beth S2` The shell's cwd is not carried across calls (`locatedSegments` starts at the root every call).
 - [ ] `beth S3` Monorepo runs: `pnpm --filter`, `turbo run test`, `nx test`, `pnpm -r test` not recognised; prefixed output (`api:test: Tests 3 passed`) not read; non-hoisted runners under packages/* not found.
-- [ ] `beth S4` Python on macOS: the fallback is `python` (absent on stock macOS); poetry and pipenv venvs live outside the repo. Try `python3`, `uv run`, `poetry run`.
+- [x] `beth S4` Paid 2026-10-09: a venv in the repo first, then the lockfile's launcher (uv, poetry, pdm, pipenv run python), then python3 outside Windows. S4: Python on macOS: the fallback is `python` (absent on stock macOS); poetry and pipenv venvs live outside the repo. Try `python3`, `uv run`, `poetry run`.
 - [ ] `beth S5` The shell write gate only knows `src/**/*.ts(x)` (bashWrites.ts); `sed -i app/models.py` passes in enforce.
 - [x] `beth S6` Paid 2026-10-09: the receipt re-checks with `git checkout <base> -- path`, run, `git checkout HEAD -- path`; base from origin/HEAD, else main. The receipt's re-check `git stash push -- path && run; git stash pop` pops the reviewer's own stash when the change is committed. Use `git checkout <base> -- path; run; git checkout HEAD -- path`.
 - [ ] `beth S7` REFACTOR is credited without a check; a behaviour change made while green after a proven cycle is never reverted.

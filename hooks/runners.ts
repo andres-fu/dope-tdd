@@ -1,6 +1,6 @@
 import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome'
 import type { RunOutcome } from './runOutcome'
-import { ELSEWHERE, locatedSegments } from './shell'
+import { ELSEWHERE, commandSegments, executedText, locatedSegments } from './shell'
 import { STACKS } from './stacks'
 import type { StackName } from './stacks'
 
@@ -361,7 +361,7 @@ export function runnersFor(stack: StackName, testPath?: string): readonly Runner
 
 /** A shell command that runs any known runner, or a package's test script. */
 export function isTestRun(command: string): boolean {
-  return RUNNERS.some(runner => runner.command.test(command))
+  return commandSegments(command).some(segment => RUNNERS.some(runner => runner.command.test(executedText(segment))))
 }
 
 /** The first reader that recognises the output decides; readers that see nothing of theirs say unknown and pass. */
@@ -419,7 +419,7 @@ export function namedTestFile(command: string, stack: StackName, root?: string):
 /** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
 export function testRunLocation(command: string, root: string): string | null {
   for (const { segment, cwd } of locatedSegments(command, root)) {
-    if (RUNNERS.some(runner => runner.command.test(segment))) {
+    if (RUNNERS.some(runner => runner.command.test(executedText(segment)))) {
       return cwd === ELSEWHERE ? ELSEWHERE : cwd
     }
   }

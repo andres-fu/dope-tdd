@@ -2,6 +2,26 @@ const HERESTRING = /@['"]\r?\n/
 // A heredoc opener: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"`. Sticky, so it is tried at the `<<` just read.
 const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/y
 
+// A shell that runs what it reads on stdin: a heredoc fed to it is commands, not data.
+const SHELL_READER = /^\s*(?:\w+=\S*\s+)*(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s*(?:<<|$)/
+
+/**
+ * The part of a segment that runs. A heredoc body fed to anything but a shell
+ * (`cat > body.md <<'EOF'`, `tee`, `gh ... --body-file -`) is data: the
+ * commands it quotes never run, so only the opener line counts.
+ */
+export function executedText(segment: string): string {
+  const newline = segment.indexOf('\n')
+  if (newline === -1) {
+    return segment
+  }
+  const opener = segment.slice(0, newline)
+  if (!/<<-?\s*(['"]?)\w+\1/.test(opener) || SHELL_READER.test(opener)) {
+    return segment
+  }
+  return opener
+}
+
 /**
  * Splits a command on `&&`, `||`, `;` and `|` outside quotes. A heredoc's body
  * stays with the command that opened it, verbatim, and what follows its

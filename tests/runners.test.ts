@@ -117,6 +117,18 @@ describe('recognising a test run in a shell command', () => {
     expect(isTestRun('mvn compile')).toBe(false)
     expect(isTestRun('dotnet build')).toBe(false)
   })
+
+  test('a heredoc written to a file is data: the commands it quotes never ran (seen writing a PR body, 2026-10-09)', () => {
+    const body = "cat > body.md <<'EOF'\nTo re-check:\nnpx vitest run server/a.test.ts\ndotnet test --filter Foo\nEOF\ngh pr create --body-file body.md"
+    expect(isTestRun(body)).toBe(false)
+    expect(testRunLocation(body, 'C:/work')).toBe(null)
+  })
+
+  test('a heredoc fed to a shell runs, and a run after the terminator is still a run', () => {
+    expect(isTestRun("bash <<'EOF'\nnpx vitest run\nEOF")).toBe(true)
+    expect(isTestRun("cat > a.md <<'EOF'\nnotes\nEOF\nnpx vitest run")).toBe(true)
+    expect(testRunLocation("cat > a.md <<'EOF'\nnotes\nEOF\ncd server && npx vitest run", 'C:/work')).toBe('C:/work/server')
+  })
 })
 
 describe('the test file a command names, by the stack', () => {

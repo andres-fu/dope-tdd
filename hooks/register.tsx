@@ -1143,8 +1143,14 @@ async function guardShell(
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
+  const checkStartMs = await $.clock.now()
   const check =
     passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed)
+  // The time the check itself cost, baseline included: the part of a guarded run's overhead that is Dope TDD's own.
+  const checkMs = (await $.clock.now()) - checkStartMs
+  if (checkMs > 0) {
+    await change($, s => ({ ...s, checkMsTotal: s.checkMsTotal + checkMs }))
+  }
   // Red, then the test edited, then green with the module's code unchanged: the green came from the test.
   const testChanged = passedModule !== undefined && check === 'unchecked' && before_?.sawRed === true && before_.testTouchedAfterRed
   if (passedModule !== undefined) {

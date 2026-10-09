@@ -7,8 +7,8 @@
  * the folder name.
  */
 
-/** Longer than a guide should be; the briefing stays short so the rules are read. */
-export const GUIDE_LIMIT = 4000
+/** A guide past this is cut: short rules are the ones agents follow, and every session pays for them on every turn. */
+export const GUIDE_LIMIT = 2000
 
 export function guideKey(remote: string | null, root: string): string {
   if (remote !== null) {

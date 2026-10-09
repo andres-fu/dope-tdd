@@ -51,3 +51,16 @@ test('hand-checked verdicts count the wrong ones by id', () => {
   const card = computeScorecard({ checks: [{ id: 'a', correct: true }, { id: 'b', correct: false }] })
   assert.deepEqual(card.wrongVerdicts, { checked: 2, wrong: 1, wrongIds: ['b'] })
 })
+
+test('the catch check\'s share of guarded time counts only runs that recorded it', () => {
+  const card = computeScorecard({
+    ledger: [
+      { id: 'x', mode: 'enforce', durationMs: 40_000, checkMs: 10_000 },
+      { id: 'y', mode: 'enforce', durationMs: 60_000, checkMs: 5_000 },
+      { id: 'z', mode: 'enforce', durationMs: 99_000 },
+      { id: 'x', mode: 'observe', durationMs: 30_000, checkMs: 0 },
+    ],
+  })
+  assert.deepEqual(card.checkTime, { runs: 2, checkMs: 15_000, runMs: 100_000, share: 0.15 })
+  assert.match(renderScorecard(card, { at: 'now', files: [] }), /Catch check's share of guarded run time \(2 runs\) \| 15%/)
+})

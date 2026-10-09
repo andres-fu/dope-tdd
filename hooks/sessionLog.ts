@@ -28,6 +28,8 @@ export type SessionRecord = {
   unverified: number
   refactors: number
   workarounds: number
+  /** Milliseconds spent in catch checks, baselines included. */
+  checkMs: number
   receipt: string
 }
 
@@ -56,6 +58,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     unverified: s.unverified,
     refactors: s.refactors,
     workarounds: s.workarounds,
+    checkMs: s.checkMsTotal,
     receipt,
   }
 }

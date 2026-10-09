@@ -71,6 +71,12 @@ export function computeScorecard({ ledger = [], sessions = [], prs = [], checks 
       turns: median(ratios('turns')),
       time: median(ratios('time')),
     },
+    checkTime: (() => {
+      const timed = guarded.filter(row => typeof row.checkMs === 'number' && typeof row.durationMs === 'number' && row.durationMs > 0)
+      const checkMs = sum(timed, 'checkMs')
+      const runMs = sum(timed, 'durationMs')
+      return { runs: timed.length, checkMs, runMs, share: runMs === 0 ? null : checkMs / runMs }
+    })(),
     refusals: { runs: guarded.length, total: sum(guarded, 'blocked'), max: guarded.reduce((most, row) => Math.max(most, row.blocked ?? 0), 0) },
     workarounds: { runs: guarded.length, total: sum(guarded, 'workarounds') },
     proofGaps: { missed: sum(guarded, 'missed'), unguarded: sum(guarded, 'unguarded') },
@@ -118,6 +124,7 @@ export function renderScorecard(card, sources) {
     '| --- | --- | --- |',
     `| Wrong verdicts (hand-checked) | ${wrongVerdicts.checked === 0 ? 'no hand-checked runs yet' : `${wrongVerdicts.wrong} of ${wrongVerdicts.checked}`} | 0 |`,
     `| Overhead, guarded vs unguarded (median of ${overhead.pairs} A/B pairs) | cost ${times(overhead.cost)}, turns ${times(overhead.turns)}, time ${times(overhead.time)} | ≤ 1.25× |`,
+    `| Catch check's share of guarded run time (${card.checkTime.runs} runs) | ${card.checkTime.runs === 0 ? 'not recorded yet' : pct(card.checkTime.share)} | most of the time overhead |`,
     `| Refusals per guarded run | ${refusals.total} in ${refusals.runs} runs (max ${refusals.max} in one) | ≤ 1 on average |`,
     `| Workarounds in guarded runs | ${workarounds.total} in ${workarounds.runs} runs | 0 without a stated reason |`,
     `| Proof gaps in guarded runs | missed ${proofGaps.missed}, unguarded edits ${proofGaps.unguarded} | 0 |`,
@@ -160,6 +167,7 @@ export function exportRows({ ledger = [], sessions = [], prs = [] }) {
       turns: row.turns,
       minutes: typeof row.durationMs === 'number' ? Math.round((row.durationMs / 60000) * 100) / 100 : null,
       durationMs: row.durationMs,
+      checkMs: row.checkMs ?? null,
       blocked: row.blocked,
       unguarded: row.unguarded,
       caught: row.caught,

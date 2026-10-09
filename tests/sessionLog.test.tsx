@@ -33,6 +33,19 @@ describe('every session leaves its receipt on this machine', () => {
     expect(String(record.receipt)).toMatch(/^dope-tdd\n/)
   })
 
+  test('the record says how long the catch check took in all, so its share of a run can be measured', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.onCatchRun = () => world.clock.advance(3000)
+    await runTests($, world, 'pass')
+
+    await end($)
+    const record = JSON.parse(logged(world)[0]?.[1] ?? '{}') as Record<string, unknown>
+
+    expect(record.checkMs).toBe(3000)
+  })
+
   test('a session that did nothing leaves nothing', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME } })
 

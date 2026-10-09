@@ -102,6 +102,8 @@ export type TddStats = {
   missed: number
   unverified: number
   refactors: number
+  /** Milliseconds spent in catch checks this session, baselines included. */
+  checkMsTotal: number
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' }; path?: string } | null
   lastCycle: CycleVerdict | null

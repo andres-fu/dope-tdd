@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { guideKey } from '../hooks/fieldGuide'
+import { guideKey, guideSection } from '../hooks/fieldGuide'
 import { FIXTURE_DRIVE, ROOT, fakeEngine, startSession } from './engine'
 
 const HOME = `${FIXTURE_DRIVE}Users/tester`
@@ -85,5 +85,16 @@ describe("a repository's field guide in the briefing", () => {
     const guide = (await compose($)).sections.find(section => section.id === 'dope-tdd:field-guide')
 
     expect(guide?.text).toContain('Money is always in cents.')
+  })
+})
+
+describe('a field guide stays short', () => {
+  test('past 2,000 characters the guide is cut, and the cut is said; short rules are the ones agents follow', () => {
+    const long = '- rule\n'.repeat(500)
+    const section = guideSection('Owner__repo', long)
+    const body = section.slice(section.indexOf('\n') + 1)
+    expect(body.length).toBeLessThanOrEqual(2000 + '\n(the rest of the guide is cut)'.length)
+    expect(section).toMatch(/the rest of the guide is cut/)
+    expect(guideSection('Owner__repo', '- one rule').endsWith('- one rule')).toBe(true)
   })
 })

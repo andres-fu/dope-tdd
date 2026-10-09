@@ -14,7 +14,7 @@
 // ~/.dope-tdd/pool, because task text names private code.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -79,6 +79,21 @@ function claudeBinary() {
   return existsSync(exe) ? exe : shim
 }
 
+/** The time the run's catch checks took, from the record Dope TDD left when that session ended; null without one. */
+function sessionCheckMs(sessionId) {
+  if (typeof sessionId !== 'string') return null
+  const dir = join(homedir(), '.dope-tdd', 'sessions')
+  if (!existsSync(dir)) return null
+  const name = readdirSync(dir).find(file => file.endsWith(`-${sessionId}.json`))
+  if (name === undefined) return null
+  try {
+    const record = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+    return typeof record.checkMs === 'number' ? record.checkMs : null
+  } catch {
+    return null
+  }
+}
+
 function runAgent(cwd, prompt, args) {
   return new Promise(done => {
     const tools = ['Read', 'Grep', 'Glob', 'Edit', 'Write', ...args.allow, 'mcp__dope-tdd__status'].join(',')
@@ -132,7 +147,7 @@ async function main() {
     const receipt = readReceipt(json.result)
     const diff = git(leg.dir, 'diff', '--stat')
     const untracked = git(leg.dir, 'ls-files', '--others', '--exclude-standard')
-    return { ...leg, receipt, diff, untracked, cost: json.total_cost_usd ?? null, turns: json.num_turns ?? null, ms: json.duration_ms ?? null, denials: (json.permission_denials ?? []).length, summary: json.result ?? leg.stderr }
+    return { ...leg, receipt, diff, untracked, cost: json.total_cost_usd ?? null, turns: json.num_turns ?? null, ms: json.duration_ms ?? null, denials: (json.permission_denials ?? []).length, summary: json.result ?? leg.stderr, checkMs: sessionCheckMs(json.session_id) }
   })
 
   for (const row of rows) {
@@ -151,6 +166,7 @@ async function main() {
         turns: row.turns,
         durationMs: row.ms,
         permissionDenials: row.denials,
+        checkMs: row.checkMs,
         testFirst: row.receipt.testFirst,
         blocked: row.receipt.blocked,
         unguarded: row.receipt.unguarded,

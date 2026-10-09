@@ -147,6 +147,53 @@ function readJsonLines(path) {
   return existsSync(path) ? readFileSync(path, 'utf8').split(/\r?\n/).filter(line => line.trim() !== '').map(line => JSON.parse(line)) : null
 }
 
+/** The rows behind the page, as the published dashboard reads them: the same records, nothing added. */
+export function exportRows({ ledger = [], sessions = [], prs = [] }) {
+  return {
+    runs: ledger.map(row => ({
+      run: `${row.id}/${row.mode}`,
+      id: row.id,
+      repo: row.repo,
+      mode: row.mode,
+      at: row.at,
+      costUsd: row.costUsd,
+      turns: row.turns,
+      minutes: typeof row.durationMs === 'number' ? Math.round((row.durationMs / 60000) * 100) / 100 : null,
+      durationMs: row.durationMs,
+      blocked: row.blocked,
+      unguarded: row.unguarded,
+      caught: row.caught,
+      proven: row.proven,
+      missed: row.missed,
+      workarounds: row.workarounds,
+    })),
+    sessions: sessions.map(record => ({
+      session: record.sessionId.slice(0, 8),
+      endedAt: record.endedAt,
+      repo: record.repo,
+      mode: record.mode,
+      blocked: record.blocked,
+      workarounds: record.workarounds,
+      caught: record.caught,
+      proven: record.proven,
+      missed: record.missed,
+      unverified: record.unverified,
+      refactors: record.refactors,
+    })),
+    prs: prs.map(pr => ({
+      pr: `${pr.repo.split('/')[1]}#${pr.number}`,
+      repo: pr.repo,
+      number: pr.number,
+      status: pr.status,
+      verdict: pr.verdict,
+      bug: pr.bug,
+      url: pr.url ?? `https://github.com/${pr.repo}/pull/${pr.number}`,
+      costUsd: pr.costUsd,
+      checkedAt: pr.checkedAt ?? null,
+    })),
+  }
+}
+
 function main() {
   const base = join(homedir(), '.dope-tdd')
   const ledgerPath = join(base, 'pool', 'ledger.jsonl')
@@ -171,6 +218,15 @@ function main() {
   })
   writeFileSync(join(base, 'pool', 'scorecard.md'), text)
   console.log(text)
+  const exportAt = process.argv.indexOf('--export')
+  if (exportAt !== -1 && process.argv[exportAt + 1] !== undefined) {
+    const dir = resolve(process.argv[exportAt + 1])
+    const rows = exportRows({ ledger: ledger ?? [], sessions: sessions ?? [], prs: prs ?? [] })
+    for (const [name, data] of Object.entries(rows)) {
+      writeFileSync(join(dir, `${name}.json`), `${JSON.stringify(data, null, 1)}\n`)
+    }
+    console.log(`\nexported runs, sessions and prs to ${dir}`)
+  }
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

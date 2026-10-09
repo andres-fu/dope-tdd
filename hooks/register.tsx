@@ -61,6 +61,7 @@ import {
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
 import { freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from './unlocks'
+import { CHECK_LOCK_TTL_MS } from './stats'
 import { commentedOutLines, testEditSignals } from './workarounds'
 
 const MINUTE = 60_000
@@ -228,6 +229,98 @@ function journalFiles(value: unknown): JournalFile[] | null {
   return typeof journal === 'object' && journal !== null && Array.isArray(journal.files) ? journal.files.filter(isJournalFile) : null
 }
 
+/**
+ * One catch-check lock per checkout, across every session on the machine.
+ * The store is shared but its get-then-set is not atomic (the mods docs say
+ * so), so the lock itself is a git ref updated by compare-and-swap: creating
+ * it succeeds for exactly one session, an expired one is taken over only by
+ * naming its exact old value, and a session can release only its own.
+ * refs/worktree/ refs are per checkout, which is the right scope: two
+ * worktrees of one repository revert different files. The store keeps a copy
+ * so every guard can see the lock without starting git on each tool call.
+ */
+const SHARED_LOCK_REF = 'refs/worktree/dope-tdd-check'
+let sharedLockUnavailableSaid = false
+
+type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy'; module: string } | { kind: 'unavailable' }
+
+function sharedLockKey(root: string): string {
+  return `check-lock:${storeRoot(root)}`
+}
+
+async function gitQuiet($: EngineInterface, root: string, args: string[], stdin?: string): Promise<{ exitCode: number; stdout: string } | null> {
+  try {
+    const run = await $.process.run(['git', ...args], stdin === undefined ? { cwd: root } : { cwd: root, stdin })
+    return { exitCode: run.exitCode, stdout: run.stdout }
+  } catch {
+    return null
+  }
+}
+
+function parseLock(text: string | undefined): { module: string; sinceMs: number } | null {
+  try {
+    const value = JSON.parse(text ?? '') as { module?: unknown; sinceMs?: unknown }
+    return typeof value.module === 'string' && typeof value.sinceMs === 'number' ? { module: value.module, sinceMs: value.sinceMs } : null
+  } catch {
+    return null
+  }
+}
+
+async function acquireSharedLock($: EngineInterface, root: string, module: string, nowMs: number): Promise<SharedLock> {
+  const hashed = await gitQuiet($, root, ['hash-object', '-w', '--stdin'], JSON.stringify({ module, sinceMs: nowMs }))
+  if (hashed === null || hashed.exitCode !== 0) {
+    return { kind: 'unavailable' }
+  }
+  const sha = hashed.stdout.trim()
+  const create = async () => (await gitQuiet($, root, ['update-ref', SHARED_LOCK_REF, sha, '']))?.exitCode === 0
+  const held = async (): Promise<SharedLock> => {
+    try {
+      await $.store.set(sharedLockKey(root), { module, sinceMs: nowMs, sha })
+    } catch (error) {
+      $.ui.log(`dope-tdd: could not record the check lock in the store: ${String(error)}`)
+    }
+    return { kind: 'acquired', sha }
+  }
+  if (await create()) {
+    return held()
+  }
+  const current = await gitQuiet($, root, ['rev-parse', '-q', '--verify', SHARED_LOCK_REF])
+  if (current === null || current.exitCode !== 0) {
+    // Released between our attempt and our read: one more try, then give way.
+    return (await create()) ? held() : { kind: 'busy', module: 'another module' }
+  }
+  const oldSha = current.stdout.trim()
+  const lock = parseLock((await gitQuiet($, root, ['cat-file', '-p', oldSha]))?.stdout)
+  if (lock !== null && nowMs - lock.sinceMs < CHECK_LOCK_TTL_MS) {
+    return { kind: 'busy', module: lock.module }
+  }
+  // Expired (a check that died) or unreadable: take it over only if it is still the one we read.
+  const taken = (await gitQuiet($, root, ['update-ref', SHARED_LOCK_REF, sha, oldSha]))?.exitCode === 0
+  return taken ? held() : { kind: 'busy', module: lock?.module ?? 'another module' }
+}
+
+async function releaseSharedLock($: EngineInterface, root: string, sha: string): Promise<void> {
+  await gitQuiet($, root, ['update-ref', '-d', SHARED_LOCK_REF, sha])
+  try {
+    const mirror = (await $.store.get(sharedLockKey(root))) as { sha?: unknown } | undefined
+    if (mirror?.sha === sha) {
+      await $.store.delete(sharedLockKey(root))
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not clear the check lock in the store: ${String(error)}`)
+  }
+}
+
+/** The module a check in any session has reverted right now, from the store's copy of the lock, or null. */
+async function checkInFlight($: EngineInterface, root: string, nowMs: number): Promise<string | null> {
+  try {
+    const lock = parseLock(JSON.stringify((await $.store.get(sharedLockKey(root))) ?? null))
+    return lock !== null && nowMs - lock.sinceMs < CHECK_LOCK_TTL_MS ? lock.module : null
+  } catch {
+    return null
+  }
+}
+
 function journalKeyFor(root: string, module: string): string {
   return `${JOURNAL_PREFIX}${storeRoot(root)}:${module}`
 }
@@ -304,7 +397,8 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
 
 /** Runs the repair once per root per process load, and never while a check is in flight. */
 async function ensureRepaired($: EngineInterface, root: string, nowMs: number): Promise<void> {
-  if (repairedRoots.has(root) || isChecking(await readStats($), nowMs)) {
+  // Never while a check is in flight, in this session or another: its journal is live, and its file is reverted on purpose.
+  if (repairedRoots.has(root) || isChecking(await readStats($), nowMs) || (await checkInFlight($, root, nowMs)) !== null) {
     return
   }
   repairedRoots.add(root)
@@ -385,11 +479,27 @@ async function verifyCatch(
   if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
     return { kind: 'unverified', reason: 'another check was running' }
   }
+  const shared = await acquireSharedLock($, root, module, nowMs)
+  if (shared.kind === 'busy') {
+    await change($, releaseCheck)
+    return { kind: 'unverified', reason: `another session was checking ${shared.module}` }
+  }
+  if (shared.kind === 'unavailable' && !sharedLockUnavailableSaid) {
+    sharedLockUnavailableSaid = true
+    $.ui.log('dope-tdd: not a git checkout, so the catch-check lock covers this session only')
+  }
+  const sharedSha = shared.kind === 'acquired' ? shared.sha : null
+  const releaseAll = async () => {
+    await change($, releaseCheck)
+    if (sharedSha !== null) {
+      await releaseSharedLock($, root, sharedSha)
+    }
+  }
   const journalKey = journalKeyFor(root, module)
   try {
     await $.store.set(journalKey, { files: [{ path, before, after }] })
   } catch (error) {
-    await change($, releaseCheck)
+    await releaseAll()
     $.ui.log(`dope-tdd: could not journal the catch check for ${path}: ${String(error)}`)
     return { kind: 'unverified', reason: 'could not journal the revert' }
   }
@@ -429,7 +539,7 @@ async function verifyCatch(
         movedWhileReverted = true
       }
     }
-    await change($, releaseCheck)
+    await releaseAll()
   }
 
   if (movedWhileReverted) {
@@ -607,8 +717,13 @@ async function guardFileWrite(
   if (target.kind !== 'other') {
     // Read again right before the write: a check that started since must not have this file reverted under the edit.
     const latest = await readStats($)
-    if (isChecking(latest, await $.clock.now())) {
+    const nowMs = await $.clock.now()
+    if (isChecking(latest, nowMs)) {
       return { deny: checkingMessage(latest.checking?.module ?? target.module) }
+    }
+    const elsewhere = await checkInFlight($, root, nowMs)
+    if (elsewhere !== null) {
+      return { deny: checkingMessage(elsewhere) }
     }
   }
   const result = await proceed()
@@ -750,8 +865,15 @@ async function guardShell(
     return { deny: locked.map(module => lockedMessage(config, module)).join('\n') }
   }
   // While a file is reverted on disk, neither a write to source nor a test run may read it.
-  if ((writes.some(({ module }) => module !== null) || isTestRun(command)) && isChecking(current, await $.clock.now())) {
-    return { deny: checkingMessage(current.checking?.module ?? 'this module') }
+  if (writes.some(({ module }) => module !== null) || isTestRun(command)) {
+    const nowMs = await $.clock.now()
+    if (isChecking(current, nowMs)) {
+      return { deny: checkingMessage(current.checking?.module ?? 'this module') }
+    }
+    const elsewhere = await checkInFlight($, root, nowMs)
+    if (elsewhere !== null) {
+      return { deny: checkingMessage(elsewhere) }
+    }
   }
 
   const before = await snapshotWatched($, root, config)

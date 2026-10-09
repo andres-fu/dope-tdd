@@ -50,6 +50,10 @@ export type FakeWorld = {
   numstat: string
   untracked: string
   gitCalls: (readonly string[])[]
+  /** Git refs and objects for the shared check lock; `gitUnavailable` makes the folder not a git checkout. */
+  refs: Map<string, string>
+  objects: Map<string, string>
+  gitUnavailable: boolean
   /** When true the engine cannot say where the project is, so every guard throws before it decides. */
   rootFails: boolean
   writes: [string, string][]
@@ -80,6 +84,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    refs: new Map(),
+    objects: new Map(),
+    gitUnavailable: false,
     rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
@@ -112,6 +119,40 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       return world.catchRun === 'reject'
         ? { deny: 'timed out' }
         : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
+    }
+    const [, verb, ...rest] = e.argv
+    const answer = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } }) as never
+    if (verb === 'hash-object') {
+      if (world.gitUnavailable) {
+        return answer(128)
+      }
+      const sha = `sha${world.objects.size + 1}`
+      world.objects.set(sha, String((e as { init?: { stdin?: unknown } }).init?.stdin ?? ''))
+      return answer(0, `${sha}\n`)
+    }
+    if (verb === 'update-ref') {
+      if (rest[0] === '-d') {
+        const [, ref, expected] = rest
+        if (ref === undefined || world.refs.get(ref) !== expected) return answer(1)
+        world.refs.delete(ref)
+        return answer(0)
+      }
+      const [ref, next, expected] = rest
+      if (ref === undefined || next === undefined) return answer(128)
+      const ok = expected === '' ? !world.refs.has(ref) : world.refs.get(ref) === expected
+      if (!ok) return answer(expected === '' ? 128 : 1)
+      world.refs.set(ref, next)
+      return answer(0)
+    }
+    if (verb === 'rev-parse') {
+      const ref = rest[rest.length - 1] ?? ''
+      const sha = world.refs.get(ref)
+      return sha === undefined ? answer(1) : answer(0, `${sha}\n`)
+    }
+    if (verb === 'cat-file') {
+      const sha = rest[rest.length - 1] ?? ''
+      const body = world.objects.get(sha)
+      return body === undefined ? answer(128) : answer(0, body)
     }
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never

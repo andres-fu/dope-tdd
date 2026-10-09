@@ -7,6 +7,19 @@ function configure(world: FakeWorld, json: string) {
   world.fileContents.set(`${ROOT}/dope-tdd.json`, json)
 }
 
+describe('a guessed layout says how to fix it', () => {
+  test('with no layout in dope-tdd.json the refusal names /tdd setup; with one it does not', async ($, on) => {
+    const world = fakeEngine(on)
+    const guessed = await editAt($, 'src/utils/a.ts')
+    configure(world, '{"layout":"mirror"}')
+    const chosen = await editAt($, 'src/utils/b.ts')
+
+    expect(guessed.deny).toMatch(/\/tdd setup/)
+    expect(chosen.deny).toMatch(/write the failing test first/)
+    expect(chosen.deny).not.toMatch(/\/tdd setup/)
+  })
+})
+
 describe('guard modes from dope-tdd.json', () => {
   test('observe: nothing is denied, nothing is said, everything is counted', async ($, on) => {
     const world = fakeEngine(on)

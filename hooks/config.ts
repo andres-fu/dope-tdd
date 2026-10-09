@@ -19,6 +19,8 @@ export type GuardConfig = {
   /** The Godot binary for a gdUnit4 run, when `godot` is not on PATH. */
   godot: string | null
   error: string | null
+  /** No layout was named in the file: the stack's default is a guess, and the refusal says how to fix it. */
+  layoutGuessed?: boolean
 }
 
 export const CONFIG_FILE = 'dope-tdd.json'
@@ -32,6 +34,7 @@ export const DEFAULT_CONFIG: GuardConfig = {
   stackSource: 'default',
   godot: null,
   error: null,
+  layoutGuessed: true,
 }
 
 const MODES: readonly GuardMode[] = ['enforce', 'warn', 'observe']
@@ -139,6 +142,7 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       stackSource,
       godot: parseGodot(fields.godot),
       error: null,
+      layoutGuessed: fields.layout === undefined,
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)

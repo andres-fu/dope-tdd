@@ -28,7 +28,7 @@ describe('a Godot project with gdUnit4, no config file', () => {
     const addon = await editAt($, 'addons/gdUnit4/src/core/GdUnitSettings.gd')
     const status = await runCommand($, 'tdd')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
     expect(addon.deny).toBeUndefined()
     expect(status.text).toMatch(/stack: godot \(detected\)/)
     expect(status.text).toMatch(/exempt: addons\/\*\*/)
@@ -94,7 +94,7 @@ describe('a Python project with pytest, no config file', () => {
     await runBash($, 'python -m pytest tests/pkg/test_calc.py')
     const green = await runCommand($, 'tdd')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
     expect(touched.context?.join(' ')).toMatch(/pkg\/calc unlocked/)
     expect(red.text).toMatch(/phase: RED/)
     expect(allowed.deny).toBeUndefined()

@@ -572,7 +572,8 @@ async function verifyCatch(
 }
 
 function lockedMessage(config: GuardConfig, module: string): string {
-  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.`
+  const guess = config.layoutGuessed === true ? ' That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.' : ''
+  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${guess}`
 }
 
 function sourceModuleOf(root: string, path: string, config: GuardConfig): string | null {

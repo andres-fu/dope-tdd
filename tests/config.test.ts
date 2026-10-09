@@ -18,6 +18,7 @@ describe('parseConfig', () => {
       stackSource: 'default',
       godot: null,
       error: null,
+      layoutGuessed: true,
     })
     expect(parseConfig('{"layout":"colocated","roots":["packages/*"]}').layout.name).toBe('colocated')
     expect(parseConfig('{"layout":{"source":"lib/{module}.{ext}","test":"spec/{module}.spec.{ext}"}}').layout.name).toBe('custom')

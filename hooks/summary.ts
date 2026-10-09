@@ -12,6 +12,7 @@ const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
   skipped: 'skipped',
   'assertion-removed': 'assertions removed',
   'commented-out': 'commented out',
+  'hollow-touch': 'touched unchanged',
 }
 
 const RECENT_EVENTS = 10
@@ -110,7 +111,7 @@ export function formatGlossary(): string {
     '  UNVERIFIED     the catch check could not run; /tdd has the reason',
     '  REFACTOR       code changed while green with the test untouched; not re-checked',
     '  UNGUARDED      a source file changed with no test touched first',
-    '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out',
+    '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged',
     '  BLOCKED        an edit was refused until the test is written',
     '  PAUSED         the guard is off; edits are not counted',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',

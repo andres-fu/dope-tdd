@@ -143,3 +143,15 @@ describe('setup infers the stack and its layout', () => {
     expect(inferred.stackReason).toBe('named in dope-tdd.json')
   })
 })
+
+describe('a real repo: DungeonLobby', () => {
+  test('client, server and shared packages with __tests__ mirrored under src pair with three roots and one template', () => {
+    const config = parseConfig('{"roots":["client","server","shared"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    expect(config.error).toBe(null)
+    expect(classifyPath(ROOT, `${ROOT}/server/src/utils/dice.ts`, config)).toEqual({ kind: 'source', module: 'server/utils/dice' })
+    expect(classifyPath(ROOT, `${ROOT}/server/src/__tests__/utils/dice.test.ts`, config)).toEqual({ kind: 'test', module: 'server/utils/dice' })
+    expect(classifyPath(ROOT, `${ROOT}/shared/src/__tests__/schemas/room.test.ts`, config)).toEqual({ kind: 'test', module: 'shared/schemas/room' })
+    expect(classifyPath(ROOT, `${ROOT}/client/src/utils/.gitkeep`, config)).toEqual({ kind: 'other' })
+    expect(testPathFor(config, 'server/utils/dice')).toBe('server/src/__tests__/utils/dice.test.ts(x)')
+  })
+})

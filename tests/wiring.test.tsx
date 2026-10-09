@@ -2,8 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   BAND,
+  FAIL_SUMMARY,
   MINUTE,
   ROOT,
+  SOURCE,
   T0,
   editAt,
   fakeEngine,
@@ -390,7 +392,6 @@ describe('workarounds are on the record', () => {
 
   test('a skip marker added to a test is recorded, counted and said', async ($, on) => {
     const world = fakeEngine(on)
-    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
     await writeAt($, TEST, HONEST)
 
     const result = await writeAt($, TEST, HONEST.replace("test('formats'", "test.skip('formats'"))
@@ -655,5 +656,63 @@ describe('honest phases on the band', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+  })
+})
+
+describe('a red on the module\u2019s own test unlocks it', () => {
+  test('a run that names the test file and fails unlocks the module for the fix, and the fix is then caught', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    world.bashFails = true
+
+    const red = await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+    world.bashFails = false
+    world.catchRun = { text: FAIL_SUMMARY, exitCode: 1 }
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.context?.join(' ')).toMatch(/utils\/formatDuration unlocked by a red run of its own test/)
+    expect(allowed.deny).toBeUndefined()
+    expect(status.text).toMatch(/caught 1/)
+  })
+
+  test('a whole-suite run whose FAIL line names the module\u2019s test unlocks it too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/utils/formatDuration.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+    await runBash($, 'npx vitest run')
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(allowed.deny).toBeUndefined()
+  })
+
+  test('a green run alone does not unlock', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const blocked = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(blocked.deny).toMatch(/or run it and see it fail/)
+  })
+})
+
+describe('a touch that changes nothing', () => {
+  test('re-saving a test unchanged still unlocks, and is recorded and said as a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    const body = "it('x', () => { expect(1).toBe(1) })"
+
+    await writeAt($, 'tests/utils/formatDuration.test.ts', body)
+    const again = await writeAt($, 'tests/utils/formatDuration.test.ts', body)
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(again.context?.join(' ')).toMatch(/re-saved unchanged/)
+    expect(allowed.deny).toBeUndefined()
+    expect(status.text).toMatch(/workarounds: 1 \(touched unchanged 1\)/)
   })
 })

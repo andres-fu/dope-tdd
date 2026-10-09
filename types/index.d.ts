@@ -20,6 +20,7 @@ export type EventKind =
   | 'skipped'
   | 'assertion-removed'
   | 'commented-out'
+  | 'hollow-touch'
 
 export type CatchOutcome = { kind: 'caught' } | { kind: 'missed' } | { kind: 'unverified'; reason: string }
 

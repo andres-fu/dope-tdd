@@ -20,7 +20,7 @@ describe('colocated tests', () => {
     const touched = await writeAt($, 'src/utils/a.test.ts', "it('x', () => { expect(1).toBe(1) })")
     const allowed = await editAt($, 'src/utils/a.ts')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts(x) before editing src/utils/a.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts(x), or run it and see it fail, before editing src/utils/a.')
     expect(touched.context?.join(' ')).toMatch(/utils\/a unlocked\. Run its test and see it fail before editing src\/utils\/a\./)
     expect(allowed.deny).toBeUndefined()
   })
@@ -62,7 +62,7 @@ describe('__tests__ folders', () => {
     await writeAt($, 'src/utils/__tests__/a.test.ts', 'expect(a).toBe(1)')
     const allowed = await editAt($, 'src/utils/a.ts')
 
-    expect(blocked.deny).toMatch(/Touch src\/utils\/__tests__\/a\.test\.ts\(x\) before editing src\/utils\/a\./)
+    expect(blocked.deny).toMatch(/Touch src\/utils\/__tests__\/a\.test\.ts\(x\), or run it and see it fail, before editing src\/utils\/a\./)
     expect(allowed.deny).toBeUndefined()
   })
 })
@@ -79,7 +79,7 @@ describe('package roots', () => {
     const status = await runCommand($, 'tdd')
 
     expect(app.deny).toBeUndefined()
-    expect(web.deny).toMatch(/Touch packages\/web\/tests\/utils\/a\.test\.ts\(x\) before editing packages\/web\/src\/utils\/a\./)
+    expect(web.deny).toMatch(/Touch packages\/web\/tests\/utils\/a\.test\.ts\(x\), or run it and see it fail, before editing packages\/web\/src\/utils\/a\./)
     expect(outside.deny).toBeUndefined()
     expect(status.text).toMatch(/module: packages\/app\/utils\/a/)
     expect(status.text).toMatch(/roots: packages\/\*/)
@@ -106,7 +106,7 @@ describe('custom templates', () => {
     const allowed = await editAt($, 'lib/money.ts')
     const status = await runCommand($, 'tdd')
 
-    expect(blocked.deny).toMatch(/Touch spec\/money\.spec\.ts\(x\) before editing lib\/money\./)
+    expect(blocked.deny).toMatch(/Touch spec\/money\.spec\.ts\(x\), or run it and see it fail, before editing lib\/money\./)
     expect(allowed.deny).toBeUndefined()
     expect(status.text).toMatch(/layout: custom \(lib\/\{module\}\.\{ext\} ↔ spec\/\{module\}\.spec\.\{ext\}\)/)
   })

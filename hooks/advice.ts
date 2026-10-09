@@ -31,6 +31,14 @@ export function inheritedAdvice(module: string, testPath: string, ageMs: number,
   return `dope-tdd: ${sourcePath} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
 }
 
+export function redUnlockAdvice(module: string, sourcePath = defaultSource(module)): string {
+  return `dope-tdd: ${module} unlocked by a red run of its own test. Fix ${sourcePath}, run again, and the fix will be checked.`
+}
+
+export function hollowTouchAdvice(testPath: string): string {
+  return `dope-tdd: ${testPath} was re-saved unchanged. A touch that changes nothing proves nothing. Recorded; say why in your reply.`
+}
+
 export function hollowAdvice(testPath: string): string {
   return `dope-tdd: ${testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`
 }

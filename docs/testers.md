@@ -1,4 +1,4 @@
-# Testing Dope TDD
+'# Testing Dope TDD
 
 Thanks for trying it. This page is everything you need, in the order you
 need it. Budget about thirty minutes for the first pass.
@@ -31,8 +31,9 @@ moment, and what you see:
 
 | Claude is about to... | Dope TDD... | You see |
 | --- | --- | --- |
-| Edit or write a source file whose module has no test | Refuses the call before it runs, and names the test file to write first | **BLOCKED**; Claude's reply says why |
-| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out. | **WRITING** |
+| Edit or write a source file whose module has no test | Refuses the call before it runs, and names the test to write, or to run and see fail, first | **BLOCKED**; Claude's reply says why |
+| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | **WRITING** |
+| Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED** |
 | Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **RED** or **GREEN**, with the count |
 | Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **NEVER SAW RED** |
 | Go green after red | Holds the result. Undoes Claude's change on disk, runs only that module's test, restores the change, and attaches the verdict to what Claude reads. | **CAUGHT**, **MISSED**, or **unverified** with the reason |
@@ -90,14 +91,10 @@ three planted bugs and no tests, built so you can watch the plugin work
 without risking anything.
 
 1. Clone this repository, then `cd playground` and `npm install`.
-2. Whenever you start a walk over: `npm run reset`, in PowerShell or your
-   shell, not typed into Claude. It puts the source back and removes the
-   tests Claude wrote. A walk that starts with the fix already on disk has
-   nothing to show you.
-3. Open Claude Code in the `playground` folder and follow
+2. Open Claude Code in the `playground` folder and follow
    [playground/README.md](../playground/README.md): it gives you the task
    to hand to Claude and says what to watch for.
-4. Type `/tdd` at any point to see the state and the recent events, and
+3. Type `/tdd` at any point to see the state and the recent events, and
    `/tdd why` to have each word on the band explained.
 
 What a good run looks like: Claude is refused when it tries to edit source
@@ -141,7 +138,8 @@ would not refuse the same module twice.
   turns every plugin off for that session, and give it Walk 1 from the
   playground README. Watch what Claude does first. Usually it edits the
   code, then maybe writes a test, and never sees that test fail.
-- **Reset:** `npm run reset` in the `playground` folder, in your shell.
+- **Reset:** from the `playground` folder, `git checkout -- src` and delete
+  the `tests` folder it created.
 - **With:** a normal session, same task. The refusal comes first, then the
   test, then red, then the fix, then the catch check. `/tdd` at the end is
   the receipt; the first run has no equivalent.

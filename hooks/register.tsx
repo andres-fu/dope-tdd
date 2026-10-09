@@ -12,6 +12,8 @@ import {
   commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
+  hollowTouchAdvice,
+  redUnlockAdvice,
   inheritedAdvice,
   runAdvice,
   skippedAdvice,
@@ -43,6 +45,7 @@ import {
   recordChange,
   recordConfigChange,
   recordRun,
+  recordRedUnlock,
   recordRunTarget,
   recordSourceEdit,
   recordTestChanged,
@@ -430,7 +433,7 @@ async function verifyCatch(
 }
 
 function lockedMessage(config: GuardConfig, module: string): string {
-  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)} before editing ${sourcePathFor(config, module)}.`
+  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.`
 }
 
 function sourceModuleOf(root: string, path: string, config: GuardConfig): string | null {
@@ -560,6 +563,7 @@ async function noteTestEdit(
 
 async function guardFileWrite(
   $: EngineInterface,
+  tool: 'Edit' | 'Write',
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
@@ -644,7 +648,13 @@ async function guardFileWrite(
     const source = await readWhole($, filePath)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
     const signals = before === undefined ? [] : await noteTestEdit($, root, target.module, filePath, beforeText(before), source, nowMs)
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module)), ...hollow, ...signals])
+    // A Write of the same bytes: the touch counts, and so does the fact that it changed nothing. An Edit always changes something.
+    const unchanged = tool === 'Write' && before !== undefined && source !== null && beforeText(before) === source
+    if (unchanged) {
+      await change($, s => recordWorkaround(s, 'hollow-touch', target.module, relativePath(root, filePath), nowMs))
+    }
+    const resaved = unchanged ? [hollowTouchAdvice(relativePath(root, filePath))] : []
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module)), ...hollow, ...signals, ...resaved])
   }
   return result
 }
@@ -783,14 +793,35 @@ async function guardShell(
   const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
+  const redUnlocked: string[] = []
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
     const named = namedTestFile(command, config.stack) ?? undefined
     const target = named === undefined ? null : classifyPath(root, absolutePath(root, named), config)
-    const targeted = target?.kind === 'test' ? await change($, s => recordRunTarget(s, target.module)) : updated
+    let targeted = updated
+    if (target?.kind === 'test' && named !== undefined) {
+      // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
+      const testPath = absolutePath(root, named)
+      if (outcome === 'fail' && updated.unlocked[target.module] === undefined) {
+        targeted = await change($, s => recordRedUnlock(s, target.module, testPath, true))
+        await rememberUnlock($, root, target.module, testPath, nowMs)
+        redUnlocked.push(target.module)
+      } else {
+        targeted = await change($, s => recordRunTarget(s, target.module))
+      }
+    }
     if (outcome === 'fail') {
       const failed = failedFilesIn(output)
+      // Every test file the runner named as failed unlocks its module the same way, without becoming current.
+      for (const path of failed) {
+        const seen = classifyPath(root, absolutePath(root, path), config)
+        if (seen.kind === 'test' && targeted.unlocked[seen.module] === undefined) {
+          targeted = await change($, s => recordRedUnlock(s, seen.module, absolutePath(root, path), false))
+          await rememberUnlock($, root, seen.module, absolutePath(root, path), nowMs)
+          redUnlocked.push(seen.module)
+        }
+      }
       const own = targeted.current?.module
       // The suite is red; the module is red only if its own test is among the files that failed.
       elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed, config).includes(own) ? failed : []
@@ -824,6 +855,7 @@ async function guardShell(
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
         ...commented,
+        ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
@@ -918,12 +950,12 @@ export const register: Register = on => {
     return { result: `dope-tdd: the status could not be read (${next.error.kind}); try /tdd` } as ToolCallResult
   })
 
-  on('tool.call', { tool: 'Edit' }, ($, e, next) => guardFileWrite($, e.file_path, () => next(e))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Edit' }, ($, e, next) => guardFileWrite($, 'Edit', e.file_path, () => next(e))).catch(($, e, next) => {
     reportGuardFailure($, 'Edit', next.error)
     return next(e)
   })
 
-  on('tool.call', { tool: 'Write' }, ($, e, next) => guardFileWrite($, e.file_path, () => next(e))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Write' }, ($, e, next) => guardFileWrite($, 'Write', e.file_path, () => next(e))).catch(($, e, next) => {
     reportGuardFailure($, 'Write', next.error)
     return next(e)
   })

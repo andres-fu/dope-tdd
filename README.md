@@ -28,6 +28,7 @@ each moment it decides before the action runs:
 | --- | --- | --- |
 | Edit untested source | Refuses, names the test to write first | BLOCKED |
 | Touch a test | Unlocks the module; see it fail first | WRITING |
+| Run the module's own test and see it fail | Unlocks it too: the red is the evidence a touch stands for | RED |
 | Run the tests | Reads the runner's summary, not the exit code | RED, GREEN |
 | Go green without a red | Says the test has proven nothing yet | NEVER SAW RED |
 | Go green after red | Reverts, runs that test, restores, attaches the verdict | CAUGHT, MISSED |

@@ -267,7 +267,7 @@ export function recordConfigChange(s: TddStats, detail: string, loosened: boolea
 /** A skip/only marker added to a test, an assertion removed, or code commented out: recorded with what was seen. */
 export function recordWorkaround(
   s: TddStats,
-  kind: 'skipped' | 'assertion-removed' | 'commented-out',
+  kind: 'skipped' | 'assertion-removed' | 'commented-out' | 'hollow-touch',
   module: string,
   detail: string,
   nowMs: number,
@@ -290,6 +290,16 @@ export function recordSourceEdit(s: TddStats, module: string, isGuarded: boolean
 
 export function recordBlocked(s: TddStats, module: string, nowMs: number): TddStats {
   return logged({ ...s, blocked: s.blocked + 1 }, 'blocked', nowMs, module)
+}
+
+/**
+ * A module whose own test was seen red: that is the evidence test-first asks
+ * for, so it unlocks as a touch would, and the band follows it when the run
+ * named it. A fake refactor still goes red on the unchanged test next run.
+ */
+export function recordRedUnlock(s: TddStats, module: string, testPath: string, makeCurrent: boolean): TddStats {
+  const unlocked = { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
+  return makeCurrent ? mirrored({ ...unlocked, current: { module, testPath } }, moduleState(s, module)) : unlocked
 }
 
 /** A run that named a test file: that module is current, and the band mirrors its cycle. */

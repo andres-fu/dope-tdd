@@ -12,6 +12,7 @@ describe('briefingText', () => {
     expect(text).toMatch(/Run one test file at a time: `npx vitest run <test file>`/)
     expect(text).toMatch(/CAUGHT means the test is real; MISSED means/)
     expect(text).toMatch(/say why in your reply/)
+    expect(text).toMatch(/\/dope-tdd:pin skill: pin, prove, then change/)
   })
 
   test('in observe mode says nothing is refused, and without a runner gives no command', () => {

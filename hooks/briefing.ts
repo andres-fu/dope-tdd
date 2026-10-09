@@ -23,7 +23,7 @@ export function briefingText(config: GuardConfig, runCommand: string | null): st
     runCommand === null
       ? '- Run one test file at a time, and keep the runner\'s summary line in the output: it reads that line, never the exit code.'
       : `- Run one test file at a time: \`${runCommand}\`. Keep the runner's summary line in the output: it reads that line, never the exit code.`,
-    '- A green that never saw red proves nothing yet: break the code on purpose, see red, put it back.',
+    '- A green that never saw red proves nothing yet: break the code on purpose, see red, put it back; that is PROVEN. To change code that has no tests, use the /dope-tdd:pin skill: pin, prove, then change.',
     '- After a green that followed a red, it reverts your change, runs that test again, and restores it. CAUGHT means the test is real; MISSED means the test passes without your change, so strengthen the test.',
     '- Skips, removed assertions, commented-out code, a test re-saved unchanged, and a loosened dope-tdd.json are recorded as workarounds. If you take one, say why in your reply.',
     '- Its verdicts arrive in the tool results as lines starting `dope-tdd:`. The mcp__dope-tdd__status tool shows the whole state.',

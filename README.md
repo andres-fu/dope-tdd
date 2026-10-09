@@ -39,6 +39,10 @@ The mechanism is the one Anthropic describes under
 `claude plugin validate .` prints the actions it steps into. The full table,
 with what you see on each surface, is in `docs/testers.md`.
 
+`/dope-tdd:pin` is a skill that walks an agent through changing untested
+code: pin what it does today, prove the pins by breaking the code on
+purpose, then change it. The band says PROVEN when the proof is in.
+
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to

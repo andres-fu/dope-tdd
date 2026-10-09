@@ -100,3 +100,18 @@ exactly as it was before your break ... PROVEN"; receipt "caught 0 · proven 1";
 carried across sessions ("touched 2M AGO in an earlier session"). Nothing committed or pushed in
 Roadhouse; test/VanCostTest.cs is untracked in the local clone only.
 Minor: a pass before any module is current logs as a bare "pass" with no module.
+
+## 2026-10-09 — Roadhouse, the catch check on C#, and what the numbers say
+
+Measured on the real game (warm, Windows): a source edit plus rebuild plus one pure suite through a
+filtered `dotnet test` is 2.5-3 s; an engine-backed suite (OwnedRoomTest, Godot Runtime Test Runner)
+is about 16 s, edit or not. The catch-check budget (twice the agent's own green run of the same suite,
+capped at 60 s) fits both, so no change; a cold first build (about a minute) can still read as
+"unverified: timeout", which is honest. `dotnet test` with no project named resolves the lone .sln.
+Then a headless Sonnet run made a real test-first change (VanCost refuses a negative level) on a
+throwaway branch: touched -> fail -> edited -> pass -> caught. The first live C# revert-and-rerun:
+CAUGHT. Discarded afterwards; nothing pushed.
+The agent flagged a false "has no assertion": the hollow-test detector knew only lowercase assert( and
+expect(, so every C# test (AssertThat, AssertFloat) and every pytest test (bare `assert x == y`) read
+as hollow, and assertion-removal counting was blind there too. Fixed with tests proven red on the old
+detector. Lesson: let the agent say what confused it; it found this in one run.

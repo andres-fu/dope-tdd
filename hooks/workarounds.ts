@@ -9,7 +9,9 @@ export const WORKAROUND_KINDS: readonly WorkaroundKind[] = ['config', 'pause', '
 
 const SKIP_MARKER = /\b(?:it|test|describe)\s*\.\s*(?:skip|only|todo)\b|\bx(?:it|test|describe)\s*\(/g
 // A call, not a mention: `import assert from 'node:assert'` asserts nothing, `assertEquals(...)` and `assert.ok(...)` do.
-const ASSERTION_CALL = /\bexpect\s*\(|\bassert\w*\s*\(|\bassert\.\w+\s*\(|\.should\b|\bshould\s*\(|\bt\.(?:is|deepEqual|true|false|truthy|falsy|throws|like|snapshot|regex)\s*\(/g
+// A call, not a mention, in every stack: expect(...) and assert*(...) in JS, AssertThat(...) and Assert.Equal(...) in C#,
+// assertEquals(...) in Java, assert_int(...) in GDScript, and pytest's bare `assert x == y` statement at the start of a line.
+const ASSERTION_CALL = /\bexpect\s*\(|\b[Aa]ssert\w*\s*\(|\b[Aa]ssert\.\w+\s*\(|^[ \t]*assert[ \t]+[^\s(]|\.should\b|\bshould\s*\(|\bt\.(?:is|deepEqual|true|false|truthy|falsy|throws|like|snapshot|regex)\s*\(/gm
 const LINE_COMMENT = /^\/\/\s?/
 const COMMENT_OR_BLANK = /^(?:\/\/|\/\*|\*|\*\/|$)/
 

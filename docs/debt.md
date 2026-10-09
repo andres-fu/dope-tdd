@@ -83,7 +83,7 @@ A read-only review as a principal engineer running many agents on macOS with wat
 - [ ] `beth S3` Monorepo runs: `pnpm --filter`, `turbo run test`, `nx test`, `pnpm -r test` not recognised; prefixed output (`api:test: Tests 3 passed`) not read; non-hoisted runners under packages/* not found.
 - [ ] `beth S4` Python on macOS: the fallback is `python` (absent on stock macOS); poetry and pipenv venvs live outside the repo. Try `python3`, `uv run`, `poetry run`.
 - [ ] `beth S5` The shell write gate only knows `src/**/*.ts(x)` (bashWrites.ts); `sed -i app/models.py` passes in enforce.
-- [ ] `beth S6` The receipt's re-check `git stash push -- path && run; git stash pop` pops the reviewer's own stash when the change is committed. Use `git checkout <base> -- path; run; git checkout HEAD -- path`.
+- [x] `beth S6` Paid 2026-10-09: the receipt re-checks with `git checkout <base> -- path`, run, `git checkout HEAD -- path`; base from origin/HEAD, else main. The receipt's re-check `git stash push -- path && run; git stash pop` pops the reviewer's own stash when the change is committed. Use `git checkout <base> -- path; run; git checkout HEAD -- path`.
 - [ ] `beth S7` REFACTOR is credited without a check; a behaviour change made while green after a proven cycle is never reverted.
 - [ ] `beth A1` Cost per tool call: 4 git spawns plus a stat of every dirty file on every shell call, observe included; up to 2 git calls per prompt for the field guide.
 - [ ] `beth A5` Path comparisons ignore case everywhere; wrong on Linux.

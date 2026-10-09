@@ -1160,15 +1160,19 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   // The change record is cleared once checked; the last catch keeps the path it reverted.
   const changePath = s.changes[module]?.path ?? (s.lastCatch?.module === module ? s.lastCatch.path : undefined)
   const change = changePath === undefined ? undefined : { path: changePath }
+  // Never the stash: on a committed change it saves nothing, and its pop would apply the reviewer's own stash.
+  const head = await gitQuiet($, root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+  const base = head !== null && head.exitCode === 0 && head.stdout.trim() !== '' ? head.stdout.trim() : 'main'
   lines.push('To check the proof yourself, from the repo root with this change checked out:', '```', run)
   if (change !== undefined) {
-    lines.push(`git stash push -- ${relativePath(root, change.path)} && ${run}; git stash pop`)
+    const path = relativePath(root, change.path)
+    lines.push(`git checkout ${base} -- ${path}`, run, `git checkout HEAD -- ${path}`)
   }
   lines.push('```')
   lines.push(
     change === undefined
-      ? `No change to ${module} is on record this session, so there is nothing to stash; the first run is the whole receipt.`
-      : 'The first run passes. The second runs the same test against the code as it was before the change and fails, which is what the catch check saw. The stash pop restores the change.',
+      ? `No change to ${module} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
+      : `The first run passes. The second runs the same test against the code on ${base}, before the change, and fails, which is what the catch check saw. The last line puts the change back.`,
   )
   return lines.join('\n')
 }

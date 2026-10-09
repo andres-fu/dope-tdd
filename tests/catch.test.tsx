@@ -439,8 +439,10 @@ describe('/tdd receipt', () => {
     expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
     expect(receipt.text).toMatch(/caught 1/)
     expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
-    expect(receipt.text).toMatch(/git stash push -- src\/utils\/formatDuration\.ts && npx vitest run tests\/utils\/formatDuration\.test\.ts; git stash pop/)
-    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code as it was before the change and fails/)
+    // Never the stash: on a committed change it saves nothing, and the pop applies the reviewer's own stash.
+    expect(receipt.text).not.toMatch(/stash/)
+    expect(receipt.text).toMatch(/git checkout main -- src\/utils\/formatDuration\.ts\nnpx vitest run tests\/utils\/formatDuration\.test\.ts\ngit checkout HEAD -- src\/utils\/formatDuration\.ts/)
+    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code on main, before the change, and fails/)
   })
 
   test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {

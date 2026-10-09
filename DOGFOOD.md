@@ -41,3 +41,18 @@ refused by the auto-mode classifier when given `--allowedTools` instead of skipp
 permissions; that is the way to drive a plugin-watched session from another session.
 Outcome: merged by the maintainer on 2026-10-09 (04:06 UTC), no review comments. The first change
 made under Dope TDD to be accepted on someone else's repository.
+
+## 2026-10-09 — DungeonLobby, a real bug in the reconnection path
+
+Found by reading the untested handlers and following the socket-id trail into the manager: a
+player who refreshes gets a new socket id, rejoinRoom migrated the player and their tokens but
+not the stored whispers, getChatHistoryForPlayer filters whispers by socket id, and the client
+replaces its chat with the synced history, so the DM's private messages vanished from the
+player's screen after a refresh. Fixed test-first by a headless session with the plugin watching:
+touched → fail → edited → pass → caught; 1 cycle, caught 1, blocked 0. Eleven lines next to the
+existing token migration, one test covering both directions and a third player.
+PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/28 (from the owner's fork).
+
+Lesson for the search: the bug was not in the untested handlers themselves (they are careful) but
+in a record that carries a socket id across a reconnect. "What identifier is stored, and what
+happens when it changes" is a better question than "where is the untested code".

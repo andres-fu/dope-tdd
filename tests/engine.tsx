@@ -65,6 +65,8 @@ export type FakeWorld = {
   baselineCalls: number
   hasVitest: boolean
   onBash: (command: string) => void
+  /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
+  readOnly: boolean
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
   onCatchRun: () => void | Promise<void>
   /** Return true to make a write to that path fail. */
@@ -100,6 +102,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     baselineCalls: 0,
     hasVitest: true,
     onBash: () => {},
+    readOnly: false,
     onCatchRun: () => {},
     writeFails: () => false,
     unreadable: new Set(),
@@ -248,7 +251,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       return { isError: true as const, result: 'FAIL', text: world.bashText || FAIL_SUMMARY }
     }
     // A real runner always prints its summary; a shell command that is not a test run prints whatever it prints.
-    return { result: {} as never, text: world.bashText || PASS_SUMMARY }
+    return { result: {} as never, text: world.bashText || PASS_SUMMARY, ...(isShell && world.readOnly ? { isReadOnly: true as const } : {}) }
   })
   return world
 }

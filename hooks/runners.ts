@@ -380,6 +380,16 @@ export function runnersFor(stack: StackName, testPath?: string): readonly Runner
 }
 
 /** A shell command that runs any known runner, or a package's test script. */
+// What may sit beside a test run without writing anything: a cd, and the filters its output is piped through.
+const HARMLESS = /^\s*(?:cd|echo|tail|head|grep|sort|uniq|wc|true)(?:\s|$)/
+
+/** Only test runs, cds and output filters: nothing in it writes source, so a change seen while it ran came from elsewhere. */
+export function isPureTestRun(command: string): boolean {
+  const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
+  const runs = (segment: string) => RUNNERS.some(runner => runner.command.test(segment))
+  return segments.some(runs) && segments.every(segment => runs(segment) || HARMLESS.test(segment))
+}
+
 export function isTestRun(command: string): boolean {
   return commandSegments(command).some(segment => RUNNERS.some(runner => runner.command.test(executedText(segment))))
 }

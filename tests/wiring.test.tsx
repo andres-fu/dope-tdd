@@ -61,6 +61,35 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/unguarded 1/)
   })
 
+  test('a change seen during a read-only command was not made by it: not charged, and said', async ($, on) => {
+    const world = fakeEngine(on)
+    world.readOnly = true
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    const result = await runBash($, 'ls src')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(result.context?.join('\n')).toMatch(/src\/App\.tsx changed while the command ran, but the command cannot have changed it/)
+  })
+
+  test('a change seen during a pure test run was not made by it; a test run chained to a formatter is charged', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = command => {
+      world.numstat = command.includes('format') ? '3\t1\tsrc/App.tsx\n2\t1\tsrc/Nav.tsx\n' : '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'npx vitest run tests/App.test.tsx | tail -20')
+    const quiet = await runCommand($, 'tdd')
+    await runBash($, 'npx vitest run && npm run format')
+    const charged = await runCommand($, 'tdd')
+
+    expect(quiet.text).toMatch(/unguarded 0/)
+    expect(charged.text).toMatch(/unguarded [12]/)
+  })
+
   test('counts a shell change to an unlocked module as test-first', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'App', 'tsx')

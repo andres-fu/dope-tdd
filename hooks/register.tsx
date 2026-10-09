@@ -29,7 +29,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
+import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -965,7 +965,15 @@ async function guardShell(
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
-  const changed = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
+  const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
+  // A command that cannot have written source (Claude Code held it read-only, or it is only test runs and filters):
+  // what changed while it ran was another editor or session, so it is said and never charged to the agent.
+  const cannotWrite = result.isReadOnly === true || isPureTestRun(command)
+  const changed = cannotWrite ? [] : seen
+  const bystanders = cannotWrite ? changedOfKind(root, seen, 'source', config).map(({ path }) => path) : []
+  if (bystanders.length > 0) {
+    $.ui.log(`dope-tdd: changed during a command that cannot write them, not counted: ${bystanders.join(', ')}`)
+  }
   const touchedTests = changedOfKind(root, changed, 'test', config)
   const changedSources = changedOfKind(root, changed, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
   const changedModules = new Set(changedSources.map(({ module }) => module))
@@ -1100,6 +1108,7 @@ async function guardShell(
     ? []
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,
         ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),
         ...(advice === null ? [] : [advice]),

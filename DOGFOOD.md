@@ -39,3 +39,5 @@ Findings: (1) a test run invoked from inside `server/` with a package-relative p
 the full path. Shell cwd drift, `arch2 7`, seen on a real repo. (2) The headless run was not
 refused by the auto-mode classifier when given `--allowedTools` instead of skipped
 permissions; that is the way to drive a plugin-watched session from another session.
+Outcome: merged by the maintainer on 2026-10-09 (04:06 UTC), no review comments. The first change
+made under Dope TDD to be accepted on someone else's repository.

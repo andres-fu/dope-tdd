@@ -70,3 +70,21 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [x] `live` Paid 2026-10-09 (`executedText` in shell.ts: a heredoc body counts as commands only when fed to a shell). A heredoc that writes a file (`cat > body.md <<'EOF' ... npx vitest run ... EOF`) was read as a test run, and the plugin said "a test run happened but its summary line was not in the output". Seen 2026-10-09 writing PR bodies that quote re-check commands. Text fed to `cat`/`tee` into a file is data, not a command; only an interpreter fed by heredoc (bash, sh, node) runs its body.
 - [ ] `pool` Scout agents (bug hunts) and one-off `claude -p` runs outside `ab.mjs` are not in the ledger; their cost is invisible. Either route them through a `tools/pool/run.mjs` that ledgers one run, or read `~/.dope-tdd/sessions` for them.
 - [x] `owner` Paid 2026-10-09 (`tools/pool/prs.mjs`, data in ~/.dope-tdd/pool/prs.json, 7 PRs backfilled). Left over: cost of scouts and of PRs made before the ledger. Track what our real-repo work changes (2026-10-09): one line per PR we open (repo, link, the bug, how it was found, receipt verdict, cost, status refreshed from `gh`: open/merged/closed and review comments, and the mod commits it led to). Lives in `~/.dope-tdd/pool` beside the ledger, private until the repo owners agree to the story. Backfill DungeonLobby #27-31 and Roadhouse #70-71. It is the adoption evidence ("N PRs, all proven, M merged") and the measure of whether the test-learn-refine loop pays.
+
+## Beth-ready (principal-engineer review, 2026-10-09)
+
+A read-only review as a principal engineer running many agents on macOS with watchers and monorepos. Gate before the next tester.
+
+- [ ] `beth B1` The catch check reverts the live working tree. Exit or crash mid-check leaves old code on disk until the next session start in that root (no repair at `session.end`); watchers (tsc --watch, HMR, vitest --watch) rebuild twice per check; a parallel Read sees the old code; a `.dope-tdd.kept` file is not ignored and `git add -A` commits it. Smallest: `catchCheck: false`, repair at `session.end`, kept copies outside the tree. Real: check in a throwaway worktree.
+- [ ] `beth B2` Any red is CAUGHT: no baseline under the check's own command (cwd root, CI=1, no npm script or env). A test that fails under that invocation for any reason is false credit. Fix: the red must name the test file; a baseline green under the same argv once per module.
+- [ ] `beth B3` With no config, `src/foo.test.ts` is classified as source `foo.test` under the default mirror layout; editing it is refused. A path with a test-file name is never source; infer the layout on first use and name `/tdd setup` in the refusal.
+- [ ] `beth S1` The shell backstop charges every change seen during a command to the agent (an IDE save, codegen, another session): false accusation or false unlock. Attribute only what the command names; report the rest as cause unknown.
+- [ ] `beth S2` The shell's cwd is not carried across calls (`locatedSegments` starts at the root every call).
+- [ ] `beth S3` Monorepo runs: `pnpm --filter`, `turbo run test`, `nx test`, `pnpm -r test` not recognised; prefixed output (`api:test: Tests 3 passed`) not read; non-hoisted runners under packages/* not found.
+- [ ] `beth S4` Python on macOS: the fallback is `python` (absent on stock macOS); poetry and pipenv venvs live outside the repo. Try `python3`, `uv run`, `poetry run`.
+- [ ] `beth S5` The shell write gate only knows `src/**/*.ts(x)` (bashWrites.ts); `sed -i app/models.py` passes in enforce.
+- [ ] `beth S6` The receipt's re-check `git stash push -- path && run; git stash pop` pops the reviewer's own stash when the change is committed. Use `git checkout <base> -- path; run; git checkout HEAD -- path`.
+- [ ] `beth S7` REFACTOR is credited without a check; a behaviour change made while green after a proven cycle is never reverted.
+- [ ] `beth A1` Cost per tool call: 4 git spawns plus a stat of every dirty file on every shell call, observe included; up to 2 git calls per prompt for the field guide.
+- [ ] `beth A5` Path comparisons ignore case everywhere; wrong on Linux.
+- [ ] `beth Q` register.tsx 1360 lines; one Bash call makes about 10 separate state writes; the lock lives in three places; this ledger had contradicted the code (fixed).

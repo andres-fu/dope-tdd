@@ -461,6 +461,11 @@ async function verifyCatch(
   if (cycleChange.kind === 'refactor') {
     return 'refactor'
   }
+  // Observe touches nothing on disk: a module the config only watches (observe mode, or outside the scope) is never reverted.
+  const policy = policyFor(config, relativePath(root, cycleChange.path))
+  if (policy === 'observe' || policy === 'exempt') {
+    return 'unchecked'
+  }
   if (cycleChange.before === null) {
     return { kind: 'unverified', reason: cycleChange.beforeState === 'unreadable' ? 'could not read the file before the edit' : 'new file' }
   }
@@ -1151,6 +1156,10 @@ export const register: Register = on => {
     const composed = await next(e)
     const root = await $.session.root()
     const config = await loadConfig($, root)
+    // Observe measures how the agent works on its own, so it is not briefed.
+    if (config.mode === 'observe') {
+      return composed
+    }
     const text = briefingText(config, await briefingCommand($, root, config))
     return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })

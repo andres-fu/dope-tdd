@@ -195,7 +195,7 @@ export function describeStack(config: GuardConfig): string {
 export function describeConfig(config: GuardConfig): string[] {
   const scope = config.scope.length === 0 ? '' : ` in ${config.scope.join(', ')}`
   return [
-    `mode: ${config.mode}${scope}`,
+    `mode: ${config.mode}${scope}${config.mode === 'observe' ? ' (records only: no refusals, no advice, no briefing, no catch check; nothing on disk is touched)' : ''}`,
     ...(config.exempt.length === 0 ? [] : [`exempt: ${config.exempt.join(', ')}`]),
     ...(config.stack === 'node' && config.stackSource === 'default' ? [] : [describeStack(config)]),
     `layout: ${describeLayout(config.layout)}`,

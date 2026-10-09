@@ -97,3 +97,52 @@ describe('guard modes from dope-tdd.json', () => {
     expect(status.text).toMatch(/mode: enforce\n/)
   })
 })
+
+describe('observe touches nothing on disk', () => {
+  test('a red, a fix and a green are recorded, but the catch check never reverts the file or starts a runner', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"mode":"observe"}')
+    world.fileContents.set(`${ROOT}/src/utils/formatDuration.ts`, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    await runBash($, 'npx vitest run')
+    await editAt($, 'src/utils/formatDuration.ts')
+    world.bashFails = false
+    const writesBefore = world.writes.length
+
+    const green = await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.length).toBe(writesBefore)
+    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+    expect(green.context).toBeUndefined()
+    expect(status.text).toMatch(/cycles: 1/)
+    expect(status.text).toMatch(/mode: observe \(records only: no refusals, no advice, no briefing, no catch check; nothing on disk is touched\)/)
+    expect(status.text).not.toMatch(/caught|missed/)
+  })
+
+  test('a module outside the scope is only watched, so its fix is not reverted either', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"scope":["src/money/**"]}')
+    world.fileContents.set(`${ROOT}/src/utils/formatDuration.ts`, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    await runBash($, 'npx vitest run')
+    await editAt($, 'src/utils/formatDuration.ts')
+    world.bashFails = false
+
+    await runBash($, 'npx vitest run')
+
+    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+  })
+
+  test('the agent is not briefed in observe mode, so the record is of how it works on its own', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"mode":"observe"}')
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true } as never)
+
+    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })) as { sections: readonly { id: string }[] }
+
+    expect(composed.sections.some(section => section.id === 'dope-tdd:briefing')).toBe(false)
+  })
+})

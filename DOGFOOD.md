@@ -186,3 +186,12 @@ same evening: the same. Harness note, not plugin: in the Roadhouse run Claude Co
 `GODOT_BIN=... bash test/run-tests.sh` the agent tried, where the same allowlist passed an hour earlier, so the
 full guarded run did not happen; the agent said so and did not work around it. For launcher runs, set
 GODOT_BIN in the launcher's environment instead of asking the agent to.
+
+## 2026-10-09 — The catch check in a worktree, proven live
+
+Project-RESEARCH in a full local clone (`ab.mjs --clone`, so .git is a folder as in a person's checkout),
+enforce, the slugify task. A watcher polled src/lib/io.ts every 100 ms for the whole run and logged each
+distinct version: exactly two, the original and the agent's fix. The fixed file never went back to the old
+code. The session record: caught 1, worktreeChecks 1, checkMs 2463 (baseline in the worktree plus the check).
+No worktree left in the clone afterwards. Before this change, the same check wrote the old code into the
+real file for the length of a test run.

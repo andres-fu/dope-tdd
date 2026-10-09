@@ -87,3 +87,16 @@ source under godot-csharp", suggested config { stack: godot, layout: godot-cshar
 not pair are feature-level suites (BandCore, EconomyBalance, Harness, MainSceneLoad, ...) with no
 single source; they will unlock nothing, which is the honest reading. No .NET SDK on this machine, so
 the catch check (dotnet test --filter) and the dotnet reader still wait for a real run.
+
+## 2026-10-09 — Roadhouse, the first receipt on a Godot game, and PROVEN
+
+Two headless Sonnet runs in a local clone of Adam's Roadhouse (Godot 4.6.2 mono, C#, gdUnit4 via
+dotnet test, layout godot-csharp in an excluded dope-tdd.json). Run 1: the briefed agent pinned the
+untested VanCost.CostFor in five cases with no refusals, broke Math.Ceiling on purpose (2 red),
+restored it byte for byte, green. Stack, layout, red and green all read correctly from real dotnet
+output, but the receipt had no proof line: break and restore net to no change, so the catch check
+said nothing. Fixed in e67d729 (PROVEN). Run 2, same flow: "GREEN on VanCost, and the code is back
+exactly as it was before your break ... PROVEN"; receipt "caught 0 · proven 1"; the unlock from run 1
+carried across sessions ("touched 2M AGO in an earlier session"). Nothing committed or pushed in
+Roadhouse; test/VanCostTest.cs is untracked in the local clone only.
+Minor: a pass before any module is current logs as a bare "pass" with no module.

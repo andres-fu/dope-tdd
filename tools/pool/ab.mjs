@@ -7,7 +7,7 @@
 //   node tools/pool/ab.mjs --repo C:/path/to/clone --task task.txt \
 //     --allow "Bash(npx vitest*)" [--allow ...] [--setup "npm ci"] \
 //     [--config '{"layout":"flat"}'] [--model claude-sonnet-5-5] [--max-turns 40]
-//     [--modes observe,enforce] [--keep]
+//     [--modes observe,enforce] [--ref upstream/main] [--keep]
 //
 // Nothing is committed or pushed. Worktrees are removed afterwards unless
 // --keep is given. The ledger and reports live outside every repository, in
@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function parseArgs(argv) {
-  const args = { allow: [], modes: ['observe', 'enforce'], model: 'claude-sonnet-5-5', maxTurns: 40, keep: false, config: '{}' }
+  const args = { ref: 'HEAD', allow: [], modes: ['observe', 'enforce'], model: 'claude-sonnet-5-5', maxTurns: 40, keep: false, config: '{}' }
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i]
     const next = () => argv[++i]
@@ -32,6 +32,7 @@ function parseArgs(argv) {
     else if (key === '--model') args.model = next()
     else if (key === '--max-turns') args.maxTurns = Number(next())
     else if (key === '--modes') args.modes = next().split(',')
+    else if (key === '--ref') args.ref = next()
     else if (key === '--keep') args.keep = true
     else throw new Error(`unknown argument ${key}`)
   }
@@ -106,14 +107,14 @@ async function main() {
   const task = readFileSync(args.task, 'utf8').trim()
   const repoName = basename(args.repo)
   const id = `${repoName}-${stamp()}`
-  const head = git(args.repo, 'rev-parse', '--short', 'HEAD')
+  const head = git(args.repo, 'rev-parse', '--short', args.ref)
   const poolDir = join(homedir(), '.dope-tdd', 'pool')
   mkdirSync(poolDir, { recursive: true })
   const baseConfig = JSON.parse(args.config)
 
   const legs = args.modes.map(mode => ({ mode, dir: resolve(args.repo, '..', `${repoName}-ab-${mode}-${stamp()}`) }))
   for (const leg of legs) {
-    git(args.repo, 'worktree', 'add', '--detach', leg.dir, 'HEAD')
+    git(args.repo, 'worktree', 'add', '--detach', leg.dir, args.ref)
     writeFileSync(join(leg.dir, 'dope-tdd.json'), `${JSON.stringify({ ...baseConfig, mode: leg.mode }, null, 2)}\n`)
     const exclude = join(git(leg.dir, 'rev-parse', '--git-common-dir'), 'info', 'exclude')
     const current = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''

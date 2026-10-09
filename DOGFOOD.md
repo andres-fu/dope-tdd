@@ -146,3 +146,21 @@ enforce caught 1 on io. Two findings:
 - The observe agent wrote "the catch check reported CAUGHT" in its summary. Observe runs no catch check,
   and the receipt it printed above that sentence has no catch line. The prose is a claim; the receipt is
   the evidence. Readers of a PR (and the ledger) should trust the receipt block, never the summary.
+
+## 2026-10-09 — A/B on both of Adam's repos: the same pattern twice
+
+Two real bugs found by scouts and checked by hand, each run observe vs enforce from the latest main
+(`tools/pool/ab.mjs --ref`), Sonnet, nothing committed:
+- DungeonLobby, `RoomManager.updateToken` resizes a token past the map edge (addToken and moveToken
+  refuse it). Observe: fixed, 86/86 green, never saw red 1. Enforce: red first, fixed, caught 1.
+  $0.18 vs $0.20, 9 vs 10 turns.
+- Roadhouse, `TipFormat.RoomProgressLine` rounds 99.7% up to "100%" while the Buy button is disabled.
+  Observe: fixed, never saw red 1 (it says so itself: "I wrote the fix right after the tests"). Enforce:
+  red first, fixed, caught 1. $0.37 vs $0.34, 11 vs 12 turns.
+The finding: on two unrelated stacks (TypeScript and Godot C#), the unguarded agent wrote tests and never
+watched them fail; the guarded one did, and its tests are proven to catch the change, for about the same
+cost and turns. Both fixes look alike; only one comes with evidence.
+Engine bug found: Claude Code's refusal "A variable in this command can't be checked before it runs"
+was read as an unread run ("1 unread"). Fixed: it is a hold, not a run. Field-guide material for
+Roadhouse: the enforce agent bumped EXPECTED_MIN_TOTAL but not the ARCHITECTURE.md count sentence, and
+neither agent ran `bash test/run-tests.sh` in full; that repo's rules belong in a briefing.

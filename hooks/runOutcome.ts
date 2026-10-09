@@ -8,7 +8,7 @@ const PASSED = /\d+\s+passed/
 const FAILED_FILE = /^\s*(?:FAIL|❯|×)\s+((?:[A-Za-z]:)?[\w./\\-]+\.(?:test|spec)\.[cm]?[jt]sx?)\b/gm
 const TRUNCATION_BANNER = /Output too large/
 // What the model reads when Claude Code held a command for approval or refused it: the command never ran.
-const NEVER_RAN = /requires approval|requested permissions? to use|haven't granted|denied by the .*classifier|permission(?: for this action)? (?:was |has been )?denied/i
+const NEVER_RAN = /requires approval|requested permissions? to use|haven't granted|denied by the .*classifier|permission(?: for this action)? (?:was |has been )?denied|can't be checked before it runs/i
 
 export function stripAnsi(text: string): string {
   return text.replace(ANSI, '')

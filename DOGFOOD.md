@@ -78,3 +78,12 @@ caught 1. PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/30. Also adde
 whisper label direction on the client was wrong after a refresh for the same socket-id reason.
 Hunting lessons so far: stored identifiers across events that change them; keys of limits and
 caches and who controls the input; trust boundaries on headers.
+
+## 2026-10-09 — Roadhouse, dry run of the inference on the real tree
+
+Clone at C:\Users\fuent\Roadhouse-Game. Fed its 130 code files and root entries to inferLayout:
+stack godot (project.godot at the root), layout godot-csharp, "37 of 56 test files pair with a
+source under godot-csharp", suggested config { stack: godot, layout: godot-csharp }. The 19 that do
+not pair are feature-level suites (BandCore, EconomyBalance, Harness, MainSceneLoad, ...) with no
+single source; they will unlock nothing, which is the honest reading. No .NET SDK on this machine, so
+the catch check (dotnet test --filter) and the dotnet reader still wait for a real run.

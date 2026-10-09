@@ -164,3 +164,14 @@ Engine bug found: Claude Code's refusal "A variable in this command can't be che
 was read as an unread run ("1 unread"). Fixed: it is a hold, not a run. Field-guide material for
 Roadhouse: the enforce agent bumped EXPECTED_MIN_TOTAL but not the ARCHITECTURE.md count sentence, and
 neither agent ran `bash test/run-tests.sh` in full; that repo's rules belong in a briefing.
+
+## 2026-10-09 — The field guide, measured: the same Roadhouse bug, with and without it
+
+Same task (room line rounds 99.7% to "100%"), enforce, Sonnet, from upstream main. Without a guide (the
+A/B leg and the first PR run): test-first, caught 1, but the count paragraph in ARCHITECTURE.md was left
+with two stale numbers (DocumentClaimsTest would fail) and the full guarded run never happened ("couldn't
+find Godot"); both were fixed by hand before PR #71. With `~/.dope-tdd/guides/Atom-Powell__Roadhouse-Game.md`
+in the briefing: test-first, caught 1, all four numbers moved together (798, 432 pure), Godot found from
+the guide, and `bash test/run-tests.sh` green at 798 of 798. $0.54 and 18 turns vs $0.34 and 12: the extra
+cost is the full guarded run the repo asks for. Lesson: the plugin proves the test; the guide carries the
+repo's own definition of done.

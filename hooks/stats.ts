@@ -304,6 +304,29 @@ export function recordRedUnlock(s: TddStats, module: string, testPath: string, m
   return makeCurrent ? mirrored({ ...unlocked, current: { module, testPath } }, moduleState(s, module)) : unlocked
 }
 
+/** A test that imports this module covers it: touching that test unlocks the module, pointing at that test. */
+export function recordImportUnlock(s: TddStats, module: string, testPath: string): TddStats {
+  return s.unlocked[module] !== undefined ? s : { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
+}
+
+/** A failing test that imports this module is a red for it too: its cycle saw red, so its green will say so. */
+export function recordRedFor(s: TddStats, module: string, nowMs: number): TddStats {
+  const prev = moduleState(s, module)
+  return withModule(s, module, { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false })
+}
+
+/** A test file that passed closes the open cycle of every other module it is the test for, so none is left red behind it. */
+export function closeCyclesForTest(s: TddStats, testPath: string, except: string | undefined): TddStats {
+  const same = (path: string) => path.replace(/\\/g, '/').toLowerCase() === testPath.replace(/\\/g, '/').toLowerCase()
+  return Object.entries(s.modules).reduce((acc, [module, state]) => {
+    const path = acc.unlocked[module]
+    if (module === except || path === undefined || !same(path) || state.cycleStartMs === null) {
+      return acc
+    }
+    return withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })
+  }, s)
+}
+
 /** A run that named a test file: that module is current, and the band mirrors its cycle. */
 export function recordRunTarget(s: TddStats, module: string): TddStats {
   const testPath = s.unlocked[module]

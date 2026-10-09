@@ -4,6 +4,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
 import { briefingText } from './briefing'
+import { importCandidates } from './imports'
 import { changedLines } from './changedLines'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
@@ -14,6 +15,7 @@ import {
   commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
+  importAdvice,
   hollowTouchAdvice,
   redUnlockAdvice,
   inheritedAdvice,
@@ -47,6 +49,9 @@ import {
   recordChange,
   recordConfigChange,
   recordRun,
+  closeCyclesForTest,
+  recordImportUnlock,
+  recordRedFor,
   recordRedUnlock,
   recordRunTarget,
   recordSourceEdit,
@@ -791,8 +796,17 @@ async function guardFileWrite(
       await change($, s => recordWorkaround(s, 'hollow-touch', target.module, relativePath(root, filePath), nowMs))
     }
     const resaved = unchanged ? [hollowTouchAdvice(relativePath(root, filePath))] : []
+    // A test covers what it imports: slugify.test.ts importing src/lib/io is the test for io too.
+    const imported = (await importedModules($, root, config, filePath, source)).filter(module => module !== target.module && touched.unlocked[module] === undefined)
+    if (imported.length > 0) {
+      await change($, s => imported.reduce((acc, module) => recordImportUnlock(acc, module, filePath), s))
+      for (const module of imported) {
+        await rememberUnlock($, root, module, filePath, nowMs)
+      }
+    }
+    const importLines = imported.length === 0 ? [] : [importAdvice(relativePath(root, filePath), imported)]
     const command = (await runCommandFor($, root, config, filePath)) ?? undefined
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module), command), ...hollow, ...signals, ...resaved])
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module), command), ...importLines, ...hollow, ...signals, ...resaved])
   }
   return result
 }
@@ -948,7 +962,12 @@ async function guardShell(
     const named = namedTestFile(command, config.stack, root) ?? undefined
     const target = named === undefined ? null : classifyPath(root, named, config)
     let targeted = updated
-    if (target?.kind === 'test' && named !== undefined) {
+    const namedImports = named === undefined ? [] : await importedModules($, root, config, named)
+    const current = updated.current
+    // The run is the current module's test, or a test that imports it: the band stays on the module being worked on.
+    const keepsCurrent =
+      current !== null && named !== undefined && (relativePath(root, current.testPath).toLowerCase() === relativePath(root, named).toLowerCase() || namedImports.includes(current.module))
+    if (target?.kind === 'test' && named !== undefined && !keepsCurrent) {
       // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
       const testPath = named
       if (outcome === 'fail' && updated.unlocked[target.module] === undefined) {
@@ -971,11 +990,32 @@ async function guardShell(
           redUnlocked.push(seen.module)
         }
       }
+      // A failing test is a red for every module it imports: unlocked if they were not, and their cycle saw red.
+      const failingTests = [...new Set([...failed.map(path => absolutePath(root, path)), ...(named !== undefined && target?.kind === 'test' ? [named] : [])])]
+      const coveredByFailure: string[] = []
+      for (const testFile of failingTests) {
+        for (const module of await importedModules($, root, config, testFile)) {
+          coveredByFailure.push(module)
+          if (targeted.unlocked[module] === undefined) {
+            targeted = await change($, s => recordRedUnlock(s, module, testFile, false))
+            await rememberUnlock($, root, module, testFile, nowMs)
+            redUnlocked.push(module)
+          }
+        }
+      }
       const own = targeted.current?.module
-      // The suite is red; the module is red only if its own test is among the files that failed.
-      elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed, config).includes(own) ? failed : []
+      for (const module of [...new Set(coveredByFailure)].filter(module => module !== own)) {
+        targeted = await change($, s => recordRedFor(s, module, nowMs))
+      }
+      // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.
+      const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
+      elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? failed : []
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
+    if (outcome === 'pass' && named !== undefined) {
+      // The test file passed: no other module it is the test for stays red behind it.
+      afterRun = await change($, s => closeCyclesForTest(s, named, s.current?.module))
+    }
   }
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
@@ -1051,6 +1091,25 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   if (Object.keys(entries).length > 0) {
     await change($, s => seedUnlocks(s, entries))
   }
+}
+
+/** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */
+async function importedModules($: EngineInterface, root: string, config: GuardConfig, testPath: string, text?: string | null): Promise<string[]> {
+  const source = text ?? (await readWhole($, testPath))
+  if (source === null || source === undefined) {
+    return []
+  }
+  const found: string[] = []
+  for (const candidate of importCandidates(relativePath(root, testPath), source, config.stack).slice(0, 80)) {
+    const target = classifyPath(root, `${root}/${candidate}`, config)
+    if (target.kind !== 'source' || found.includes(target.module)) {
+      continue
+    }
+    if (await $.fs.exists(`${root}/${candidate}`)) {
+      found.push(target.module)
+    }
+  }
+  return found
 }
 
 /** How one test file runs in this project, as a person types it, for a path relative to the root; null when no runner is found. */

@@ -40,6 +40,10 @@ export function hollowTouchAdvice(testPath: string): string {
   return `dope-tdd: ${testPath} was re-saved unchanged. A touch that changes nothing proves nothing. Recorded; say why in your reply.`
 }
 
+export function importAdvice(testPath: string, modules: readonly string[]): string {
+  return `dope-tdd: ${testPath} imports ${modules.join(', ')}, so it is the test for ${modules.length === 1 ? 'that module' : 'those modules'} too: ${modules.length === 1 ? 'it is' : 'they are'} unlocked, and ${modules.length === 1 ? 'its' : 'their'} catch check runs this file.`
+}
+
 export function hollowAdvice(testPath: string): string {
   return `dope-tdd: ${testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`
 }

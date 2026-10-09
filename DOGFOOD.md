@@ -115,3 +115,16 @@ The agent flagged a false "has no assertion": the hollow-test detector knew only
 expect(, so every C# test (AssertThat, AssertFloat) and every pytest test (bare `assert x == y`) read
 as hollow, and assertion-removal counting was blind there too. Fixed with tests proven red on the old
 detector. Lesson: let the agent say what confused it; it found this in one run.
+
+## 2026-10-09 — A/B on Project-RESEARCH: same task, observe vs enforce
+
+One real bug (slugify in src/lib/io.ts drops accents and returns "" for non-Latin topics, so every such
+topic writes into the shared work root), one natural prompt with no mention of tests, two fresh Sonnet
+agents in two worktrees of a local clone. Observe: the unbriefed agent worked test-first on its own
+(added cases to test/slugify.test.ts, red, fix, green), and the plugin called it "unguarded io,
+test-first 0/1": a false accusation. Enforce: the agent wrote the failing test, saw red, and was BLOCKED
+from io.ts anyway, then wrote duplicate tests in test/io.test.ts to get through, leaving a dangling
+"also open: slugify (red)". Same root cause in both: the test is named after the function, the code
+after its file, and pairing by name connects nothing. A real engineer reads the import. Fixed: a test
+covers what it imports (type-only imports excluded; .js imports name .ts files; Python dotted and
+GDScript preload too). The replay test fails on the old plugin with the exact deny the agent got.

@@ -56,3 +56,15 @@ PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/28 (from the owner's fo
 Lesson for the search: the bug was not in the untested handlers themselves (they are careful) but
 in a record that carries a socket id across a reconnect. "What identifier is stored, and what
 happens when it changes" is a better question than "where is the untested code".
+
+## 2026-10-09 — DungeonLobby, Walk 2 on real code: pin, prove, refactor
+
+server/src/handlers/mapHandlers.ts had no tests and eight handlers with the same preamble. A headless
+session with the plugin watching: pinned each handler's five paths (77 cases, real RoomManager and
+RateLimiter under fake timers) → GREEN but "never saw red" → broke one message on purpose → RED on
+exactly that pin → restored → GREEN "saw red" → refactored with the test file untouched → the plugin
+named it a refactor and did not re-check. 495 lines became 377. Receipt: runs 5 (4 pass, 1 fail),
+cycles 2, refactors 1, never saw red 0. PR: https://github.com/Ironwright-Labs/DungeonLobby/pull/29.
+Verification for a refactor PR: the same pins pass against the old handler (stash) and the new one.
+Note for the band: during the pin step the honest word was NEVER SAW RED, and the agent followed the
+advice to break the code on purpose; that is the walkthrough's Walk 2 happening unprompted.

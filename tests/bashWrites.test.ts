@@ -55,6 +55,11 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites("grep -n x src/App.tsx; echo done > src/main.tsx")).toEqual(['src/main.tsx'])
   })
 
+  test('a data heredoc that only mentions a source path in its body is not a write, even with an in-place sed later in the command', () => {
+    const note = "cat >> notes/log.md <<'EOF'\nlayout: src/api/rate-limit.ts beside rate-limit.test.ts\nEOF\nsed -i 's/a/b/' notes/index.md"
+    expect(findSourceWrites(note)).toEqual([])
+  })
+
   test('printing a source file to stdout from a script is a read', () => {
     expect(findSourceWrites("node -e \"process.stdout.write(require('fs').readFileSync('src/App.tsx','utf8'))\"")).toEqual([])
     expect(findSourceWrites("python -c \"import sys; sys.stdout.write(open('src/App.tsx').read())\"")).toEqual([])

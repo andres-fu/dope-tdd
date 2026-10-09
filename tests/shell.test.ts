@@ -31,6 +31,11 @@ describe('commandSegments', () => {
     expect(commandSegments(hereString)).toEqual([hereString])
   })
 
+  test('a heredoc body stays with the command that opened it, and what follows the terminator is split as usual', () => {
+    const command = "cat > notes.md <<'EOT'\nx; y | z\nEOT\nsed -i 's/a/b/' index.md && echo done"
+    expect(commandSegments(command)).toEqual(["cat > notes.md <<'EOT'\nx; y | z\nEOT", "sed -i 's/a/b/' index.md", 'echo done'])
+  })
+
   test('drops empty segments', () => {
     expect(commandSegments('a;; b')).toEqual(['a', 'b'])
   })

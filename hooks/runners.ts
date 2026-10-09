@@ -35,6 +35,8 @@ export type Runner = {
   argv: (runnerRoot: string, testPath: string, tool: string, options: RunnerOptions) => string[]
   read: (output: string) => RunOutcome
   failedFiles: (output: string) => string[]
+  /** The command a person types to run one test file, for a receipt a reviewer can re-run. */
+  describe: (testPath: string) => string
   provisional: boolean
 }
 
@@ -214,6 +216,7 @@ function noFailedFiles(): string[] {
 export const RUNNERS: readonly Runner[] = [
   {
     kind: 'vitest',
+    describe: testPath => `npx vitest run ${testPath}`,
     alsoFor: [],
     exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
     stack: 'node',
@@ -228,6 +231,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'jest',
+    describe: testPath => `npx jest ${testPath}`,
     alsoFor: [],
     exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
     stack: 'node',
@@ -242,6 +246,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'pytest',
+    describe: testPath => `python -m pytest ${testPath}`,
     alsoFor: [],
     exts: ['py'],
     stack: 'python',
@@ -256,6 +261,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'gdunit4',
+    describe: testPath => `addons/gdUnit4/runtest.sh -a res://${forwardSlashes(testPath)}` + '  (runtest.cmd on Windows)',
     alsoFor: [],
     exts: ['gd'],
     stack: 'godot',
@@ -284,6 +290,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'maven',
+    describe: testPath => `mvn -Dtest=${javaClassName(testPath)} test`,
     alsoFor: [],
     exts: ['java'],
     stack: 'java',
@@ -298,6 +305,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'gradle',
+    describe: testPath => `./gradlew test --tests ${javaClassName(testPath)}`,
     alsoFor: [],
     exts: ['java'],
     stack: 'java',
@@ -312,6 +320,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'dotnet',
+    describe: testPath => `dotnet test --filter FullyQualifiedName~${stem(testPath)}`,
     stack: 'dotnet',
     alsoFor: ['godot'],
     exts: ['cs'],

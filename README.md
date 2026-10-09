@@ -39,6 +39,11 @@ The mechanism is the one Anthropic describes under
 `claude plugin validate .` prints the actions it steps into. The full table,
 with what you see on each surface, is in `docs/testers.md`.
 
+`/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
+detects, and `/tdd receipt` the receipt for the current module with the two
+commands a reviewer runs to re-check the proof without the plugin, ready to
+paste into a pull request.
+
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
 

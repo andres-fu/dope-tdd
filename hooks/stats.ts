@@ -363,12 +363,13 @@ export function releaseCheck(s: TddStats): TddStats {
 
 /** Counts the outcome for `module` and clears only that module's pending change; other modules wait for their own green. */
 export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome | 'unchecked' | 'refactor', nowMs: number): TddStats {
+  const path = s.changes[module]?.path
   const cleared = { ...s, changes: without(s.changes, module) }
   if (outcome === 'unchecked') {
     return cleared
   }
   if (outcome === 'refactor') {
-    return logged({ ...cleared, refactors: s.refactors + 1, lastCatch: { module, outcome: { kind: 'refactor' } } }, 'refactor', nowMs, module)
+    return logged({ ...cleared, refactors: s.refactors + 1, lastCatch: { module, outcome: { kind: 'refactor' }, path } }, 'refactor', nowMs, module)
   }
   const counted =
     outcome.kind === 'caught'
@@ -376,7 +377,7 @@ export function recordCatch(s: TddStats, module: string, outcome: CatchOutcome |
       : outcome.kind === 'missed'
         ? { ...cleared, missed: s.missed + 1 }
         : { ...cleared, unverified: s.unverified + 1 }
-  return logged({ ...counted, lastCatch: { module, outcome } }, outcome.kind, nowMs, module)
+  return logged({ ...counted, lastCatch: { module, outcome, path } }, outcome.kind, nowMs, module)
 }
 
 export function togglePause(s: TddStats, nowMs: number): TddStats {

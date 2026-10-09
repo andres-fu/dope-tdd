@@ -98,7 +98,8 @@ export type TddStats = {
   missed: number
   unverified: number
   refactors: number
-  lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' } } | null
+  /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
+  lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' }; path?: string } | null
   lastCycle: CycleVerdict | null
   current: CurrentTest | null
   events: readonly TddEvent[]

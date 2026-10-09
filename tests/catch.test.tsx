@@ -424,3 +424,31 @@ describe('what the check cannot see is said, not skipped', () => {
     expect(status.text).not.toMatch(/refactors 1/)
   })
 })
+
+describe('/tdd receipt', () => {
+  test('prints the status and the two commands a reviewer runs, for the current module', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
+    expect(receipt.text).toMatch(/caught 1/)
+    expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
+    expect(receipt.text).toMatch(/git stash push -- src\/utils\/formatDuration\.ts && npx vitest run tests\/utils\/formatDuration\.test\.ts; git stash pop/)
+    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code as it was before the change and fails/)
+  })
+
+  test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {
+    const world = fakeEngine(on)
+    const empty = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+    expect(empty.text).toMatch(/No module is current/)
+
+    await touchTest($, world, 'utils/formatDuration')
+    const named = await $.command.run({ command: 'tdd', args: 'receipt utils/formatDuration' } as never)
+    expect(named.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
+    expect(named.text).toMatch(/No change to utils\/formatDuration is on record/)
+  })
+})

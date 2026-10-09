@@ -25,7 +25,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, isTestRun, namedTestFile, readRun, runnersFor, testRunLocation } from './runners'
+import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
 import { isTruncated, neverRan } from './runOutcome'
 import { detectStackFrom } from './stacks'
 import type { StackName } from './stacks'
@@ -912,6 +912,44 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   }
 }
 
+/**
+ * The receipt for a module, ready for a pull request: the status as the band
+ * reads it, then the two commands a reviewer runs to re-check the proof
+ * without the plugin: the test, and the test against the code as it was
+ * before the change.
+ */
+async function receiptText($: EngineInterface, root: string, config: GuardConfig, named: string | undefined, nowMs: number): Promise<string> {
+  const s = await readStats($)
+  const module = named ?? s.current?.module
+  const status = formatStatus(s, nowMs, config)
+  if (module === undefined) {
+    return ['dope-tdd receipt', '```', status, '```', 'No module is current; name one: /tdd receipt <module>.'].join('\n')
+  }
+  const lines = [`dope-tdd receipt for ${module}`, '```', status, '```']
+  const testPath = s.unlocked[module]
+  if (testPath === undefined) {
+    lines.push(`No test on record for ${module}; the receipt is the status alone.`)
+    return lines.join('\n')
+  }
+  const runner = await detectRunner($, root, config, testPath)
+  const relativeTest = relativePath(root, testPath)
+  const run = runner === null ? `<run ${relativeTest} with your test runner>` : runnerNamed(runner.kind).describe(relativeTest)
+  // The change record is cleared once checked; the last catch keeps the path it reverted.
+  const changePath = s.changes[module]?.path ?? (s.lastCatch?.module === module ? s.lastCatch.path : undefined)
+  const change = changePath === undefined ? undefined : { path: changePath }
+  lines.push('To check the proof yourself, from the repo root with this change checked out:', '```', run)
+  if (change !== undefined) {
+    lines.push(`git stash push -- ${relativePath(root, change.path)} && ${run}; git stash pop`)
+  }
+  lines.push('```')
+  lines.push(
+    change === undefined
+      ? `No change to ${module} is on record this session, so there is nothing to stash; the first run is the whole receipt.`
+      : 'The first run passes. The second runs the same test against the code as it was before the change and fails, which is what the catch check saw. The stash pop restores the change.',
+  )
+  return lines.join('\n')
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   const config = await loadConfig($, await $.session.root())
   return formatStatus(await readStats($), await $.clock.now(), config)
@@ -933,7 +971,7 @@ export const register: Register = on => {
     await loadConfig($, root)
     await $.command.register({
       name: 'tdd',
-      description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band; /tdd setup detects where your tests live',
+      description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band; /tdd setup detects where your tests live; /tdd receipt prints the receipt for a pull request',
     })
     await $.tool.register({
       name: 'status',
@@ -943,12 +981,18 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'tdd' }, async ($, e) => {
-    const words = e.args.trim().toLowerCase().split(/\s+/).filter(word => word !== '')
+    const raw = e.args.trim().split(/\s+/).filter(word => word !== '')
+    const words = raw.map(word => word.toLowerCase())
     if (words[0] === 'why') {
       return { text: formatGlossary() }
     }
     if (words[0] === 'setup') {
       return { text: await setupText($, await $.session.root(), words[1] === 'write', await $.clock.now()) }
+    }
+    if (words[0] === 'receipt') {
+      const root = await $.session.root()
+      // The module id keeps its case: server/managers/RoomManager is not server/managers/roommanager.
+      return { text: await receiptText($, root, await loadConfig($, root), raw[1], await $.clock.now()) }
     }
     return { text: await currentStatus($) }
   })

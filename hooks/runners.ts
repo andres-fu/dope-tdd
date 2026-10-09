@@ -1,0 +1,427 @@
+import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome'
+import type { RunOutcome } from './runOutcome'
+import { ELSEWHERE, locatedSegments } from './shell'
+import { STACKS } from './stacks'
+import type { StackName } from './stacks'
+
+/**
+ * A runner is how a stack's tests get run and read: the files that say it is
+ * installed, the program that runs it, the command line for one test file,
+ * the shape of a shell command that runs it, and the reader for its summary.
+ * Every reader is written from real output and says so in `tests/fixtures`;
+ * a reader marked provisional was written from documented formats and is
+ * replaced the first time a real run is on record.
+ */
+
+export type RunnerKind = 'vitest' | 'jest' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
+
+export type RunnerOptions = { godot?: string | null }
+
+export type Runner = {
+  kind: RunnerKind
+  stack: StackName
+  /** Stacks whose projects this runner may serve besides its own: dotnet runs the C# tests of a Godot .NET project. */
+  alsoFor: readonly StackName[]
+  /** Test file extensions it runs, without the dot. */
+  exts: readonly string[]
+  /** Files under a directory that say the runner lives there; checked walking up from the project root. */
+  markers: readonly string[]
+  /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
+  tools: readonly string[]
+  fallback: string
+  /** A shell command that runs this runner, anchored at a command start. */
+  command: RegExp
+  /** `tool` is an absolute path when one of `tools` was found, else `fallback`. `testPath` is relative to the project root. */
+  argv: (runnerRoot: string, testPath: string, tool: string, options: RunnerOptions) => string[]
+  read: (output: string) => RunOutcome
+  failedFiles: (output: string) => string[]
+  /** The command a person types to run one test file, for a receipt a reviewer can re-run. */
+  describe: (testPath: string) => string
+  provisional: boolean
+}
+
+const START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
+const PATHED = String.raw`(?:[\w./\\-]*[\\/])?`
+const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
+const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
+const PYTEST = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run\s+)?(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
+const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
+const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
+const DOTNET = String.raw`dotnet\s+test(?=\s|$)`
+
+function commandOf(body: string): RegExp {
+  return new RegExp(`${START}(?:${body})`)
+}
+
+const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}`)
+
+function forwardSlashes(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+function unique(paths: string[]): string[] {
+  return [...new Set(paths)]
+}
+
+// --- pytest: tests/fixtures/runnerOutputs.ts holds the real output these were written from.
+const PYTEST_SUMMARY = /^=*\s*((?:\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed|warnings?|deselected|rerun)(?:, )?)+)\s+in\s+[\d.]+s(?:\s*\([^)]*\))?\s*=*\s*$/m
+const PYTEST_NONE = /^=*\s*no tests ran in [\d.]+s\s*=*\s*$/m
+const PYTEST_FAILED_FILE = /^(?:FAILED|ERROR)\s+((?:[A-Za-z]:)?[\w./\\-]+\.py)(?=::|\s|$)/gm
+
+function readPytest(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  if (PYTEST_NONE.test(text)) {
+    return 'none'
+  }
+  const counts = PYTEST_SUMMARY.exec(text)?.[1]
+  if (counts === undefined) {
+    return 'unknown'
+  }
+  const failed = Number(/(\d+) failed/.exec(counts)?.[1] ?? 0)
+  const errors = Number(/(\d+) errors?/.exec(counts)?.[1] ?? 0)
+  if (failed > 0 || errors > 0) {
+    return 'fail'
+  }
+  if (/\d+ passed/.test(counts)) {
+    return 'pass'
+  }
+  // Only skipped, xfailed or deselected: nothing ran that could have failed.
+  return 'none'
+}
+
+function pytestFailedFiles(output: string): string[] {
+  return unique([...stripAnsi(output).matchAll(PYTEST_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])])))
+}
+
+// --- gdUnit4: the console reporter's format strings (GdUnitConsoleTestReporter.gd); provisional until a real run is on record.
+const GDUNIT_SUMMARY = /Overall Summary:\s*(\d+) test cases \| (\d+) errors \| (\d+) failures \| (\d+) flaky \| (\d+) skipped \| (\d+) orphans/
+const GDUNIT_EXECUTED = /Executed test cases\s*:\s*\((\d+)\/(\d+)\)/
+const GDUNIT_SUITE = /Run Test Suite:\s*(res:\/\/\S+|\S+\.gd)/
+const GDUNIT_FAILED = /(?:^|\s)FAILED(?:\s|$|\s\(retry)/
+
+function readGdUnit(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const summary = GDUNIT_SUMMARY.exec(text)
+  if (summary === null) {
+    const executed = GDUNIT_EXECUTED.exec(text)
+    return executed !== null && executed[2] === '0' ? 'none' : 'unknown'
+  }
+  const cases = Number(summary[1])
+  const errors = Number(summary[2])
+  const failures = Number(summary[3])
+  if (errors > 0 || failures > 0) {
+    return 'fail'
+  }
+  return cases === 0 ? 'none' : 'pass'
+}
+
+function gdUnitFailedFiles(output: string): string[] {
+  const failed: string[] = []
+  let current: string | null = null
+  for (const line of stripAnsi(output).split(/\r?\n/)) {
+    const suite = GDUNIT_SUITE.exec(line)
+    if (suite !== null) {
+      current = (suite[1] ?? '').replace(/^res:\/\//, '')
+      continue
+    }
+    if (current !== null && GDUNIT_FAILED.test(line)) {
+      failed.push(current)
+    }
+  }
+  return unique(failed)
+}
+
+// --- Maven Surefire; provisional until a real run is on record.
+const MAVEN_TOTAL = /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)(?!.*Time elapsed)/g
+const MAVEN_NO_TESTS = /No tests to run\./
+const MAVEN_BUILD = /BUILD (SUCCESS|FAILURE)/
+
+function readMaven(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const totals = [...text.matchAll(MAVEN_TOTAL)]
+  const last = totals[totals.length - 1]
+  if (last !== undefined) {
+    const run = Number(last[1])
+    const broken = Number(last[2]) + Number(last[3])
+    return broken > 0 ? 'fail' : run === 0 ? 'none' : 'pass'
+  }
+  if (MAVEN_NO_TESTS.test(text)) {
+    return 'none'
+  }
+  // A build that failed before any test ran (a compile error) is no verdict.
+  return 'unknown'
+}
+
+// --- Gradle; provisional until a real run is on record. With --console=plain a passing run prints the task line and BUILD SUCCESSFUL.
+const GRADLE_COUNTS = /(\d+) tests completed, (\d+) failed/
+const GRADLE_TEST_TASK = /^> Task :(?:[\w-]+:)*test(?:\s|$)/m
+const GRADLE_NO_SOURCE = /^> Task :(?:[\w-]+:)*test NO-SOURCE/m
+const GRADLE_SUCCESS = /BUILD SUCCESSFUL/
+
+function readGradle(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const counts = GRADLE_COUNTS.exec(text)
+  if (counts !== null) {
+    return Number(counts[2]) > 0 ? 'fail' : 'pass'
+  }
+  if (GRADLE_NO_SOURCE.test(text)) {
+    return 'none'
+  }
+  if (GRADLE_SUCCESS.test(text) && GRADLE_TEST_TASK.test(text)) {
+    return 'pass'
+  }
+  return 'unknown'
+}
+
+// --- dotnet test, read from real output (Roadhouse, .NET SDK 8.0.425, gdUnit4 C# adapter 3.0.0, 2026-10-09): VSTest prints
+// "Passed!/Failed!  - Failed: n, Passed: n, Skipped: n, Total: n, Duration: ..."; a filter that matches nothing prints
+// "No test matches the given testcase filter `...`" and exits 0, which is no run, never a pass. The newer testing platform's
+// "Test summary: total: n, failed: n, succeeded: n, skipped: n" is still provisional.
+const DOTNET_VSTEST = /(?:Passed|Failed)!\s+-\s+Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)/
+const DOTNET_MTP = /Test summary:\s*total:\s*(\d+),\s*failed:\s*(\d+),\s*succeeded:\s*(\d+),\s*skipped:\s*(\d+)/
+const DOTNET_NO_TESTS = /No test is available|No test matches the given testcase filter/
+// A failed test's stack trace names the file and line: `at Ns.Class.Method() in C:\path\FooTest.cs:line 15`.
+const DOTNET_TRACE_FILE = /\bin\s+((?:[A-Za-z]:)?[^\n]*?\.cs):line\s+\d+/g
+
+function readDotnet(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const vstest = DOTNET_VSTEST.exec(text)
+  if (vstest !== null) {
+    const failed = Number(vstest[1])
+    const total = Number(vstest[4])
+    return failed > 0 ? 'fail' : total === 0 ? 'none' : 'pass'
+  }
+  const mtp = DOTNET_MTP.exec(text)
+  if (mtp !== null) {
+    const total = Number(mtp[1])
+    const failed = Number(mtp[2])
+    return failed > 0 ? 'fail' : total === 0 ? 'none' : 'pass'
+  }
+  return DOTNET_NO_TESTS.test(text) ? 'none' : 'unknown'
+}
+
+function dotnetFailedFiles(output: string): string[] {
+  const paths = [...stripAnsi(output).matchAll(DOTNET_TRACE_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])]))
+  return unique(paths.filter(path => STACKS.dotnet.testFile.test(path)))
+}
+
+/** `src/test/java/com/x/FooTest.java` → `com.x.FooTest`; a path outside that layout keeps its stem. */
+function javaClassName(testPath: string): string {
+  const slashed = forwardSlashes(testPath).replace(/\.java$/, '')
+  const at = slashed.indexOf('/java/')
+  return (at === -1 ? slashed : slashed.slice(at + '/java/'.length)).replace(/\//g, '.')
+}
+
+function stem(testPath: string): string {
+  const slashed = forwardSlashes(testPath)
+  const name = slashed.slice(slashed.lastIndexOf('/') + 1)
+  return name.replace(/\.[^.]+$/, '')
+}
+
+function noFailedFiles(): string[] {
+  return []
+}
+
+export const RUNNERS: readonly Runner[] = [
+  {
+    kind: 'vitest',
+    describe: testPath => `npx vitest run ${testPath}`,
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
+    stack: 'node',
+    markers: ['node_modules/vitest/vitest.mjs'],
+    tools: ['node_modules/vitest/vitest.mjs'],
+    fallback: 'node_modules/vitest/vitest.mjs',
+    command: NODE_COMMAND,
+    argv: (_root, testPath, tool) => ['node', tool, 'run', testPath],
+    read: readNode,
+    failedFiles: nodeFailedFiles,
+    provisional: false,
+  },
+  {
+    kind: 'jest',
+    describe: testPath => `npx jest ${testPath}`,
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
+    stack: 'node',
+    markers: ['node_modules/jest/bin/jest.js'],
+    tools: ['node_modules/jest/bin/jest.js'],
+    fallback: 'node_modules/jest/bin/jest.js',
+    command: NODE_COMMAND,
+    argv: (_root, testPath, tool) => ['node', tool, testPath],
+    read: readNode,
+    failedFiles: nodeFailedFiles,
+    provisional: false,
+  },
+  {
+    kind: 'pytest',
+    describe: testPath => `python -m pytest ${testPath}`,
+    alsoFor: [],
+    exts: ['py'],
+    stack: 'python',
+    markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
+    tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
+    fallback: 'python',
+    command: commandOf(PYTEST),
+    argv: (_root, testPath, tool) => [tool, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', testPath],
+    read: readPytest,
+    failedFiles: pytestFailedFiles,
+    provisional: false,
+  },
+  {
+    kind: 'gdunit4',
+    describe: testPath => `addons/gdUnit4/runtest.sh -a res://${forwardSlashes(testPath)}` + '  (runtest.cmd on Windows)',
+    alsoFor: [],
+    exts: ['gd'],
+    stack: 'godot',
+    markers: ['addons/gdUnit4/bin/GdUnitCmdTool.gd'],
+    tools: [],
+    fallback: 'godot',
+    command: commandOf(GDUNIT),
+    // The wrapper's own invocation, headless, with the debugger kept off so a parse error cannot hang the run.
+    argv: (root, testPath, tool, options) => [
+      options.godot ?? tool,
+      '--headless',
+      '--path',
+      root,
+      '-s',
+      '-d',
+      '--remote-debug',
+      'tcp://127.0.0.1:0',
+      'res://addons/gdUnit4/bin/GdUnitCmdTool.gd',
+      '-a',
+      `res://${forwardSlashes(testPath)}`,
+      '--ignoreHeadlessMode',
+    ],
+    read: readGdUnit,
+    failedFiles: gdUnitFailedFiles,
+    provisional: true,
+  },
+  {
+    kind: 'maven',
+    describe: testPath => `mvn -Dtest=${javaClassName(testPath)} test`,
+    alsoFor: [],
+    exts: ['java'],
+    stack: 'java',
+    markers: ['pom.xml'],
+    tools: ['mvnw.cmd', 'mvnw'],
+    fallback: 'mvn',
+    command: commandOf(JAVA),
+    argv: (_root, testPath, tool) => [tool, '-B', '-ntp', `-Dtest=${javaClassName(testPath)}`, '-Dsurefire.failIfNoSpecifiedTests=false', 'test'],
+    read: readMaven,
+    failedFiles: noFailedFiles,
+    provisional: true,
+  },
+  {
+    kind: 'gradle',
+    describe: testPath => `./gradlew test --tests ${javaClassName(testPath)}`,
+    alsoFor: [],
+    exts: ['java'],
+    stack: 'java',
+    markers: ['build.gradle', 'build.gradle.kts'],
+    tools: ['gradlew.bat', 'gradlew'],
+    fallback: 'gradle',
+    command: commandOf(JAVA),
+    argv: (_root, testPath, tool) => [tool, 'test', '--tests', javaClassName(testPath), '--console=plain'],
+    read: readGradle,
+    failedFiles: noFailedFiles,
+    provisional: true,
+  },
+  {
+    kind: 'dotnet',
+    describe: testPath => `dotnet test --filter FullyQualifiedName~${stem(testPath)}`,
+    stack: 'dotnet',
+    alsoFor: ['godot'],
+    exts: ['cs'],
+    // No marker: `dotnet test` runs from the project root wherever the SDK is on PATH.
+    markers: [],
+    tools: [],
+    fallback: 'dotnet',
+    command: commandOf(DOTNET),
+    argv: (_root, testPath, tool) => [tool, 'test', '--nologo', '--filter', `FullyQualifiedName~${stem(testPath)}`],
+    read: readDotnet,
+    failedFiles: dotnetFailedFiles,
+    provisional: false,
+  },
+]
+
+export function runnerNamed(kind: RunnerKind): Runner {
+  const runner = RUNNERS.find(entry => entry.kind === kind)
+  if (runner === undefined) {
+    throw new Error(`no runner named ${kind}`)
+  }
+  return runner
+}
+
+/** The runners that can run this stack's tests; with a test path, only those that run its extension. */
+export function runnersFor(stack: StackName, testPath?: string): readonly Runner[] {
+  const ext = testPath === undefined ? null : forwardSlashes(testPath).replace(/^.*\./, '')
+  return RUNNERS.filter(runner => (runner.stack === stack || runner.alsoFor.includes(stack)) && (ext === null || runner.exts.includes(ext)))
+}
+
+/** A shell command that runs any known runner, or a package's test script. */
+export function isTestRun(command: string): boolean {
+  return RUNNERS.some(runner => runner.command.test(command))
+}
+
+/** The first reader that recognises the output decides; readers that see nothing of theirs say unknown and pass. */
+export function readRun(output: string): RunOutcome {
+  for (const runner of RUNNERS) {
+    const outcome = runner.read(output)
+    if (outcome !== 'unknown') {
+      return outcome
+    }
+  }
+  return 'unknown'
+}
+
+export function failedFilesIn(output: string): string[] {
+  return unique(RUNNERS.flatMap(runner => runner.failedFiles(output)))
+}
+
+const TOKEN = /[\w./\\:-]+/g
+
+function namedIn(text: string, stack: StackName): string | null {
+  const rule = STACKS[stack].testFile
+  for (const match of text.matchAll(TOKEN)) {
+    const token = match[0].replace(/^res:\/\//, '')
+    if (rule.test(forwardSlashes(token))) {
+      return token
+    }
+  }
+  return null
+}
+
+/**
+ * The test file a command names, by the stack's naming rule. Without a root,
+ * as written (a `res://` prefix dropped). With a root, taken from the segment
+ * that runs the tests and resolved against the directory that segment runs
+ * in, so `cd server && npx vitest run src/x.test.ts` names `<root>/server/src/x.test.ts`.
+ */
+export function namedTestFile(command: string, stack: StackName, root?: string): string | null {
+  if (root === undefined) {
+    return namedIn(command, stack)
+  }
+  for (const { segment, cwd } of locatedSegments(command, root)) {
+    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+      continue
+    }
+    const named = namedIn(segment, stack)
+    if (named === null) {
+      return null
+    }
+    const slashed = forwardSlashes(named)
+    return /^(?:[A-Za-z]:)?\//.test(slashed) ? slashed : `${cwd}/${slashed}`
+  }
+  return null
+}
+
+/** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
+export function testRunLocation(command: string, root: string): string | null {
+  for (const { segment, cwd } of locatedSegments(command, root)) {
+    if (RUNNERS.some(runner => runner.command.test(segment))) {
+      return cwd === ELSEWHERE ? ELSEWHERE : cwd
+    }
+  }
+  return null
+}

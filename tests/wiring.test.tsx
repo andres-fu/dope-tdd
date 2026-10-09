@@ -2,8 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   BAND,
+  FAIL_SUMMARY,
   MINUTE,
   ROOT,
+  SOURCE,
   T0,
   editAt,
   fakeEngine,
@@ -284,6 +286,45 @@ describe('honest runs', () => {
   })
 })
 
+describe('one module at a time', () => {
+  test('a red on one module is never charged to another: B green after A red is never saw red, not test changed', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/a')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'utils/b')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/GREEN on utils\/b but it never saw red/)
+    expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
+    expect(status.text).toMatch(/never saw red 1/)
+    expect(status.text).not.toMatch(/test changed/)
+    expect(status.text).toMatch(/also open: utils\/a \(red\)/)
+    expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeUndefined()
+    await ui.unmount()
+
+    await runBash($, 'npx vitest run tests/utils/a.test.ts')
+    const later = await runCommand($, 'tdd')
+
+    expect(later.text).toMatch(/cycles: 2 \(avg .*never saw red 1\)/)
+    expect(later.text).not.toMatch(/also open/)
+  })
+
+  test('a hold text without an error flag is still not a run', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashText = "Claude requested permissions to use Bash, but you haven't granted it yet."
+
+    const result = await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context).toBeUndefined()
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail\)/)
+  })
+})
+
 describe('a test changed after red', () => {
   test('green with the test edited and the code untouched says the green came from the test', async ($, on) => {
     const world = fakeEngine(on)
@@ -345,6 +386,80 @@ describe('the config file is watched', () => {
   })
 })
 
+describe('workarounds are on the record', () => {
+  const TEST = 'tests/money/formatCents.test.ts'
+  const HONEST = "import { expect, test } from 'vitest'\n\ntest('formats', () => {\n  expect(formatCents(-1250)).toBe('-$12.50')\n  expect(formatCents(-50)).toBe('-$0.50')\n})\n"
+
+  test('a skip marker added to a test is recorded, counted and said', async ($, on) => {
+    const world = fakeEngine(on)
+    await writeAt($, TEST, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace("test('formats'", "test.skip('formats'"))
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/tests\/money\/formatCents\.test\.ts gained 1 skip\/only marker\. A skipped test guards nothing\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(skipped 1\)/)
+    expect(status.text).toMatch(/skipped\s+money\/formatCents \(\+1\)/)
+    expect(await ui.find({ type: 'Text', text: '1 WORKAROUNDS' })).toBeDefined()
+  })
+
+  test('an assertion removed from a test is recorded with before and after counts', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace("  expect(formatCents(-50)).toBe('-$0.50')\n", ''))
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/went from 2 to 1 assertion\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(assertions removed 1\)/)
+  })
+
+  test('code commented out by a source edit is recorded and said', async ($, on) => {
+    const world = fakeEngine(on)
+    const SRC = `${ROOT}/src/money/formatCents.ts`
+    world.fileContents.set(SRC, 'export function f(a: number) {\n  if (a < 0) {\n    throw new Error("negative")\n  }\n  return a\n}\n')
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await $.tool.call({
+      tool: 'Edit',
+      file_path: SRC,
+      old_string: '  if (a < 0) {\n    throw new Error("negative")\n  }\n',
+      new_string: '  // if (a < 0) {\n  //   throw new Error("negative")\n  // }\n',
+    } as never)
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/src\/money\/formatCents\.ts: 2 lines of code commented out by this edit\. Recorded; say why/)
+    expect(status.text).toMatch(/workarounds: 1 \(commented out 1\)/)
+    expect(status.text).toMatch(/commented-out\s+money\/formatCents \(2 lines\)/)
+  })
+
+  test('pausing the guard and loosening the config count; tightening the config does not', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    await ui.press({ key: 'pause' })
+    await ui.press({ key: 'pause' })
+    await writeAt($, 'dope-tdd.json', '{"mode":"warn"}')
+    await writeAt($, 'dope-tdd.json', '{"mode":"enforce"}')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/workarounds: 2 \(config loosened 1, paused 1\)/)
+  })
+
+  test('an honest test edit is not a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/${TEST}`, HONEST)
+
+    const result = await writeAt($, TEST, HONEST.replace('})\n', "  expect(formatCents(0)).toBe('$0.00')\n})\n"))
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).not.toMatch(/Recorded; say why/)
+    expect(status.text).not.toMatch(/workarounds/)
+  })
+})
+
 describe('the agent is told', () => {
   test('touching a test tells the agent the module is unlocked and to see it fail first', async ($, on) => {
     const world = fakeEngine(on)
@@ -395,6 +510,21 @@ describe('memory across sessions', () => {
     expect(first.context?.join(' ')).toMatch(/touched 2H AGO in an earlier session/)
     expect(second.context).toBeUndefined()
     expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
+  })
+
+  test('an unlock remembered under the normalised root is found by a session that spells the root the other way', async ($, on) => {
+    fakeEngine(on, {
+      store: {
+        [`unlocks:${ROOT.replace(/^C:/, 'c:')}`]: {
+          'utils/formatDuration': { testPath: `${ROOT}/tests/utils/formatDuration.test.ts`, atMs: T0 - 2 * HOUR },
+        },
+      },
+    })
+    await startSession($)
+
+    const result = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(result.deny).toBeUndefined()
   })
 
   test('touching a test is remembered for the next session', async ($, on) => {
@@ -526,5 +656,86 @@ describe('honest phases on the band', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+  })
+})
+
+describe('a red on the module\u2019s own test unlocks it', () => {
+  test('a run that names the test file and fails unlocks the module for the fix, and the fix is then caught', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    world.bashFails = true
+
+    const red = await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+    world.bashFails = false
+    world.catchRun = { text: FAIL_SUMMARY, exitCode: 1 }
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.context?.join(' ')).toMatch(/utils\/formatDuration unlocked by a red run of its own test/)
+    expect(allowed.deny).toBeUndefined()
+    expect(status.text).toMatch(/caught 1/)
+  })
+
+  test('a whole-suite run whose FAIL line names the module\u2019s test unlocks it too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/utils/formatDuration.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+    await runBash($, 'npx vitest run')
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(allowed.deny).toBeUndefined()
+  })
+
+  test('a green run alone does not unlock', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/formatDuration.test.ts`)
+
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const blocked = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(blocked.deny).toMatch(/or run it and see it fail/)
+  })
+})
+
+describe('a touch that changes nothing', () => {
+  test('re-saving a test unchanged still unlocks, and is recorded and said as a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    const body = "it('x', () => { expect(1).toBe(1) })"
+
+    await writeAt($, 'tests/utils/formatDuration.test.ts', body)
+    const again = await writeAt($, 'tests/utils/formatDuration.test.ts', body)
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(again.context?.join(' ')).toMatch(/re-saved unchanged/)
+    expect(allowed.deny).toBeUndefined()
+    expect(status.text).toMatch(/workarounds: 1 \(touched unchanged 1\)/)
+  })
+})
+
+describe('the briefing in the system prompt', () => {
+  test('a section is added after the engine\u2019s own, naming the rules and this project\u2019s test command', async ($, on) => {
+    fakeEngine(on)
+    await startSession($)
+
+    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Write', 'Bash'], outputStyle: null, traits: [] })) as { sections: { id: string; text: string; scope: string }[] }
+
+    expect(composed.sections[0]?.id).toBe('intro')
+    const briefing = composed.sections.find(section => section.id === 'dope-tdd:briefing')
+    expect(briefing?.scope).toBe('session')
+    expect(briefing?.text).toMatch(/Dope TDD is on in this project \(mode: enforce\)/)
+    expect(briefing?.text).toMatch(/node_modules\/vitest\/vitest\.mjs|npx vitest run <test file>/)
+  })
+
+  test('touching a test hands the agent the exact command to run it', async ($, on) => {
+    fakeEngine(on)
+
+    const touched = await writeAt($, 'tests/utils/formatDuration.test.ts', "it('x', () => { expect(1).toBe(2) })")
+
+    expect(touched.context?.join(' ')).toMatch(/Run it with: npx vitest run tests\/utils\/formatDuration\.test\.ts/)
   })
 })

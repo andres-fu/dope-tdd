@@ -2,7 +2,21 @@ import { mock } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-export const ROOT = 'C:/work/throughline'
+/** Every fixture path lives on this drive, including a runner hoisted above the root. */
+export const FIXTURE_DRIVE = 'C:/'
+export const ROOT = `${FIXTURE_DRIVE}work/throughline`
+
+/**
+ * The fixture paths are Windows-shaped. On a POSIX host they are not
+ * absolute, so the engine resolves them against the real cwd before an fs
+ * event reaches these stubs; a path is therefore read from where the fixture
+ * drive starts, whatever the host put in front of it, with forward slashes.
+ */
+export function fakePath(path: string): string {
+  const slashed = path.replace(/\\/g, '/')
+  const at = slashed.indexOf(FIXTURE_DRIVE)
+  return at >= 0 ? slashed.slice(at) : slashed
+}
 export const T0 = Date.UTC(2026, 9, 6, 12, 0, 0)
 export const MINUTE = 60_000
 export const TEST_SOURCE = "it('formats months', () => {\n  expect(formatDuration(14)).toBe('1y 2m')\n})\n"
@@ -35,18 +49,22 @@ export type FakeWorld = {
   toasts: string[]
   numstat: string
   untracked: string
-  gitCalls: string[][]
+  gitCalls: (readonly string[])[]
+  /** When true the engine cannot say where the project is, so every guard throws before it decides. */
+  rootFails: boolean
   writes: [string, string][]
   catchRun: { text: string; exitCode: number } | 'reject'
   hasVitest: boolean
   onBash: (command: string) => void
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
-  onCatchRun: () => void
+  onCatchRun: () => void | Promise<void>
   /** Return true to make a write to that path fail. */
   writeFails: (path: string, text: string) => boolean
+  /** Paths that exist but cannot be read (too large, locked). */
+  unreadable: Set<string>
 }
 
-export type FakeOptions = { store?: Readonly<Record<string, unknown>> }
+export type FakeOptions = { store?: Readonly<Record<string, unknown>>; env?: Readonly<Record<string, string>> }
 
 export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
@@ -62,16 +80,20 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
     hasVitest: true,
     onBash: () => {},
     onCatchRun: () => {},
     writeFails: () => false,
+    unreadable: new Set(),
   }
 
   mock.store(on, options.store)
-  on('session.root', () => ({ value: ROOT }))
+  mock.env(on, options.env ?? {})
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
+  on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('ui.log', (_$, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
@@ -83,10 +105,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__dope-tdd__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
-  on('process.run', (_$, e) => {
+  on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
-    if (e.argv.some(arg => arg.includes('vitest.mjs') || arg.includes('jest.js'))) {
-      world.onCatchRun()
+    if (e.argv[0] !== 'git') {
+      await world.onCatchRun()
       return world.catchRun === 'reject'
         ? { deny: 'timed out' }
         : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
@@ -103,7 +125,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     return { value: { isOpen: true } } as never
   })
   on('fs.write', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = fakePath(e.path)
     if (world.writeFails(path, e.text)) {
       return { deny: `EBUSY: ${path}` }
     }
@@ -112,14 +134,34 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     return { value: undefined } as never
   })
   on('fs.exists', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
-    return { value: world.fileContents.has(path) || world.existingFiles.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')) } as never
+    const path = fakePath(e.path)
+    return {
+      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')),
+    } as never
   })
   on('fs.stat', () => ({
     value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
   }) as never)
+  on('fs.list', (_$, e) => {
+    const dir = fakePath(e.path ?? ROOT).replace(/\/$/, '')
+    const names = new Map<string, 'file' | 'dir'>()
+    for (const path of [...world.fileContents.keys(), ...world.existingFiles]) {
+      if (!path.startsWith(`${dir}/`)) {
+        continue
+      }
+      const [name, ...deeper] = path.slice(dir.length + 1).split('/')
+      if (name !== undefined && name !== '') {
+        names.set(name, deeper.length > 0 ? 'dir' : names.get(name) ?? 'file')
+      }
+    }
+    const entries = [...names].map(([name, kind]) => ({ name, kind, size: 1, mtimeMs: world.testModifiedAt, isLink: false }))
+    return { value: entries } as never
+  })
   on('fs.read', (_$, e) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = fakePath(e.path)
+    if (world.unreadable.has(path)) {
+      return { deny: `EFBIG: ${e.path}` }
+    }
     const custom = world.fileContents.get(path)
     if (custom !== undefined) {
       return { value: custom }
@@ -134,7 +176,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       world.onBash(String((e as { command?: unknown }).command ?? ''))
     }
     const input = e as { file_path?: string; content?: string; old_string?: string; new_string?: string }
-    const target = input.file_path?.replace(/\\/g, '/')
+    const target = input.file_path === undefined ? undefined : fakePath(input.file_path)
     if (e.tool === 'Write' && target !== undefined && input.content !== undefined) {
       world.fileContents.set(target, input.content)
     }

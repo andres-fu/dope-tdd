@@ -8,6 +8,7 @@ import {
   isChecking,
   markReminded,
   normalizeStats,
+  otherOpenModules,
   recordBlocked,
   recordCatch,
   recordChange,
@@ -17,6 +18,7 @@ import {
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
+  recordWorkaround,
   releaseCheck,
   resetStats,
   seedUnlocks,
@@ -85,6 +87,35 @@ describe('phases', () => {
   })
 })
 
+describe('per-module cycles', () => {
+  test('touching another module while one is red gives it its own cycle and leaves the red where it was', () => {
+    const aRed = recordRun(touch(), false, T0 + 1)
+    const bTouched = recordTestTouch(aRed, { module: 'utils/b', testPath: 'tb' }, T0 + 2)
+    expect(bTouched.modules[MODULE]?.phase).toBe('red')
+    expect(bTouched.modules['utils/b']?.sawRed).toBe(false)
+    expect(bTouched.phase).toBe('writing')
+    expect(bTouched.sawRed).toBe(false)
+
+    const bGreen = recordRun(bTouched, true, T0 + 3)
+    expect(bGreen.neverSawRed).toBe(1)
+    expect(bGreen.lastCycle).toEqual({ module: 'utils/b', sawRed: false, testChanged: false })
+    expect(bGreen.modules[MODULE]?.cycleStartMs).toBe(T0)
+    expect(otherOpenModules(bGreen)).toEqual([{ module: MODULE, phase: 'red' }])
+  })
+
+  test('a source edit marks the module edited since its last run, and its next run clears it', () => {
+    const edited = recordSourceEdit(touch(), MODULE, true, T0 + 1)
+    expect(edited.modules[MODULE]?.editedSinceRun).toBe(true)
+    expect(recordRun(edited, false, T0 + 2).modules[MODULE]?.editedSinceRun).toBe(false)
+  })
+
+  test('a change on a module that never saw red is a fix even when another module is green after red', () => {
+    const aProven = recordRun(recordRun(touch(), false, T0 + 1), true, T0 + 2)
+    const bInherited = seedUnlocks(aProven, { 'utils/b': { testPath: 'tb', atMs: 0 } })
+    expect(recordChange(bInherited, 'utils/b', 'p', 'v0', 'v1').changes['utils/b']?.kind).toBe('fix')
+  })
+})
+
 describe('red elsewhere', () => {
   test('a failing run whose failures are in other test files does not move the module to RED or count as its red', () => {
     const s = recordRun(touch(), false, T0 + 1, ['tests/cart/applyDiscount.test.ts'])
@@ -132,9 +163,35 @@ describe('runs that could not be read', () => {
 })
 
 describe('config changes', () => {
-  test('are logged with what changed', () => {
-    const s = recordConfigChange(INITIAL_STATS, 'mode enforce → observe', T0)
-    expect(s.events.at(-1)).toEqual({ atMs: T0, kind: 'config', detail: 'mode enforce → observe' })
+  test('are logged with what changed, and count as a workaround only when they loosen the guard', () => {
+    const loosened = recordConfigChange(INITIAL_STATS, 'mode enforce → observe', true, T0)
+    const tightened = recordConfigChange(loosened, 'mode observe → enforce', false, T0 + 1)
+    expect(loosened.events.at(-1)).toEqual({ atMs: T0, kind: 'config', detail: 'mode enforce → observe' })
+    expect(loosened.workarounds).toBe(1)
+    expect(tightened.workarounds).toBe(1)
+    expect(tightened.workaroundsBy).toEqual({ config: 1 })
+  })
+})
+
+describe('workarounds', () => {
+  test('each kind is counted in the total and by kind, with its detail on the event', () => {
+    const skipped = recordWorkaround(INITIAL_STATS, 'skipped', MODULE, '+1', T0)
+    const weakened = recordWorkaround(skipped, 'assertion-removed', MODULE, '2 → 1', T0 + 1)
+    const commented = recordWorkaround(weakened, 'commented-out', MODULE, '3 lines', T0 + 2)
+    expect(commented.workarounds).toBe(3)
+    expect(commented.workaroundsBy).toEqual({ skipped: 1, 'assertion-removed': 1, 'commented-out': 1 })
+    expect(commented.events.at(-1)).toEqual({ atMs: T0 + 2, kind: 'commented-out', module: MODULE, detail: '3 lines' })
+  })
+
+  test('pausing counts once; resuming does not', () => {
+    const paused = togglePause(INITIAL_STATS, T0)
+    const resumed = togglePause(paused, T0 + 1)
+    expect(paused.workaroundsBy).toEqual({ pause: 1 })
+    expect(resumed.workarounds).toBe(1)
+  })
+
+  test('a test changed after red counts too', () => {
+    expect(recordTestChanged(INITIAL_STATS, MODULE, T0).workaroundsBy).toEqual({ 'test-changed': 1 })
   })
 })
 

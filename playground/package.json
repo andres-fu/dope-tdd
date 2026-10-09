@@ -1,9 +1,10 @@
 {
-  "name": "red-first-playground",
+  "name": "dope-tdd-playground",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "reset": "git checkout -- src && node -e \"require('fs').rmSync('tests', { recursive: true, force: true })\""
   },
   "devDependencies": {
     "vitest": "^5.0.3"

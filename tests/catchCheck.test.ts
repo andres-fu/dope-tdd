@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, runnerArgv, timeBudgetMs } from '../hooks/catchCheck'
+import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from '../hooks/catchCheck'
+
+describe('runFailure', () => {
+  test('a timeout is a timeout; anything else is a runner that could not start, with its message', () => {
+    expect(runFailure(new Error('process timed out after 9000ms'))).toBe('timeout')
+    expect(runFailure({ deny: 'timed out' })).toBe('timeout')
+    expect(runFailure(new Error('spawn node ENOENT'))).toEqual({ failedToStart: 'spawn node ENOENT' })
+    expect(catchOutcome({ failedToStart: 'spawn node ENOENT' })).toEqual({ kind: 'unverified', reason: 'runner could not start (spawn node ENOENT)' })
+  })
+})
 
 describe('runnerArgv', () => {
   test('runs the test file through node directly, so no shell or npx wrapper is needed on any OS', () => {

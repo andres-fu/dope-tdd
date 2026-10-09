@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, touchTest, writeAt } from './engine'
+import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, touchTest, writeAt } from './engine'
 
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
+const KEPT = `${SOURCE}.dope-tdd.kept`
 
 describe('catches the change', () => {
   test('at green: puts the source back, runs only that test, expects it to fail, restores the source', async ($, on) => {
@@ -35,6 +36,8 @@ describe('catches the change', () => {
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     expect(status.text).toMatch(/missed 1/)
     expect(result.context?.join(' ')).toMatch(/does NOT catch the change/)
+    // The agent is shown what slipped past the test, so it can write the assertion.
+    expect(result.context?.join(' ')).toMatch(/The change it did not notice:\n  - export const a = 1\n  \+ export const b = 1\nAdd an assertion that fails without it\./)
   })
 
   test('a check that times out is unverified and the source is still restored', async ($, on) => {
@@ -59,7 +62,7 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/caught 0 · missed 0 · unverified 1/)
+    expect(status.text).toMatch(/caught 0 · proven 0 · missed 0 · unverified 1/)
     expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner summary/)
   })
 
@@ -89,7 +92,7 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/Could not verify.*new file/)
   })
 
-  test('a shell edit to a file that could not be read before or after is not checked', async ($, on) => {
+  test('a shell edit to a file that could not be read before or after is unverified, not silently green', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
@@ -101,7 +104,7 @@ describe('catches the change', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.writes).toEqual([])
-    expect(result.context?.join(' ')).toMatch(/GREEN on utils.formatDuration, saw red\. Now refactor/)
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*change not captured/)
   })
 
   test('a test written after the code, then a fix, is still checked on the next pass', async ($, on) => {
@@ -136,7 +139,7 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/a refactor, not re-checked/)
   })
 
-  test('restoring the original text after breaking it on purpose is not a change to check', async ($, on) => {
+  test('restoring the original text after breaking it on purpose leaves nothing to revert: no file is touched, and the red is the proof', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(SOURCE, 'export const a = 1')
     await touchTest($, world, 'utils/formatDuration')
@@ -149,7 +152,7 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.writes).toEqual([])
-    expect(status.text).not.toMatch(/catch check/)
+    expect(status.text).toMatch(/proven 1/)
     expect(status.text).toMatch(/never saw red 0/)
   })
 
@@ -250,7 +253,7 @@ describe('the revert is safe', () => {
     expect(result.context?.join(' ')).toMatch(/Could not verify.*revert failed/)
   })
 
-  test('a file edited by hand while it was reverted is left as it is, never overwritten', async ($, on) => {
+  test('a file edited by hand while it was reverted is left as it is, and the change is kept beside it', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     world.onCatchRun = () => {
@@ -260,9 +263,28 @@ describe('the revert is safe', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const a = 1 // hand edit during the check')
-    expect(world.writes).toEqual([[SOURCE, 'export const a = 1']])
+    expect(world.writes).toEqual([
+      [SOURCE, 'export const a = 1'],
+      [KEPT, 'export const b = 1'],
+    ])
     expect(result.context?.join(' ')).toMatch(/Could not verify.*changed during check/)
-    expect(world.toasts.some(t => /left as is/.test(t))).toBe(true)
+    expect(world.toasts.some(t => /left as is; your change is in src\/utils\/formatDuration\.ts\.dope-tdd\.kept/.test(t))).toBe(true)
+  })
+
+  test('a test run while a file is reverted is refused, so it cannot read the reverted file', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    let inner: { deny?: string } | null = null
+    world.onCatchRun = async () => {
+      inner = await runBash($, 'npx vitest run tests/utils/b.test.ts')
+    }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect((inner as { deny?: string } | null)?.deny).toMatch(/verifying that the test for utils\/formatDuration catches the change/)
+    expect(status.text).toMatch(/caught 1/)
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
   })
 
   test('an interrupted check is repaired at the next session start when the file is still reverted', async ($, on) => {
@@ -277,17 +299,40 @@ describe('the revert is safe', () => {
     expect(world.toasts.some(t => /restored 1 file/.test(t))).toBe(true)
   })
 
-  test('a file that moved since the interrupted check is left alone, and the user is told', async ($, on) => {
+  test('a journal keyed by the normalised root (a lower-case drive) is repaired the same way', async ($, on) => {
     const world = fakeEngine(on, {
-      store: { [`catch-journal:${ROOT}`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+      store: { [`catch-journal:${ROOT.replace(/^C:/, 'c:')}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await startSession($)
+
+    expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
+  })
+
+  test('a file that moved since the interrupted check is left alone, the change is kept beside it, and the user is told', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
     })
     world.fileContents.set(SOURCE, 'export const a = 1 // fixed by hand')
 
     await startSession($)
 
-    expect(world.writes).toEqual([])
+    expect(world.writes).toEqual([[KEPT, 'export const b = 1']])
     expect(world.fileContents.get(SOURCE)).toBe('export const a = 1 // fixed by hand')
     expect(world.toasts.some(t => /left 1 file/.test(t))).toBe(true)
+  })
+
+  test('an interrupted check is repaired on the next tool call when no session start ran, as after a hot reload', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await editAt($, 'docs/notes.md')
+
+    expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
+    expect(world.toasts.some(t => /restored 1 file/.test(t))).toBe(true)
   })
 
   test('a file already back at its text after an interrupted check needs nothing', async ($, on) => {
@@ -325,5 +370,127 @@ describe('finding the runner', () => {
 
     expect(world.writes).toEqual([])
     expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner found/)
+  })
+})
+
+describe('what the check cannot see is said, not skipped', () => {
+  test('a source change the backstop saw but the capture did not is unverified: change not captured', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    world.onBash = command => {
+      world.numstat = command.includes('git apply') ? '1\t1\tsrc/utils/formatDuration.ts\n' : world.numstat
+    }
+    await runBash($, 'git apply fix.patch')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([])
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*change not captured/)
+    expect(status.text).toMatch(/unverified 1/)
+  })
+
+  test('a file that exists but cannot be read before the edit is unverified with that reason', async ($, on) => {
+    const world = fakeEngine(on)
+    world.unreadable.add(SOURCE)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/utils/formatDuration.ts')
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.writes).toEqual([])
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*could not read the file before the edit/)
+  })
+
+  test('an edit under an unlock inherited from an earlier session is checked, never credited as a refactor', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`unlocks:${ROOT}`]: { 'utils/formatDuration': { testPath: TEST, atMs: T0 - 60 * MINUTE } } },
+    })
+    await startSession($)
+    await touchTest($, world, 'utils/a')
+    await runTests($, world, 'fail')
+    await runTests($, world, 'pass')
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await editAt($, 'src/utils/formatDuration.ts')
+
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([
+      [SOURCE, 'export const a = 1'],
+      [SOURCE, 'export const b = 1'],
+    ])
+    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).not.toMatch(/refactors 1/)
+  })
+})
+
+describe('/tdd receipt', () => {
+  test('prints the status and the two commands a reviewer runs, for the current module', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
+    expect(receipt.text).toMatch(/caught 1/)
+    expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
+    expect(receipt.text).toMatch(/git stash push -- src\/utils\/formatDuration\.ts && npx vitest run tests\/utils\/formatDuration\.test\.ts; git stash pop/)
+    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code as it was before the change and fails/)
+  })
+
+  test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {
+    const world = fakeEngine(on)
+    const empty = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+    expect(empty.text).toMatch(/No module is current/)
+
+    await touchTest($, world, 'utils/formatDuration')
+    const named = await $.command.run({ command: 'tdd', args: 'receipt utils/formatDuration' } as never)
+    expect(named.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
+    expect(named.text).toMatch(/No change to utils\/formatDuration is on record/)
+  })
+})
+
+describe('PROVEN: break, red, restore, green', () => {
+  async function restore($: Parameters<typeof runCommand>[0]) {
+    return $.tool.call({ tool: 'Edit', file_path: SOURCE, old_string: 'b', new_string: 'a' } as never)
+  }
+
+  test('pins that went red on a deliberate break and green on the restored code are proven, and the agent is told', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await restore($)
+
+    const green = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const a = 1')
+    expect(green.context?.join(' ')).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
+    expect(status.text).toMatch(/catch check: caught 0 · proven 1 · missed 0/)
+    // No runner was started: there was nothing to revert.
+    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+  })
+
+  test('a test edited after the red with the code restored is not proof: that stays TEST CHANGED', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'utils/formatDuration')
+    await restore($)
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/proven 1/)
   })
 })

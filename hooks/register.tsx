@@ -3,15 +3,22 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
-import { catchOutcome, runnerArgv, timeBudgetMs } from './catchCheck'
+import { briefingText } from './briefing'
+import { changedLines } from './changedLines'
+import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck'
 import type { RunnerKind } from './catchCheck'
-import { CONFIG_FILE, describeConfigChange, parseConfig, policyFor } from './config'
+import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor } from './config'
 import type { GuardConfig } from './config'
 import {
+  assertionsRemovedAdvice,
+  commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
+  hollowTouchAdvice,
+  redUnlockAdvice,
   inheritedAdvice,
   runAdvice,
+  skippedAdvice,
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
@@ -19,50 +26,64 @@ import {
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
-import { classifyPath, isTestRun, relativePath } from './mirror'
-import { failedFiles, isTruncated, neverRan, runOutcome } from './runOutcome'
+import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { failedFilesIn, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation } from './runners'
+import { isTruncated, neverRan } from './runOutcome'
+import { detectStackFrom, stackOf } from './stacks'
+import type { StackName } from './stacks'
+import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
+import type { Survey } from './setup'
 import {
   INITIAL_STATS,
   acquireCheck,
   expireCurrent,
   isChecking,
   markReminded,
+  moduleState,
   normalizeStats,
+  otherOpenModules,
   recordBlocked,
   recordCatch,
   recordChange,
   recordConfigChange,
   recordRun,
+  recordRedUnlock,
   recordRunTarget,
   recordSourceEdit,
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
+  recordWorkaround,
   releaseCheck,
   resetStats,
   seedUnlocks,
   togglePause,
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
-import { freshUnlocks, hasAssertion, unlockKey } from './unlocks'
+import { freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from './unlocks'
+import { commentedOutLines, testEditSignals } from './workarounds'
 
 const MINUTE = 60_000
 const TEST_PANE = 'dope-tdd-test'
 const STATUS_TOOL = /^mcp__dope-tdd__status$/
 const MAX_SOURCE_CHARS = 10_000
-const WATCHED_DIRS = ['src', 'tests']
 const JOURNAL_PREFIX = 'catch-journal:'
-const TEST_FILE_IN_COMMAND = /(?:^|[\s'"])((?:[A-Za-z]:)?[\w./\\-]*tests[/\\][\w./\\-]+\.test\.tsx?)/
-const RUNNER_FILES: readonly (readonly [RunnerKind, string])[] = [
-  ['vitest', 'node_modules/vitest/vitest.mjs'],
-  ['jest', 'node_modules/jest/bin/jest.js'],
-]
+/** Where a change left alone after a check is kept, next to its source, named in the toast. */
+const KEPT_SUFFIX = '.dope-tdd.kept'
+const SURVEY_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', 'out', '.next', '.cache', 'target', 'vendor'])
+const SURVEY_DEPTH = 6
+const SURVEY_CAP = 5_000
 
 const stats = atom({ plugin: 'dope-tdd', key: 'stats' } as const, INITIAL_STATS)
 const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
 
 /** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
 let cachedConfig: { root: string; config: GuardConfig } | null = null
+/** The stack each root's files pointed at when first listed; `/tdd setup` looks again. */
+const detectedStacks = new Map<string, StackName | undefined>()
+/** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
+const repairedRoots = new Set<string>()
+let guardFailureToasted = false
 
 type FileRead = { kind: 'text'; text: string } | { kind: BeforeState }
 
@@ -94,8 +115,33 @@ async function rememberUnlock($: EngineInterface, root: string, module: string, 
   await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
 }
 
+/** The stack the root's own files say the project is, when dope-tdd.json does not name one. */
+async function detectStack($: EngineInterface, root: string): Promise<StackName | undefined> {
+  if (detectedStacks.has(root)) {
+    return detectedStacks.get(root)
+  }
+  let detected: StackName | undefined
+  try {
+    detected = detectStackFrom((await $.fs.list(root)).map(entry => entry.name)) ?? undefined
+  } catch {
+    detected = undefined
+  }
+  detectedStacks.set(root, detected)
+  return detected
+}
+
+/** GODOT_BIN, the variable gdUnit4's own wrapper reads, when the config does not name the binary. */
+async function godotFromEnv($: EngineInterface): Promise<string | null> {
+  try {
+    const value = await $.env.get('GODOT_BIN')
+    return typeof value === 'string' && value !== '' ? value : null
+  } catch {
+    return null
+  }
+}
+
 async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
-  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`))
+  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`), await detectStack($, root))
   cachedConfig = { root, config }
   return config
 }
@@ -143,14 +189,27 @@ function parentDir(dir: string): string | null {
   return cut === trimmed || cut === '' ? null : cut
 }
 
-type Runner = { kind: RunnerKind; root: string }
+type Runner = { kind: RunnerKind; root: string; tool: string }
 
-/** Walks up from the project root, because a monorepo hoists the runner into a parent node_modules. */
-async function detectRunner($: EngineInterface, root: string): Promise<Runner | null> {
+/** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
+async function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
+  const candidates = runnersFor(config.stack, testPath)
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
-    for (const [kind, file] of RUNNER_FILES) {
-      if (await $.fs.exists(`${dir}/${file}`)) {
-        return { kind, root: dir }
+    for (const runner of candidates) {
+      if (runner.markers.length === 0) {
+        return { kind: runner.kind, root, tool: runner.fallback }
+      }
+      for (const marker of runner.markers) {
+        if (await $.fs.exists(`${dir}/${marker}`)) {
+          let tool: string | null = null
+          for (const candidate of runner.tools) {
+            if (await $.fs.exists(`${dir}/${candidate}`)) {
+              tool = `${dir}/${candidate}`
+              break
+            }
+          }
+          return { kind: runner.kind, root: dir, tool: tool ?? runner.fallback }
+        }
       }
     }
   }
@@ -169,6 +228,22 @@ function journalFiles(value: unknown): JournalFile[] | null {
   return typeof journal === 'object' && journal !== null && Array.isArray(journal.files) ? journal.files.filter(isJournalFile) : null
 }
 
+function journalKeyFor(root: string, module: string): string {
+  return `${JOURNAL_PREFIX}${storeRoot(root)}:${module}`
+}
+
+async function journalKeys($: EngineInterface, root: string): Promise<string[]> {
+  try {
+    const all = await $.store.keys()
+    // Both spellings: a journal an earlier build wrote under the raw root is a reverted file on disk until it is read.
+    const prefixes = [...new Set([`${JOURNAL_PREFIX}${storeRoot(root)}`, `${JOURNAL_PREFIX}${root}`])]
+    return all.filter(key => prefixes.some(prefix => key === prefix || key.startsWith(`${prefix}:`)))
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not list the store: ${String(error)}`)
+    return []
+  }
+}
+
 async function forget($: EngineInterface, key: string): Promise<void> {
   try {
     await $.store.delete(key)
@@ -177,42 +252,83 @@ async function forget($: EngineInterface, key: string): Promise<void> {
   }
 }
 
+/** A change that will not be written back is kept next to its file, so no text is ever only in the log. */
+async function keepAside($: EngineInterface, path: string, text: string): Promise<string | null> {
+  const kept = `${path}${KEPT_SUFFIX}`
+  try {
+    await $.fs.write(kept, text)
+    return kept
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not write ${kept}: ${String(error)}`)
+    return null
+  }
+}
+
 /**
  * A journal left behind means a check died between revert and restore. A file
- * still at `before` gets `after` back; a file that moved since is left alone,
- * because the hand that moved it knew more than the journal does.
+ * still at `before` gets `after` back; a file that moved since is left alone
+ * and its `after` text is kept beside it, because the hand that moved it knew
+ * more than the journal does.
  */
-async function repairInterruptedCheck($: EngineInterface): Promise<void> {
-  const key = `${JOURNAL_PREFIX}${await $.session.root()}`
-  const files = journalFiles(await $.store.get(key))
-  if (files === null) {
-    return
-  }
+async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
-  for (const file of files) {
-    const onDisk = await readWhole($, file.path)
-    if (onDisk === file.after) {
-      continue
+  for (const key of await journalKeys($, root)) {
+    const files = journalFiles(await $.store.get(key)) ?? []
+    for (const file of files) {
+      const onDisk = await readWhole($, file.path)
+      if (onDisk === file.after) {
+        continue
+      }
+      if (onDisk !== file.before) {
+        left.push((await keepAside($, file.path, file.after)) ?? file.path)
+        continue
+      }
+      try {
+        await $.fs.write(file.path, file.after)
+        restored.push(file.path)
+      } catch {
+        left.push((await keepAside($, file.path, file.after)) ?? file.path)
+      }
     }
-    if (onDisk !== file.before) {
-      left.push(file.path)
-      continue
-    }
-    try {
-      await $.fs.write(file.path, file.after)
-      restored.push(file.path)
-    } catch {
-      left.push(file.path)
-    }
+    await forget($, key)
   }
-  await forget($, key)
   if (restored.length > 0) {
     $.ui.toast(`dope-tdd restored ${restored.length} file(s) after an interrupted check`)
   }
   if (left.length > 0) {
-    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; see the log`)
-    $.ui.log(`dope-tdd: not restored, they no longer match the interrupted check: ${left.join(', ')}`)
+    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; the change is kept beside each, see the log`)
+    $.ui.log(`dope-tdd: not restored, they no longer match the interrupted check; kept as: ${left.join(', ')}`)
+  }
+}
+
+/** Runs the repair once per root per process load, and never while a check is in flight. */
+async function ensureRepaired($: EngineInterface, root: string, nowMs: number): Promise<void> {
+  if (repairedRoots.has(root) || isChecking(await readStats($), nowMs)) {
+    return
+  }
+  repairedRoots.add(root)
+  await repairInterruptedCheck($, root)
+}
+
+/**
+ * A guard that fails (throws, overruns its budget, answers a wrong shape) is
+ * skipped and its `.catch` handler answers in its place; that handler calls
+ * this, then `next(e)`, which replays the guard's own call when it had made
+ * one and runs the call through unobserved when it had not. Fail open, on
+ * the record. Under re-entry the handler's own `$` calls reject, so the
+ * report is best-effort and the call still goes through.
+ */
+function reportGuardFailure($: EngineInterface, name: string, error: { readonly kind: string; readonly message?: string }): void {
+  try {
+    const why = error.message === undefined ? error.kind : `${error.kind}: ${error.message}`
+    $.ui.log(`dope-tdd: the ${name} guard failed (${why}) and let the call through`)
+    if (!guardFailureToasted) {
+      guardFailureToasted = true
+      $.ui.toast('dope-tdd hit an internal error and let a call through; see the log')
+    }
+  } catch {
+    // Re-entry: nothing to report with, and nothing to hold.
   }
 }
 
@@ -225,15 +341,28 @@ async function repairInterruptedCheck($: EngineInterface): Promise<void> {
 async function verifyCatch(
   $: EngineInterface,
   root: string,
+  config: GuardConfig,
   s: TddStats,
   module: string,
+  editedSinceRun: boolean,
   greenRunMs: number,
   nowMs: number,
+  /** The module saw red in this cycle and its test was not edited after that red. */
+  provedByRed = false,
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
-  if (cycleChange === undefined || testPath === undefined || cycleChange.before === cycleChange.after) {
+  if (cycleChange === undefined) {
+    // The backstop saw an edit (a patch, a formatter, a copy) that the text capture did not: say so, never stay silent.
+    return editedSinceRun && testPath !== undefined ? { kind: 'unverified', reason: 'change not captured' } : 'unchecked'
+  }
+  if (testPath === undefined) {
     return 'unchecked'
+  }
+  if (cycleChange.before === cycleChange.after) {
+    // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
+    // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
+    return provedByRed ? { kind: 'proven' } : 'unchecked'
   }
   if (cycleChange.kind === 'refactor') {
     return 'refactor'
@@ -245,22 +374,24 @@ async function verifyCatch(
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
   }
-  const runner = await detectRunner($, root)
+  const runner = await detectRunner($, root, config, testPath)
   if (runner === null) {
     return catchOutcome('no-runner')
   }
+  const godot = config.godot ?? (await godotFromEnv($))
 
-  const journalKey = `${JOURNAL_PREFIX}${root}`
+  // The lock first, then the journal: a check that loses the lock never touches another check's journal.
+  const locked = await change($, state => acquireCheck(state, module, nowMs))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
+    return { kind: 'unverified', reason: 'another check was running' }
+  }
+  const journalKey = journalKeyFor(root, module)
   try {
     await $.store.set(journalKey, { files: [{ path, before, after }] })
   } catch (error) {
+    await change($, releaseCheck)
     $.ui.log(`dope-tdd: could not journal the catch check for ${path}: ${String(error)}`)
     return { kind: 'unverified', reason: 'could not journal the revert' }
-  }
-  const locked = await change($, state => acquireCheck(state, module, nowMs))
-  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
-    await forget($, journalKey)
-    return { kind: 'unverified', reason: 'another check was running' }
   }
 
   let outcome: CatchOutcome = { kind: 'unverified', reason: 'revert failed' }
@@ -270,14 +401,18 @@ async function verifyCatch(
     await $.fs.write(path, before)
     reverted = true
     try {
-      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath)), {
+      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath), runner.tool, { godot }), {
         cwd: root,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
       })
       outcome = catchOutcome(run)
-    } catch {
-      outcome = catchOutcome('timeout')
+      if (outcome.kind === 'missed') {
+        // What the test did not notice: the agent needs the lines, not just the verdict, to write the assertion.
+        outcome = { kind: 'missed', slipped: changedLines(before, after) }
+      }
+    } catch (error) {
+      outcome = catchOutcome(runFailure(error))
     }
   } catch (error) {
     $.ui.log(`dope-tdd: could not revert ${path} for the catch check: ${String(error)}`)
@@ -298,8 +433,11 @@ async function verifyCatch(
   }
 
   if (movedWhileReverted) {
-    $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; see /tdd`)
-    $.ui.log(`dope-tdd: ${path} changed while reverted; the text before the check is kept under ${journalKey}`)
+    const kept = await keepAside($, path, after)
+    const where = kept === null ? 'see the log' : `your change is in ${relativePath(root, kept)}`
+    $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
+    $.ui.log(`dope-tdd: ${path} changed while reverted; the text after your change: ${kept ?? `(could not be written) ${after}`}`)
+    await forget($, journalKey)
     return { kind: 'unverified', reason: 'changed during check' }
   }
   if ((await readWhole($, path)) !== after) {
@@ -311,13 +449,81 @@ async function verifyCatch(
   return outcome
 }
 
-function lockedMessage(module: string): string {
-  return `dope-tdd: write the failing test first. Touch tests/${module}.test.ts(x) before editing src/${module}.`
+function lockedMessage(config: GuardConfig, module: string): string {
+  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.`
 }
 
-function sourceModuleOf(root: string, path: string): string | null {
-  const target = classifyPath(root, absolutePath(root, path))
+function sourceModuleOf(root: string, path: string, config: GuardConfig): string | null {
+  const target = classifyPath(root, absolutePath(root, path), config)
   return target.kind === 'source' ? target.module : null
+}
+
+/** Every code file and every directory with a package.json, for /tdd setup; bounded so a huge tree stays cheap. */
+async function surveyProject($: EngineInterface, root: string): Promise<Survey> {
+  const files: string[] = []
+  const packageDirs: string[] = []
+  const rootEntries: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > SURVEY_DEPTH || files.length >= SURVEY_CAP) {
+      return
+    }
+    let entries: Awaited<ReturnType<typeof $.fs.list>> = []
+    try {
+      entries = await $.fs.list(dir === '' ? root : `${root}/${dir}`)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const relative = dir === '' ? entry.name : `${dir}/${entry.name}`
+      if (dir === '') {
+        rootEntries.push(entry.name)
+      }
+      if (entry.kind === 'dir') {
+        if (!SURVEY_SKIP.has(entry.name) && !entry.name.startsWith('.')) {
+          await walk(relative, depth + 1)
+        }
+      } else if (entry.kind === 'file') {
+        if (entry.name === 'package.json') {
+          packageDirs.push(dir)
+        } else if (isCodeFile(relative)) {
+          files.push(relative)
+        }
+      }
+    }
+  }
+  await walk('', 0)
+  return { files, packageDirs, rootEntries }
+}
+
+function parsedJson(text: string | null): Record<string, unknown> {
+  try {
+    const raw: unknown = text === null ? {} : JSON.parse(text)
+    return typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** `/tdd setup` shows what the project looks like and the config that fits; `/tdd setup write` saves it. */
+async function setupText($: EngineInterface, root: string, write: boolean, nowMs: number): Promise<string> {
+  detectedStacks.delete(root)
+  const survey = await surveyProject($, root)
+  const configPath = `${root}/${CONFIG_FILE}`
+  const existing = await readWhole($, configPath)
+  const current = parseConfig(existing, await detectStack($, root))
+  const inferred = inferLayout(survey, current.stackSource === 'config' ? current.stack : undefined)
+  const text = formatSetup(current, inferred, survey, existing !== null)
+  if (!write) {
+    return text
+  }
+  const { layout: _layout, roots: _roots, stack: _stack, ...kept } = parsedJson(existing)
+  const merged = { ...kept, ...suggestedConfig(current, inferred) }
+  await $.fs.write(configPath, `${JSON.stringify(merged, null, 2)}\n`)
+  const after = await loadConfig($, root)
+  const detail = describeConfigChange(current, after) ?? 'no change'
+  await change($, s => recordConfigChange(s, `setup: ${detail}`, false, nowMs))
+  $.ui.toast(`dope-tdd: ${CONFIG_FILE} written (${detail})`)
+  return `${text}\nwritten: ${CONFIG_FILE} (${detail})`
 }
 
 function beforeText(file: FileRead): string | null {
@@ -328,16 +534,62 @@ function beforeState(file: FileRead): BeforeState | undefined {
   return file.kind === 'text' ? undefined : file.kind
 }
 
+/** Code commented out by an edit is recorded and said; the count is the detail. */
+async function noteCommentedOut(
+  $: EngineInterface,
+  root: string,
+  module: string,
+  path: string,
+  before: string | null,
+  after: string,
+  nowMs: number,
+): Promise<string[]> {
+  const lines = before === null ? 0 : commentedOutLines(before, after)
+  if (lines === 0) {
+    return []
+  }
+  await change($, s => recordWorkaround(s, 'commented-out', module, `${lines} line${lines === 1 ? '' : 's'}`, nowMs))
+  return [commentedOutAdvice(relativePath(root, path), lines)]
+}
+
+/** Skip/only markers added or assertions lost in a test edit are recorded and said. */
+async function noteTestEdit(
+  $: EngineInterface,
+  root: string,
+  module: string,
+  path: string,
+  before: string | null,
+  after: string | null,
+  nowMs: number,
+): Promise<string[]> {
+  if (before === null || after === null) {
+    return []
+  }
+  const lines: string[] = []
+  for (const signal of testEditSignals(before, after)) {
+    if (signal.kind === 'skipped') {
+      await change($, s => recordWorkaround(s, 'skipped', module, `+${signal.added}`, nowMs))
+      lines.push(skippedAdvice(relativePath(root, path), signal.added))
+    } else {
+      await change($, s => recordWorkaround(s, 'assertion-removed', module, `${signal.before} → ${signal.after}`, nowMs))
+      lines.push(assertionsRemovedAdvice(relativePath(root, path), signal.before, signal.after))
+    }
+  }
+  return lines
+}
+
 async function guardFileWrite(
   $: EngineInterface,
+  tool: 'Edit' | 'Write',
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
-  const target = classifyPath(root, filePath)
+  await ensureRepaired($, root, await $.clock.now())
+  const config = await loadConfig($, root)
+  const target = classifyPath(root, filePath, config)
   const isConfig = relativePath(root, filePath) === CONFIG_FILE
   const current = await readStats($)
-  const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
   const policy = target.kind === 'source' ? policyFor(config, relativePath(root, filePath)) : null
   if (policy === 'exempt') {
@@ -348,10 +600,10 @@ async function guardFileWrite(
   if (isLocked && policy === 'enforce' && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => recordBlocked(s, target.module, nowMs))
-    return { deny: lockedMessage(target.module) }
+    return { deny: lockedMessage(config, target.module) }
   }
 
-  const before = target.kind === 'source' && !current.paused ? await readFile($, filePath) : undefined
+  const before = target.kind !== 'other' && !current.paused ? await readFile($, filePath) : undefined
   if (target.kind !== 'other') {
     // Read again right before the write: a check that started since must not have this file reverted under the edit.
     const latest = await readStats($)
@@ -366,40 +618,61 @@ async function guardFileWrite(
 
   const nowMs = await $.clock.now()
   if (isConfig) {
-    const detail = describeConfigChange(config, await loadConfig($, root))
+    const after = await loadConfig($, root)
+    const detail = describeConfigChange(config, after)
     if (detail === null) {
       return result
     }
-    await change($, s => recordConfigChange(s, detail, nowMs))
+    await change($, s => recordConfigChange(s, detail, isLoosening(config, after), nowMs))
     $.ui.toast(`dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
     return withContext(result, [configChangedAdvice(detail)])
   }
   if (target.kind === 'source') {
     const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
     const after = before === undefined ? null : await readWhole($, filePath)
+    // A file that could not be read before the edit is still a change to account for, with that reason.
+    const captured =
+      before === undefined
+        ? null
+        : after !== null
+          ? { before: beforeText(before), after, state: beforeState(before) }
+          : before.kind === 'unreadable'
+            ? { before: null, after: '', state: 'unreadable' as const }
+            : null
     const edited = await change($, s => {
       const recorded = markReminded(recordSourceEdit(s, target.module, !isLocked, nowMs), target.module)
-      return before === undefined || after === null
-        ? recorded
-        : recordChange(recorded, target.module, filePath, beforeText(before), after, beforeState(before))
+      return captured === null ? recorded : recordChange(recorded, target.module, filePath, captured.before, captured.after, captured.state)
     })
     if (edited.paused) {
       return result
     }
+    const commented = before === undefined || after === null ? [] : await noteCommentedOut($, root, target.module, filePath, beforeText(before), after, nowMs)
+    const sourcePath = sourcePathFor(config, target.module)
     if (isLocked) {
-      return tell(quiet, result, policy === 'warn' ? [unguardedAdvice(target.module)] : [])
+      const warned = policy === 'warn' ? [unguardedAdvice(target.module, sourcePath, testPathFor(config, target.module))] : []
+      return tell(quiet, result, [...warned, ...commented])
     }
     const testPath = edited.unlocked[target.module]
-    return inheritedAt === undefined || testPath === undefined
-      ? result
-      : tell(quiet, result, [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt)])
+    const inherited =
+      inheritedAt === undefined || testPath === undefined
+        ? []
+        : [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt, sourcePath)]
+    return tell(quiet, result, [...inherited, ...commented])
   }
   if (target.kind === 'test') {
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
     await rememberUnlock($, root, target.module, filePath, nowMs)
     const source = await readWhole($, filePath)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module), ...hollow])
+    const signals = before === undefined ? [] : await noteTestEdit($, root, target.module, filePath, beforeText(before), source, nowMs)
+    // A Write of the same bytes: the touch counts, and so does the fact that it changed nothing. An Edit always changes something.
+    const unchanged = tool === 'Write' && before !== undefined && source !== null && beforeText(before) === source
+    if (unchanged) {
+      await change($, s => recordWorkaround(s, 'hollow-touch', target.module, relativePath(root, filePath), nowMs))
+    }
+    const resaved = unchanged ? [hollowTouchAdvice(relativePath(root, filePath))] : []
+    const command = (await runCommandFor($, root, config, filePath)) ?? undefined
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module), command), ...hollow, ...signals, ...resaved])
   }
   return result
 }
@@ -420,16 +693,17 @@ async function runGit($: EngineInterface, root: string, args: string[]): Promise
 
 type ChangedFile = { path: string; module: string }
 
-function changedOfKind(root: string, paths: string[], kind: 'source' | 'test'): ChangedFile[] {
+function changedOfKind(root: string, paths: string[], kind: 'source' | 'test', config: GuardConfig): ChangedFile[] {
   return paths.flatMap(path => {
-    const target = classifyPath(root, `${root}/${path}`)
+    const target = classifyPath(root, `${root}/${path}`, config)
     return target.kind === kind ? [{ path, module: target.module }] : []
   })
 }
 
-async function snapshotWatched($: EngineInterface, root: string): Promise<SourceSnapshot | null> {
-  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', '--', ...WATCHED_DIRS])
-  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...WATCHED_DIRS])
+async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig): Promise<SourceSnapshot | null> {
+  const dirs = watchedDirs(config)
+  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', '--', ...dirs])
+  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...dirs])
   if (numstat === null || untracked === null) {
     return null
   }
@@ -443,9 +717,9 @@ async function snapshotWatched($: EngineInterface, root: string): Promise<Source
 }
 
 /** The test files the runner named as failed, as modules; empty when the output names none. */
-function failedModules(root: string, files: string[]): string[] {
+function failedModules(root: string, files: string[], config: GuardConfig): string[] {
   return files.flatMap(file => {
-    const target = classifyPath(root, absolutePath(root, file))
+    const target = classifyPath(root, absolutePath(root, file), config)
     return target.kind === 'test' ? [target.module] : []
   })
 }
@@ -456,13 +730,15 @@ async function guardShell(
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
+  await ensureRepaired($, root, await $.clock.now())
   const current = await readStats($)
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
 
-  const writes = findSourceWrites(command).map(path => ({
+  // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
+  const writes = findSourceWrites(command, root).map(path => ({
     path: absolutePath(root, path),
-    module: sourceModuleOf(root, path),
+    module: sourceModuleOf(root, path, config),
     policy: policyFor(config, relativePath(root, path)),
   }))
   const locked = writes.flatMap(({ module, policy }) =>
@@ -471,13 +747,14 @@ async function guardShell(
   if (locked.length > 0 && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
-    return { deny: locked.map(lockedMessage).join('\n') }
+    return { deny: locked.map(module => lockedMessage(config, module)).join('\n') }
   }
-  if (writes.some(({ module }) => module !== null) && isChecking(current, await $.clock.now())) {
+  // While a file is reverted on disk, neither a write to source nor a test run may read it.
+  if ((writes.some(({ module }) => module !== null) || isTestRun(command)) && isChecking(current, await $.clock.now())) {
     return { deny: checkingMessage(current.checking?.module ?? 'this module') }
   }
 
-  const before = await snapshotWatched($, root)
+  const before = await snapshotWatched($, root, config)
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
@@ -487,12 +764,12 @@ async function guardShell(
   if (result.deny !== undefined) {
     return result
   }
-  const after = before === null ? null : await snapshotWatched($, root)
+  const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
   const changed = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
-  const touchedTests = changedOfKind(root, changed, 'test')
-  const changedSources = changedOfKind(root, changed, 'source').filter(({ path }) => policyFor(config, path) !== 'exempt')
+  const touchedTests = changedOfKind(root, changed, 'test', config)
+  const changedSources = changedOfKind(root, changed, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
   const changedModules = new Set(changedSources.map(({ module }) => module))
   const captured = await Promise.all(
     textsBefore
@@ -519,51 +796,88 @@ async function guardShell(
   for (const { path, module } of touchedTests) {
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
+  const commented: string[] = []
+  for (const write of captured) {
+    if (write.after !== null) {
+      commented.push(...(await noteCommentedOut($, root, write.module, write.path, beforeText(write.before), write.after, nowMs)))
+    }
+  }
   const unguardedPaths = changedSources
     .filter(source => updated.unlocked[source.module] === undefined && policyFor(config, source.path) !== 'observe')
     .map(source => source.path)
 
   const output = result.text ?? ''
-  // A command held for approval or refused never ran: no run to read, nothing to count.
-  const ran = isTestRun(command) && !(result.isError === true && neverRan(output))
-  const outcome = ran ? runOutcome(output) : 'none'
+  // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
+  // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
+  const runLocation = testRunLocation(command, root)
+  const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
+  const outcome = ran ? readRun(output) : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
+  const redUnlocked: string[] = []
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
-    const named = TEST_FILE_IN_COMMAND.exec(command)?.[1]
-    const target = named === undefined ? null : classifyPath(root, absolutePath(root, named))
-    const targeted = target?.kind === 'test' ? await change($, s => recordRunTarget(s, target.module)) : updated
+    const named = namedTestFile(command, config.stack, root) ?? undefined
+    const target = named === undefined ? null : classifyPath(root, named, config)
+    let targeted = updated
+    if (target?.kind === 'test' && named !== undefined) {
+      // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
+      const testPath = named
+      if (outcome === 'fail' && updated.unlocked[target.module] === undefined) {
+        targeted = await change($, s => recordRedUnlock(s, target.module, testPath, true))
+        await rememberUnlock($, root, target.module, testPath, nowMs)
+        redUnlocked.push(target.module)
+      } else {
+        targeted = await change($, s => recordRunTarget(s, target.module))
+      }
+    }
     if (outcome === 'fail') {
-      const failed = failedFiles(output)
+      // The runner prints paths relative to where it ran; resolve them there, then name them from the root.
+      const failed = failedFilesIn(output).map(path => relativePath(root, /^(?:[A-Za-z]:|\/)/.test(path) ? path : `${runLocation}/${path}`))
+      // Every test file the runner named as failed unlocks its module the same way, without becoming current.
+      for (const path of failed) {
+        const seen = classifyPath(root, absolutePath(root, path), config)
+        if (seen.kind === 'test' && targeted.unlocked[seen.module] === undefined) {
+          targeted = await change($, s => recordRedUnlock(s, seen.module, absolutePath(root, path), false))
+          await rememberUnlock($, root, seen.module, absolutePath(root, path), nowMs)
+          redUnlocked.push(seen.module)
+        }
+      }
       const own = targeted.current?.module
       // The suite is red; the module is red only if its own test is among the files that failed.
-      elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed).includes(own) ? failed : []
+      elsewhere = failed.length > 0 && own !== undefined && !failedModules(root, failed, config).includes(own) ? failed : []
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
   }
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
-  const check = passedModule === undefined ? 'unchecked' : await verifyCatch($, root, afterRun, passedModule, nowMs - startedMs, nowMs)
+  // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
+  const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
+  const check =
+    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed)
   // Red, then the test edited, then green with the module's code unchanged: the green came from the test.
-  const testChanged = passedModule !== undefined && check === 'unchecked' && updated.sawRed && updated.testChangedAfterRed
+  const testChanged = passedModule !== undefined && check === 'unchecked' && before_?.sawRed === true && before_.testTouchedAfterRed
   if (passedModule !== undefined) {
     await change($, s => {
       const counted = recordCatch(s, passedModule, check, nowMs)
       return testChanged ? recordTestChanged(counted, passedModule, nowMs) : counted
     })
   }
+  const runModule = afterRun.current?.module
+  const sourcePath = runModule === undefined ? undefined : sourcePathFor(config, runModule)
   const advice =
     outcome === 'none'
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath })
 
   const reminders = current.paused
     ? []
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...commented,
+        ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
@@ -599,7 +913,8 @@ async function loadLogo($: EngineInterface): Promise<string | null> {
 async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
-  const stored = freshUnlocks(await $.store.get(unlockKey(root)), nowMs)
+  const legacy = legacyUnlockKey(root) === unlockKey(root) ? {} : freshUnlocks(await $.store.get(legacyUnlockKey(root)), nowMs)
+  const stored = { ...legacy, ...freshUnlocks(await $.store.get(unlockKey(root)), nowMs) }
   const present = await Promise.all(
     Object.entries(stored).map(async ([module, entry]) =>
       (await lastModifiedMs($, entry.testPath)) === null ? [] : [[module, entry] as const],
@@ -609,6 +924,57 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   if (Object.keys(entries).length > 0) {
     await change($, s => seedUnlocks(s, entries))
   }
+}
+
+/** How one test file runs in this project, as a person types it, for a path relative to the root; null when no runner is found. */
+async function runCommandFor($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string | null> {
+  const runner = await detectRunner($, root, config, testPath)
+  return runner === null ? null : runnerNamed(runner.kind).describe(relativePath(root, testPath))
+}
+
+/** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */
+async function briefingCommand($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
+  const ext = config.layout.displayExt ?? stackOf(config.stack).exts[0] ?? 'ts'
+  const runner = await detectRunner($, root, config, `${root}/example.${ext}`)
+  return runner === null ? null : runnerNamed(runner.kind).describe('<test file>')
+}
+
+/**
+ * The receipt for a module, ready for a pull request: the status as the band
+ * reads it, then the two commands a reviewer runs to re-check the proof
+ * without the plugin: the test, and the test against the code as it was
+ * before the change.
+ */
+async function receiptText($: EngineInterface, root: string, config: GuardConfig, named: string | undefined, nowMs: number): Promise<string> {
+  const s = await readStats($)
+  const module = named ?? s.current?.module
+  const status = formatStatus(s, nowMs, config)
+  if (module === undefined) {
+    return ['dope-tdd receipt', '```', status, '```', 'No module is current; name one: /tdd receipt <module>.'].join('\n')
+  }
+  const lines = [`dope-tdd receipt for ${module}`, '```', status, '```']
+  const testPath = s.unlocked[module]
+  if (testPath === undefined) {
+    lines.push(`No test on record for ${module}; the receipt is the status alone.`)
+    return lines.join('\n')
+  }
+  const runner = await detectRunner($, root, config, testPath)
+  const relativeTest = relativePath(root, testPath)
+  const run = runner === null ? `<run ${relativeTest} with your test runner>` : runnerNamed(runner.kind).describe(relativeTest)
+  // The change record is cleared once checked; the last catch keeps the path it reverted.
+  const changePath = s.changes[module]?.path ?? (s.lastCatch?.module === module ? s.lastCatch.path : undefined)
+  const change = changePath === undefined ? undefined : { path: changePath }
+  lines.push('To check the proof yourself, from the repo root with this change checked out:', '```', run)
+  if (change !== undefined) {
+    lines.push(`git stash push -- ${relativePath(root, change.path)} && ${run}; git stash pop`)
+  }
+  lines.push('```')
+  lines.push(
+    change === undefined
+      ? `No change to ${module} is on record this session, so there is nothing to stash; the first run is the whole receipt.`
+      : 'The first run passes. The second runs the same test against the code as it was before the change and fails, which is what the catch check saw. The stash pop restores the change.',
+  )
+  return lines.join('\n')
 }
 
 async function currentStatus($: EngineInterface): Promise<string> {
@@ -626,10 +992,14 @@ export const register: Register = on => {
       )
     })
     const started = await next(e)
-    await repairInterruptedCheck($)
+    const root = await $.session.root()
+    await ensureRepaired($, root, await $.clock.now())
     await seedRememberedUnlocks($)
-    await loadConfig($, await $.session.root())
-    await $.command.register({ name: 'tdd', description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band' })
+    await loadConfig($, root)
+    await $.command.register({
+      name: 'tdd',
+      description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band; /tdd setup detects where your tests live; /tdd receipt prints the receipt for a pull request',
+    })
     await $.tool.register({
       name: 'status',
       description: 'Report the TDD guard state: paused or on, phase, current module, counts, and the recent event log.',
@@ -638,28 +1008,56 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'tdd' }, async ($, e) => {
-    const wantsGlossary = e.args.trim().toLowerCase() === 'why'
-    return { text: wantsGlossary ? formatGlossary() : await currentStatus($) }
+    const raw = e.args.trim().split(/\s+/).filter(word => word !== '')
+    const words = raw.map(word => word.toLowerCase())
+    if (words[0] === 'why') {
+      return { text: formatGlossary() }
+    }
+    if (words[0] === 'setup') {
+      return { text: await setupText($, await $.session.root(), words[1] === 'write', await $.clock.now()) }
+    }
+    if (words[0] === 'receipt') {
+      const root = await $.session.root()
+      // The module id keeps its case: server/managers/RoomManager is not server/managers/roommanager.
+      return { text: await receiptText($, root, await loadConfig($, root), raw[1], await $.clock.now()) }
+    }
+    return { text: await currentStatus($) }
   })
 
-  on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult)
+  // The briefing: the rules in Claude's system prompt, so the first refusal is an expected step, not a surprise.
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    const root = await $.session.root()
+    const config = await loadConfig($, root)
+    const text = briefingText(config, await briefingCommand($, root, config))
+    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
+  })
 
-  on('tool.call', { tool: 'Edit' }, ($, e, next) =>
-    guardFileWrite($, e.file_path, () => next(e)),
-  )
+  on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult).catch(($, _e, next) => {
+    reportGuardFailure($, 'status', next.error)
+    return { result: `dope-tdd: the status could not be read (${next.error.kind}); try /tdd` } as ToolCallResult
+  })
 
-  on('tool.call', { tool: 'Write' }, ($, e, next) =>
-    guardFileWrite($, e.file_path, () => next(e)),
-  )
+  on('tool.call', { tool: 'Edit' }, ($, e, next) => guardFileWrite($, 'Edit', e.file_path, () => next(e))).catch(($, e, next) => {
+    reportGuardFailure($, 'Edit', next.error)
+    return next(e)
+  })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) =>
-    guardShell($, e.command, () => next(e)),
-  )
+  on('tool.call', { tool: 'Write' }, ($, e, next) => guardFileWrite($, 'Write', e.file_path, () => next(e))).catch(($, e, next) => {
+    reportGuardFailure($, 'Write', next.error)
+    return next(e)
+  })
+
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardShell($, e.command, () => next(e))).catch(($, e, next) => {
+    reportGuardFailure($, 'Bash', next.error)
+    return next(e)
+  })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) =>
-    guardShell($, e.command, () => next(e)),
-  )
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardShell($, e.command, () => next(e))).catch(($, e, next) => {
+    reportGuardFailure($, 'PowerShell', next.error)
+    return next(e)
+  })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await read($, tick)

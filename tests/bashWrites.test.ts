@@ -55,6 +55,11 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites("grep -n x src/App.tsx; echo done > src/main.tsx")).toEqual(['src/main.tsx'])
   })
 
+  test('a data heredoc that only mentions a source path in its body is not a write, even with an in-place sed later in the command', () => {
+    const note = "cat >> notes/log.md <<'EOF'\nlayout: src/api/rate-limit.ts beside rate-limit.test.ts\nEOF\nsed -i 's/a/b/' notes/index.md"
+    expect(findSourceWrites(note)).toEqual([])
+  })
+
   test('printing a source file to stdout from a script is a read', () => {
     expect(findSourceWrites("node -e \"process.stdout.write(require('fs').readFileSync('src/App.tsx','utf8'))\"")).toEqual([])
     expect(findSourceWrites("python -c \"import sys; sys.stdout.write(open('src/App.tsx').read())\"")).toEqual([])
@@ -72,5 +77,14 @@ describe('findSourceWrites', () => {
   test('refuses a path that climbs out with .., so nothing downstream writes outside the root', () => {
     expect(findSourceWrites("sed -i 's/a/b/' ../other/src/App.tsx")).toEqual([])
     expect(findSourceWrites('echo x > src/../../src/App.tsx')).toEqual([])
+  })
+})
+
+describe('findSourceWrites with a root', () => {
+  test('resolves a write against the directory its segment runs in, so a cd into a package or out of the repo is followed', () => {
+    expect(findSourceWrites("cd server && sed -i 's/a/b/' src/x.ts", 'C:/work')).toEqual(['C:/work/server/src/x.ts'])
+    expect(findSourceWrites("cd ../other && echo x > src/x.ts", 'C:/work')).toEqual(['C:/other/src/x.ts'])
+    expect(findSourceWrites('echo x > src/x.ts', 'C:/work')).toEqual(['C:/work/src/x.ts'])
+    expect(findSourceWrites('echo x > C:/work/src/y.ts', 'C:/work')).toEqual(['C:/work/src/y.ts'])
   })
 })

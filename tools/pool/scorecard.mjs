@@ -124,7 +124,7 @@ export function renderScorecard(card, sources) {
     '| --- | --- | --- |',
     `| Wrong verdicts (hand-checked) | ${wrongVerdicts.checked === 0 ? 'no hand-checked runs yet' : `${wrongVerdicts.wrong} of ${wrongVerdicts.checked}`} | 0 |`,
     `| Overhead, guarded vs unguarded (median of ${overhead.pairs} A/B pairs) | cost ${times(overhead.cost)}, turns ${times(overhead.turns)}, time ${times(overhead.time)} | ≤ 1.25× |`,
-    `| Catch check's share of guarded run time (${card.checkTime.runs} runs) | ${card.checkTime.runs === 0 ? 'not recorded yet' : pct(card.checkTime.share)} | most of the time overhead |`,
+    `| Catch check's share of guarded run time (${card.checkTime.runs} runs) | ${card.checkTime.runs === 0 ? 'not recorded yet' : pct(card.checkTime.share)} | info: the rest is the agent's own steps |`,
     `| Refusals per guarded run | ${refusals.total} in ${refusals.runs} runs (max ${refusals.max} in one) | ≤ 1 on average |`,
     `| Workarounds in guarded runs | ${workarounds.total} in ${workarounds.runs} runs | 0 without a stated reason |`,
     `| Proof gaps in guarded runs | missed ${proofGaps.missed}, unguarded edits ${proofGaps.unguarded} | 0 |`,

@@ -248,6 +248,8 @@ function journalFiles(value: unknown): JournalFile[] | null {
  */
 const SHARED_LOCK_REF = 'refs/worktree/dope-tdd-check'
 let sharedLockUnavailableSaid = false
+/** Module and test pairs whose baseline (the check's own command, nothing reverted) was green in this load. */
+const baselined = new Set<string>()
 
 type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy'; module: string } | { kind: 'unavailable' }
 
@@ -485,6 +487,25 @@ async function verifyCatch(
     return catchOutcome('no-runner')
   }
   const godot = config.godot ?? (await godotFromEnv($))
+  const relativeTest = relativePath(root, testPath)
+  const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot })
+
+  // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
+  // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.
+  const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+  if (!baselined.has(baselineKey)) {
+    let base: CatchOutcome
+    try {
+      const run = await $.process.run(argv, { cwd: root, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
+      base = catchOutcome(run, relativeTest)
+    } catch (error) {
+      base = catchOutcome(runFailure(error))
+    }
+    if (base.kind !== 'missed') {
+      return { kind: 'unverified', reason: base.kind === 'unverified' ? `baseline: ${base.reason}` : "the test is red under the check's own command before anything is reverted" }
+    }
+    baselined.add(baselineKey)
+  }
 
   // The lock first, then the journal: a check that loses the lock never touches another check's journal.
   const locked = await change($, state => acquireCheck(state, module, nowMs))
@@ -523,12 +544,12 @@ async function verifyCatch(
     await $.fs.write(path, before)
     reverted = true
     try {
-      const run = await $.process.run(runnerArgv(runner.root, runner.kind, relativePath(root, testPath), runner.tool, { godot }), {
+      const run = await $.process.run(argv, {
         cwd: root,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
       })
-      outcome = catchOutcome(run)
+      outcome = catchOutcome(run, relativeTest)
       if (outcome.kind === 'missed') {
         // What the test did not notice: the agent needs the lines, not just the verdict, to write the assertion.
         outcome = { kind: 'missed', slipped: changedLines(before, after) }

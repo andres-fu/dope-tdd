@@ -60,6 +60,9 @@ export type FakeWorld = {
   rootFails: boolean
   writes: [string, string][]
   catchRun: { text: string; exitCode: number } | 'reject'
+  /** The check's baseline: the test run as it stands, before anything is reverted. Green unless a test says otherwise. */
+  baselineRun: { text: string; exitCode: number }
+  baselineCalls: number
   hasVitest: boolean
   onBash: (command: string) => void
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
@@ -93,6 +96,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
+    baselineRun: { text: ' Tests  1 passed (1)\n', exitCode: 0 },
+    baselineCalls: 0,
     hasVitest: true,
     onBash: () => {},
     onCatchRun: () => {},
@@ -118,6 +123,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
+    if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
+      world.baselineCalls++
+      return { value: { exitCode: world.baselineRun.exitCode, stdout: world.baselineRun.text, stderr: '' } } as never
+    }
     if (e.argv[0] !== 'git') {
       await world.onCatchRun()
       return world.catchRun === 'reject'

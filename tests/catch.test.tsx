@@ -25,6 +25,32 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/its test catches the change/)
   })
 
+  test('the check first runs the test as it stands under its own command; a red there is no verdict, and nothing is reverted', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.baselineRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([])
+    expect(status.text).toMatch(/caught 0/)
+    expect(status.text).toMatch(/unverified 1/)
+  })
+
+  test('the baseline runs once per module in a session, not on every green', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'pass')
+
+    expect(world.baselineCalls).toBe(1)
+  })
+
   test('a test that still passes with the change undone is reported as missed, and the agent is told to fix the test', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
@@ -249,7 +275,8 @@ describe('the revert is safe', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+    // Only the baseline ran, on the code as it stands; nothing ran against a revert that never happened.
+    expect(world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).length).toBe(world.baselineCalls)
     expect(result.context?.join(' ')).toMatch(/Could not verify.*revert failed/)
   })
 

@@ -1012,9 +1012,9 @@ async function guardShell(
       elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? failed : []
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
-    if (outcome === 'pass' && named !== undefined) {
-      // The test file passed: no other module it is the test for stays red behind it.
-      afterRun = await change($, s => closeCyclesForTest(s, named, s.current?.module))
+    if (outcome === 'pass' && (named !== undefined || !filtersTests(command))) {
+      // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
+      afterRun = await change($, s => closeCyclesForTest(s, named ?? null, s.current?.module, nowMs))
     }
   }
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
@@ -1091,6 +1091,13 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   if (Object.keys(entries).length > 0) {
     await change($, s => seedUnlocks(s, entries))
   }
+}
+
+// -t / --testNamePattern / -k / --filter / --grep: a run of some tests by name, not the whole suite.
+const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|--testNamePattern|--filter|--grep)(?:[\s=]|$)/
+
+function filtersTests(command: string): boolean {
+  return TEST_FILTER.test(command)
 }
 
 /** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */

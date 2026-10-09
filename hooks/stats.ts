@@ -315,15 +315,31 @@ export function recordRedFor(s: TddStats, module: string, nowMs: number): TddSta
   return withModule(s, module, { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false })
 }
 
-/** A test file that passed closes the open cycle of every other module it is the test for, so none is left red behind it. */
-export function closeCyclesForTest(s: TddStats, testPath: string, except: string | undefined): TddStats {
-  const same = (path: string) => path.replace(/\\/g, '/').toLowerCase() === testPath.replace(/\\/g, '/').toLowerCase()
+/**
+ * A test file that passed closes the open cycle of every other module it is the test for, so none is left red behind it.
+ * A null path is a green run of the whole suite: every test passed, so every open cycle closes.
+ * A cycle closed this way counts as a cycle of its own, unless its test is the current module's test: that is one piece of work.
+ */
+export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number): TddStats {
+  const norm = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+  const same = (path: string) => testPath === null || norm(path) === norm(testPath)
+  const exceptTest = except === undefined ? undefined : s.unlocked[except]
   return Object.entries(s.modules).reduce((acc, [module, state]) => {
     const path = acc.unlocked[module]
     if (module === except || path === undefined || !same(path) || state.cycleStartMs === null) {
       return acc
     }
-    return withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })
+    const closed = withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })
+    if (exceptTest !== undefined && norm(exceptTest) === norm(path)) {
+      return closed
+    }
+    return {
+      ...closed,
+      cycles: closed.cycles + 1,
+      cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs),
+      neverSawRed: state.sawRed ? closed.neverSawRed : closed.neverSawRed + 1,
+      unproven: state.sawRed || closed.unproven.includes(module) ? closed.unproven : [...closed.unproven, module],
+    }
   }, s)
 }
 

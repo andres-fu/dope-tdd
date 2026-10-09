@@ -301,7 +301,9 @@ describe('one module at a time', () => {
     expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
     expect(status.text).toMatch(/never saw red 1/)
     expect(status.text).not.toMatch(/test changed/)
-    expect(status.text).toMatch(/also open: utils\/a \(red\)/)
+    // The whole suite passed, so A's test passed too: its red cycle closed, counted as its own cycle.
+    expect(status.text).not.toMatch(/also open/)
+    expect(status.text).toMatch(/cycles: 2 /)
     expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeUndefined()
     await ui.unmount()
 

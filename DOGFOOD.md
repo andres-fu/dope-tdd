@@ -131,3 +131,18 @@ GDScript preload too). The replay test fails on the old plugin with the exact de
 Re-run of the gated leg with the import pairing live (3587b3a), same task and model: blocked 0, test-first
 1/1, only src/lib/io.ts and test/slugify.test.ts touched, caught 1 on io running test/slugify.test.ts,
 no dangling red. Before: blocked 1, a third file of duplicate tests, "also open: slugify (red)".
+
+## 2026-10-09 — The A/B launcher's first run, and what it caught
+
+`tools/pool/ab.mjs` ran the same slugify task in two worktrees at once (observe and enforce, Sonnet,
+under a minute each, $0.15 and $0.17 at list price) and wrote one ledger line per leg to
+`~/.dope-tdd/pool/ledger.jsonl`. Both legs: test-first 1/1, blocked 0, the same two files touched;
+enforce caught 1 on io. Two findings:
+- Observe left "also open: slugify (red)". Its last green was the whole suite (`npx vitest run`, no file
+  named), and only a run naming the test file closed the other cycles it covered. Fixed: a green
+  whole-suite run (no name filter such as -t, -k, --grep) closes every open cycle; one closed that way
+  counts as its own cycle unless its test is the current module's test (one piece of work, not two).
+  An older wiring test had encoded the dangling red as correct; it now says the opposite.
+- The observe agent wrote "the catch check reported CAUGHT" in its summary. Observe runs no catch check,
+  and the receipt it printed above that sentence has no catch line. The prose is a claim; the receipt is
+  the evidence. Readers of a PR (and the ledger) should trust the receipt block, never the summary.

@@ -60,6 +60,42 @@ describe('a test covers what it imports', () => {
     expect(check?.slice(-1)).toEqual([SLUG_TEST])
   })
 
+  test('a green whole-suite run closes every red cycle: nothing is left open behind it', async ($, on) => {
+    const world = fakeEngine(on)
+    project(world)
+
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    world.bashFails = true
+    world.bashText = FAIL
+    await runBash($, `npx vitest run ${SLUG_TEST}`)
+    await $.tool.call({ tool: 'Edit', file_path: IO, old_string: 'return t', new_string: 'return t.normalize("NFD")' } as never)
+    world.bashFails = false
+    world.bashText = PASS
+    world.catchRun = { text: FAIL, exitCode: 1 }
+    await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/also open/)
+  })
+
+  test('a green run filtered by test name is not the whole suite and closes nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    project(world)
+
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    world.bashFails = true
+    world.bashText = FAIL
+    await runBash($, `npx vitest run ${SLUG_TEST}`)
+    await $.tool.call({ tool: 'Edit', file_path: IO, old_string: 'return t', new_string: 'return t.normalize("NFD")' } as never)
+    world.bashFails = false
+    world.bashText = PASS
+    world.catchRun = { text: FAIL, exitCode: 1 }
+    await runBash($, 'npx vitest run -t "something else"')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/also open: slugify \(red\)/)
+  })
+
   test('a failing run of an existing test that imports io unlocks io with no touch at all', async ($, on) => {
     const world = fakeEngine(on)
     project(world)

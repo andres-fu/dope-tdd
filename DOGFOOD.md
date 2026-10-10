@@ -195,3 +195,19 @@ distinct version: exactly two, the original and the agent's fix. The fixed file 
 code. The session record: caught 1, worktreeChecks 1, checkMs 2463 (baseline in the worktree plus the check).
 No worktree left in the clone afterwards. Before this change, the same check wrote the old code into the
 real file for the length of a test run.
+
+## 2026-10-10 — First open-source A/B: dapr-agents #885 and nanocoder #1689
+
+Bugs found by tools/pool/find-bugs.mjs, verified against the code by one agent (2 of 6 shortlisted were GO).
+- dapr-agents (Python, uv): both legs fixed it and added tests; the enforce agent saw 3 of 4 new tests red
+  first. Dope TDD read NONE of the runs: the real ones were `uv run --group test python -m pytest`, and the
+  pytest pattern took no flags between `run` and the program; the "unread" runs were failed attempts
+  (global python without pytest, uv without pytest). Fixed in 405b499: launcher flags allowed, and a runner
+  that never started is no run, said plainly.
+- nanocoder (TypeScript, ava, Windows-only bug): enforce test-first 6/7 with a test for each of the three
+  functions (its host.ts edit was refused until it wrote that test), caught 1 on plugins/host; observe 3/5
+  with 2 unguarded edits and no test for host.ts. Cost 0.49 vs 0.38, turns 34 vs 24: over the 1.25x line
+  on this bug. Ava support was added for it (1bd578a), from real output.
+- New gap: path-validation.spec.ts already had 11 failures on Windows (POSIX paths, symlink EPERM), so the
+  file never goes green, the module stays RED, and its fix can never be checked. Brownfield files with
+  known failures need a per-test comparison: which tests failed before vs after, not the file's summary.

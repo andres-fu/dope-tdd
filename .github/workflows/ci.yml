@@ -35,3 +35,5 @@ jobs:
         run: node --test tools/pool/scorecard.test.mjs
       - name: Check the bug-search rules
         run: node --test tools/pool/find-bugs.test.mjs
+      - name: Check the pull-request check report
+        run: npx -y tsx@4.19.2 --test tools/pr-check/check.spec-node.ts

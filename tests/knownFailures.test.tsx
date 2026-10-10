@@ -89,6 +89,36 @@ describe('tests that were already failing', () => {
     expect(status.text).toMatch(/caught 1/)
   })
 
+  test('the run counts for the module whose test file it names, even when another module was touched last (seen on nanocoder)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await touchTest($, world, 'utils/other')
+    world.bashFails = true
+    world.bashText = failing('old: breaks on windows', 'new: formats months')
+    await runBash($, RUN)
+    await editAt($, 'src/utils/formatDuration.ts')
+    await touchTest($, world, 'utils/other')
+    world.bashText = failing('old: breaks on windows')
+    world.baselineRun = { text: failing('old: breaks on windows'), exitCode: 1 }
+    world.catchRun = { text: failing('old: breaks on windows', 'new: formats months'), exitCode: 1 }
+
+    const green = await runBash($, RUN)
+
+    expect(green.context?.join(' ')).toMatch(/utils\/formatDuration is green apart from 1 test/)
+  })
+
+  test('a run filtered to some tests by name proves nothing about the rest: never green this way', async ($, on) => {
+    const world = fakeEngine(on)
+    await redWithAnOldFailure($, world)
+    world.bashText = failing('old: breaks on windows')
+
+    await runBash($, `${RUN} --match "old*"`)
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+  })
+
   test('a test that fails now and was not failing before is red, old failures or not', async ($, on) => {
     const world = fakeEngine(on)
     await redWithAnOldFailure($, world)

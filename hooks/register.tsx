@@ -1237,9 +1237,12 @@ async function guardShell(
   // Tests that were failing before the change neither hide a red nor block a green: judge a run of the current
   // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
   let alreadyFailing: string[] = []
-  const working = updated.current
-  const ownFile = outcome === 'fail' && working !== null ? namedTestFile(command, config.stack, start) : null
-  if (working !== null && ownFile !== null && relativePath(root, ownFile).toLowerCase() === relativePath(root, working.testPath).toLowerCase()) {
+  // The run counts for the module whose test file it names, whichever was touched last. A run filtered to some tests
+  // by name says nothing about the rest, so it is never judged this way.
+  const ownFile = outcome === 'fail' && !filtersTests(command) ? namedTestFile(command, config.stack, start) : null
+  const ownTarget = ownFile === null ? null : classifyPath(root, ownFile, config)
+  const working = ownFile !== null && ownTarget?.kind === 'test' ? { module: ownTarget.module, testPath: ownFile } : null
+  if (working !== null) {
     let names = failedTestsIn(output)
     // A tail kept the summary and lost the names: run the file once, locally, to read them all.
     const count = failedCountIn(output)
@@ -1416,7 +1419,7 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
 }
 
 // -t / --testNamePattern / -k / --filter / --grep: a run of some tests by name, not the whole suite.
-const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|--testNamePattern|--filter|--grep)(?:[\s=]|$)/
+const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|-m|--testNamePattern|--filter|--grep|--match)(?:[\s=]|$)/
 
 function filtersTests(command: string): boolean {
   return TEST_FILTER.test(command)

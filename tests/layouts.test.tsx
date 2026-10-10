@@ -46,7 +46,7 @@ describe('colocated tests', () => {
     const world = fakeEngine(on)
     configure(world, '{"layout":"colocated"}')
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat?.slice(-1)).toEqual(['src'])
@@ -64,6 +64,62 @@ describe('__tests__ folders', () => {
 
     expect(blocked.deny).toMatch(/Touch src\/utils\/__tests__\/a\.test\.ts\(x\), or run it and see it fail, before editing src\/utils\/a\./)
     expect(allowed.deny).toBeUndefined()
+  })
+})
+
+describe('a runner installed in the package, not hoisted', () => {
+  test('is found from the test file, and the check runs from that package with the path relative to it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    configure(world, '{"roots":["server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/node_modules/vitest/vitest.mjs`)
+    world.fileContents.set(`${ROOT}/server/src/utils/dice.ts`, 'export const a = 1')
+
+    await writeAt($, 'server/src/__tests__/utils/dice.test.ts', "it('x', () => { expect(1).toBe(2) })")
+    world.bashFails = true
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    await editAt($, 'server/src/utils/dice.ts')
+    world.bashFails = false
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    const at = world.gitCalls.findIndex(argv => argv.some(arg => arg.includes('vitest.mjs')))
+    expect(world.gitCalls[at]).toEqual(['node', `${ROOT}/server/node_modules/vitest/vitest.mjs`, 'run', 'src/__tests__/utils/dice.test.ts'])
+    expect(world.runCwds[at]).toBe(`${ROOT}/server`)
+    expect(status.text).toMatch(/caught 1/)
+  })
+})
+
+describe('a workspace run names its package', () => {
+  const FAIL_IN_PACKAGE = ' FAIL  src/__tests__/utils/dice.test.ts > rolls\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+  test('npm test -w server: the failed path is the server package’s, so the red lands on its module', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/package.json`)
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+    world.bashFails = true
+    world.bashText = FAIL_IN_PACKAGE
+
+    const red = await runBash($, 'npm test -w server')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.context?.join(' ')).toMatch(/server\/utils\/dice unlocked by a red run/)
+    expect(status.text).not.toMatch(/elsewhere/)
+  })
+
+  test('pnpm --filter by package name: found through each package’s package.json', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["packages/*"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.fileContents.set(`${ROOT}/packages/game-server/package.json`, '{ "name": "@acme/server" }')
+    world.fileContents.set(`${ROOT}/packages/web/package.json`, '{ "name": "@acme/web" }')
+    world.existingFiles.add(`${ROOT}/packages/game-server/src/__tests__/utils/dice.test.ts`)
+    world.bashFails = true
+    world.bashText = FAIL_IN_PACKAGE
+
+    const red = await runBash($, 'pnpm --filter @acme/server test')
+
+    expect(red.context?.join(' ')).toMatch(/packages\/game-server\/utils\/dice unlocked by a red run/)
   })
 })
 
@@ -89,7 +145,7 @@ describe('package roots', () => {
     const world = fakeEngine(on)
     configure(world, '{"roots":["packages/*"]}')
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat?.slice(-1)).toEqual(['packages'])
@@ -185,6 +241,36 @@ describe('a command that changes directory', () => {
     expect(status.text).toMatch(/phase: RED/)
     expect(status.text).toMatch(/module: server\/utils\/dice/)
     expect(status.text).not.toMatch(/elsewhere/)
+  })
+
+  test('the shell keeps its directory between calls: a cd in one call moves the run in the next', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+
+    await runBash($, 'cd server')
+    world.bashFails = true
+    world.bashText = ' FAIL  src/__tests__/utils/dice.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'npx vitest run src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/phase: RED/)
+    expect(status.text).toMatch(/module: server\/utils\/dice/)
+  })
+
+  test('a cd out of the project resets to the root, as Claude Code resets the shell', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"roots":["client","server"],"layout":{"source":"src/{module}.{ext}","test":"src/__tests__/{module}.test.{ext}"}}')
+    world.existingFiles.add(`${ROOT}/server/src/__tests__/utils/dice.test.ts`)
+
+    await runBash($, 'cd server')
+    await runBash($, 'cd ../../elsewhere')
+    world.bashFails = true
+    world.bashText = ' FAIL  server/src/__tests__/utils/dice.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'npx vitest run server/src/__tests__/utils/dice.test.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/module: server\/utils\/dice/)
   })
 
   test('a run in another repository is not this project\u2019s run', async ($, on) => {

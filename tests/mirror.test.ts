@@ -53,4 +53,10 @@ describe('classifyPath', () => {
     expect(classifyPath(ROOT, `${ROOT}/src/index.css`)).toEqual({ kind: 'other' })
     expect(classifyPath(ROOT, 'C:/elsewhere/src/a.ts')).toEqual({ kind: 'other' })
   })
+
+  test('a file named like a test is never source, whatever the layout: a colocated test under the default is the test for its neighbour', () => {
+    expect(classifyPath(ROOT, `${ROOT}/src/utils/a.test.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
+    expect(classifyPath(ROOT, `${ROOT}/src/utils/a.spec.tsx`)).toEqual({ kind: 'test', module: 'utils/a' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/utils/a.spec.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
+  })
 })

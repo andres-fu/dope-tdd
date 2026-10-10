@@ -2,6 +2,26 @@ const HERESTRING = /@['"]\r?\n/
 // A heredoc opener: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"`. Sticky, so it is tried at the `<<` just read.
 const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/y
 
+// A shell that runs what it reads on stdin: a heredoc fed to it is commands, not data.
+const SHELL_READER = /^\s*(?:\w+=\S*\s+)*(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s*(?:<<|$)/
+
+/**
+ * The part of a segment that runs. A heredoc body fed to anything but a shell
+ * (`cat > body.md <<'EOF'`, `tee`, `gh ... --body-file -`) is data: the
+ * commands it quotes never run, so only the opener line counts.
+ */
+export function executedText(segment: string): string {
+  const newline = segment.indexOf('\n')
+  if (newline === -1) {
+    return segment
+  }
+  const opener = segment.slice(0, newline)
+  if (!/<<-?\s*(['"]?)\w+\1/.test(opener) || SHELL_READER.test(opener)) {
+    return segment
+  }
+  return opener
+}
+
 /**
  * Splits a command on `&&`, `||`, `;` and `|` outside quotes. A heredoc's body
  * stays with the command that opened it, verbatim, and what follows its
@@ -128,18 +148,38 @@ export function locatedSegments(command: string, root: string): LocatedSegment[]
   const located: LocatedSegment[] = []
   for (const segment of commandSegments(command)) {
     located.push({ segment, cwd })
-    const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
-    if (cd === null) {
-      continue
-    }
-    const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
-    if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
-      cwd = ELSEWHERE
-    } else if (cwd === ELSEWHERE) {
-      cwd = /^(?:[A-Za-z]:)?[\\/]/.test(target) ? joinPath('', target) : ELSEWHERE
-    } else {
-      cwd = joinPath(cwd, target)
-    }
+    cwd = movedBy(cwd, segment)
   }
   return located
+}
+
+// Commands that only read. `find` with -exec or -delete and `git` verbs that write are not among them.
+const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|where|tree|stat|file|du|df|sort|uniq|true|find(?![^\n]*\s-(?:exec|execdir|delete|ok|fprint)\b)|git\s+(?:status|log|diff|show|branch|rev-parse|ls-files|blame|remote|config\s+--get))(?:\s|$)/
+// An output redirect writes, whatever the command: `echo x > src/a.ts`. Stderr to a file descriptor or /dev/null does not.
+const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
+
+/** Only commands that read: nothing in it can change a file, so there is nothing to snapshot around it. */
+export function isPureRead(command: string): boolean {
+  const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
+  return segments.length > 0 && segments.every(segment => READS.test(segment) && !WRITES_OUTPUT.test(segment))
+}
+
+/** Where the shell is after the whole command, starting from `start`: the next call starts there. */
+export function cwdAfter(command: string, start: string): string {
+  return commandSegments(command).reduce(movedBy, start.replace(/\\/g, '/').replace(/\/$/, ''))
+}
+
+function movedBy(cwd: string, segment: string): string {
+  const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
+  if (cd === null) {
+    return cwd
+  }
+  const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
+  if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
+    return ELSEWHERE
+  }
+  if (cwd === ELSEWHERE) {
+    return /^(?:[A-Za-z]:)?[\\/]/.test(target) ? joinPath('', target) : ELSEWHERE
+  }
+  return joinPath(cwd, target)
 }

@@ -10,6 +10,13 @@ describe('isLoosening', () => {
     expect(isLoosening(parseConfig('{"scope":["src/billing/**","src/cart/**"]}'), parseConfig('{"scope":["src/billing/**"]}'))).toBe(true)
   })
 
+  test('turning the catch check off loosens the guard, and says so; turning it back on does not', () => {
+    expect(isLoosening(DEFAULT_CONFIG, parseConfig('{"catchCheck":false}'))).toBe(true)
+    expect(isLoosening(parseConfig('{"catchCheck":false}'), DEFAULT_CONFIG)).toBe(false)
+    expect(describeConfigChange(DEFAULT_CONFIG, parseConfig('{"catchCheck":false}'))).toBe('catch check on → off')
+    expect(parseConfig('{"catchCheck":"no"}').error).toMatch(/catchCheck must be true or false/)
+  })
+
   test('a stronger mode, a dropped exemption, or a wider scope does not', () => {
     expect(isLoosening(parseConfig('{"mode":"observe"}'), DEFAULT_CONFIG)).toBe(false)
     expect(isLoosening(parseConfig('{"exempt":["src/main.tsx"]}'), DEFAULT_CONFIG)).toBe(false)

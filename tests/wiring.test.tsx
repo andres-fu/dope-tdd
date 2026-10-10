@@ -61,6 +61,50 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/unguarded 1/)
   })
 
+  test('a change seen during a read-only command was not made by it: not charged, and said', async ($, on) => {
+    const world = fakeEngine(on)
+    world.readOnly = true
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    const result = await runBash($, './scripts/inspect.sh')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(result.context?.join('\n')).toMatch(/src\/App\.tsx changed while the command ran, but the command cannot have changed it/)
+  })
+
+  test('a change seen during a pure test run was not made by it; a test run chained to a formatter is charged', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = command => {
+      world.numstat = command.includes('format') ? '3\t1\tsrc/App.tsx\n2\t1\tsrc/Nav.tsx\n' : '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'npx vitest run tests/App.test.tsx | tail -20')
+    const quiet = await runCommand($, 'tdd')
+    await runBash($, 'npx vitest run && npm run format')
+    const charged = await runCommand($, 'tdd')
+
+    expect(quiet.text).toMatch(/unguarded 0/)
+    expect(charged.text).toMatch(/unguarded [12]/)
+  })
+
+  test('reads and pure test runs cost no git snapshot; a command that may write still gets one', async ($, on) => {
+    const world = fakeEngine(on)
+    const snapshots = () => world.gitCalls.filter(argv => argv.includes('--numstat')).length
+
+    await runBash($, 'ls src && cat src/App.tsx | head -20')
+    await runBash($, 'git status && git diff src/App.tsx')
+    await runBash($, 'npx vitest run tests/App.test.tsx | tail -5')
+    const afterReads = snapshots()
+    await runBash($, './scripts/codemod.sh')
+    await runBash($, 'cat src/App.tsx > /tmp/copy.tsx')
+
+    expect(afterReads).toBe(0)
+    expect(snapshots()).toBe(4)
+  })
+
   test('counts a shell change to an unlocked module as test-first', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'App', 'tsx')
@@ -104,7 +148,7 @@ describe('bash bypass', () => {
   test('asks git for paths relative to the session root, so a project inside a bigger repo works', async ($, on) => {
     const world = fakeEngine(on)
 
-    await runBash($, 'git status')
+    await runBash($, './scripts/codemod.sh')
 
     const numstat = world.gitCalls.find(argv => argv.includes('--numstat'))
     expect(numstat).toContain('--relative')
@@ -247,6 +291,22 @@ describe('honest runs', () => {
     expect(status.text).not.toMatch(/red elsewhere/)
   })
 
+  test('a runner that never started is no run, not an unread one, and the agent is told it did not start (seen on dapr-agents)', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+
+    world.bashText = 'C:\\Python314\\python.exe: No module named pytest'
+    const noModule = await runBash($, 'python -m pytest tests/test_a.py')
+    world.bashText = 'error: Failed to spawn: pytest\n  cause: program not found'
+    await runBash($, 'uv run pytest tests/test_a.py')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail\)/)
+    expect(status.text).not.toMatch(/unread/)
+    expect(noModule.context?.join(' ')).toMatch(/the test runner did not start \(No module named pytest\); nothing was counted/)
+  })
+
   test('a run whose output has no summary line counts as nothing, and the agent is told why', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'money/formatCents')
@@ -301,7 +361,9 @@ describe('one module at a time', () => {
     expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
     expect(status.text).toMatch(/never saw red 1/)
     expect(status.text).not.toMatch(/test changed/)
-    expect(status.text).toMatch(/also open: utils\/a \(red\)/)
+    // The whole suite passed, so A's test passed too: its red cycle closed, counted as its own cycle.
+    expect(status.text).not.toMatch(/also open/)
+    expect(status.text).toMatch(/cycles: 2 /)
     expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeUndefined()
     await ui.unmount()
 

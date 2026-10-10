@@ -28,7 +28,7 @@ describe('a Godot project with gdUnit4, no config file', () => {
     const addon = await editAt($, 'addons/gdUnit4/src/core/GdUnitSettings.gd')
     const status = await runCommand($, 'tdd')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
     expect(addon.deny).toBeUndefined()
     expect(status.text).toMatch(/stack: godot \(detected\)/)
     expect(status.text).toMatch(/exempt: addons\/\*\*/)
@@ -94,7 +94,7 @@ describe('a Python project with pytest, no config file', () => {
     await runBash($, 'python -m pytest tests/pkg/test_calc.py')
     const green = await runCommand($, 'tdd')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
     expect(touched.context?.join(' ')).toMatch(/pkg\/calc unlocked/)
     expect(red.text).toMatch(/phase: RED/)
     expect(allowed.deny).toBeUndefined()
@@ -135,5 +135,70 @@ describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
     expect(check).toContain('--filter')
     expect(check).toContain('FullyQualifiedName~BeatDeckTest')
     expect(green.text).toMatch(/caught 1/)
+  })
+})
+
+describe('Python without a venv in the repo', () => {
+  for (const [lock, launcher] of [
+    ['uv.lock', ['uv', 'run', 'python']],
+    ['poetry.lock', ['poetry', 'run', 'python']],
+    ['pdm.lock', ['pdm', 'run', 'python']],
+    ['Pipfile.lock', ['pipenv', 'run', 'python']],
+  ] as const) {
+    test(`${lock}: the catch check runs pytest through ${launcher[0]}, which knows where the environment lives`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.hasVitest = false
+      world.existingFiles.add(`${ROOT}/pyproject.toml`)
+      world.existingFiles.add(`${ROOT}/${lock}`)
+      world.fileContents.set(`${ROOT}/src/pkg/calc.py`, 'def add(a, b):\n    return a + b\n')
+      const ownFailure = PYTEST_FAIL.replace(/tests[\/]test_other\.py/g, 'tests/pkg/test_calc.py')
+
+      await writeAt($, 'tests/pkg/test_calc.py', 'from pkg.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
+      world.bashText = ownFailure
+      await runBash($, `${launcher[0]} run pytest tests/pkg/test_calc.py`)
+      await editAt($, 'src/pkg/calc.py')
+      world.bashText = PYTEST_PASS
+      world.catchRun = { text: ownFailure, exitCode: 1 }
+      await runBash($, `${launcher[0]} run pytest tests/pkg/test_calc.py`)
+
+      const check = world.gitCalls.find(argv => argv.includes('pytest'))
+      expect(check?.slice(0, 5)).toEqual([...launcher, '-m', 'pytest'])
+    })
+  }
+})
+
+describe('the shell gate knows every stack', () => {
+  test('an in-place sed on a Python source with no test touched is refused like an Edit', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonProject(world)
+
+    const result = await runBash($, "sed -i 's/a + b/a - b/' src/pkg/calc.py")
+
+    expect(result.deny).toMatch(/write the failing test first/)
+  })
+})
+
+describe('a Node project tested with ava', () => {
+  test('the catch check finds ava in node_modules and runs the spec file through it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.existingFiles.add(`${ROOT}/node_modules/ava/entrypoints/cli.js`)
+    world.fileContents.set(`${ROOT}/src/utils/path.ts`, 'export const a = 1')
+
+    await writeAt($, 'src/utils/path.spec.ts', "test('x', t => { t.is(1, 2) })")
+    world.bashFails = true
+    world.bashText = '  ✘ [fail]: x\n  ─\n\n  src/utils/path.spec.ts:1\n\n  ─\n\n  1 test failed\n'
+    await runBash($, 'npx ava src/utils/path.spec.ts')
+    await editAt($, 'src/utils/path.ts')
+    world.bashFails = false
+    world.bashText = '  ✔ x\n  ─\n\n  1 test passed\n'
+    world.baselineRun = { text: '  ✔ x\n  ─\n\n  1 test passed\n', exitCode: 0 }
+    world.catchRun = { text: '  ✘ [fail]: x\n  ─\n\n  src/utils/path.spec.ts:1\n\n  ─\n\n  1 test failed\n', exitCode: 1 }
+    await runBash($, 'npx ava src/utils/path.spec.ts')
+    const status = await runCommand($, 'tdd')
+
+    const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('ava/entrypoints/cli.js')))
+    expect(check).toEqual(['node', `${ROOT}/node_modules/ava/entrypoints/cli.js`, 'src/utils/path.spec.ts'])
+    expect(status.text).toMatch(/caught 1/)
   })
 })

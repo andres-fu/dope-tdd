@@ -48,6 +48,8 @@ export const INITIAL_STATS: TddStats = {
   missed: 0,
   unverified: 0,
   refactors: 0,
+  checkMsTotal: 0,
+  worktreeChecks: 0,
   lastCatch: null,
   lastCycle: null,
   current: null,
@@ -110,6 +112,8 @@ export function normalizeStats(stored: unknown): TddStats {
     missed: pick('missed', isNumber),
     unverified: pick('unverified', isNumber),
     refactors: pick('refactors', isNumber),
+    checkMsTotal: pick('checkMsTotal', isNumber),
+    worktreeChecks: pick('worktreeChecks', isNumber),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
@@ -242,7 +246,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere
   if (module === undefined || prev === null) {
     return logged(base, 'pass', nowMs, module)
   }
-  const state: ModuleState = { ...prev, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false, editedSinceRun: false }
+  const state: ModuleState = { ...prev, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false, editedSinceRun: false, redFailures: [] }
   return logged(withModule(base, module, state), 'pass', nowMs, module)
 }
 
@@ -302,6 +306,56 @@ export function recordBlocked(s: TddStats, module: string, nowMs: number): TddSt
 export function recordRedUnlock(s: TddStats, module: string, testPath: string, makeCurrent: boolean): TddStats {
   const unlocked = { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
   return makeCurrent ? mirrored({ ...unlocked, current: { module, testPath } }, moduleState(s, module)) : unlocked
+}
+
+/** A test that imports this module covers it: touching that test unlocks the module, pointing at that test. */
+export function recordImportUnlock(s: TddStats, module: string, testPath: string): TddStats {
+  return s.unlocked[module] !== undefined ? s : { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
+}
+
+/** A failing test that imports this module is a red for it too: its cycle saw red, so its green will say so. */
+export function recordRedFor(s: TddStats, module: string, nowMs: number): TddStats {
+  const prev = moduleState(s, module)
+  return withModule(s, module, { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false })
+}
+
+/**
+ * A test file that passed closes the open cycle of every other module it is the test for, so none is left red behind it.
+ * A null path is a green run of the whole suite: every test passed, so every open cycle closes.
+ * A cycle closed this way counts as a cycle of its own, unless its test is the current module's test: that is one piece of work.
+ */
+export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number): TddStats {
+  const norm = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+  const same = (path: string) => testPath === null || norm(path) === norm(testPath)
+  const exceptTest = except === undefined ? undefined : s.unlocked[except]
+  return Object.entries(s.modules).reduce((acc, [module, state]) => {
+    const path = acc.unlocked[module]
+    if (module === except || path === undefined || !same(path) || state.cycleStartMs === null) {
+      return acc
+    }
+    const closed = withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })
+    if (exceptTest !== undefined && norm(exceptTest) === norm(path)) {
+      return closed
+    }
+    return {
+      ...closed,
+      cycles: closed.cycles + 1,
+      cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs),
+      neverSawRed: state.sawRed ? closed.neverSawRed : closed.neverSawRed + 1,
+      unproven: state.sawRed || closed.unproven.includes(module) ? closed.unproven : [...closed.unproven, module],
+    }
+  }, s)
+}
+
+/** The tests a red run of the module's own file named as failing, gathered over the cycle. */
+export function recordRedNames(s: TddStats, module: string, names: readonly string[]): TddStats {
+  const prev = moduleState(s, module)
+  return withModule(s, module, { ...prev, redFailures: [...new Set([...(prev.redFailures ?? []), ...names])] })
+}
+
+/** The failures left at a green that were all failing in the red: they were there before the change. */
+export function recordKnownFailures(s: TddStats, module: string, names: readonly string[]): TddStats {
+  return withModule(s, module, { ...moduleState(s, module), knownFailures: [...names], redFailures: [] })
 }
 
 /** A run that named a test file: that module is current, and the band mirrors its cycle. */

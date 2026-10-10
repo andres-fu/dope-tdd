@@ -25,6 +25,32 @@ describe('catches the change', () => {
     expect(result.context?.join(' ')).toMatch(/its test catches the change/)
   })
 
+  test('the check first runs the test as it stands under its own command; a red there is no verdict, and nothing is reverted', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.baselineRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes).toEqual([])
+    expect(status.text).toMatch(/caught 0/)
+    expect(status.text).toMatch(/unverified 1/)
+  })
+
+  test('the baseline runs once per module in a session, not on every green', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'pass')
+
+    expect(world.baselineCalls).toBe(1)
+  })
+
   test('a test that still passes with the change undone is reported as missed, and the agent is told to fix the test', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
@@ -135,8 +161,11 @@ describe('catches the change', () => {
     const runsAfter = world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).length
 
     expect(runsAfter).toBe(runsBefore)
-    expect(status.text).toMatch(/refactors 1/)
+    // Never beside caught and proven: a refactor is not a verdict on the test.
+    expect(status.text).toMatch(/^refactors: 1 \(changed while green with the test untouched; not re-checked\)$/m)
+    expect(status.text).not.toMatch(/catch check:.*refactors/)
     expect(result.context?.join(' ')).toMatch(/a refactor, not re-checked/)
+    expect(result.context?.join(' ')).toMatch(/If it changed what the code does, that has no test yet: write one first/)
   })
 
   test('restoring the original text after breaking it on purpose leaves nothing to revert: no file is touched, and the red is the proof', async ($, on) => {
@@ -249,7 +278,8 @@ describe('the revert is safe', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+    // Only the baseline ran, on the code as it stands; nothing ran against a revert that never happened.
+    expect(world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).length).toBe(world.baselineCalls)
     expect(result.context?.join(' ')).toMatch(/Could not verify.*revert failed/)
   })
 
@@ -439,8 +469,10 @@ describe('/tdd receipt', () => {
     expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
     expect(receipt.text).toMatch(/caught 1/)
     expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
-    expect(receipt.text).toMatch(/git stash push -- src\/utils\/formatDuration\.ts && npx vitest run tests\/utils\/formatDuration\.test\.ts; git stash pop/)
-    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code as it was before the change and fails/)
+    // Never the stash: on a committed change it saves nothing, and the pop applies the reviewer's own stash.
+    expect(receipt.text).not.toMatch(/stash/)
+    expect(receipt.text).toMatch(/git checkout main -- src\/utils\/formatDuration\.ts\nnpx vitest run tests\/utils\/formatDuration\.test\.ts\ngit checkout HEAD -- src\/utils\/formatDuration\.ts/)
+    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code on main, before the change, and fails/)
   })
 
   test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {
@@ -492,5 +524,116 @@ describe('PROVEN: break, red, restore, green', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).not.toMatch(/proven 1/)
+  })
+})
+
+describe('the catch check stays out of the way', () => {
+  test('"catchCheck": false in dope-tdd.json: a green is never reverted or re-run, and the status says the check is off', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"catchCheck":false}')
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(world.baselineCalls).toBe(0)
+    expect(status.text).toMatch(/catch check: off/)
+  })
+
+  test('a session that ends mid-check puts the change back on its way out', async ($, on) => {
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
+    })
+    world.fileContents.set(SOURCE, 'export const a = 1')
+
+    await $.session.end({ reason: 'prompt_input_exit', sessionId: 's', resume: { id: 's' } } as never)
+
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+  })
+
+  test('a change kept aside goes under the home folder, never into the repository where git add -A would take it', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    await fixUnderGuard($, world)
+    world.onCatchRun = () => {
+      world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
+    }
+
+    await runTests($, world, 'pass')
+
+    const kept = world.writes.find(([, text]) => text === 'export const b = 1')
+    expect(kept?.[0]).toBe('C:/Users/tester/.dope-tdd/kept/throughline/src/utils/formatDuration.ts')
+    expect(world.toasts.some(t => /your change is in C:\/Users\/tester\/\.dope-tdd\/kept\/throughline\/src\/utils\/formatDuration\.ts/.test(t))).toBe(true)
+  })
+})
+
+describe('the catch check in a worktree, never in your files', () => {
+  const WT = `${ROOT}/.git/dope-tdd/wt`
+  const gitRepo = (world: ReturnType<typeof fakeEngine>) => world.existingFiles.add(`${ROOT}/.git/HEAD`)
+
+  test('a vitest project in a git checkout: your file is never written; the old code runs in a worktree that is removed after', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(world.writes).toContainEqual([`${WT}/src/utils/formatDuration.ts`, 'export const a = 1'])
+    const check = world.gitCalls.findIndex((argv, i) => argv.some(arg => arg.includes('vitest.mjs')) && world.runCwds[i] === WT)
+    expect(check).toBeGreaterThan(-1)
+    expect(world.gitCalls.some(argv => argv.join(' ').startsWith('git worktree add --detach'))).toBe(true)
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
+    expect(status.text).toMatch(/caught 1/)
+    await $.session.end({ reason: 'other', sessionId: 'wt', resume: { id: 'wt' } } as never)
+    const record = world.writes.find(([path]) => path.includes('/.dope-tdd/sessions/'))
+    expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(1)
+  })
+
+  test('your uncommitted and untracked files go into the worktree with it, so the test runs on what you have', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    world.fileContents.set(`${ROOT}/src/other.ts`, 'export const other = 2')
+    world.fileContents.set(`${ROOT}/tests/utils/formatDuration.test.ts`, "it('x', () => {})")
+    world.dirty = 'src/other.ts\nsrc/utils/formatDuration.ts\n'
+    world.untracked = 'tests/utils/formatDuration.test.ts\n'
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+
+    expect(world.writes).toContainEqual([`${WT}/src/other.ts`, 'export const other = 2'])
+    expect(world.writes).toContainEqual([`${WT}/tests/utils/formatDuration.test.ts`, "it('x', () => {})"])
+  })
+
+  test('a test that is not green in the worktree as it stands falls back to the check in place, never to a verdict from a broken setup', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.baselineRunIn.set(WT, { text: ' Tests  1 failed (1)\n', exitCode: 1 })
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === SOURCE).map(([, text]) => text)).toEqual(['export const a = 1', 'export const b = 1'])
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(status.text).toMatch(/caught 1/)
+  })
+
+  test('a run that crashes still removes the worktree, and is unverified', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.catchRun = 'reject'
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(status.text).toMatch(/unverified 1/)
   })
 })

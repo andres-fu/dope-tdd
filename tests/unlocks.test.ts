@@ -33,6 +33,24 @@ describe('hasAssertion', () => {
   test('a test body that only calls the code asserts nothing', () => {
     expect(hasAssertion("it('works', () => {\n  formatDuration(14)\n})\n")).toBe(false)
   })
+
+  test('sees assertions in every stack, so a real C#, GDScript or pytest test is never called hollow', () => {
+    for (const source of [
+      'AssertThat(TipFormat.FormatTips(1.0)).IsEqual("$1");',
+      'AssertFloat(VanCost.CostFor(40.0, 3.0, 0)).IsEqualApprox(40.0, 1e-9);',
+      'AssertThrown(() => VanCost.CostFor(1, 1, -1)).IsInstanceOf<ArgumentOutOfRangeException>();',
+      'Assert.Equal(3, Add(1, 2));',
+      'def test_add():\n    assert add(1, 2) == 3\n',
+      'func test_jump():\n\tassert_int(1).is_equal(1)\n',
+    ]) {
+      expect(hasAssertion(source)).toBe(true)
+    }
+  })
+
+  test('a mention of assertions in another stack is still not an assertion', () => {
+    expect(hasAssertion('using static GdUnit4.Assertions;\n[TestCase]\npublic void Runs() { VanCost.CostFor(1, 1, 0); }')).toBe(false)
+    expect(hasAssertion('import pytest\n\ndef test_runs():\n    add(1, 2)\n')).toBe(false)
+  })
 })
 
 describe('freshUnlocks', () => {

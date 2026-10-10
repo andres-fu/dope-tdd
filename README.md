@@ -146,7 +146,7 @@ fixture.
 
 Above the prompt, three rows: the phase (WRITING, RED, GREEN, PAUSED, IDLE)
 with the run trail; the current module with its verdict (SAW RED or NEVER
-SAW RED, then CAUGHT, MISSED, UNVERIFIED or REFACTOR from the catch check);
+SAW RED, then CAUGHT, MISSED or UNVERIFIED from the catch check, or REFACTOR, in plain text, for a change made while green that was not re-checked);
 and the session tally. `/tdd why` explains every word, `/tdd` prints the
 full status and event log, and Claude reads the same lines in its tool
 results as it works.
@@ -166,17 +166,36 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 
 - `mode`: `enforce` (default) denies a source edit until its test is
   touched; `warn` allows it, counts it as unguarded, and tells Claude what to
-  write next; `observe` allows it, counts it, and says nothing, for a
-  baseline before a team turns the guard on.
+  write next; `observe` allows it, counts it, and says nothing: no advice,
+  no briefing, and no catch check, so nothing on disk is ever touched. Use it
+  for a baseline of how an agent works on its own before a team turns the
+  guard on.
 - `scope`: when set, the mode applies only inside these paths and everything
   else is observed. This is how to bring the guard into one area of an old
   codebase at a time.
 - `exempt`: paths the guard never touches or counts, such as an entry file
   or generated code. Prefer this to pausing; a pause hides edits, an
   exemption is on the record.
+- `catchCheck`: `false` turns the catch check off, for a repo whose dev
+  server, `tsc --watch` or test watcher would rebuild on every revert. A
+  green then stops at GREEN; turning it off is recorded as a loosening.
 
-Everything else, including the catch check and the evidence, runs in every
-mode. Modes only decide whether an edit is denied and whether Claude is told.
+The catch check writes the old code into your file for the length of one
+test run, then puts your change back. If the session ends mid-check, the
+change is put back on the way out (or at the next session start). If the
+file changed under it, your file is left alone and the change is kept in
+`~/.dope-tdd/kept/<repo>/`, never inside the repository.
+
+The counts run in every mode. Modes decide whether an edit is denied, whether
+Claude is told, and whether the catch check runs: `warn` and `enforce` check,
+`observe` only measures and touches nothing on disk in your project.
+
+## Your record
+
+When a session that did anything ends, Dope TDD writes its counts and
+receipt to one file on your machine, `~/.dope-tdd/sessions/<date>-<session>.json`.
+It never goes in the repository and never leaves your computer. Set
+`DOPE_TDD_LOG=off` to keep nothing.
 
 ## Develop
 

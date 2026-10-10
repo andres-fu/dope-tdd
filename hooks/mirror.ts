@@ -4,6 +4,15 @@ import type { Layout } from './layout'
 import { stackOf } from './stacks'
 import type { StackName } from './stacks'
 
+/** The path of the file a test is named after: `a.test.ts` → `a.ts`, `test_a.py` → `a.py`, `ATest.cs` → `A.cs`. */
+function untested(path: string): string {
+  return path
+    .replace(/\.(?:test|spec)(\.[cm]?[jt]sx?)$/, '$1')
+    .replace(/(^|\/)test_([^/]+\.py)$/, '$1$2')
+    .replace(/_test(\.(?:py|gd))$/, '$1')
+    .replace(/(?:Tests?|IT)(\.(?:cs|java|gd))$/, '$1')
+}
+
 export { isTestRun } from './runners'
 
 export type ClassifiedPath =
@@ -69,6 +78,16 @@ export function classifyPath(root: string, path: string, config: LayoutConfig = 
   const test = matchTemplate(config.layout.test, split.rest, exts)
   if (test !== null) {
     return { kind: 'test', module: withPkg(split.pkg, reduce(test.module)) }
+  }
+  // A file named like a test is never source, whatever the layout says: `src/foo.test.ts` under the default
+  // mirror layout is the colocated test for foo, and `tests/foo.spec.ts` is foo's test too.
+  if (stackOf(config.stack).testFile.test(split.rest)) {
+    const stem = untested(split.rest)
+    const asSource = matchTemplate(config.layout.source, stem, exts)
+    const asTest = matchTemplate(config.layout.test, stem.replace(/(\.[^./]+)$/, '.test$1'), exts)
+    const module = asSource?.module ?? asTest?.module
+    // Named like a test but in no place this layout knows: nobody's test, and still nobody's source.
+    return module === undefined ? { kind: 'other' } : { kind: 'test', module: withPkg(split.pkg, reduce(module)) }
   }
   // A file inside a tests folder of its own that is not a test (a fixture, a conftest) is nobody's source.
   const testsRoot = literalRoot(config.layout.test)

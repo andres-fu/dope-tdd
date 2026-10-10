@@ -1,6 +1,6 @@
 import { CONFIG_FILE, describeLayout, globMatches } from './config'
 import type { GuardConfig } from './config'
-import { LAYOUTS, baseName } from './layout'
+import { LAYOUTS, baseName, matchTemplate } from './layout'
 import type { Layout, NodeLayoutName } from './layout'
 import { classifyPath, sourcePathFor, splitRoot, testFileFor } from './mirror'
 import type { LayoutConfig } from './mirror'
@@ -117,7 +117,8 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
     let matched = 0
     for (const file of testFiles) {
       const target = classifyPath(root, `${root}/${file}`, config)
-      if (target.kind !== 'test') {
+      // Only a test the layout's own template places is evidence for that layout; the named-like-a-test rescue is not.
+      if (target.kind !== 'test' || matchTemplate(layout.test, file, stack.exts) === null) {
         continue
       }
       matched++

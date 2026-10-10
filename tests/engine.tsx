@@ -50,12 +50,33 @@ export type FakeWorld = {
   numstat: string
   untracked: string
   gitCalls: (readonly string[])[]
+  /** The working directory of each process run, in order, beside `gitCalls`. */
+  runCwds: string[]
+  /** Git refs and objects for the shared check lock; `gitUnavailable` makes the folder not a git checkout. */
+  refs: Map<string, string>
+  objects: Map<string, string>
+  gitUnavailable: boolean
+  /** Remote URLs by name, answered to `git config --get remote.<name>.url`. */
+  remotes: Map<string, string>
   /** When true the engine cannot say where the project is, so every guard throws before it decides. */
   rootFails: boolean
   writes: [string, string][]
   catchRun: { text: string; exitCode: number } | 'reject'
+  /** The check's baseline: the test run as it stands, before anything is reverted. Green unless a test says otherwise. */
+  baselineRun: { text: string; exitCode: number }
+  baselineCalls: number
+  /** What the plugin's own run of a test file prints when the agent's output was cut and it needs every failing name. */
+  namesRun: string
+  namesCalls: number
+  /** A baseline answered differently in one folder, by its cwd: the catch-check worktree, say. */
+  baselineRunIn: Map<string, { text: string; exitCode: number }>
+  /** Tracked files changed since HEAD, and deleted ones, as `git diff --name-only HEAD` lists them. */
+  dirty: string
+  deleted: string
   hasVitest: boolean
   onBash: (command: string) => void
+  /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
+  readOnly: boolean
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
   onCatchRun: () => void | Promise<void>
   /** Return true to make a write to that path fail. */
@@ -80,11 +101,24 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     numstat: '',
     untracked: '',
     gitCalls: [],
+    runCwds: [],
+    refs: new Map(),
+    objects: new Map(),
+    gitUnavailable: false,
+    remotes: new Map(),
     rootFails: false,
     writes: [],
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
+    baselineRun: { text: ' Tests  1 passed (1)\n', exitCode: 0 },
+    baselineCalls: 0,
+    namesRun: '',
+    namesCalls: 0,
+    baselineRunIn: new Map(),
+    dirty: '',
+    deleted: '',
     hasVitest: true,
     onBash: () => {},
+    readOnly: false,
     onCatchRun: () => {},
     writeFails: () => false,
     unreadable: new Set(),
@@ -95,6 +129,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('ui.log', (_$, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
     return { value: undefined } as never
@@ -107,11 +142,62 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
+    world.runCwds.push(fakePath(String((e as { init?: { cwd?: unknown } }).init?.cwd ?? '')))
+    if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_NAMES === '1') {
+      world.namesCalls++
+      return { value: { exitCode: 1, stdout: world.namesRun, stderr: '' } } as never
+    }
+    if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
+      world.baselineCalls++
+      const run = world.baselineRunIn.get(world.runCwds[world.runCwds.length - 1] ?? '') ?? world.baselineRun
+      return { value: { exitCode: run.exitCode, stdout: run.text, stderr: '' } } as never
+    }
     if (e.argv[0] !== 'git') {
       await world.onCatchRun()
       return world.catchRun === 'reject'
         ? { deny: 'timed out' }
         : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
+    }
+    const [, verb, ...rest] = e.argv
+    const answer = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } }) as never
+    if (verb === 'hash-object') {
+      if (world.gitUnavailable) {
+        return answer(128)
+      }
+      const sha = `sha${world.objects.size + 1}`
+      world.objects.set(sha, String((e as { init?: { stdin?: unknown } }).init?.stdin ?? ''))
+      return answer(0, `${sha}\n`)
+    }
+    if (verb === 'update-ref') {
+      if (rest[0] === '-d') {
+        const [, ref, expected] = rest
+        if (ref === undefined || world.refs.get(ref) !== expected) return answer(1)
+        world.refs.delete(ref)
+        return answer(0)
+      }
+      const [ref, next, expected] = rest
+      if (ref === undefined || next === undefined) return answer(128)
+      const ok = expected === '' ? !world.refs.has(ref) : world.refs.get(ref) === expected
+      if (!ok) return answer(expected === '' ? 128 : 1)
+      world.refs.set(ref, next)
+      return answer(0)
+    }
+    if (verb === 'rev-parse') {
+      const ref = rest[rest.length - 1] ?? ''
+      const sha = world.refs.get(ref)
+      return sha === undefined ? answer(1) : answer(0, `${sha}\n`)
+    }
+    if (verb === 'cat-file') {
+      const sha = rest[rest.length - 1] ?? ''
+      const body = world.objects.get(sha)
+      return body === undefined ? answer(128) : answer(0, body)
+    }
+    if (verb === 'config') {
+      const url = world.remotes.get((rest[rest.length - 1] ?? '').replace(/^remote\.|\.url$/g, ''))
+      return url === undefined ? answer(1) : answer(0, `${url}\n`)
+    }
+    if (verb === 'diff' && e.argv.includes('--name-only')) {
+      return answer(0, e.argv.includes('--diff-filter=D') ? world.deleted : world.dirty)
     }
     const isNumstat = e.argv.includes('--numstat')
     return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never
@@ -136,7 +222,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('fs.exists', (_$, e) => {
     const path = fakePath(e.path)
     return {
-      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path.endsWith('vitest.mjs')),
+      value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path === `${ROOT}/node_modules/vitest/vitest.mjs`),
     } as never
   })
   on('fs.stat', () => ({
@@ -190,7 +276,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       return { isError: true as const, result: 'FAIL', text: world.bashText || FAIL_SUMMARY }
     }
     // A real runner always prints its summary; a shell command that is not a test run prints whatever it prints.
-    return { result: {} as never, text: world.bashText || PASS_SUMMARY }
+    return { result: {} as never, text: world.bashText || PASS_SUMMARY, ...(isShell && world.readOnly ? { isReadOnly: true as const } : {}) }
   })
   return world
 }

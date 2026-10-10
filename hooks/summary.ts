@@ -56,9 +56,13 @@ function eventLines(s: TddStats, nowMs: number): string[] {
 }
 
 function catchLine(s: TddStats): string[] {
-  return s.caught + s.proven + s.missed + s.unverified + s.refactors === 0
-    ? []
-    : [`catch check: caught ${s.caught} · proven ${s.proven} · missed ${s.missed} · unverified ${s.unverified} · refactors ${s.refactors}`]
+  const verdicts =
+    s.caught + s.proven + s.missed + s.unverified === 0
+      ? []
+      : [`catch check: caught ${s.caught} · proven ${s.proven} · missed ${s.missed} · unverified ${s.unverified}`]
+  // A refactor is a fact about the change, not a verdict on the test, so it never sits beside caught and proven.
+  const refactors = s.refactors === 0 ? [] : [`refactors: ${s.refactors} (changed while green with the test untouched; not re-checked)`]
+  return [...verdicts, ...refactors]
 }
 
 function workaroundLine(s: TddStats): string[] {

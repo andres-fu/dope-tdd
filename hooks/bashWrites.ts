@@ -1,6 +1,8 @@
 import { ELSEWHERE, commandSegments, locatedSegments } from './shell'
+import { STACKS } from './stacks'
 
-const PATH_TO_SOURCE = String.raw`((?:[A-Za-z]:)?(?:[\w.~-]*\/)*src\/[\w./-]+?\.tsx?)`
+// A code file of any stack, anywhere: the caller's layout decides which are source. Test files are dropped below.
+const PATH_TO_SOURCE = String.raw`((?:[A-Za-z]:)?(?:[\w.~@-]*\/)*[\w.@-]+?\.(?:[cm]?[jt]sx?|py|gd|cs|java|kts?))(?![\w.-])`
 const SOURCE_PATH = new RegExp(String.raw`(?:^|[\s'"=(])` + PATH_TO_SOURCE + String.raw`(?=$|[\s'"),;])`, 'g')
 const IN_PLACE_SED = /\bsed\s+(?:-\w+\s+)*-i/
 const SCRIPT_WRITE = /open\([^)]*['"][wa]\+?['"]|writeFileSync|writeFile\(|(?<!stdout|stderr)\.write\(|write_text\(/
@@ -13,7 +15,7 @@ const COPY_OR_MOVE_TARGET = new RegExp(
 const PARENT_SEGMENT = /(?:^|\/)\.\.(?:\/|$)/
 
 function isSourceFile(path: string): boolean {
-  return !path.endsWith('.d.ts') && !PARENT_SEGMENT.test(path)
+  return !path.endsWith('.d.ts') && !PARENT_SEGMENT.test(path) && !Object.values(STACKS).some(stack => stack.testFile.test(path))
 }
 
 function captures(pattern: RegExp, text: string): string[] {

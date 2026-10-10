@@ -1,6 +1,6 @@
 import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome'
 import type { RunOutcome } from './runOutcome'
-import { ELSEWHERE, locatedSegments } from './shell'
+import { ELSEWHERE, commandSegments, executedText, locatedSegments } from './shell'
 import { STACKS } from './stacks'
 import type { StackName } from './stacks'
 
@@ -13,9 +13,13 @@ import type { StackName } from './stacks'
  * replaced the first time a real run is on record.
  */
 
-export type RunnerKind = 'vitest' | 'jest' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
+export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
 
-export type RunnerOptions = { godot?: string | null }
+/** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
+export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
+
+/** A lockfile that names how this project runs its tools: `uv.lock` means `uv run python`. */
+export type Launcher = { marker: string; argv: readonly string[] }
 
 export type Runner = {
   kind: RunnerKind
@@ -29,6 +33,10 @@ export type Runner = {
   /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
   tools: readonly string[]
   fallback: string
+  /** The fallback outside Windows, when it differs: stock macOS has `python3` and no `python`. */
+  fallbackPosix?: string
+  /** Lockfiles that name a launcher, tried when none of `tools` is found: the environment lives outside the repo. */
+  launchers?: readonly Launcher[]
   /** A shell command that runs this runner, anchored at a command start. */
   command: RegExp
   /** `tool` is an absolute path when one of `tools` was found, else `fallback`. `testPath` is relative to the project root. */
@@ -42,9 +50,15 @@ export type Runner = {
 
 const START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
 const PATHED = String.raw`(?:[\w./\\-]*[\\/])?`
-const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
-const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
-const PYTEST = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run\s+)?(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
+const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest|ava)(?=\s|$)|node\s+${PATHED}ava[\\/]entrypoints[\\/]cli\.m?js(?=\s|$)`
+// Flags before the script (`--filter api`, `-F @acme/api`, `-r`, `--recursive`) and `yarn workspace <name>`.
+const PM_FLAGS = String.raw`(?:\s+(?:--?[\w-]+(?:=\S+)?(?:\s+(?!(?:run|test)\b)[^\s;&|-]\S*)?|workspace\s+\S+))*`
+const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)${PM_FLAGS}\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
+// Monorepo task runners asked for the test task.
+const WORKSPACE_RUN = String.raw`(?:(?:npx|pnpm(?:\s+exec)?|yarn)\s+)?(?:turbo(?:\s+run)?\s+test(?::[\w-]+)?(?=\s|$)|nx\s+(?:test(?=\s|$)|run\s+[\w@/.-]+:test(?::[\w-]+)?(?=\s|$)|run-many\s+[^;&|\n]*?(?:-t|--targets?)[=\s]+test(?=[\s,]|$))|lerna\s+run\s+test(?=\s|$))`
+// A Python launcher, with its own flags before the program: `uv run --group test python -m pytest`, `poetry run -q pytest`.
+const PY_LAUNCHER = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run(?:\s+-[^\s;&|]+(?:\s+(?!-|python|py\b|pytest)[^\s;&|]+)?)*\s+)?`
+const PYTEST = String.raw`${PY_LAUNCHER}(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
 const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
 const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
 const DOTNET = String.raw`dotnet\s+test(?=\s|$)`
@@ -53,7 +67,43 @@ function commandOf(body: string): RegExp {
   return new RegExp(`${START}(?:${body})`)
 }
 
-const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}`)
+const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}|${WORKSPACE_RUN}`)
+
+// turbo prefixes each line `api:test: `, pnpm -r `server test: `; the task starts with a letter, so `src/a.ts:12:` is no prefix.
+const TASK_PREFIX = /^(?:[@\w./-]+:[A-Za-z][\w-]*(?::[\w-]+)*:|[@\w./-]+ test(?::[\w-]+)?:)[ \t]?/gm
+
+const TARGETS = [
+  /(?:^|\s)(?:-w|--workspace)(?:=|\s+)(\S+)/,
+  /(?:^|\s)(?:--filter|-F)(?:=|\s+)(\S+)/,
+  /\byarn\s+workspace\s+(\S+)/,
+  /\bnx\s+test\s+([^\s-]\S*)/,
+  /\bnx\s+run\s+([\w@/.-]+):test\b/,
+]
+
+/**
+ * The package a workspace test run is aimed at (`npm test -w server`, `pnpm --filter @acme/api test`), as written:
+ * a folder or a package name. pnpm's `...` graph markers and quotes are dropped. Null for a run aimed at no one package.
+ */
+export function workspaceTarget(command: string): string | null {
+  for (const segment of commandSegments(command).map(executedText)) {
+    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+      continue
+    }
+    for (const pattern of TARGETS) {
+      const found = pattern.exec(segment)?.[1]
+      if (found !== undefined) {
+        return found.replace(/^['"]|['"]$/g, '').replace(/^\.\.\.|\.\.\.$/g, '')
+      }
+    }
+    return null
+  }
+  return null
+}
+
+/** The output with each line's workspace prefix taken off, so the runner's own lines read as they would alone. */
+export function withoutTaskPrefixes(output: string): string {
+  return output.replace(TASK_PREFIX, '')
+}
 
 function forwardSlashes(path: string): string {
   return path.replace(/\\/g, '/')
@@ -61,6 +111,28 @@ function forwardSlashes(path: string): string {
 
 function unique(paths: string[]): string[] {
   return [...new Set(paths)]
+}
+
+// --- ava: tests/fixtures/runnerOutputs.ts holds the real output these were written from (ava 8, Windows).
+const AVA_FAILED = /^\s*\d+\s+(?:tests? failed|uncaught exceptions?|unhandled rejections?)\b/m
+const AVA_PASSED = /^\s*\d+\s+tests? passed\b/m
+const AVA_NONE = /Couldn't find any files to test/
+// In a failure's detail block, the file and line on a line of their own: `source\utils\a.spec.ts:3`.
+const AVA_FAILED_FILE = /^\s*((?:[A-Za-z]:)?[\w./\\-]+\.(?:spec|test)\.[cm]?[jt]sx?):\d+\s*$/gm
+
+function readAva(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  if (AVA_NONE.test(text)) {
+    return 'none'
+  }
+  if (AVA_FAILED.test(text)) {
+    return 'fail'
+  }
+  return AVA_PASSED.test(text) ? 'pass' : 'unknown'
+}
+
+function avaFailedFiles(output: string): string[] {
+  return unique([...stripAnsi(output).matchAll(AVA_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])])))
 }
 
 // --- pytest: tests/fixtures/runnerOutputs.ts holds the real output these were written from.
@@ -254,6 +326,21 @@ export const RUNNERS: readonly Runner[] = [
     provisional: false,
   },
   {
+    kind: 'ava',
+    describe: testPath => `npx ava ${testPath}`,
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
+    stack: 'node',
+    markers: ['node_modules/ava/entrypoints/cli.js', 'node_modules/ava/entrypoints/cli.mjs'],
+    tools: ['node_modules/ava/entrypoints/cli.js', 'node_modules/ava/entrypoints/cli.mjs'],
+    fallback: 'node_modules/ava/entrypoints/cli.js',
+    command: NODE_COMMAND,
+    argv: (_root, testPath, tool) => ['node', tool, testPath],
+    read: readAva,
+    failedFiles: avaFailedFiles,
+    provisional: false,
+  },
+  {
     kind: 'pytest',
     describe: testPath => `python -m pytest ${testPath}`,
     alsoFor: [],
@@ -262,8 +349,15 @@ export const RUNNERS: readonly Runner[] = [
     markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
     tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
     fallback: 'python',
+    fallbackPosix: 'python3',
+    launchers: [
+      { marker: 'uv.lock', argv: ['uv', 'run', 'python'] },
+      { marker: 'poetry.lock', argv: ['poetry', 'run', 'python'] },
+      { marker: 'pdm.lock', argv: ['pdm', 'run', 'python'] },
+      { marker: 'Pipfile.lock', argv: ['pipenv', 'run', 'python'] },
+    ],
     command: commandOf(PYTEST),
-    argv: (_root, testPath, tool) => [tool, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', testPath],
+    argv: (_root, testPath, tool, options) => [...(options.launcher ?? [tool]), '-m', 'pytest', '-q', '-p', 'no:cacheprovider', testPath],
     read: readPytest,
     failedFiles: pytestFailedFiles,
     provisional: false,
@@ -353,6 +447,11 @@ export function runnerNamed(kind: RunnerKind): Runner {
   return runner
 }
 
+/** The program on PATH when the project names none: a root with a drive letter is Windows, anything else is POSIX. */
+export function fallbackTool(runner: Runner, root: string): string {
+  return /^[A-Za-z]:/.test(root) ? runner.fallback : (runner.fallbackPosix ?? runner.fallback)
+}
+
 /** The runners that can run this stack's tests; with a test path, only those that run its extension. */
 export function runnersFor(stack: StackName, testPath?: string): readonly Runner[] {
   const ext = testPath === undefined ? null : forwardSlashes(testPath).replace(/^.*\./, '')
@@ -360,14 +459,24 @@ export function runnersFor(stack: StackName, testPath?: string): readonly Runner
 }
 
 /** A shell command that runs any known runner, or a package's test script. */
+// What may sit beside a test run without writing anything: a cd, and the filters its output is piped through.
+const HARMLESS = /^\s*(?:cd|echo|tail|head|grep|sort|uniq|wc|true)(?:\s|$)/
+
+/** Only test runs, cds and output filters: nothing in it writes source, so a change seen while it ran came from elsewhere. */
+export function isPureTestRun(command: string): boolean {
+  const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
+  const runs = (segment: string) => RUNNERS.some(runner => runner.command.test(segment))
+  return segments.some(runs) && segments.every(segment => runs(segment) || HARMLESS.test(segment))
+}
+
 export function isTestRun(command: string): boolean {
-  return RUNNERS.some(runner => runner.command.test(command))
+  return commandSegments(command).some(segment => RUNNERS.some(runner => runner.command.test(executedText(segment))))
 }
 
 /** The first reader that recognises the output decides; readers that see nothing of theirs say unknown and pass. */
 export function readRun(output: string): RunOutcome {
   for (const runner of RUNNERS) {
-    const outcome = runner.read(output)
+    const outcome = runner.read(withoutTaskPrefixes(output))
     if (outcome !== 'unknown') {
       return outcome
     }
@@ -375,8 +484,48 @@ export function readRun(output: string): RunOutcome {
   return 'unknown'
 }
 
+// The name of each failed test, by the shape each runner prints it in (tests/fixtures/runnerOutputs.ts has them).
+const FAILED_TEST_NAMES: readonly RegExp[] = [
+  // ava: `✘ [fail]: name`, sometimes followed by the reason it appends
+  /^\s*✘ \[fail\]: (.+?)(?:\s+(?:Error thrown in test|Assertion failed|Rejected promise returned by test|Test timed out|Difference \(.*))?\s*$/gm,
+  // pytest: `FAILED file::test - message` and `ERROR file::test`
+  /^(?:FAILED|ERROR)\s+(\S+::\S+)/gm,
+  // vitest: ` FAIL  file > describe > name`
+  /^\s*FAIL\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?\s+>\s+.+?)\s*$/gm,
+  // jest: `● describe › name` (not "Test suite failed to run")
+  /^\s*●\s+(?!Test suite failed to run)(.+?)\s*$/gm,
+  // gdUnit4: `suite > test   FAILED`
+  /^\s*(\S+\s+>\s+\S+)\s+FAILED\b/gm,
+  // dotnet: VSTest `Failed Name [3 ms]`, Microsoft.Testing.Platform `failed Name (3ms)`
+  /^\s*[Ff]ailed\s+([\w.<>`,+-]+)\s+[[(]\d/gm,
+]
+
+// How many tests the summary says failed: ava, vitest and jest, pytest, dotnet.
+const FAILED_COUNTS: readonly RegExp[] = [
+  /^\s*(\d+)\s+tests? failed\b/m,
+  /^\s*Tests:?\s+(\d+) failed\b/m,
+  /^=*\s*(\d+) failed\b[^\n]*\bin\s+[\d.]+s\b/m,
+  /\bFailed:\s+(\d+),/,
+]
+
+/** The failed count from the runner's summary, or null when it prints none: more than the names read means output was cut. */
+export function failedCountIn(output: string): number | null {
+  const text = withoutTaskPrefixes(stripAnsi(output))
+  const counts = FAILED_COUNTS.flatMap(pattern => {
+    const found = pattern.exec(text)?.[1]
+    return found === undefined ? [] : [Number(found)]
+  })
+  return counts.length === 0 ? null : Math.max(...counts)
+}
+
+/** The names of the tests that failed, in the order printed, once each; empty for a pass or output it cannot read. */
+export function failedTestsIn(output: string): string[] {
+  const text = withoutTaskPrefixes(stripAnsi(output))
+  return unique(FAILED_TEST_NAMES.flatMap(pattern => [...text.matchAll(pattern)].flatMap(match => (match[1] === undefined ? [] : [match[1].trim()]))))
+}
+
 export function failedFilesIn(output: string): string[] {
-  return unique(RUNNERS.flatMap(runner => runner.failedFiles(output)))
+  return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }
 
 const TOKEN = /[\w./\\:-]+/g
@@ -419,7 +568,7 @@ export function namedTestFile(command: string, stack: StackName, root?: string):
 /** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
 export function testRunLocation(command: string, root: string): string | null {
   for (const { segment, cwd } of locatedSegments(command, root)) {
-    if (RUNNERS.some(runner => runner.command.test(segment))) {
+    if (RUNNERS.some(runner => runner.command.test(executedText(segment)))) {
       return cwd === ELSEWHERE ? ELSEWHERE : cwd
     }
   }

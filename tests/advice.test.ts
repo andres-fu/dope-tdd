@@ -146,7 +146,7 @@ describe('runAdvice on a pass that completes no cycle', () => {
     const again = recordRun(green, true, at(4))
 
     expect(runAdvice(green, again, 'refactor')).toBe(
-      'dope-tdd: GREEN on money/formatCents with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before.',
+      'dope-tdd: GREEN on money/formatCents with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.',
     )
   })
 

@@ -91,6 +91,10 @@ describe('neverRan', () => {
     expect(neverRan('Permission for this action was denied by the Claude Code auto mode classifier.')).toBe(true)
   })
 
+  test('a command refused because a variable could not be checked never ran (seen on Roadhouse, 2026-10-09)', () => {
+    expect(neverRan("A variable in this command can't be checked before it runs")).toBe(true)
+  })
+
   test('does not mistake a runner output for a hold', () => {
     expect(neverRan(VITEST_FAIL)).toBe(false)
     expect(neverRan('Error: Cannot find module vitest')).toBe(false)

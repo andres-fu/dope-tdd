@@ -19,6 +19,10 @@ export type GuardConfig = {
   /** The Godot binary for a gdUnit4 run, when `godot` is not on PATH. */
   godot: string | null
   error: string | null
+  /** No layout was named in the file: the stack's default is a guess, and the refusal says how to fix it. */
+  layoutGuessed?: boolean
+  /** `false` turns the catch check off (a repo whose watchers or dev server see every revert). Absent means on. */
+  catchCheck?: boolean
 }
 
 export const CONFIG_FILE = 'dope-tdd.json'
@@ -32,6 +36,7 @@ export const DEFAULT_CONFIG: GuardConfig = {
   stackSource: 'default',
   godot: null,
   error: null,
+  layoutGuessed: true,
 }
 
 const MODES: readonly GuardMode[] = ['enforce', 'warn', 'observe']
@@ -99,6 +104,17 @@ function parseGodot(value: unknown): string | null {
   return value
 }
 
+/** Only an explicit `false` is recorded, so a config that never names it reads exactly as before. */
+function parseCatchCheck(value: unknown): { catchCheck?: false } {
+  if (value === undefined || value === true) {
+    return {}
+  }
+  if (value !== false) {
+    throw new Error('catchCheck must be true or false')
+  }
+  return { catchCheck: false }
+}
+
 /** The defaults for a stack that was detected rather than configured, with the stack's own exemptions. */
 function defaultsFor(detected: StackName | undefined): GuardConfig {
   if (detected === undefined) {
@@ -139,6 +155,8 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       stackSource,
       godot: parseGodot(fields.godot),
       error: null,
+      layoutGuessed: fields.layout === undefined,
+      ...parseCatchCheck(fields.catchCheck),
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -195,12 +213,13 @@ export function describeStack(config: GuardConfig): string {
 export function describeConfig(config: GuardConfig): string[] {
   const scope = config.scope.length === 0 ? '' : ` in ${config.scope.join(', ')}`
   return [
-    `mode: ${config.mode}${scope}`,
+    `mode: ${config.mode}${scope}${config.mode === 'observe' ? ' (records only: no refusals, no advice, no briefing, no catch check; nothing on disk is touched)' : ''}`,
     ...(config.exempt.length === 0 ? [] : [`exempt: ${config.exempt.join(', ')}`]),
     ...(config.stack === 'node' && config.stackSource === 'default' ? [] : [describeStack(config)]),
     `layout: ${describeLayout(config.layout)}`,
     ...(config.roots.length === 0 ? [] : [`roots: ${config.roots.join(', ')}`]),
     ...(config.godot === null ? [] : [`godot: ${config.godot}`]),
+    ...(config.catchCheck === false ? [`catch check: off (${CONFIG_FILE}); a green is not re-run with the change undone`] : []),
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),
   ]
 }
@@ -212,7 +231,8 @@ export function isLoosening(before: GuardConfig, after: GuardConfig): boolean {
   const weakerMode = MODE_STRENGTH[after.mode] < MODE_STRENGTH[before.mode]
   const moreExempt = after.exempt.some(glob => !before.exempt.includes(glob))
   const narrowerScope = (before.scope.length === 0 && after.scope.length > 0) || (before.scope.length > 0 && after.scope.length > 0 && before.scope.some(glob => !after.scope.includes(glob)))
-  return weakerMode || moreExempt || narrowerScope
+  const checkOff = before.catchCheck !== false && after.catchCheck === false
+  return weakerMode || moreExempt || narrowerScope || checkOff
 }
 
 function listChange(name: string, before: readonly string[], after: readonly string[]): string[] {
@@ -232,6 +252,7 @@ function sameLayout(a: Layout, b: Layout): boolean {
 export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
   const parts = [
     ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
+    ...((before.catchCheck !== false) === (after.catchCheck !== false) ? [] : [`catch check ${before.catchCheck === false ? 'off → on' : 'on → off'}`]),
     ...listChange('exempt', before.exempt, after.exempt),
     ...listChange('scope', before.scope, after.scope),
     ...(before.stack === after.stack ? [] : [`stack ${before.stack} → ${after.stack}`]),

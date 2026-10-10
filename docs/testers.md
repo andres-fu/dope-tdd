@@ -80,8 +80,10 @@ Later, `claude plugin update dope-tdd@dope-tdd` pulls the newest version.
 To try it for one session without installing anything, start Claude Code
 from a clone with `claude --plugin-dir <path-to-the-clone>`.
 
-To turn it off for one project, put `{ "mode": "observe" }` in a
-`dope-tdd.json` at the project root. To remove it:
+To watch without steering, put `{ "mode": "observe" }` in a
+`dope-tdd.json` at the project root: nothing is refused, Claude is told
+nothing, and no file is ever reverted, but every cycle is still recorded in
+`/tdd`. To remove it:
 `claude plugin uninstall dope-tdd@dope-tdd`.
 
 ## First ten minutes: the playground

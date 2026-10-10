@@ -44,6 +44,14 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites('git diff src/App.tsx > /tmp/patch.diff')).toEqual([])
   })
 
+  test('sees writes to code files of every stack, wherever they sit; the layout decides later which are source', () => {
+    expect(findSourceWrites("sed -i 's/a/b/' app/models.py")).toEqual(['app/models.py'])
+    expect(findSourceWrites('echo x > scripts/player.gd')).toEqual(['scripts/player.gd'])
+    expect(findSourceWrites('cp /tmp/Foo.java src/main/java/com/x/Foo.java')).toEqual(['src/main/java/com/x/Foo.java'])
+    expect(findSourceWrites("sed -i 's/a/b/' packages/api/lib/handler.js")).toEqual(['packages/api/lib/handler.js'])
+    expect(findSourceWrites("sed -i 's/a/b/' Player.cs")).toEqual(['Player.cs'])
+  })
+
   test('ignores writes to test files and non-ts files under src', () => {
     expect(findSourceWrites("sed -i 's/a/b/' tests/utils/a.test.ts")).toEqual([])
     expect(findSourceWrites('echo x >> src/index.css')).toEqual([])

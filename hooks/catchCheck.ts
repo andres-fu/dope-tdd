@@ -1,5 +1,5 @@
 import type { CatchOutcome } from '../types'
-import { readRun, runnerNamed } from './runners'
+import { failedFilesIn, failedTestsIn, readRun, runnerNamed } from './runners'
 import type { RunnerKind, RunnerOptions } from './runners'
 import { stripAnsi } from './runOutcome'
 
@@ -46,7 +46,21 @@ function failureText(error: unknown): string {
   return String(error)
 }
 
-export function catchOutcome(run: RunResult | RunFailure): CatchOutcome {
+/** A failed file names this test when one path ends with the other: runners print paths from where they ran. */
+function namesTest(failed: readonly string[], testPath: string): boolean {
+  const want = testPath.replace(/\\/g, '/').toLowerCase()
+  return failed.some(path => {
+    const seen = path.replace(/\\/g, '/').toLowerCase()
+    return seen.endsWith(want) || want.endsWith(seen)
+  })
+}
+
+/**
+ * `testPath` is the test the check ran. When the runner names the files that
+ * failed, the red must include it: a red in other files is not this test
+ * catching the change.
+ */
+export function catchOutcome(run: RunResult | RunFailure, testPath?: string, known: readonly string[] = []): CatchOutcome {
   if (run === 'timeout') {
     return { kind: 'unverified', reason: 'timeout' }
   }
@@ -66,6 +80,19 @@ export function catchOutcome(run: RunResult | RunFailure): CatchOutcome {
   }
   if (outcome === 'unknown') {
     return { kind: 'unverified', reason: 'no runner summary' }
+  }
+  // Only tests that were failing before the change failed: nothing that checks this change went red.
+  if (outcome === 'fail' && known.length > 0) {
+    const names = failedTestsIn(output)
+    if (names.length > 0 && names.every(name => known.includes(name))) {
+      return { kind: 'missed' }
+    }
+  }
+  if (outcome === 'fail' && testPath !== undefined) {
+    const failed = failedFilesIn(output)
+    if (failed.length > 0 && !namesTest(failed, testPath)) {
+      return { kind: 'unverified', reason: 'the red was in other test files' }
+    }
   }
   return outcome === 'fail' ? { kind: 'caught' } : { kind: 'missed' }
 }

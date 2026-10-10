@@ -32,6 +32,14 @@ describe('catchOutcome', () => {
     expect(catchOutcome({ stdout: ' Tests  1 failed (1)\n', stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
   })
 
+  test('a red in other test files only is not this test catching the change', () => {
+    const elsewhere = { stdout: ' FAIL  tests/other.test.ts > x\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n', stderr: '', exitCode: 1 }
+    const own = { stdout: ' FAIL  tests/utils/a.test.ts > x\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n', stderr: '', exitCode: 1 }
+    expect(catchOutcome(elsewhere, 'tests/utils/a.test.ts')).toEqual({ kind: 'unverified', reason: 'the red was in other test files' })
+    expect(catchOutcome(own, 'tests/utils/a.test.ts')).toEqual({ kind: 'caught' })
+    expect(catchOutcome({ stdout: ' Tests  1 failed (1)\n', stderr: '', exitCode: 1 }, 'tests/utils/a.test.ts')).toEqual({ kind: 'caught' })
+  })
+
   test('a passing run with the change undone means the test misses it', () => {
     expect(catchOutcome({ stdout: ' Tests  3 passed (3)\n', stderr: '', exitCode: 0 })).toEqual({ kind: 'missed' })
   })

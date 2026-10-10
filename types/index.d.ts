@@ -55,6 +55,10 @@ export type ModuleState = {
   everSawRed: boolean
   /** A source edit, captured or not, since its last run. */
   editedSinceRun: boolean
+  /** The tests named as failing by this cycle's red runs of its test file. */
+  redFailures?: readonly string[]
+  /** Tests in its file that were failing before the change and still fail: they neither hide a red nor block a green. */
+  knownFailures?: readonly string[]
 }
 
 export type CurrentTest = {
@@ -102,6 +106,10 @@ export type TddStats = {
   missed: number
   unverified: number
   refactors: number
+  /** Milliseconds spent in catch checks this session, baselines included. */
+  checkMsTotal: number
+  /** Catch checks that ran in a worktree, with the user's files untouched. */
+  worktreeChecks: number
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' }; path?: string } | null
   lastCycle: CycleVerdict | null
@@ -112,6 +120,6 @@ export type TddStats = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'dope-tdd': { stats: TddStats; tick: number }
+    'dope-tdd': { stats: TddStats; tick: number; 'bash-cwd': string; 'powershell-cwd': string }
   }
 }

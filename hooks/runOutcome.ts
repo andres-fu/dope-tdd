@@ -8,7 +8,7 @@ const PASSED = /\d+\s+passed/
 const FAILED_FILE = /^\s*(?:FAIL|❯|×)\s+((?:[A-Za-z]:)?[\w./\\-]+\.(?:test|spec)\.[cm]?[jt]sx?)\b/gm
 const TRUNCATION_BANNER = /Output too large/
 // What the model reads when Claude Code held a command for approval or refused it: the command never ran.
-const NEVER_RAN = /requires approval|requested permissions? to use|haven't granted|denied by the .*classifier|permission(?: for this action)? (?:was |has been )?denied/i
+const NEVER_RAN = /requires approval|requested permissions? to use|haven't granted|denied by the .*classifier|permission(?: for this action)? (?:was |has been )?denied|can't be checked before it runs/i
 
 export function stripAnsi(text: string): string {
   return text.replace(ANSI, '')
@@ -46,6 +46,17 @@ export function failedFiles(output: string): string[] {
 /** Claude Code replaces a long tool result with a preview and this banner; the summary line is gone with it. */
 export function isTruncated(output: string): boolean {
   return TRUNCATION_BANNER.test(output)
+}
+
+// The runner itself never started: no test ran (seen on dapr-agents: a global python without pytest, uv with no pytest).
+const NOT_STARTED = /No module named ['"]?[\w.]+['"]?|Failed to spawn: \S+|command not found|is not recognized as an internal or external command/i
+
+/**
+ * Why the runner never started, when output with no summary says so; null otherwise. Asked only when no summary was
+ * read, so a real run whose tests fail on an import error is still red.
+ */
+export function runnerDidNotStart(output: string): string | null {
+  return NOT_STARTED.exec(stripAnsi(output))?.[0] ?? null
 }
 
 /** An errored result whose text is a permission hold or refusal: not a run at all, so not even "unread". */

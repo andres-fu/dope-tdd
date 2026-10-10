@@ -67,7 +67,11 @@ claude plugin marketplace add C:/path/to/dope-tdd
 claude plugin install dope-tdd@dope-tdd
 ```
 
-Requires Claude Code v2.1.287+. The hooks run everywhere the plugin loads.
+Requires Claude Code v2.1.287+ (the Desktop app's Code tab: v2.1.286+). An
+older Claude Code does not load the plugin and does not say so, so check
+`claude --version`, and with more than one install, check which one runs.
+In a terminal, `/plugin` shows `1 mod active · dope-tdd` when it loaded. The
+hooks run everywhere the plugin loads.
 The band above the prompt draws in the terminal and in the Desktop app's Code
 tab; in the VS Code extension's chat panel nothing draws, so there the
 evidence is in the tool results, `/tdd` and the status tool.

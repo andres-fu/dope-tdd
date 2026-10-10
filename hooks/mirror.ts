@@ -31,11 +31,21 @@ function toForwardSlashes(path: string): string {
     .replace(/^\/([A-Za-z])\//, (_, drive: string) => `${drive.toUpperCase()}:/`)
 }
 
+/** Windows ignores case in paths; Linux does not. A path is Windows-shaped when it starts with a drive letter. */
+export function foldsCase(path: string): boolean {
+  return /^[A-Za-z]:/.test(toForwardSlashes(path))
+}
+
+/** A path as a comparison key: forward slashes, no trailing slash, case folded only where the file system folds it. */
+export function pathKey(path: string): string {
+  const slashed = toForwardSlashes(path).replace(/\/$/, '')
+  return foldsCase(slashed) ? slashed.toLowerCase() : slashed
+}
+
 function relativeTo(root: string, path: string): string | undefined {
-  const prefix = toForwardSlashes(root).replace(/\/$/, '') + '/'
+  const base = pathKey(root)
   const normalized = toForwardSlashes(path)
-  const isInside = normalized.toLowerCase().startsWith(prefix.toLowerCase())
-  return isInside ? normalized.slice(prefix.length) : undefined
+  return pathKey(normalized).startsWith(`${base}/`) ? normalized.slice(base.length + 1) : undefined
 }
 
 export function relativePath(root: string, path: string): string {
@@ -137,9 +147,9 @@ export function watchedDirs(config: LayoutConfig): string[] {
   return dirs.includes(null) ? ['.'] : [...new Set(dirs as string[])]
 }
 
-/** True when `path` is the root or sits under it, whatever the spelling of the drive letter. */
+/** True when `path` is the root or sits under it: in any case on Windows, in its own case elsewhere. */
 export function isInsideRoot(root: string, path: string): boolean {
-  const base = toForwardSlashes(root).replace(/\/$/, '').toLowerCase()
-  const candidate = toForwardSlashes(path).replace(/\/$/, '').toLowerCase()
+  const base = pathKey(root)
+  const candidate = pathKey(path)
   return candidate === base || candidate.startsWith(`${base}/`)
 }

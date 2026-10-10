@@ -1,5 +1,6 @@
 import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, ModuleState, TddEvent, TddStats } from '../types'
 import type { WorkaroundKind } from './workarounds'
+import { pathKey } from './mirror'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
@@ -325,7 +326,7 @@ export function recordRedFor(s: TddStats, module: string, nowMs: number): TddSta
  * A cycle closed this way counts as a cycle of its own, unless its test is the current module's test: that is one piece of work.
  */
 export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number): TddStats {
-  const norm = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+  const norm = pathKey
   const same = (path: string) => testPath === null || norm(path) === norm(testPath)
   const exceptTest = except === undefined ? undefined : s.unlocked[except]
   return Object.entries(s.modules).reduce((acc, [module, state]) => {

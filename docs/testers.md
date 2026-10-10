@@ -57,7 +57,11 @@ the clone. The `hooks:` line names the exact actions it steps into, and the
 
 ## What you need
 
-- Claude Code v2.1.287 or later (`claude --version`). The terminal or the
+- Claude Code v2.1.287 or later (`claude --version`). An older Claude Code
+  does not load the plugin and says nothing about it: the agent simply runs
+  unguarded. If you have more than one Claude Code installed, check the one
+  that actually runs (`which claude`, or `where claude` on Windows): we were
+  caught by an old copy sitting earlier on the PATH. The terminal or the
   Desktop app's Code tab show the band above the prompt. The VS Code
   extension's chat panel runs the plugin but draws nothing, so there you
   read the `dope-tdd:` lines in tool results and `/tdd`.

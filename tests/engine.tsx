@@ -65,6 +65,9 @@ export type FakeWorld = {
   /** The check's baseline: the test run as it stands, before anything is reverted. Green unless a test says otherwise. */
   baselineRun: { text: string; exitCode: number }
   baselineCalls: number
+  /** What the plugin's own run of a test file prints when the agent's output was cut and it needs every failing name. */
+  namesRun: string
+  namesCalls: number
   /** A baseline answered differently in one folder, by its cwd: the catch-check worktree, say. */
   baselineRunIn: Map<string, { text: string; exitCode: number }>
   /** Tracked files changed since HEAD, and deleted ones, as `git diff --name-only HEAD` lists them. */
@@ -108,6 +111,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     catchRun: { text: ' Tests  1 failed (1)\n', exitCode: 1 },
     baselineRun: { text: ' Tests  1 passed (1)\n', exitCode: 0 },
     baselineCalls: 0,
+    namesRun: '',
+    namesCalls: 0,
     baselineRunIn: new Map(),
     dirty: '',
     deleted: '',
@@ -138,6 +143,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('process.run', async (_$, e) => {
     world.gitCalls.push(e.argv)
     world.runCwds.push(fakePath(String((e as { init?: { cwd?: unknown } }).init?.cwd ?? '')))
+    if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_NAMES === '1') {
+      world.namesCalls++
+      return { value: { exitCode: 1, stdout: world.namesRun, stderr: '' } } as never
+    }
     if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
       world.baselineCalls++
       const run = world.baselineRunIn.get(world.runCwds[world.runCwds.length - 1] ?? '') ?? world.baselineRun

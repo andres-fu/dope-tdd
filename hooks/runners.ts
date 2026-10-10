@@ -500,6 +500,24 @@ const FAILED_TEST_NAMES: readonly RegExp[] = [
   /^\s*[Ff]ailed\s+([\w.<>`,+-]+)\s+[[(]\d/gm,
 ]
 
+// How many tests the summary says failed: ava, vitest and jest, pytest, dotnet.
+const FAILED_COUNTS: readonly RegExp[] = [
+  /^\s*(\d+)\s+tests? failed\b/m,
+  /^\s*Tests:?\s+(\d+) failed\b/m,
+  /^=*\s*(\d+) failed\b[^\n]*\bin\s+[\d.]+s\b/m,
+  /\bFailed:\s+(\d+),/,
+]
+
+/** The failed count from the runner's summary, or null when it prints none: more than the names read means output was cut. */
+export function failedCountIn(output: string): number | null {
+  const text = withoutTaskPrefixes(stripAnsi(output))
+  const counts = FAILED_COUNTS.flatMap(pattern => {
+    const found = pattern.exec(text)?.[1]
+    return found === undefined ? [] : [Number(found)]
+  })
+  return counts.length === 0 ? null : Math.max(...counts)
+}
+
 /** The names of the tests that failed, in the order printed, once each; empty for a pass or output it cannot read. */
 export function failedTestsIn(output: string): string[] {
   const text = withoutTaskPrefixes(stripAnsi(output))

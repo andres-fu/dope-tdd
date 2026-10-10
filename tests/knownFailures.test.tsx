@@ -66,6 +66,29 @@ describe('tests that were already failing', () => {
     expect(status.text).toMatch(/phase: GREEN/)
   })
 
+  test('output cut by tail (only the summary left) is completed by the plugin running the file itself, so the names are read', async ($, on) => {
+    const world = fakeEngine(on)
+    const summaryOnly = (n: number) => `\n Test Files  1 failed (1)\n      Tests  ${n} failed | 4 passed (${n + 4})\n`
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    world.bashText = summaryOnly(2)
+    world.namesRun = failing('old: breaks on windows', 'new: formats months')
+    await runBash($, `${RUN} 2>&1 | tail -3`)
+    await editAt($, 'src/utils/formatDuration.ts')
+    world.bashText = summaryOnly(1)
+    world.namesRun = failing('old: breaks on windows')
+    world.baselineRun = { text: failing('old: breaks on windows'), exitCode: 1 }
+    world.catchRun = { text: failing('old: breaks on windows', 'new: formats months'), exitCode: 1 }
+
+    await runBash($, `${RUN} 2>&1 | tail -3`)
+    const status = await runCommand($, 'tdd')
+
+    expect(world.namesCalls).toBe(2)
+    expect(status.text).toMatch(/phase: GREEN/)
+    expect(status.text).toMatch(/caught 1/)
+  })
+
   test('a test that fails now and was not failing before is red, old failures or not', async ($, on) => {
     const world = fakeEngine(on)
     await redWithAnOldFailure($, world)

@@ -29,7 +29,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -521,6 +521,44 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
  * modules wait for their own green. The lock is taken in one update and
  * released whatever happens; a file that moved while reverted is left alone.
  */
+/**
+ * How the plugin itself runs one test file: the runner, where it runs (a runner installed in a package runs from that
+ * package, so its own config loads; otherwise the root), the test path from there, and the argv. Null with no runner.
+ */
+async function oneTestCommand(
+  $: EngineInterface,
+  root: string,
+  config: GuardConfig,
+  testPath: string,
+): Promise<{ runner: Runner; runIn: string; relativeTest: string; argv: string[] } | null> {
+  const runner = await detectRunner($, root, config, testPath)
+  if (runner === null) {
+    return null
+  }
+  const godot = config.godot ?? (await godotFromEnv($))
+  const runIn = runner.root !== root && isInsideRoot(root, runner.root) ? runner.root : root
+  const relativeTest = relativePath(runIn, testPath)
+  const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot, ...(runner.launcher === undefined ? {} : { launcher: runner.launcher }) })
+  return { runner, runIn, relativeTest, argv }
+}
+
+/**
+ * Every failing test name in a run of this test file, when the agent's output was cut (a tail kept the summary and
+ * lost the names): the plugin runs the file itself, locally, and reads them. Empty when that cannot be done.
+ */
+async function allFailingNames($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string[]> {
+  try {
+    const command = await oneTestCommand($, root, config, testPath)
+    if (command === null) {
+      return []
+    }
+    const run = await $.process.run(command.argv, { cwd: command.runIn, env: { CI: '1', DOPE_TDD_NAMES: '1' }, timeoutMs: 60_000 })
+    return failedTestsIn(`${run.stdout}\n${run.stderr}`)
+  } catch {
+    return []
+  }
+}
+
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
 const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava'])
 const CHECK_WORKTREE = '.git/dope-tdd/wt'
@@ -672,15 +710,11 @@ async function verifyCatch(
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
   }
-  const runner = await detectRunner($, root, config, testPath)
-  if (runner === null) {
+  const command = await oneTestCommand($, root, config, testPath)
+  if (command === null) {
     return catchOutcome('no-runner')
   }
-  const godot = config.godot ?? (await godotFromEnv($))
-  // A runner installed inside a package runs from that package, so its own config loads; otherwise from the root.
-  const runIn = runner.root !== root && isInsideRoot(root, runner.root) ? runner.root : root
-  const relativeTest = relativePath(runIn, testPath)
-  const argv = runnerArgv(runner.root, runner.kind, relativeTest, runner.tool, { godot, ...(runner.launcher === undefined ? {} : { launcher: runner.launcher }) })
+  const { runner, runIn, relativeTest, argv } = command
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
   if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
@@ -1206,7 +1240,15 @@ async function guardShell(
   const working = updated.current
   const ownFile = outcome === 'fail' && working !== null ? namedTestFile(command, config.stack, start) : null
   if (working !== null && ownFile !== null && relativePath(root, ownFile).toLowerCase() === relativePath(root, working.testPath).toLowerCase()) {
-    const names = failedTestsIn(output)
+    let names = failedTestsIn(output)
+    // A tail kept the summary and lost the names: run the file once, locally, to read them all.
+    const count = failedCountIn(output)
+    if (count !== null && names.length < count) {
+      const all = await allFailingNames($, root, config, working.testPath)
+      if (all.length > names.length) {
+        names = all
+      }
+    }
     const state = moduleState(updated, working.module)
     const within = (set: readonly string[]) => names.length > 0 && set.length > 0 && names.every(name => set.includes(name))
     if (within(state.knownFailures ?? [])) {

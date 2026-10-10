@@ -1,5 +1,5 @@
 import type { CatchOutcome } from '../types'
-import { failedFilesIn, readRun, runnerNamed } from './runners'
+import { failedFilesIn, failedTestsIn, readRun, runnerNamed } from './runners'
 import type { RunnerKind, RunnerOptions } from './runners'
 import { stripAnsi } from './runOutcome'
 
@@ -60,7 +60,7 @@ function namesTest(failed: readonly string[], testPath: string): boolean {
  * failed, the red must include it: a red in other files is not this test
  * catching the change.
  */
-export function catchOutcome(run: RunResult | RunFailure, testPath?: string): CatchOutcome {
+export function catchOutcome(run: RunResult | RunFailure, testPath?: string, known: readonly string[] = []): CatchOutcome {
   if (run === 'timeout') {
     return { kind: 'unverified', reason: 'timeout' }
   }
@@ -80,6 +80,13 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string): Ca
   }
   if (outcome === 'unknown') {
     return { kind: 'unverified', reason: 'no runner summary' }
+  }
+  // Only tests that were failing before the change failed: nothing that checks this change went red.
+  if (outcome === 'fail' && known.length > 0) {
+    const names = failedTestsIn(output)
+    if (names.length > 0 && names.every(name => known.includes(name))) {
+      return { kind: 'missed' }
+    }
   }
   if (outcome === 'fail' && testPath !== undefined) {
     const failed = failedFilesIn(output)

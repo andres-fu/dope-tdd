@@ -55,6 +55,10 @@ export type ModuleState = {
   everSawRed: boolean
   /** A source edit, captured or not, since its last run. */
   editedSinceRun: boolean
+  /** The tests named as failing by this cycle's red runs of its test file. */
+  redFailures?: readonly string[]
+  /** Tests in its file that were failing before the change and still fail: they neither hide a red nor block a green. */
+  knownFailures?: readonly string[]
 }
 
 export type CurrentTest = {

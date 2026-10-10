@@ -29,7 +29,7 @@ import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
+import { failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -55,6 +55,8 @@ import {
   closeCyclesForTest,
   recordImportUnlock,
   recordRedFor,
+  recordKnownFailures,
+  recordRedNames,
   recordRedUnlock,
   recordRunTarget,
   recordSourceEdit,
@@ -535,6 +537,7 @@ type WorktreeCheck = {
   argv: string[]
   greenRunMs: number
   nowMs: number
+  known: readonly string[]
 }
 
 function listed(answer: { exitCode: number; stdout: string } | null): string[] | null {
@@ -596,7 +599,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
       await $.fs.write(inTree, after)
       let base: CatchOutcome
       try {
-        base = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: budget }), relativeTest)
+        base = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: budget }), relativeTest, check.known)
       } catch (error) {
         base = catchOutcome(runFailure(error))
       }
@@ -609,7 +612,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     await $.fs.write(inTree, before)
     let outcome: CatchOutcome
     try {
-      outcome = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest)
+      outcome = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known)
     } catch (error) {
       outcome = catchOutcome(runFailure(error))
     }
@@ -637,6 +640,8 @@ async function verifyCatch(
   nowMs: number,
   /** The module saw red in this cycle and its test was not edited after that red. */
   provedByRed = false,
+  /** Tests in its file that were failing before the change: a check where only these fail has caught nothing. */
+  known: readonly string[] = [],
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
@@ -679,7 +684,7 @@ async function verifyCatch(
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
   if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
-    const isolated = await checkInWorktree($, root, { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs })
+    const isolated = await checkInWorktree($, root, { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs, known })
     if (isolated !== null) {
       await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
       return isolated
@@ -693,7 +698,7 @@ async function verifyCatch(
     let base: CatchOutcome
     try {
       const run = await $.process.run(argv, { cwd: runIn, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
-      base = catchOutcome(run, relativeTest)
+      base = catchOutcome(run, relativeTest, known)
     } catch (error) {
       base = catchOutcome(runFailure(error))
     }
@@ -745,7 +750,7 @@ async function verifyCatch(
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
       })
-      outcome = catchOutcome(run, relativeTest)
+      outcome = catchOutcome(run, relativeTest, known)
       if (outcome.kind === 'missed') {
         // What the test did not notice: the agent needs the lines, not just the verdict, to write the assertion.
         outcome = { kind: 'missed', slipped: changedLines(before, after) }
@@ -1194,7 +1199,27 @@ async function guardShell(
   const read = ran ? readRun(output) : 'none'
   // A runner that never started ran no test: not an unread run, and the agent is told it did not start.
   const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
-  const outcome = notStarted === null ? read : 'none'
+  let outcome = notStarted === null ? read : 'none'
+  // Tests that were failing before the change neither hide a red nor block a green: judge a run of the current
+  // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
+  let alreadyFailing: string[] = []
+  const working = updated.current
+  const ownFile = outcome === 'fail' && working !== null ? namedTestFile(command, config.stack, start) : null
+  if (working !== null && ownFile !== null && relativePath(root, ownFile).toLowerCase() === relativePath(root, working.testPath).toLowerCase()) {
+    const names = failedTestsIn(output)
+    const state = moduleState(updated, working.module)
+    const within = (set: readonly string[]) => names.length > 0 && set.length > 0 && names.every(name => set.includes(name))
+    if (within(state.knownFailures ?? [])) {
+      outcome = 'pass'
+      alreadyFailing = names
+    } else if (within(state.redFailures ?? []) && names.length < (state.redFailures ?? []).length) {
+      outcome = 'pass'
+      alreadyFailing = names
+      await change($, s => recordKnownFailures(s, working.module, names))
+    } else if (names.length > 0) {
+      await change($, s => recordRedNames(s, working.module, names))
+    }
+  }
   let afterRun = updated
   let elsewhere: string[] = []
   const redUnlocked: string[] = []
@@ -1264,7 +1289,7 @@ async function guardShell(
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
   const checkStartMs = await $.clock.now()
   const check =
-    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed)
+    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed, alreadyFailing)
   // The time the check itself cost, baseline included: the part of a guarded run's overhead that is Dope TDD's own.
   const checkMs = (await $.clock.now()) - checkStartMs
   if (checkMs > 0) {
@@ -1291,6 +1316,11 @@ async function guardShell(
     ? []
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...(alreadyFailing.length === 0
+          ? []
+          : [
+              `dope-tdd: ${working?.module ?? 'this module'} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
+            ]),
         ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
         ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,

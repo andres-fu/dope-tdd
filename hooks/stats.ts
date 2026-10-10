@@ -246,7 +246,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere
   if (module === undefined || prev === null) {
     return logged(base, 'pass', nowMs, module)
   }
-  const state: ModuleState = { ...prev, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false, editedSinceRun: false }
+  const state: ModuleState = { ...prev, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false, editedSinceRun: false, redFailures: [] }
   return logged(withModule(base, module, state), 'pass', nowMs, module)
 }
 
@@ -345,6 +345,17 @@ export function closeCyclesForTest(s: TddStats, testPath: string | null, except:
       unproven: state.sawRed || closed.unproven.includes(module) ? closed.unproven : [...closed.unproven, module],
     }
   }, s)
+}
+
+/** The tests a red run of the module's own file named as failing, gathered over the cycle. */
+export function recordRedNames(s: TddStats, module: string, names: readonly string[]): TddStats {
+  const prev = moduleState(s, module)
+  return withModule(s, module, { ...prev, redFailures: [...new Set([...(prev.redFailures ?? []), ...names])] })
+}
+
+/** The failures left at a green that were all failing in the red: they were there before the change. */
+export function recordKnownFailures(s: TddStats, module: string, names: readonly string[]): TddStats {
+  return withModule(s, module, { ...moduleState(s, module), knownFailures: [...names], redFailures: [] })
 }
 
 /** A run that named a test file: that module is current, and the band mirrors its cycle. */

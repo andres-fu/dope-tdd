@@ -211,3 +211,12 @@ Bugs found by tools/pool/find-bugs.mjs, verified against the code by one agent (
 - New gap: path-validation.spec.ts already had 11 failures on Windows (POSIX paths, symlink EPERM), so the
   file never goes green, the module stays RED, and its fix can never be checked. Brownfield files with
   known failures need a per-test comparison: which tests failed before vs after, not the file's summary.
+
+## 2026-10-10 — The pull-request check, proven on three repositories and on GitHub
+
+tools/pr-check runs the catch check on a pull request's diff, outside any agent. Locally: dapr-agents #885
+CAUGHT; nanocoder #1689 CAUGHT on all three modules, path-validation included, its 11 failures that were
+already there set aside by name (the first live proof of the known-failures rule); a probe commit no test
+checked read MISSED and exited 1; the working trees were left clean. On GitHub Actions (ubuntu), as a
+composite action used from a private repo by another private repo of the same owner, on a fork-only test PR
+in andres-fu/DungeonLobby: RoomManager CAUGHT and dice CAUGHT. Test PR closed and its branch deleted.

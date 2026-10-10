@@ -197,6 +197,38 @@ receipt to one file on your machine, `~/.dope-tdd/sessions/<date>-<session>.json
 It never goes in the repository and never leaves your computer. Set
 `DOPE_TDD_LOG=off` to keep nothing.
 
+## On every pull request
+
+The plugin guards an agent while it works. The pull-request check proves the
+result, whoever wrote it: Claude Code with or without the plugin, another
+agent, a cloud workspace, or a person. For each source file a pull request
+changes, it finds that module's test, puts back the base branch's version of
+the source, runs the test, and expects it to fail.
+
+```yaml
+# .github/workflows/dope-tdd.yml
+on: pull_request
+jobs:
+  catch-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # install the project's dependencies here, as its own CI does
+      - uses: andres-fu/dope-tdd/tools/pr-check@main
+        with:
+          base: ${{ github.base_ref }}
+```
+
+Each changed module is CAUGHT (the test fails without the change), MISSED
+(it still passes, so nothing checks the change), UNTESTED, or UNVERIFIED with
+the reason, in the job summary. Tests that already fail on the pull request
+are set aside by name. By default a MISSED fails the check; `fail-on:
+untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
+same way the plugin does. Run it locally from a pull request's checkout with
+`npx tsx tools/pr-check/check.ts --base origin/main`.
+
 ## Develop
 
 ```bash

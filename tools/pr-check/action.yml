@@ -1,0 +1,28 @@
+name: Dope TDD pull-request check
+description: Do the tests catch this change? Runs Dope TDD's catch check on a pull request's diff, for any agent or person.
+inputs:
+  base:
+    description: The branch the pull request goes into (usually github.base_ref).
+    required: true
+  fail-on:
+    description: "missed (default): fail when a test does not catch the change; untested: also fail when a changed module has no test; never: report only."
+    required: false
+    default: missed
+  timeout-ms:
+    description: How long one test run may take.
+    required: false
+    default: '180000'
+runs:
+  using: composite
+  steps:
+    - name: Fetch the base branch
+      shell: bash
+      run: git fetch --no-tags --depth=200 origin "${{ inputs.base }}"
+    - name: Do the tests catch this change?
+      shell: bash
+      run: >
+        npx -y tsx@4.19.2 "$GITHUB_ACTION_PATH/check.ts"
+        --repo "$GITHUB_WORKSPACE"
+        --base "origin/${{ inputs.base }}"
+        --fail-on "${{ inputs.fail-on }}"
+        --timeout-ms "${{ inputs.timeout-ms }}"

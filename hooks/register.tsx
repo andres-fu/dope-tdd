@@ -3,6 +3,8 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
 import { findSourceWrites } from './bashWrites'
+import { findRunner } from './findRunner'
+import type { FoundRunner } from './findRunner'
 import { briefingText } from './briefing'
 import { importCandidates } from './imports'
 import { changedLines } from './changedLines'
@@ -248,52 +250,11 @@ async function readFile($: EngineInterface, path: string): Promise<FileRead> {
   }
 }
 
-function parentDir(dir: string): string | null {
-  const trimmed = dir.replace(/[\\/]+$/, '')
-  const cut = trimmed.replace(/[\\/][^\\/]*$/, '')
-  return cut === trimmed || cut === '' ? null : cut
-}
+type Runner = FoundRunner
 
-type Runner = { kind: RunnerKind; root: string; tool: string; launcher?: readonly string[] }
-
-/** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
-async function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
-  const candidates = runnersFor(config.stack, testPath)
-  // First a runner installed in the test's own package (a monorepo that does not hoist): from the test's folder up to the root.
-  const top = root.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
-  for (let dir: string | null = parentDir(testPath.replace(/\\/g, '/')); dir !== null && dir.toLowerCase() !== top && isInsideRoot(root, dir); dir = parentDir(dir)) {
-    for (const runner of candidates) {
-      for (const candidate of runner.tools) {
-        if (await $.fs.exists(`${dir}/${candidate}`)) {
-          return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }
-        }
-      }
-    }
-  }
-  for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
-    for (const runner of candidates) {
-      if (runner.markers.length === 0) {
-        return { kind: runner.kind, root, tool: fallbackTool(runner, root) }
-      }
-      for (const marker of runner.markers) {
-        if (await $.fs.exists(`${dir}/${marker}`)) {
-          for (const candidate of runner.tools) {
-            if (await $.fs.exists(`${dir}/${candidate}`)) {
-              return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }
-            }
-          }
-          // No program in the repo: a lockfile may name the launcher that knows where the environment lives.
-          for (const launcher of runner.launchers ?? []) {
-            if (await $.fs.exists(`${dir}/${launcher.marker}`)) {
-              return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root), launcher: launcher.argv }
-            }
-          }
-          return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root) }
-        }
-      }
-    }
-  }
-  return null
+/** The runner for a test file, found through Claude Code's view of the disk. */
+function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
+  return findRunner(root, config.stack, testPath, path => $.fs.exists(path))
 }
 
 type JournalFile = { path: string; before: string; after: string }

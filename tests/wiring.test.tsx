@@ -291,6 +291,22 @@ describe('honest runs', () => {
     expect(status.text).not.toMatch(/red elsewhere/)
   })
 
+  test('a runner that never started is no run, not an unread one, and the agent is told it did not start (seen on dapr-agents)', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'money/formatCents')
+    world.bashFails = true
+
+    world.bashText = 'C:\\Python314\\python.exe: No module named pytest'
+    const noModule = await runBash($, 'python -m pytest tests/test_a.py')
+    world.bashText = 'error: Failed to spawn: pytest\n  cause: program not found'
+    await runBash($, 'uv run pytest tests/test_a.py')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/runs: 0 \(0 pass, 0 fail\)/)
+    expect(status.text).not.toMatch(/unread/)
+    expect(noModule.context?.join(' ')).toMatch(/the test runner did not start \(No module named pytest\); nothing was counted/)
+  })
+
   test('a run whose output has no summary line counts as nothing, and the agent is told why', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'money/formatCents')

@@ -30,7 +30,7 @@ import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedFilesIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
-import { isTruncated, neverRan } from './runOutcome'
+import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell'
@@ -1191,7 +1191,10 @@ async function guardShell(
   const target = plainLocation === null ? null : workspaceTarget(command)
   const runLocation = target === null ? plainLocation : ((await packageDirFor($, root, start, config, target)) ?? plainLocation)
   const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
-  const outcome = ran ? readRun(output) : 'none'
+  const read = ran ? readRun(output) : 'none'
+  // A runner that never started ran no test: not an unread run, and the agent is told it did not start.
+  const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
+  const outcome = notStarted === null ? read : 'none'
   let afterRun = updated
   let elsewhere: string[] = []
   const redUnlocked: string[] = []
@@ -1288,6 +1291,7 @@ async function guardShell(
     ? []
     : [
         ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
         ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,
         ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),

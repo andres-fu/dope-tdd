@@ -303,3 +303,18 @@ describe('ava, read from real output', () => {
     expect(readRun("  ✘ Couldn't find any files to test\n")).toBe('none')
   })
 })
+
+describe('pytest through a launcher with flags (seen on dapr-agents, 2026-10-09)', () => {
+  test('uv run --group test, uv run --with, poetry run -q: all test runs, and the test file is still named', () => {
+    expect(isTestRun('uv run --group test python -m pytest tests/memory/test_liststore.py 2>&1 | tail -15')).toBe(true)
+    expect(isTestRun('uv run --with pytest pytest tests/test_a.py')).toBe(true)
+    expect(isTestRun('poetry run -q pytest tests/test_a.py')).toBe(true)
+    expect(isTestRun('uv run --group test python -m ruff check .')).toBe(false)
+    expect(namedTestFile('uv run --group test python -m pytest tests/memory/test_liststore.py', 'python')).toBe('tests/memory/test_liststore.py')
+  })
+
+  test('its real summary, with Windows line endings, reads red and green', () => {
+    expect(readRun('FAILED tests/memory/test_liststore.py::test_reset_memory_clears_only_that_id\r\n======================== 3 failed, 1 passed in 16.14s =========================\r\n')).toBe('fail')
+    expect(readRun('tests/memory/test_liststore.py::test_add_interaction_uses_given_id PASSED [100%]\r\n\r\n============================== 4 passed in 4.79s ==============================\r\n')).toBe('pass')
+  })
+})

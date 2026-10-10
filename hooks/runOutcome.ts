@@ -48,6 +48,17 @@ export function isTruncated(output: string): boolean {
   return TRUNCATION_BANNER.test(output)
 }
 
+// The runner itself never started: no test ran (seen on dapr-agents: a global python without pytest, uv with no pytest).
+const NOT_STARTED = /No module named ['"]?[\w.]+['"]?|Failed to spawn: \S+|command not found|is not recognized as an internal or external command/i
+
+/**
+ * Why the runner never started, when output with no summary says so; null otherwise. Asked only when no summary was
+ * read, so a real run whose tests fail on an import error is still red.
+ */
+export function runnerDidNotStart(output: string): string | null {
+  return NOT_STARTED.exec(stripAnsi(output))?.[0] ?? null
+}
+
 /** An errored result whose text is a permission hold or refusal: not a run at all, so not even "unread". */
 export function neverRan(output: string): boolean {
   return NEVER_RAN.test(output)

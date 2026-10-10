@@ -56,7 +56,9 @@ const PM_FLAGS = String.raw`(?:\s+(?:--?[\w-]+(?:=\S+)?(?:\s+(?!(?:run|test)\b)[
 const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)${PM_FLAGS}\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
 // Monorepo task runners asked for the test task.
 const WORKSPACE_RUN = String.raw`(?:(?:npx|pnpm(?:\s+exec)?|yarn)\s+)?(?:turbo(?:\s+run)?\s+test(?::[\w-]+)?(?=\s|$)|nx\s+(?:test(?=\s|$)|run\s+[\w@/.-]+:test(?::[\w-]+)?(?=\s|$)|run-many\s+[^;&|\n]*?(?:-t|--targets?)[=\s]+test(?=[\s,]|$))|lerna\s+run\s+test(?=\s|$))`
-const PYTEST = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run\s+)?(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
+// A Python launcher, with its own flags before the program: `uv run --group test python -m pytest`, `poetry run -q pytest`.
+const PY_LAUNCHER = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run(?:\s+-[^\s;&|]+(?:\s+(?!-|python|py\b|pytest)[^\s;&|]+)?)*\s+)?`
+const PYTEST = String.raw`${PY_LAUNCHER}(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
 const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
 const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
 const DOTNET = String.raw`dotnet\s+test(?=\s|$)`

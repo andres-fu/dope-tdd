@@ -35,6 +35,11 @@ const MAINTAINER = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
 const CONTENT_TASK = /\badd new\b|^\s*\[docs?\]|\bdocs?:/i
 // "[FEATURE] …", "Feature request: …", "bump to python 3.14": new work or upkeep, not a defect.
 const FEATURE_OR_CHORE = /^\s*\[feat(?:ure)?\]|\bfeature request\b|^\s*(?:bump|chore\b|upgrade to\b)/i
+// "assign it to me", "I'd like to work on this", "can I take this?", "I'm working on a fix": someone else's turn.
+const CLAIM = /\bassign (?:it|this|the issue)? ?to me\b|\b(?:i'?d|i would|i'?ll|i will|i want to|i'?m going to) (?:like to |love to )?(?:work on|take|fix|pick up|handle)\b|\bcan i (?:work on|take|pick up|fix|handle)\b|\bi'?m (?:currently )?(?:working on|on it|looking into)\b/i
+const UNCLAIM = /\bno longer\b|\bfree to take\b|\bunassign\b|\bcan'?t (?:work on|continue|finish)\b|\bgo ahead\b|\bnot (?:going to|working on)\b/i
+/** A claim older than this is stale: the issue is open to others again. */
+const CLAIM_DAYS = 60
 /** No one repository fills the shortlist: at most this many issues from each. */
 const PER_REPO = 2
 
@@ -62,6 +67,19 @@ async function stackOverflowHits(query) {
   } catch {
     return null
   }
+}
+
+/** The latest recent comment that claims the issue and its author has not taken back, or null. */
+export function claimOf(comments, nowMs) {
+  let claim = null
+  for (const comment of comments) {
+    const by = comment.author?.login ?? 'ghost'
+    if (claim !== null && claim.by === by && UNCLAIM.test(comment.body)) claim = null
+    else if (CLAIM.test(comment.body) && nowMs - Date.parse(comment.createdAt) < CLAIM_DAYS * 86_400_000) {
+      claim = { by, at: comment.createdAt.slice(0, 10), quote: comment.body.trim().split(/\n/)[0].slice(0, 160) }
+    }
+  }
+  return claim
 }
 
 /** The best-scored issues in order, at most PER_REPO from any one repository. */
@@ -168,6 +186,26 @@ function lookupRepos(names) {
   return repos
 }
 
+/** The last 30 comments of each issue, oldest first, in batches of 40 issues. */
+function lookupComments(issues) {
+  const comments = new Map()
+  for (let at = 0; at < issues.length; at += 40) {
+    const batch = issues.slice(at, at + 40)
+    const parts = batch.map((issue, i) => {
+      const [owner, name] = issue.repository.nameWithOwner.split('/')
+      return `i${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issue(number: ${issue.number}) { comments(last: 30) { nodes { author { login } createdAt body } } } }`
+    })
+    let data = {}
+    try {
+      data = JSON.parse(gh(['api', 'graphql', '-f', `query={ ${parts.join(' ')} }`])).data ?? {}
+    } catch {
+      // Unreadable: the issue stays in, unchecked for claims, rather than the search failing.
+    }
+    batch.forEach((issue, i) => comments.set(issue.url, data[`i${i}`]?.issue?.comments?.nodes ?? []))
+  }
+  return comments
+}
+
 function parseArgs(argv) {
   const args = { langs: ['typescript', 'javascript', 'python'], minStars: 500, since: new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10), top: 15 }
   for (let i = 0; i < argv.length; i++) {
@@ -215,6 +253,14 @@ async function main() {
     }
     kept.push({ issue, repo, ai, ...scored })
   }
+  // Someone asked to take it: their turn, not ours (dapr-agents #885 was claimed 4 hours before our comment).
+  const comments = lookupComments(kept.map(entry => entry.issue))
+  for (const entry of [...kept]) {
+    const claim = claimOf(comments.get(entry.issue.url), started)
+    if (claim === null) continue
+    kept.splice(kept.indexOf(entry), 1)
+    dropped.push({ issue: entry.issue, why: 'claimed in a comment', claim })
+  }
   kept.sort((a, b) => b.score - a.score || b.repo.stargazerCount - a.repo.stargazerCount)
   const shortlist = shortlistOf(kept, args.top)
   // Corroboration from outside the issue tracker: the same problem asked about on Stack Overflow.
@@ -233,7 +279,7 @@ async function main() {
   const report = [
     `# Bug search ${day}`,
     '',
-    `Searched ${args.langs.join(', ')}, labels bug and good first issue, open, unassigned, no linked PR, under 15 comments, updated since ${args.since}. ${issues.length} issues in ${new Set(issues.map(issue => issue.repository.nameWithOwner)).size} repositories; ${kept.length} kept, ${dropped.length} dropped; ${((Date.now() - started) / 1000).toFixed(1)} s.`,
+    `Searched ${args.langs.join(', ')}, labels bug and good first issue, open, unassigned, unclaimed in comments, no linked PR, under 15 comments, updated since ${args.since}. ${issues.length} issues in ${new Set(issues.map(issue => issue.repository.nameWithOwner)).size} repositories; ${kept.length} kept, ${dropped.length} dropped; ${((Date.now() - started) / 1000).toFixed(1)} s.`,
     '',
     'Nothing below is verified against code yet: these are leads. Next: read the code for the shortlist, in parallel.',
     '',

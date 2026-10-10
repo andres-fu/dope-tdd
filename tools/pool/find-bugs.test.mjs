@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { classifyAiPolicy, repoProblem, scoreIssue, shortlistOf, soQuery } from './find-bugs.mjs'
+import { claimOf, classifyAiPolicy, repoProblem, scoreIssue, shortlistOf, soQuery } from './find-bugs.mjs'
 
 const NOW = Date.parse('2026-10-09T00:00:00Z')
 const good = {
@@ -71,4 +71,18 @@ test('feature requests and chores are not bugs either', () => {
 test('the Stack Overflow query names the project and the problem, without bracket tags or noise', () => {
   assert.equal(soQuery({ repository: { name: 'medusa' }, title: '@medusajs/ui: toast.loading() ignores the dismissable prop (hardcoded to false)' }), 'medusa toast.loading() ignores dismissable prop hardcoded false')
   assert.equal(soQuery({ repository: { name: 'jodit' }, title: "[Bug] Paste after a space deletes the space if it's after a tag" }), "jodit Paste after space deletes space if it's after")
+})
+
+test('an issue someone asked to take, recently and not withdrawn, is claimed (dapr-agents #885)', () => {
+  const say = (login, createdAt, body) => ({ author: { login }, createdAt, body })
+  const asked = say('casper', '2026-10-08T10:00:00Z', 'Hi, can you assign it to me? I would like to fix this.')
+  assert.deepEqual(claimOf([say('bot', '2026-10-01T00:00:00Z', 'Thanks for the report'), asked], NOW), { by: 'casper', at: '2026-10-08', quote: 'Hi, can you assign it to me? I would like to fix this.' })
+  assert.equal(claimOf([say('ana', '2026-10-02T00:00:00Z', "I'd like to work on this")], NOW).by, 'ana')
+  assert.equal(claimOf([say('ana', '2026-10-02T00:00:00Z', "I'm working on a fix, PR soon")], NOW).by, 'ana')
+  assert.equal(claimOf([say('ana', '2026-10-02T00:00:00Z', 'Can I take this one?')], NOW).by, 'ana')
+  // Old claims go stale; a claim taken back frees the issue; talk about the bug is not a claim.
+  assert.equal(claimOf([say('ana', '2026-05-01T00:00:00Z', 'Assign it to me please')], NOW), null)
+  assert.equal(claimOf([asked, say('casper', '2026-10-08T12:00:00Z', "Sorry, I no longer have time, it's free to take")], NOW), null)
+  assert.equal(claimOf([say('ana', '2026-10-02T00:00:00Z', 'I see this too on Windows. Any workaround?')], NOW), null)
+  assert.equal(claimOf([], NOW), null)
 })

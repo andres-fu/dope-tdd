@@ -4,6 +4,8 @@ import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
 import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
+  AVA_REAL_FAIL,
+  AVA_REAL_PASS,
   DOTNET_FAIL,
   DOTNET_MTP_FAIL,
   DOTNET_PASS,
@@ -278,5 +280,26 @@ describe('the package a workspace run targets', () => {
     expect(workspaceTarget('npx nx run api:test')).toBe('api')
     expect(workspaceTarget('npx vitest run tests/x.test.ts')).toBe(null)
     expect(workspaceTarget('pnpm -r test')).toBe(null)
+  })
+})
+
+describe('ava, read from real output', () => {
+  test('its runs are test runs, however it is started', () => {
+    expect(isTestRun('npx ava source/utils/a.spec.ts')).toBe(true)
+    expect(isTestRun('pnpm exec ava source/utils/a.spec.ts')).toBe(true)
+    expect(isTestRun('node node_modules/ava/entrypoints/cli.js source/utils/a.spec.ts')).toBe(true)
+    expect(isTestRun('cat node_modules/ava/readme.md')).toBe(false)
+  })
+
+  test('the summary decides: a failed test is red, a clean run is green; the failed file is named with forward slashes', () => {
+    expect(readRun(AVA_REAL_FAIL)).toBe('fail')
+    expect(failedFilesIn(AVA_REAL_FAIL)).toEqual(['source/utils/zz-dope-probe.spec.ts'])
+    expect(readRun(AVA_REAL_PASS)).toBe('pass')
+    expect(failedFilesIn(AVA_REAL_PASS)).toEqual([])
+  })
+
+  test('an uncaught exception or no files found is not a pass', () => {
+    expect(readRun('  ✔ one\n  ─\n\n  1 uncaught exception\n  2 tests passed\n')).toBe('fail')
+    expect(readRun("  ✘ Couldn't find any files to test\n")).toBe('none')
   })
 })

@@ -234,3 +234,8 @@ export const DOTNET_REAL_NO_MATCH = [
   'No test matches the given testcase filter `FullyQualifiedName~NoSuchSuiteXyz` in C:\\work\\Roadhouse-Game\\.godot\\mono\\temp\\bin\\Debug\\Roadhouse.dll',
   '',
 ].join('\n')
+
+// --- ava, REAL: ava 8.0.1 with tsx, Nano-Collective/nanocoder, Windows, 2026-10-09.
+// `node node_modules/ava/entrypoints/cli.js <file>`. FAIL: a two-test probe file with one failing on purpose; PASS: source/config/preferences.spec.ts, middle lines cut.
+export const AVA_REAL_FAIL = "\r\n  ✔ probe passes\r\n  ✘ [fail]: probe fails on purpose\r\n  ─\r\n\r\n  probe fails on purpose\r\n\r\n  source\\utils\\zz-dope-probe.spec.ts:3\r\n\r\n   2: test('probe passes', t => { t.is(1, 1); });              \n   3: test('probe fails on purpose', t => { t.is(1 + 1, 3); });\n   4:                                                          \r\n\r\n  Difference (- actual, + expected):\n\n  - 2\n  + 3\r\n\r\n  › <anonymous> (source/utils/zz-dope-probe.spec.ts:3:41)\r\n\r\n  ─\r\n\r\n  1 test failed\r\n"
+export const AVA_REAL_PASS = "\n\npreferences.spec.ts\n  ✔ loadPreferences loads valid JSON file\n  ✔ loadPreferences returns empty object when file does not exist\n  ✔ loadPreferences returns empty object for invalid JSON\n  ─\n\n\n  112 tests passed\n"

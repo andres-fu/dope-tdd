@@ -177,3 +177,28 @@ describe('the shell gate knows every stack', () => {
     expect(result.deny).toMatch(/write the failing test first/)
   })
 })
+
+describe('a Node project tested with ava', () => {
+  test('the catch check finds ava in node_modules and runs the spec file through it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.existingFiles.add(`${ROOT}/node_modules/ava/entrypoints/cli.js`)
+    world.fileContents.set(`${ROOT}/src/utils/path.ts`, 'export const a = 1')
+
+    await writeAt($, 'src/utils/path.spec.ts', "test('x', t => { t.is(1, 2) })")
+    world.bashFails = true
+    world.bashText = '  ✘ [fail]: x\n  ─\n\n  src/utils/path.spec.ts:1\n\n  ─\n\n  1 test failed\n'
+    await runBash($, 'npx ava src/utils/path.spec.ts')
+    await editAt($, 'src/utils/path.ts')
+    world.bashFails = false
+    world.bashText = '  ✔ x\n  ─\n\n  1 test passed\n'
+    world.baselineRun = { text: '  ✔ x\n  ─\n\n  1 test passed\n', exitCode: 0 }
+    world.catchRun = { text: '  ✘ [fail]: x\n  ─\n\n  src/utils/path.spec.ts:1\n\n  ─\n\n  1 test failed\n', exitCode: 1 }
+    await runBash($, 'npx ava src/utils/path.spec.ts')
+    const status = await runCommand($, 'tdd')
+
+    const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('ava/entrypoints/cli.js')))
+    expect(check).toEqual(['node', `${ROOT}/node_modules/ava/entrypoints/cli.js`, 'src/utils/path.spec.ts'])
+    expect(status.text).toMatch(/caught 1/)
+  })
+})

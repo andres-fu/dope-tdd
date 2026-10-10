@@ -520,7 +520,7 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
  * released whatever happens; a file that moved while reverted is left alone.
  */
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
-const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest'])
+const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava'])
 const CHECK_WORKTREE = '.git/dope-tdd/wt'
 /** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
 const MAX_COPIED_FILES = 300

@@ -13,7 +13,7 @@ import type { StackName } from './stacks'
  * replaced the first time a real run is on record.
  */
 
-export type RunnerKind = 'vitest' | 'jest' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
+export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
 
 /** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
 export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
@@ -50,7 +50,7 @@ export type Runner = {
 
 const START = String.raw`(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*`
 const PATHED = String.raw`(?:[\w./\\-]*[\\/])?`
-const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest)(?=\s|$)`
+const NODE_BINARY = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+exec)?)\s+)?(?:[\w./-]*\/)?(?:vitest|jest|ava)(?=\s|$)|node\s+${PATHED}ava[\\/]entrypoints[\\/]cli\.m?js(?=\s|$)`
 // Flags before the script (`--filter api`, `-F @acme/api`, `-r`, `--recursive`) and `yarn workspace <name>`.
 const PM_FLAGS = String.raw`(?:\s+(?:--?[\w-]+(?:=\S+)?(?:\s+(?!(?:run|test)\b)[^\s;&|-]\S*)?|workspace\s+\S+))*`
 const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)${PM_FLAGS}\s+(?:run\s+)?test(?::[\w-]+)?(?=\s|$)`
@@ -109,6 +109,28 @@ function forwardSlashes(path: string): string {
 
 function unique(paths: string[]): string[] {
   return [...new Set(paths)]
+}
+
+// --- ava: tests/fixtures/runnerOutputs.ts holds the real output these were written from (ava 8, Windows).
+const AVA_FAILED = /^\s*\d+\s+(?:tests? failed|uncaught exceptions?|unhandled rejections?)\b/m
+const AVA_PASSED = /^\s*\d+\s+tests? passed\b/m
+const AVA_NONE = /Couldn't find any files to test/
+// In a failure's detail block, the file and line on a line of their own: `source\utils\a.spec.ts:3`.
+const AVA_FAILED_FILE = /^\s*((?:[A-Za-z]:)?[\w./\\-]+\.(?:spec|test)\.[cm]?[jt]sx?):\d+\s*$/gm
+
+function readAva(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  if (AVA_NONE.test(text)) {
+    return 'none'
+  }
+  if (AVA_FAILED.test(text)) {
+    return 'fail'
+  }
+  return AVA_PASSED.test(text) ? 'pass' : 'unknown'
+}
+
+function avaFailedFiles(output: string): string[] {
+  return unique([...stripAnsi(output).matchAll(AVA_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])])))
 }
 
 // --- pytest: tests/fixtures/runnerOutputs.ts holds the real output these were written from.
@@ -299,6 +321,21 @@ export const RUNNERS: readonly Runner[] = [
     argv: (_root, testPath, tool) => ['node', tool, testPath],
     read: readNode,
     failedFiles: nodeFailedFiles,
+    provisional: false,
+  },
+  {
+    kind: 'ava',
+    describe: testPath => `npx ava ${testPath}`,
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
+    stack: 'node',
+    markers: ['node_modules/ava/entrypoints/cli.js', 'node_modules/ava/entrypoints/cli.mjs'],
+    tools: ['node_modules/ava/entrypoints/cli.js', 'node_modules/ava/entrypoints/cli.mjs'],
+    fallback: 'node_modules/ava/entrypoints/cli.js',
+    command: NODE_COMMAND,
+    argv: (_root, testPath, tool) => ['node', tool, testPath],
+    read: readAva,
+    failedFiles: avaFailedFiles,
     provisional: false,
   },
   {

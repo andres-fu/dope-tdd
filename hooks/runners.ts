@@ -484,6 +484,28 @@ export function readRun(output: string): RunOutcome {
   return 'unknown'
 }
 
+// The name of each failed test, by the shape each runner prints it in (tests/fixtures/runnerOutputs.ts has them).
+const FAILED_TEST_NAMES: readonly RegExp[] = [
+  // ava: `✘ [fail]: name`, sometimes followed by the reason it appends
+  /^\s*✘ \[fail\]: (.+?)(?:\s+(?:Error thrown in test|Assertion failed|Rejected promise returned by test|Test timed out|Difference \(.*))?\s*$/gm,
+  // pytest: `FAILED file::test - message` and `ERROR file::test`
+  /^(?:FAILED|ERROR)\s+(\S+::\S+)/gm,
+  // vitest: ` FAIL  file > describe > name`
+  /^\s*FAIL\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?\s+>\s+.+?)\s*$/gm,
+  // jest: `● describe › name` (not "Test suite failed to run")
+  /^\s*●\s+(?!Test suite failed to run)(.+?)\s*$/gm,
+  // gdUnit4: `suite > test   FAILED`
+  /^\s*(\S+\s+>\s+\S+)\s+FAILED\b/gm,
+  // dotnet: VSTest `Failed Name [3 ms]`, Microsoft.Testing.Platform `failed Name (3ms)`
+  /^\s*[Ff]ailed\s+([\w.<>`,+-]+)\s+[[(]\d/gm,
+]
+
+/** The names of the tests that failed, in the order printed, once each; empty for a pass or output it cannot read. */
+export function failedTestsIn(output: string): string[] {
+  const text = withoutTaskPrefixes(stripAnsi(output))
+  return unique(FAILED_TEST_NAMES.flatMap(pattern => [...text.matchAll(pattern)].flatMap(match => (match[1] === undefined ? [] : [match[1].trim()]))))
+}
+
 export function failedFilesIn(output: string): string[] {
   return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }

@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedFilesIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
+  AVA_REAL_PREEXISTING,
   AVA_REAL_PASS,
   DOTNET_FAIL,
   DOTNET_MTP_FAIL,
@@ -22,6 +23,7 @@ import {
   MAVEN_PASS,
   PYTEST_COLLECTION_ERROR_QUIET,
   PYTEST_FAIL,
+  PYTEST_REAL_DAPR_RED,
   PYTEST_MIXED_SUMMARY,
   PYTEST_NONE,
   PYTEST_PASS,
@@ -316,5 +318,32 @@ describe('pytest through a launcher with flags (seen on dapr-agents, 2026-10-09)
   test('its real summary, with Windows line endings, reads red and green', () => {
     expect(readRun('FAILED tests/memory/test_liststore.py::test_reset_memory_clears_only_that_id\r\n======================== 3 failed, 1 passed in 16.14s =========================\r\n')).toBe('fail')
     expect(readRun('tests/memory/test_liststore.py::test_add_interaction_uses_given_id PASSED [100%]\r\n\r\n============================== 4 passed in 4.79s ==============================\r\n')).toBe('pass')
+  })
+})
+
+describe('the names of the tests that failed, so old failures can be told from new ones', () => {
+  test('ava: the name after [fail]:, without the reason ava appends', () => {
+    expect(failedTestsIn(AVA_REAL_FAIL)).toEqual(['probe fails on purpose'])
+    const old = failedTestsIn(AVA_REAL_PREEXISTING)
+    expect(old).toHaveLength(5)
+    expect(old).toContain('security: rejects an in-project symlink whose target escapes')
+    expect(old).toContain('resolveFilePath: resolves simple relative paths')
+  })
+
+  test('pytest: file::test from the summary, without the message', () => {
+    expect(failedTestsIn(PYTEST_REAL_DAPR_RED)).toEqual([
+      'tests/memory/test_liststore.py::test_messages_are_isolated_per_workflow_instance_id',
+      'tests/memory/test_liststore.py::test_reset_memory_clears_only_that_id',
+      'tests/memory/test_liststore.py::test_add_interaction_uses_given_id',
+    ])
+  })
+
+  test('vitest, jest, gdUnit4 and dotnet name theirs too; a pass names none', () => {
+    expect(failedTestsIn(' FAIL  test/slugify.test.ts > slugify > keeps accents\n\n Test Files  1 failed (1)\n')).toEqual(['test/slugify.test.ts > slugify > keeps accents'])
+    expect(failedTestsIn('  ● slugify › keeps accents\n\nTests:       1 failed, 1 total\n')).toEqual(['slugify › keeps accents'])
+    expect(failedTestsIn(GDUNIT_FAIL)).toEqual(['player_test > test_land'])
+    expect(failedTestsIn(DOTNET_FAIL)).toEqual(['Foo.Tests.FooTests.Bar'])
+    expect(failedTestsIn(AVA_REAL_PASS)).toEqual([])
+    expect(failedTestsIn(PYTEST_PASS)).toEqual([])
   })
 })

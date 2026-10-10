@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { classifyPath, isTestRun } from '../hooks/mirror'
+import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
 
@@ -58,5 +58,20 @@ describe('classifyPath', () => {
     expect(classifyPath(ROOT, `${ROOT}/src/utils/a.test.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
     expect(classifyPath(ROOT, `${ROOT}/src/utils/a.spec.tsx`)).toEqual({ kind: 'test', module: 'utils/a' })
     expect(classifyPath(ROOT, `${ROOT}/tests/utils/a.spec.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
+  })
+})
+
+describe('path case follows the file system: Windows folds it, Linux does not (A5)', () => {
+  test('a Windows path is the same path in any case', () => {
+    expect(isInsideRoot('C:/work/app', 'c:/WORK/app/src/a.ts')).toBe(true)
+    expect(relativePath('C:/work/app', 'c:/Work/App/src/a.ts')).toBe('src/a.ts')
+    expect(pathKey('C:/Work/App/src/A.ts')).toBe(pathKey(String.raw`c:\work\app\src\a.ts`))
+  })
+
+  test('a POSIX path keeps its case: /work/App is not /work/app, and Foo.ts is not foo.ts', () => {
+    expect(isInsideRoot('/work/app', '/work/App/src/a.ts')).toBe(false)
+    expect(isInsideRoot('/work/app', '/work/app/src/a.ts')).toBe(true)
+    expect(relativePath('/work/app', '/work/App/src/a.ts')).toBe('/work/App/src/a.ts')
+    expect(pathKey('/work/app/src/Foo.ts')).not.toBe(pathKey('/work/app/src/foo.ts'))
   })
 })

@@ -30,7 +30,7 @@ import {
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
-import { classifyPath, isInsideRoot, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { classifyPath, isInsideRoot, pathKey, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
@@ -1239,7 +1239,7 @@ async function guardShell(
     const current = updated.current
     // The run is the current module's test, or a test that imports it: the band stays on the module being worked on.
     const keepsCurrent =
-      current !== null && named !== undefined && (relativePath(root, current.testPath).toLowerCase() === relativePath(root, named).toLowerCase() || namedImports.includes(current.module))
+      current !== null && named !== undefined && (pathKey(current.testPath) === pathKey(named) || namedImports.includes(current.module))
     if (target?.kind === 'test' && named !== undefined && !keepsCurrent) {
       // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
       const testPath = named

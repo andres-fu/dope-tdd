@@ -72,6 +72,21 @@ export function readReceipt(text) {
   }
 }
 
+/** Mods load from Claude Code v2.1.287 in the terminal (the mods overview); an older one runs the agent unguarded, silently. */
+export const MIN_CLAUDE_CODE = '2.1.287'
+
+/** True when the version in `text` (`2.1.292 (Claude Code)`) is at least `min`; false when there is none. */
+export function versionAtLeast(text, min) {
+  const found = /(\d+)\.(\d+)\.(\d+)/.exec(String(text ?? ''))
+  if (found === null) return false
+  const have = found.slice(1).map(Number)
+  const need = min.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    if (have[i] !== need[i]) return have[i] > need[i]
+  }
+  return true
+}
+
 /** The claude executable. On Windows the npm shim is a .cmd that cmd.exe would re-split, so run the .exe it points at. */
 function claudeBinary() {
   if (process.platform !== 'win32') return 'claude'
@@ -127,6 +142,11 @@ async function main() {
   const poolDir = join(homedir(), '.dope-tdd', 'pool')
   mkdirSync(poolDir, { recursive: true })
   const baseConfig = JSON.parse(args.config)
+  // Seen 2026-10-10: a stray Claude Code 2.1.12 ran an agent with no Dope TDD at all. Refuse before spending anything.
+  const version = execFileSync(claudeBinary(), ['--version'], { encoding: 'utf8' }).trim()
+  if (!versionAtLeast(version, MIN_CLAUDE_CODE)) {
+    throw new Error(`Claude Code ${version} is older than ${MIN_CLAUDE_CODE}, which mods need: the agent would run without Dope TDD. Update Claude Code first.`)
+  }
 
   const legs = args.modes.map(mode => ({ mode, dir: resolve(args.repo, '..', `${repoName}-ab-${mode}-${stamp()}`) }))
   for (const leg of legs) {

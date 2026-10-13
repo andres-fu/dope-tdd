@@ -246,6 +246,7 @@ same way the plugin does. Run it locally from a pull request's checkout with
 ```bash
 claude plugin test .
 claude plugin validate .
+npx tsx tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
 ```
 
 Tests live in `tests/`; the hooks module is `hooks/register.tsx`, with the

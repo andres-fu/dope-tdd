@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BAND, ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests } from './engine'
+import { BAND, FIXTURE_DRIVE, ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests } from './engine'
 import type { FakeWorld } from './engine'
 
 /** A checkout whose .git is a folder, as a person's clone has it, with these markers in it. */
@@ -64,8 +64,8 @@ describe('the guard stands down while a git operation is in progress', () => {
 
   test('a linked worktree is read through its .git file', async ($, on) => {
     const world = fakeEngine(on)
-    world.fileContents.set(`${ROOT}/.git`, 'gitdir: C:/work/main/.git/worktrees/throughline\n')
-    world.existingFiles.add('C:/work/main/.git/worktrees/throughline/BISECT_LOG')
+    world.fileContents.set(`${ROOT}/.git`, `gitdir: ${FIXTURE_DRIVE}work/main/.git/worktrees/throughline\n`)
+    world.existingFiles.add(`${FIXTURE_DRIVE}work/main/.git/worktrees/throughline/BISECT_LOG`)
 
     const edit = await editAt($, 'src/utils/a.ts')
 

@@ -118,7 +118,8 @@ export function formatGlossary(): string {
     '  UNGUARDED      a source file changed with no test touched first',
     '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged',
     '  BLOCKED        an edit was refused until the test is written',
-    '  PAUSED         the guard is off; edits are not counted',
+    '  PAUSED         the guard is off (/tdd off, or the band); edits are not counted; /tdd on turns it back on',
+    '  GIT REBASE     a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard stands down until it ends',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
     "  DOPE           Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar",
   ].join('\n')

@@ -5,7 +5,8 @@ nothing slows the current pass down. Add when you take a shortcut; strike
 when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 `review` = the same night's code review, `owner` = the owner's asks,
 `live` = a live playground run, `arch2` = the second architect review (2026-10-08),
-`docs` = the official plugin and mods docs at code.claude.com.
+`docs` = the official plugin and mods docs at code.claude.com,
+`checkmate` = ideas from github.com/rcrsr/checkmate, a lint-on-edit Claude Code plugin (2026-10-13).
 
 ## Correctness
 
@@ -18,7 +19,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `arch2 6` "Unread" is wrong, and repeats, for every runner that is not Vitest or Jest: mocha, node:test and playwright print a summary the reader cannot parse, and skipped-only runs read as unknown. One honest "cannot read this runner" line, said once.
 - [x] `arch2 7` Shell cwd drift: relative paths resolved against the session root while the shell cwd persisted. Paid 2026-10-09: segments carry the directory they run in (`locatedSegments`); writes, the named test file, the run's own location and the runner's FAIL lines all resolve there, and a run outside the root is not this project's run. Left over: a `cd` inside a subshell `( ... )` is not tracked.
 - [ ] `arch2 5` Pending changes for non-current modules never surface: two modules changed, `npm test` run, only the current one is checked; the other sits in `changes` with no line and no `/tdd` row.
-- [ ] `docs` After `/clear`, `$.state` resets to its defaults and `session.start` does not fire again, so remembered unlocks and the repair of an interrupted check wait for the next session. Hook `classic.SessionStart` with `source: 'clear'` and re-seed from the store (mods reference, Session events).
+- [x] `docs` Paid 2026-10-13 (`docs/decisions/2026-10-13_mvp-safety.md`): `classic.SessionStart` with `source` clear, resume or fork re-seeds from the store (repair, remembered unlocks, config), as the mods docs prescribe. After `/clear`, `$.state` resets to its defaults and `session.start` does not fire again, so remembered unlocks and the repair of an interrupted check wait for the next session. Left over: the session's counts and a pause do not carry over; `/clear` starts the next conversation guarded, and `/tdd off` says so.
 - [ ] `docs` `$.fs.write` is not atomic (mods reference): the catch check's revert and restore can be read half-written by another process. The store is shared by every session on the machine, so the journal keyed by root and module is the right shape, but two sessions in one repo share one lock.
 
 ## Product
@@ -29,11 +30,16 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `owner` Module map: new import edge in an edited file as a signal with a reason; `boundaries` in `dope-tdd.json` for hard rules.
 - [ ] `owner` Candidate mechanism: Dope TDD runs the module's own test after each edit, so RED and GREEN come from its own runs rather than from reading the agent's output.
 - [ ] `arch 5` Cut Pause in favour of a session-scoped `/tdd mode warn` that keeps counting.
-- [ ] `arch` Uninstall path: `/tdd off`, a clean store, nothing left in the repo but the JSON.
+- [~] `arch` Uninstall path: `/tdd off`, a clean store, nothing left in the repo but the JSON. `/tdd off` and `/tdd on` paid 2026-10-13 (a pause by command, for the VS Code panel where the band does not draw). Open: a clean store.
 - [ ] `arch2 8` No catch-check opt-out: `"catchCheck": false` in `dope-tdd.json` for a repo with a dev server or `tsc --watch` that sees every revert.
 - [x] `arch2 9` Paid 2026-10-09 with beth S7. REFACTOR on the band is coloured like green; it is a fact about the change, not a verdict on it.
 - [ ] `docs` In the VS Code extension's chat panel hooks run but nothing draws (mods overview, Where mods run): the band is invisible there and the tool results, `/tdd` and the status tool are the whole face. Say so in the README, and keep every verdict in the tool result.
 - [x] `docs` Publish checklist (plugins/publish): paid 2026-10-08. `version` omitted on purpose so the commit is the version and every push reaches testers (CI validates non-strict for that reason); `license`, `homepage`, `repository` and `keywords` set; LICENSE (MIT); CI on windows and ubuntu; tester brief in `docs/testers.md`. Left over: an eval suite with `claude plugin eval` using the playground planted bugs as cases against a no-plugin baseline, the scripted live harness `arch 4` asks for; it runs only on Linux or WSL2, since a Bash grant needs a sandbox backend.
+
+- [x] `checkmate` Paid 2026-10-13 (`docs/decisions/2026-10-13_mvp-safety.md`): the guard stands down while a git rebase, merge, cherry-pick, revert, am or bisect is in progress (markers in the git directory, read through a `.git` file in a linked worktree), says so at the start and the end, and shows GIT <OPERATION> on the band. Before, an agent resolving a conflict was refused or charged for code it did not write, and a green run could start a catch check that reverts a file mid-rebase.
+- [ ] `checkmate` Replay real transcripts through the detectors: feed every Bash command in `~/.claude/projects/**/*.jsonl` through `findSourceWrites`, `isTestRun` and the summary readers, and report hits, misses and timing. The corpus the `live` unread-run item and the interpreter-heredoc item ask for. Checkmate's `scan-bash` is the model.
+- [ ] `checkmate` A symlinked root is untested: no path is realpath'd, and checkmate 2.4.0 found that a symlinked checkout made `path.relative` return `../`, which silently disabled its guard. Write one test with a symlinked session root (macOS `/tmp` is `/private/tmp`).
+- [ ] `checkmate` A runner reader in `dope-tdd.json`: a regex with named groups or JSON lines, so a tester can bring mocha, node:test or GUT without a code change (helps `arch2 6`).
 
 ## Structure and tests
 

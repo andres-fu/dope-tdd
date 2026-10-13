@@ -36,11 +36,12 @@ moment, and what you see:
 | Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED** |
 | Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **RED** or **GREEN**, with the count |
 | Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **NEVER SAW RED** |
-| Go green after red | Holds the result. Undoes Claude's change on disk, runs only that module's test, restores the change, and attaches the verdict to what Claude reads. | **CAUGHT**, **MISSED**, or **unverified** with the reason |
+| Go green after red | Holds the result. Undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads. With Vitest, Jest or ava in an ordinary git clone the undo happens in a throwaway copy inside `.git`, so your files are not touched; other runners, a linked worktree, or a copy that cannot reproduce the project undo on disk for one test run and restore. | **CAUGHT**, **MISSED**, or **unverified** with the reason |
 | Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **TEST CHANGED** |
 | Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **REFACTOR** |
 | Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **unverified: change not captured** |
-| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or press pause | Lets it through, counts it, and asks Claude to say why in its reply | **N WORKAROUNDS**, each one named |
+| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard (`/tdd off` or the band) | Lets it through, counts it, and asks Claude to say why in its reply | **N WORKAROUNDS**, each one named |
+| Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down: nothing is refused, counted or checked, and no file is undone, until the operation ends. Claude is told when it starts and when it ends. | **GIT REBASE** (or the operation's name) |
 
 Every verdict is written into the tool result Claude reads, in the same
 call, so Claude cannot miss it and you can ask it what it saw.
@@ -165,13 +166,18 @@ Then give Claude a real bug or a small feature and watch the words.
 
 ## Known rough edges
 
-- Tested on Windows only so far. You may be the first run on a Mac or on
+- Live runs so far are on Windows. CI runs the whole suite on Windows,
+  Linux and macOS, but you may be the first person to use it on a Mac or on
   Linux. If paths or shell commands misbehave, that is exactly what we want
   to hear.
-- The catch check briefly reverts your source file on disk, runs the test,
-  and restores it. Your editor may flicker. Don't save that file during a
-  check. If anything ever goes wrong there, the plugin keeps your text
-  beside the file as `<file>.dope-tdd.kept` and says so.
+- With Python, Godot, Java or .NET, the catch check still undoes your change
+  on disk for the length of one test run, then restores it: an editor or a
+  file watcher may flicker, so don't save that file during a check. If the
+  file changed under it, your file is left alone and your change is kept in
+  `~/.dope-tdd/kept/<repo>/`, never inside the repository. Vitest, Jest and
+  ava check in a throwaway copy instead, except in a linked worktree, with
+  more than 300 changed files, or when the test is not green in the copy:
+  then they check on disk the same way.
 - Godot, Java and .NET are provisional: their summary readers were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most
@@ -179,16 +185,24 @@ Then give Claude a real bug or a small feature and watch the words.
   never as a verdict.
 - A Godot project needs `godot` on PATH, `GODOT_BIN` set, or `"godot"` in
   `dope-tdd.json` pointing at the binary, for the catch check to run.
+- Several sessions in one checkout share one catch-check lock, so a second
+  agent cannot edit or test a file while another session's check has it
+  undone. Outside a git checkout the lock covers one session only, and the
+  log says so. Giving each agent its own git worktree is still the calmest
+  setup.
+- `/tdd off` pauses the guard for the current conversation and `/tdd on`
+  resumes it; `/clear` starts the next conversation with the guard on. A
+  pause is counted as a workaround, so it shows on the record.
+- During a git rebase, merge, cherry-pick, revert, `am` or bisect the guard
+  stands down and says so. A bisect you forgot to reset keeps it standing
+  down; the band and `/tdd` show **GIT BISECT** until you run
+  `git bisect reset`.
+- Claude Code cloud sessions do not load plugins, so the guard does not run
+  there. Use the pull-request check (see the README) to prove the result of
+  a cloud session instead.
 - It is a prototype. Some words will be wrong sometimes. The plugin's rule
   for itself is that every verdict says why, so when a word is wrong you
   should be able to see what it was looking at.
-- One Claude Code session per checkout, for now. The catch check reverts a
-  file for a moment, and the lock that says so is per session: a second
-  session in the same folder, another agent say, could edit or test that file
-  while it is reverted. If you run several agents, give each its own git
-  worktree; the plugin keeps worktrees apart. A shared lock is on the list.
-- Observe mode watches without refusing, but the catch check still runs in
-  it. If you want nothing touched on disk, there is no switch for that yet.
 
 ## What to tell us
 

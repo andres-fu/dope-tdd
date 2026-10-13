@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath } from '../hooks/mirror'
+import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath, respelled } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
 
@@ -73,5 +73,26 @@ describe('path case follows the file system: Windows folds it, Linux does not (A
     expect(isInsideRoot('/work/app', '/work/app/src/a.ts')).toBe(true)
     expect(relativePath('/work/app', '/work/App/src/a.ts')).toBe('/work/App/src/a.ts')
     expect(pathKey('/work/app/src/Foo.ts')).not.toBe(pathKey('/work/app/src/foo.ts'))
+  })
+})
+
+describe('respelled: a path reached through a symbolic link, spelled from the root', () => {
+  test('a path inside the root comes back as it is', () => {
+    expect(respelled('/tmp/app', '/private/tmp/app', '/tmp/app/src/a.ts')).toBe('/tmp/app/src/a.ts')
+  })
+
+  test('a path that landed in the root\'s real location is spelled from the root', () => {
+    expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/app/src/a.ts')).toBe('/tmp/app/src/a.ts')
+    expect(respelled('/tmp/app/', '/private/tmp/app', '/private/tmp/app/src/a.ts')).toBe('/tmp/app/src/a.ts')
+  })
+
+  test('the root\'s real location itself is the root', () => {
+    expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/app')).toBe('/tmp/app')
+  })
+
+  test('a path that landed elsewhere, or a root that could not be resolved, is null', () => {
+    expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/other/a.ts')).toBeNull()
+    expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/application/a.ts')).toBeNull()
+    expect(respelled('/tmp/app', null, '/private/tmp/app/src/a.ts')).toBeNull()
   })
 })

@@ -32,7 +32,7 @@ import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
-import { classifyPath, isInsideRoot, pathKey, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
@@ -203,6 +203,46 @@ async function readWhole($: EngineInterface, path: string): Promise<string | nul
   }
 }
 
+async function realPathOf($: EngineInterface, path: string): Promise<string | null> {
+  try {
+    return (await $.fs.stat(path, { resolve: true })).realPath ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The path as the project spells it. A file reached through a symbolic link (macOS reaches /private/tmp through /tmp;
+ * a checkout can be a link) is outside the root by its spelling and inside it in fact, and read as outside, its edit
+ * would pass unguarded and uncounted. A path inside the root by its spelling costs nothing; any other is resolved,
+ * through the nearest folder that exists when the file is not written yet, and kept as it is when it lands elsewhere.
+ */
+async function projectPath($: EngineInterface, root: string, path: string): Promise<string> {
+  if (isInsideRoot(root, path)) {
+    return path
+  }
+  let realRoot = realRoots.get(root)
+  if (realRoot === undefined) {
+    realRoot = await realPathOf($, root)
+    realRoots.set(root, realRoot)
+  }
+  let probe = path.replace(/\\/g, '/').replace(/\/$/, '')
+  let rest = ''
+  for (let depth = 0; depth < MAX_RESOLVE_DEPTH; depth++) {
+    const real = await realPathOf($, probe)
+    if (real !== null) {
+      return respelled(root, realRoot, rest === '' ? real : `${real.replace(/\/$/, '')}/${rest}`) ?? path
+    }
+    const cut = probe.lastIndexOf('/')
+    if (cut <= 0) {
+      return path
+    }
+    rest = rest === '' ? probe.slice(cut + 1) : `${probe.slice(cut + 1)}/${rest}`
+    probe = probe.slice(0, cut)
+  }
+  return path
+}
+
 /** Tells a file that is not there from one that is there but cannot be read (too large, locked): only the first is a new file. */
 /**
  * The folder of the package a workspace run names: a path from where the shell is, or a name matched against each
@@ -289,6 +329,10 @@ let sharedLockUnavailableSaid = false
 const baselined = new Set<string>()
 /** Each root's upstream (else origin) remote URL, or null, read once for the field guide. */
 const remotesByRoot = new Map<string, string | null>()
+/** Each root's real location, every symbolic link followed, or null when it cannot be resolved; asked once per root. */
+const realRoots = new Map<string, string | null>()
+/** How many folders up a path not written yet is followed to one that exists. */
+const MAX_RESOLVE_DEPTH = 64
 
 type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy'; module: string } | { kind: 'unavailable' }
 
@@ -1008,10 +1052,11 @@ async function guardFileWrite(
 async function checkFileWrite(
   $: EngineInterface,
   tool: 'Edit' | 'Write',
-  filePath: string,
+  writtenPath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
   const root = await $.session.root()
+  const filePath = await projectPath($, root, writtenPath)
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)
   const target = classifyPath(root, filePath, config)
@@ -1205,11 +1250,12 @@ async function checkShell(
   const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
 
   // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
-  const writes = findSourceWrites(command, start).map(path => ({
-    path: absolutePath(root, path),
-    module: sourceModuleOf(root, path, config),
-    policy: policyFor(config, relativePath(root, path)),
-  }))
+  const writes = await Promise.all(
+    findSourceWrites(command, start).map(async written => {
+      const path = await projectPath($, root, absolutePath(root, written))
+      return { path, module: sourceModuleOf(root, path, config), policy: policyFor(config, relativePath(root, path)) }
+    }),
+  )
   const locked = writes.flatMap(({ module, policy }) =>
     module !== null && policy === 'enforce' && current.unlocked[module] === undefined ? [module] : [],
   )

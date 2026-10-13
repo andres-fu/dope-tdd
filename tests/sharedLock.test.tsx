@@ -8,7 +8,8 @@ const MIRROR = `check-lock:${storeRoot(ROOT)}`
 const other = (sinceMs: number) => JSON.stringify({ module: 'utils/other', sinceMs })
 
 describe('one catch-check lock across sessions', () => {
-  test('a check takes the lock with a compare-and-swap and gives it back, so nothing is left behind', async ($, on) => {
+  // The first test in this file also pays for loading the module, which took 8.7 s on a Windows runner (5 s is the default).
+  test('a check takes the lock with a compare-and-swap and gives it back, so nothing is left behind', { timeoutMs: 30_000 }, async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
 

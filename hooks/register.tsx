@@ -30,6 +30,8 @@ import {
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
 import type { SourceSnapshot } from './gitChanges'
+import { findGitOperation, gitDirFromFile } from './gitOperation'
+import type { GitOperation } from './gitOperation'
 import { classifyPath, isInsideRoot, pathKey, relativePath, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
@@ -92,6 +94,8 @@ const tick = atom({ plugin: 'dope-tdd', key: 'tick' } as const, 0)
 /** Where each of the agent's shells is: Claude Code keeps it between calls, and resets it to the root when a cd leaves the project. */
 const bashCwd = atom({ plugin: 'dope-tdd', key: 'bash-cwd' } as const, '')
 const powershellCwd = atom({ plugin: 'dope-tdd', key: 'powershell-cwd' } as const, '')
+/** The git operation the guard last stood down for, or '': kept so the start and the end are each said once. */
+const gitOperation = atom({ plugin: 'dope-tdd', key: 'git-operation' } as const, '')
 type ShellName = 'bash' | 'powershell'
 
 function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
@@ -918,7 +922,90 @@ async function noteTestEdit(
   return lines
 }
 
+/** The checkout's git directory: `.git` itself, or where a `.git` file points (a linked worktree, a submodule). */
+async function gitDirOf($: EngineInterface, root: string): Promise<string | null> {
+  if (await $.fs.exists(`${root}/.git/HEAD`)) {
+    return `${root}/.git`
+  }
+  const pointer = await readWhole($, `${root}/.git`)
+  return pointer === null ? null : gitDirFromFile(pointer, root)
+}
+
+/** The git operation in progress in this checkout, or null; a check that fails reads as none. */
+async function detectGitOperation($: EngineInterface, root: string): Promise<GitOperation | null> {
+  try {
+    const gitDir = await gitDirOf($, root)
+    return gitDir === null ? null : await findGitOperation(gitDir, path => $.fs.exists(path))
+  } catch {
+    return null
+  }
+}
+
+function standingDownLine(operation: string): string {
+  return `standing down: a git ${operation} is in progress; nothing is guarded, counted or checked until it ends`
+}
+
+/**
+ * The git operation in progress, and the lines that say what changed since the last tool call: the start and the end
+ * are each said once, to the agent in the tool result and to the person in a toast.
+ */
+async function noteGitOperation($: EngineInterface, root: string): Promise<{ operation: GitOperation | null; lines: string[] }> {
+  const operation = await detectGitOperation($, root)
+  const before = await read($, gitOperation)
+  if ((operation ?? '') === before) {
+    return { operation, lines: [] }
+  }
+  await update($, gitOperation, () => operation ?? '')
+  if (operation !== null) {
+    $.ui.toast(`dope-tdd stands down during the git ${operation}`)
+    $.ui.log(`dope-tdd: ${standingDownLine(operation)}`)
+    return {
+      operation,
+      lines: [`dope-tdd: a git ${operation} is in progress, so the guard stands down: edits and runs are not guarded, counted or checked until it ends.`],
+    }
+  }
+  $.ui.log(`dope-tdd: the git ${before} is over; the guard is back on`)
+  return { operation, lines: [`dope-tdd: the git ${before} is over; the guard is back on.`] }
+}
+
+/**
+ * During a git operation the call runs unguarded and uncounted and no catch check starts, so nothing is reverted
+ * under a conflict. A check another session already has in flight still holds a call that touches code.
+ */
+async function standDown(
+  $: EngineInterface,
+  root: string,
+  lines: string[],
+  touchesCode: boolean,
+  proceed: () => Promise<ToolCallResult>,
+): Promise<ToolCallResult> {
+  if (touchesCode) {
+    const elsewhere = await checkInFlight($, root, await $.clock.now())
+    if (elsewhere !== null) {
+      return { deny: checkingMessage(elsewhere) }
+    }
+  }
+  const result = await proceed()
+  const config = await loadConfig($, root)
+  return tell(config.mode === 'observe', result, lines)
+}
+
 async function guardFileWrite(
+  $: EngineInterface,
+  tool: 'Edit' | 'Write',
+  filePath: string,
+  proceed: () => Promise<ToolCallResult>,
+): Promise<ToolCallResult> {
+  const root = await $.session.root()
+  const git = await noteGitOperation($, root)
+  if (git.operation !== null) {
+    return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
+  }
+  const result = await checkFileWrite($, tool, filePath, proceed)
+  return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
+}
+
+async function checkFileWrite(
   $: EngineInterface,
   tool: 'Edit' | 'Write',
   filePath: string,
@@ -1079,6 +1166,30 @@ function failedModules(root: string, files: string[], config: GuardConfig): stri
 }
 
 async function guardShell(
+  $: EngineInterface,
+  command: string,
+  proceed: () => Promise<ToolCallResult>,
+  shell: ShellName,
+): Promise<ToolCallResult> {
+  const root = await $.session.root()
+  const git = await noteGitOperation($, root)
+  if (git.operation === null) {
+    const result = await checkShell($, command, proceed, shell)
+    return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
+  }
+  // The shell still moves while the guard stands down, so the next command starts where this one left it.
+  const carried = await readCwd($, shell)
+  const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
+  const touchesCode = isTestRun(command) || findSourceWrites(command, start).length > 0
+  const result = await standDown($, root, git.lines, touchesCode, proceed)
+  if (result.deny === undefined) {
+    const moved = cwdAfter(command, start)
+    await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root)
+  }
+  return result
+}
+
+async function checkShell(
   $: EngineInterface,
   command: string,
   proceed: () => Promise<ToolCallResult>,
@@ -1379,6 +1490,14 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   }
 }
 
+/** What a session starts from: an interrupted check repaired, the unlocks remembered in the store, the config read. */
+async function seedFromStore($: EngineInterface): Promise<void> {
+  const root = await $.session.root()
+  await ensureRepaired($, root, await $.clock.now())
+  await seedRememberedUnlocks($)
+  await loadConfig($, root)
+}
+
 // -t / --testNamePattern / -k / --filter / --grep: a run of some tests by name, not the whole suite.
 const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|-m|--testNamePattern|--filter|--grep|--match)(?:[\s=]|$)/
 
@@ -1513,9 +1632,28 @@ async function writeSessionLog($: EngineInterface, sessionId: string, reason: st
 `)
 }
 
+/**
+ * `/tdd off` and `/tdd on`: the band's pause button as a command, for a person who wants out now and for the surfaces
+ * where the band does not draw. Off is a pause, so it is a workaround on the record; saying it twice changes nothing.
+ */
+async function switchGuard($: EngineInterface, turnOn: boolean): Promise<string> {
+  if ((await readStats($)).paused !== turnOn) {
+    return turnOn ? 'dope-tdd is already on.' : 'dope-tdd is already off for this conversation; /tdd on turns it back on.'
+  }
+  const nowMs = await $.clock.now()
+  await change($, s => togglePause(s, nowMs))
+  $.ui.toast(turnOn ? 'TDD guard resumed' : 'TDD guard paused')
+  return turnOn
+    ? 'dope-tdd is on: an edit to untested source is refused until its test is written.'
+    : 'dope-tdd is off for this conversation: edits are not guarded or counted, and the pause is on the record. /tdd on turns it back on; so does /clear, which starts the next conversation guarded.'
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
-  const config = await loadConfig($, await $.session.root())
-  return formatStatus(await readStats($), await $.clock.now(), config)
+  const root = await $.session.root()
+  const config = await loadConfig($, root)
+  const status = formatStatus(await readStats($), await $.clock.now(), config)
+  const operation = await detectGitOperation($, root)
+  return operation === null ? status : `${standingDownLine(operation)}\n${status}`
 }
 
 export const register: Register = on => {
@@ -1528,19 +1666,26 @@ export const register: Register = on => {
       )
     })
     const started = await next(e)
-    const root = await $.session.root()
-    await ensureRepaired($, root, await $.clock.now())
-    await seedRememberedUnlocks($)
-    await loadConfig($, root)
+    await seedFromStore($)
     await $.command.register({
       name: 'tdd',
-      description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band; /tdd setup detects where your tests live; /tdd receipt prints the receipt for a pull request',
+      description: 'Show the TDD guard status and recent events; /tdd why explains the words on the band; /tdd setup detects where your tests live; /tdd receipt prints the receipt for a pull request; /tdd off and /tdd on pause and resume the guard',
     })
     await $.tool.register({
       name: 'status',
       description: 'Report the TDD guard state: paused or on, phase, current module, counts, and the recent event log.',
     })
     return started
+  })
+
+  // /clear, /resume and /branch reset $.state and do not fire session.start: without this, remembered unlocks are lost
+  // and the next edit to a module whose test was already written is refused. A compaction keeps $.state.
+  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    await seedFromStore($)
+    return next(e)
+  }).catch(($, e, next) => {
+    reportGuardFailure($, 'session re-seed', next.error)
+    return next(e)
   })
 
   // The session's receipt stays on this machine. Exits stay fast: a log that cannot be written is skipped, never waited on.
@@ -1571,6 +1716,9 @@ export const register: Register = on => {
     }
     if (words[0] === 'setup') {
       return { text: await setupText($, await $.session.root(), words[1] === 'write', await $.clock.now()) }
+    }
+    if (words[0] === 'off' || words[0] === 'on') {
+      return { text: await switchGuard($, words[0] === 'on') }
     }
     if (words[0] === 'receipt') {
       const root = await $.session.root()
@@ -1629,7 +1777,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await read($, tick)
     const current = await readStats($)
-    if (e.props.hasSurvey || !hasActivity(current)) {
+    const standingDown = await read($, gitOperation)
+    if (e.props.hasSurvey || (!hasActivity(current) && standingDown === '')) {
       return next(e)
     }
 
@@ -1642,6 +1791,7 @@ export const register: Register = on => {
       config,
       nowMs,
       logo,
+      standingDown,
       onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current?.module ?? ''}` }),
       onTogglePause: async () => {
         const nowMs = await $.clock.now()

@@ -46,7 +46,8 @@ purpose, then change it. The band says PROVEN when the proof is in.
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request.
+paste into a pull request. `/tdd off` pauses the guard for the conversation
+(on the record, as a workaround) and `/tdd on` resumes it.
 
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
@@ -145,6 +146,11 @@ fixture.
   unguarded, and tests written through the shell count as touched.
 - The project must be a git repository; without one the shell backstop
   records nothing.
+- While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
+  progress, the guard stands down: the code that operation puts on disk was
+  written before, so nothing is refused, counted or checked until it ends.
+  The band says **GIT REBASE** (or the operation's name), and Claude is told
+  when it starts and when it ends.
 
 ## What the band says
 
@@ -184,8 +190,10 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   server, `tsc --watch` or test watcher would rebuild on every revert. A
   green then stops at GREEN; turning it off is recorded as a loosening.
 
-The catch check writes the old code into your file for the length of one
-test run, then puts your change back. If the session ends mid-check, the
+With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
+your change in a throwaway copy inside `.git` and never writes your files.
+Otherwise it writes the old code into your file for the length of one test
+run, then puts your change back. If the session ends mid-check, the
 change is put back on the way out (or at the next session start). If the
 file changed under it, your file is left alone and the change is kept in
 `~/.dope-tdd/kept/<repo>/`, never inside the repository.

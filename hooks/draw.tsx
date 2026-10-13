@@ -14,6 +14,8 @@ export type BandModel = {
   config: GuardConfig
   nowMs: number
   logo: string | null
+  /** The git operation the guard stands down for, or '' when it is on. */
+  standingDown: string
   onViewTest: () => unknown
   onTogglePause: () => unknown
   onReset: () => unknown
@@ -28,8 +30,11 @@ function drawLogo(el: AnyElements, logo: string | null) {
   return <Text bold color={ACCENT.ember}>☠</Text>
 }
 
-function drawPhase(el: AnyElements, s: TddStats, nowMs: number) {
+function drawPhase(el: AnyElements, s: TddStats, nowMs: number, standingDown: string) {
   const { Text } = el
+  if (standingDown !== '') {
+    return <Text bold color={ACCENT.paused}>{`⏸ GIT ${standingDown.toUpperCase()}`}</Text>
+  }
   if (s.paused) {
     return <Text bold color={ACCENT.paused}>⏸ PAUSED</Text>
   }
@@ -145,7 +150,7 @@ export function drawBand(el: AnyElements, model: BandModel) {
       <Box flexDirection="row" gap={2}>
         {drawLogo(el, logo)}
         <Text bold>{TITLE}</Text>
-        {drawPhase(el, s, nowMs)}
+        {drawPhase(el, s, nowMs, model.standingDown)}
         {drawTrail(el, s)}
       </Box>
       {s.current !== null && drawVerdict(el, s, s.current)}

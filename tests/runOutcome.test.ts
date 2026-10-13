@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { failedFiles, isTruncated, neverRan, runOutcome, stripAnsi } from '../hooks/runOutcome'
+import { failedFiles, isTruncated, neverRan, runOutcome, stripAnsi, unreadableRunner } from '../hooks/runOutcome'
+import { readRun } from '../hooks/runners'
+import { MOCHA_FAIL, MOCHA_PASS, NODE_TEST_SPEC_FAIL, NODE_TEST_TAP_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 const VITEST_FAIL = `
  FAIL  tests/money/formatCents.test.ts > puts the minus sign before the dollar sign
@@ -105,5 +107,26 @@ describe('isTruncated', () => {
   test('recognises the banner Claude Code puts on a tool result it cut short', () => {
     expect(isTruncated('Output too large (41.9KB). Full output saved to: C:/x.txt')).toBe(true)
     expect(isTruncated(VITEST_PASS)).toBe(false)
+  })
+})
+
+describe('unreadableRunner: a runner whose summary is recognised but not read yet', () => {
+  test('mocha and node:test (TAP and spec reporters), from real output, are named', () => {
+    expect(unreadableRunner(MOCHA_PASS)).toBe('mocha')
+    expect(unreadableRunner(MOCHA_FAIL)).toBe('mocha')
+    expect(unreadableRunner(NODE_TEST_TAP_FAIL)).toBe('node:test')
+    expect(unreadableRunner(NODE_TEST_SPEC_FAIL)).toBe('node:test')
+  })
+
+  test('the readers do not read them, which is why they are named', () => {
+    for (const output of [MOCHA_PASS, MOCHA_FAIL, NODE_TEST_TAP_FAIL, NODE_TEST_SPEC_FAIL]) {
+      expect(readRun(output)).toBe('unknown')
+    }
+  })
+
+  test('output that is a read runner\'s, or nobody\'s, is not named', () => {
+    expect(unreadableRunner(VITEST_PASS)).toBeNull()
+    expect(unreadableRunner(PYTEST_PASS)).toBeNull()
+    expect(unreadableRunner('npm ERR! missing script: test\n')).toBeNull()
   })
 })

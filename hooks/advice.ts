@@ -57,6 +57,10 @@ export function unreadRunAdvice(truncated: boolean): string {
   return `dope-tdd: a test run happened but its summary line was not in the output${why}, so nothing was counted. Run the one test file, or pipe through tail -40, so the summary survives.`
 }
 
+export function unreadableRunnerAdvice(runner: string): string {
+  return `dope-tdd: this was a ${runner} run, and dope-tdd cannot read ${runner}'s summary yet, so ${runner} runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.`
+}
+
 export function configChangedAdvice(detail: string): string {
   return `dope-tdd: dope-tdd.json changed (${detail}). This is recorded in /tdd; say why in your reply.`
 }

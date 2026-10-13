@@ -59,6 +59,19 @@ export function runnerDidNotStart(output: string): string | null {
   return NOT_STARTED.exec(stripAnsi(output))?.[0] ?? null
 }
 
+// Runners whose summary is recognised but not read yet, each by a line only its summary prints (tests/fixtures has
+// the real output). A run of one is not an unread run, so it is named once instead of reported on every run.
+const UNREAD_RUNNERS: readonly (readonly [string, RegExp])[] = [
+  ['mocha', /^\s*\d+ passing \(\d+(?:\.\d+)?(?:ms|s|m)\)\s*$/m],
+  ['node:test', /^(?:#|ℹ) tests \d+\s*$/m],
+]
+
+/** The runner whose summary this is, when it is one dope-tdd recognises but cannot read yet; null otherwise. */
+export function unreadableRunner(output: string): string | null {
+  const text = stripAnsi(output)
+  return UNREAD_RUNNERS.find(([, summary]) => summary.test(text))?.[0] ?? null
+}
+
 /** An errored result whose text is a permission hold or refusal: not a run at all, so not even "unread". */
 export function neverRan(output: string): boolean {
   return NEVER_RAN.test(output)

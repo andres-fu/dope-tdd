@@ -103,13 +103,19 @@ with the JSON to use; `/tdd setup write` saves it.
 
 ## Languages
 
+Node is supported. The other stacks are **experimental**: the guard, the
+runs and the counts work, but their catch check has no throwaway copy and
+would undo your change on disk for one test run, so it stays off until
+`"catchCheck": true` is in `dope-tdd.json`; until then a green there is
+UNVERIFIED and says why.
+
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
-| Node | Vitest, Jest | from real output | `mirror`, `colocated`, `__tests__`, `flat` |
-| Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
-| Godot 4 | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
-| Java | Maven, Gradle | provisional | `maven` |
-| .NET | `dotnet test` | from real output | `dotnet` |
+| Node | Vitest, Jest, ava | from real output | `mirror`, `colocated`, `__tests__`, `flat` |
+| Python (experimental) | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
+| Godot 4 (experimental) | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
+| Java (experimental) | Maven, Gradle | provisional | `maven` |
+| .NET (experimental) | `dotnet test` | from real output | `dotnet` |
 
 Presets named `flat` and `godot-csharp` pair **by name**: the module is the
 file's basename, so `scripts/show/BeatDeck.cs` and `test/BeatDeckTest.cs`
@@ -189,11 +195,14 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `catchCheck`: `false` turns the catch check off, for a repo whose dev
   server, `tsc --watch` or test watcher would rebuild on every revert. A
   green then stops at GREEN; turning it off is recorded as a loosening.
+  `true` also lets an experimental runner (pytest, gdUnit4, Maven, Gradle,
+  `dotnet test`) check in place, as described next.
 
 With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
 your change in a throwaway copy inside `.git` and never writes your files.
-Otherwise it writes the old code into your file for the length of one test
-run, then puts your change back. If the session ends mid-check, the
+Otherwise (a linked worktree, a copy that cannot reproduce the project, or
+an experimental runner with `"catchCheck": true`) it writes the old code
+into your file for the length of one test run, then puts your change back. If the session ends mid-check, the
 change is put back on the way out (or at the next session start). If the
 file changed under it, your file is left alone and the change is kept in
 `~/.dope-tdd/kept/<repo>/`, never inside the repository.

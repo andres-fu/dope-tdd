@@ -41,6 +41,8 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [ ] `checkmate` A symlinked root is untested: no path is realpath'd, and checkmate 2.4.0 found that a symlinked checkout made `path.relative` return `../`, which silently disabled its guard. Write one test with a symlinked session root (macOS `/tmp` is `/private/tmp`).
 - [ ] `checkmate` A runner reader in `dope-tdd.json`: a regex with named groups or JSON lines, so a tester can bring mocha, node:test or GUT without a code change (helps `arch2 6`).
 
+- [x] `owner` Paid 2026-10-13: Python, Godot, Java and .NET are experimental. Their in-place catch check is off unless `"catchCheck": true`; a green is UNVERIFIED with the reason and the setting. Node (Vitest, Jest, ava) is the supported path and checks in a throwaway worktree.
+
 ## Structure and tests
 
 - [ ] `arch 10` Event-normalising refactor of `register.tsx` (`guardShell` does twelve things in sequence); one reducer in `stats.ts`, `verifyCatch` as a separate step.

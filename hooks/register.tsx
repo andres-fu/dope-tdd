@@ -680,6 +680,10 @@ async function verifyCatch(
     return catchOutcome('no-runner')
   }
   const { runner, runIn, relativeTest, argv } = command
+  // The experimental runners have no throwaway copy: their check writes the old code into the user's file, so only on request.
+  if (!ISOLATED_RUNNERS.has(runner.kind) && config.catchCheck !== true) {
+    return { kind: 'unverified', reason: experimentalCheckReason(runner.kind) }
+  }
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
   if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
@@ -790,6 +794,10 @@ async function verifyCatch(
   }
   await forget($, journalKey)
   return outcome
+}
+
+function experimentalCheckReason(kind: RunnerKind): string {
+  return `${kind} is experimental, so its check would undo your change on disk; "catchCheck": true in ${CONFIG_FILE} allows it`
 }
 
 function lockedMessage(config: GuardConfig, module: string): string {

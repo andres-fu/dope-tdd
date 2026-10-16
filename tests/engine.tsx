@@ -83,6 +83,14 @@ export type FakeWorld = {
   writeFails: (path: string, text: string) => boolean
   /** Paths that exist but cannot be read (too large, locked). */
   unreadable: Set<string>
+  /** Symbolic links, link path to target: `fs.stat` with `resolve` answers the real path through them. */
+  links: Map<string, string>
+}
+
+/** Where a path lands with every link in `links` followed (the longest link that prefixes it wins). */
+function landed(links: ReadonlyMap<string, string>, path: string): string {
+  const link = [...links.keys()].filter(from => path === from || path.startsWith(`${from}/`)).sort((a, b) => b.length - a.length)[0]
+  return link === undefined ? path : landed(links, `${links.get(link) ?? link}${path.slice(link.length)}`)
 }
 
 export type FakeOptions = { store?: Readonly<Record<string, unknown>>; env?: Readonly<Record<string, string>> }
@@ -122,6 +130,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     onCatchRun: () => {},
     writeFails: () => false,
     unreadable: new Set(),
+    links: new Map(),
   }
 
   mock.store(on, options.store)
@@ -225,9 +234,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       value: world.fileContents.has(path) || world.existingFiles.has(path) || world.unreadable.has(path) || (world.hasVitest && path === `${ROOT}/node_modules/vitest/vitest.mjs`),
     } as never
   })
-  on('fs.stat', () => ({
-    value: { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false },
-  }) as never)
+  on('fs.stat', (_$, e) => {
+    const stat = { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false }
+    return { value: e.resolve === true ? { ...stat, realPath: landed(world.links, fakePath(e.path)) } : stat } as never
+  })
   on('fs.list', (_$, e) => {
     const dir = fakePath(e.path ?? ROOT).replace(/\/$/, '')
     const names = new Map<string, 'file' | 'dir'>()

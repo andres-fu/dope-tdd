@@ -183,9 +183,9 @@ Then give Claude a real bug or a small feature and watch the words.
   of those, the whole output of one real test run, pass and fail, is the most
   valuable thing you can send. A run the reader cannot read shows as unread,
   never as a verdict.
-- Mocha and Node's built-in test runner (`node --test`) are recognised but
-  not read yet: Claude is told once, their runs are not counted, and `/tdd`
-  lists them under `not read:`. Untested edits are still refused.
+- Mocha is recognised but not read yet: Claude is told once, its runs are
+  not counted, and `/tdd` lists it under `not read:`. Untested edits are
+  still refused.
 - A Godot project needs `godot` on PATH, `GODOT_BIN` set, or `"godot"` in
   `dope-tdd.json` pointing at the binary, for the catch check to run.
 - Several sessions in one checkout share one catch-check lock, so a second

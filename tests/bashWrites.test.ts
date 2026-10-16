@@ -68,6 +68,30 @@ describe('findSourceWrites', () => {
     expect(findSourceWrites(note)).toEqual([])
   })
 
+  test('a script whose writes name their targets writes only those: a source path elsewhere in it is data', () => {
+    const editsATest = [
+      "python3 - <<'EOF'",
+      "s = open('tests/wiring.test.tsx').read()",
+      "s = s.replace(\"editAt($, 'src/utils/a.ts')\", \"editAt($, 'src/utils/b.ts')\")",
+      "open('tests/wiring.test.tsx', 'w').write(s)",
+      'EOF',
+    ].join('\n')
+    const withBlock = "python - <<'PY'\nold = open('src/legacy/a.py').read()\nwith open('src/pkg/calc.py', 'w') as f:\n    f.write(old)\nPY"
+    const node = "node -e \"const fs=require('fs'); fs.writeFileSync('src/b.ts', fs.readFileSync('src/a.ts','utf8'))\""
+    const pathlib = "python - <<'PY'\nfrom pathlib import Path\nPath('src/pkg/calc.py').write_text(open('src/pkg/old.py').read())\nPY"
+    expect(findSourceWrites(editsATest)).toEqual([])
+    expect(findSourceWrites(withBlock)).toEqual(['src/pkg/calc.py'])
+    expect(findSourceWrites(node)).toEqual(['src/b.ts'])
+    expect(findSourceWrites(pathlib)).toEqual(['src/pkg/calc.py'])
+  })
+
+  test('a script whose write target is not a literal still counts every source path it names', () => {
+    const viaVariable = "python - <<'PY'\ntarget = 'src/a.py'\nopen(target, 'w').write(open('src/b.py').read())\nPY"
+    const unknownStream = "node -e \"stream.write(require('fs').readFileSync('src/a.ts'))\""
+    expect(findSourceWrites(viaVariable)).toEqual(['src/a.py', 'src/b.py'])
+    expect(findSourceWrites(unknownStream)).toEqual(['src/a.ts'])
+  })
+
   test('printing a source file to stdout from a script is a read', () => {
     expect(findSourceWrites("node -e \"process.stdout.write(require('fs').readFileSync('src/App.tsx','utf8'))\"")).toEqual([])
     expect(findSourceWrites("python -c \"import sys; sys.stdout.write(open('src/App.tsx').read())\"")).toEqual([])

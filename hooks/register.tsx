@@ -261,7 +261,13 @@ type Runner = FoundRunner
 
 /** The runner for a test file, found through Claude Code's view of the disk. */
 function detectRunner($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<Runner | null> {
-  return findRunner(root, config.stack, testPath, path => $.fs.exists(path))
+  return findRunner(
+    root,
+    config.stack,
+    testPath,
+    path => $.fs.exists(path),
+    path => $.fs.read(path).catch(() => null),
+  )
 }
 
 type JournalFile = { path: string; before: string; after: string }
@@ -528,7 +534,7 @@ async function allFailingNames($: EngineInterface, root: string, config: GuardCo
 }
 
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
-const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava'])
+const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
 const CHECK_WORKTREE = '.git/dope-tdd/wt'
 /** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
 const MAX_COPIED_FILES = 300

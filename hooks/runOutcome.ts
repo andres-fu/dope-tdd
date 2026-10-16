@@ -63,7 +63,6 @@ export function runnerDidNotStart(output: string): string | null {
 // the real output). A run of one is not an unread run, so it is named once instead of reported on every run.
 const UNREAD_RUNNERS: readonly (readonly [string, RegExp])[] = [
   ['mocha', /^\s*\d+ passing \(\d+(?:\.\d+)?(?:ms|s|m)\)\s*$/m],
-  ['node:test', /^(?:#|ℹ) tests \d+\s*$/m],
 ]
 
 /** The runner whose summary this is, when it is one dope-tdd recognises but cannot read yet; null otherwise. */

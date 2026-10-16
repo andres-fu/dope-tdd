@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { failedFiles, isTruncated, neverRan, runOutcome, stripAnsi, unreadableRunner } from '../hooks/runOutcome'
 import { readRun } from '../hooks/runners'
-import { MOCHA_FAIL, MOCHA_PASS, NODE_TEST_SPEC_FAIL, NODE_TEST_TAP_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
+import { MOCHA_FAIL, MOCHA_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_TAP_PASS, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 const VITEST_FAIL = `
  FAIL  tests/money/formatCents.test.ts > puts the minus sign before the dollar sign
@@ -111,15 +111,19 @@ describe('isTruncated', () => {
 })
 
 describe('unreadableRunner: a runner whose summary is recognised but not read yet', () => {
-  test('mocha and node:test (TAP and spec reporters), from real output, are named', () => {
+  test('mocha, from real output, is named', () => {
     expect(unreadableRunner(MOCHA_PASS)).toBe('mocha')
     expect(unreadableRunner(MOCHA_FAIL)).toBe('mocha')
-    expect(unreadableRunner(NODE_TEST_TAP_FAIL)).toBe('node:test')
-    expect(unreadableRunner(NODE_TEST_SPEC_FAIL)).toBe('node:test')
+  })
+
+  test('node --test is read now, so it is never named', () => {
+    expect(readRun(NODE_TEST_REAL_FAIL)).toBe('fail')
+    expect(readRun(NODE_TEST_REAL_TAP_PASS)).toBe('pass')
+    expect(unreadableRunner(NODE_TEST_REAL_FAIL)).toBeNull()
   })
 
   test('the readers do not read them, which is why they are named', () => {
-    for (const output of [MOCHA_PASS, MOCHA_FAIL, NODE_TEST_TAP_FAIL, NODE_TEST_SPEC_FAIL]) {
+    for (const output of [MOCHA_PASS, MOCHA_FAIL]) {
       expect(readRun(output)).toBe('unknown')
     }
   })

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { fakeEngine, runBash, runCommand } from './engine'
-import { MOCHA_FAIL, MOCHA_PASS, NODE_TEST_TAP_FAIL } from './fixtures/runnerOutputs'
+import { MOCHA_FAIL, MOCHA_PASS } from './fixtures/runnerOutputs'
 
 describe('a runner dope-tdd cannot read yet is named once, not reported as unread on every run', () => {
   test('npm test running mocha: the agent is told once, the run is not counted, and /tdd says which runner', async ($, on) => {
@@ -20,16 +20,15 @@ describe('a runner dope-tdd cannot read yet is named once, not reported as unrea
     expect(status.text).toMatch(/not read: mocha/)
   })
 
-  test('each runner is named once: node:test after mocha is said too', async ($, on) => {
+  test('the runner is named once per session, whichever test script runs it', async ($, on) => {
     const world = fakeEngine(on)
 
     world.bashText = MOCHA_PASS
     await runBash($, 'npm test')
-    world.bashText = NODE_TEST_TAP_FAIL
-    const nodeTest = await runBash($, 'npm run test:unit')
+    const viaOtherScript = await runBash($, 'npm run test:unit')
 
-    expect(nodeTest.context?.join(' ')).toMatch(/cannot read node:test's summary yet/)
-    expect((await runCommand($, 'tdd')).text).toMatch(/not read: mocha, node:test/)
+    expect((viaOtherScript.context ?? []).join(' ')).not.toMatch(/cannot read mocha/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/not read: mocha \(/)
   })
 
   test('output nobody recognises is still an unread run, with the advice to keep the summary', async ($, on) => {

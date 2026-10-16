@@ -204,6 +204,6 @@ describe('runners by extension', () => {
   test('a C# test in a Godot project runs through dotnet, a GDScript one through gdUnit4', () => {
     expect(runnersFor('godot', 'test/BeatDeckTest.cs').map(runner => runner.kind)).toEqual(['dotnet'])
     expect(runnersFor('godot', 'test/player_test.gd').map(runner => runner.kind)).toEqual(['gdunit4'])
-    expect(runnersFor('node', 'tests/a.test.ts').map(runner => runner.kind)).toEqual(['vitest', 'jest', 'ava'])
+    expect(runnersFor('node', 'tests/a.test.ts').map(runner => runner.kind)).toEqual(['vitest', 'jest', 'ava', 'node-test'])
   })
 })

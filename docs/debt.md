@@ -41,7 +41,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 - [x] `checkmate` Paid 2026-10-13: a path outside the root by its spelling is resolved (`$.fs.stat` with `resolve`, through the nearest existing folder for a file not written yet) and spelled again from the root when it lands inside it, for Edit, Write and shell writes; proven with a fake link and unit tests. Before, an untested edit reached through a link was let through as outside the project. Left over: a test-run path and the runner's FAIL lines are not resolved this way. A symlinked root is untested: no path is realpath'd, and checkmate 2.4.0 found that a symlinked checkout made `path.relative` return `../`, which silently disabled its guard.
 - [ ] `checkmate` A runner reader in `dope-tdd.json`: a regex with named groups or JSON lines, so a tester can bring mocha, node:test or GUT without a code change (helps `arch2 6`).
 
-- [x] `owner` Paid 2026-10-13: Python, Godot, Java and .NET are experimental. Their in-place catch check is off unless `"catchCheck": true`; a green is UNVERIFIED with the reason and the setting. Node (Vitest, Jest, ava) is the supported path and checks in a throwaway worktree.
+- [x] `owner` Paid 2026-10-13: Python, Godot, Java and .NET are experimental. Their in-place catch check is off unless `"catchCheck": true`; a green is UNVERIFIED with the reason and the setting. Node (Vitest, Jest, ava, `node --test`) is the supported path and checks in a throwaway worktree.
 
 ## Structure and tests
 

@@ -111,16 +111,11 @@ UNVERIFIED and says why.
 
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
-| Node | Vitest, Jest, ava | from real output | `mirror`, `colocated`, `__tests__`, `flat` |
+| Node | Vitest, Jest, ava from `node_modules`; Node's built-in runner (`node --test <file>`) when a `test` script in `package.json` runs `node --test` | from real output (`node --test`: spec and TAP reporters) | `mirror`, `colocated`, `__tests__`, `flat` |
 | Python (experimental) | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
 | Godot 4 (experimental) | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
 | Java (experimental) | Maven, Gradle | provisional | `maven` |
 | .NET (experimental) | `dotnet test` | from real output | `dotnet` |
-| Node | Vitest, Jest, ava from `node_modules`; Node's built-in runner (`node --test <file>`) when a `test` script in `package.json` runs `node --test` | from real output (`node --test`: spec and TAP reporters) | `mirror`, `colocated`, `__tests__`, `flat` |
-| Python | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
-| Godot 4 | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
-| Java | Maven, Gradle | provisional | `maven` |
-| .NET | `dotnet test` | from real output | `dotnet` |
 
 Presets named `flat` and `godot-csharp` pair **by name**: the module is the
 file's basename, so `scripts/show/BeatDeck.cs` and `test/BeatDeckTest.cs`

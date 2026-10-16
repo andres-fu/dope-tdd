@@ -21,6 +21,9 @@ export type Pairing = 'path' | 'name'
 
 export type Layout = { name: LayoutName; source: string; test: string; pairing?: Pairing; displayExt?: string }
 
+/** A folder of the project whose files follow a layout of their own; its templates start inside the folder. */
+export type FolderLayout = { folder: string; layout: Layout }
+
 export const LAYOUTS: Readonly<Record<NodeLayoutName, Layout>> = {
   mirror: { name: 'mirror', source: 'src/{module}.{ext}', test: 'tests/{module}.test.{ext}' },
   colocated: { name: 'colocated', source: 'src/{module}.{ext}', test: 'src/{module}.test.{ext}' },

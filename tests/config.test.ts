@@ -59,6 +59,29 @@ describe('policyFor', () => {
   })
 })
 
+describe('layouts: a folder with a layout of its own', () => {
+  test('reads a folder → layout map in the main layout\'s terms, and says it', () => {
+    const config = parseConfig('{"layout":{"source":"{module}.{ext}","test":"test/{module}.test.{ext}"},"layouts":{"dashboard/":"colocated","tools/gen":{"source":"{module}.{ext}","test":"{module}.spec.{ext}"}}}')
+    expect(config.error).toBe(null)
+    expect(config.layouts).toEqual([
+      { folder: 'dashboard', layout: { name: 'colocated', source: 'src/{module}.{ext}', test: 'src/{module}.test.{ext}' } },
+      { folder: 'tools/gen', layout: { name: 'custom', source: '{module}.{ext}', test: '{module}.spec.{ext}' } },
+    ])
+    expect(describeConfig(config)).toContain('layout in dashboard/: colocated (src/{module}.{ext} ↔ src/{module}.test.{ext})')
+    expect(parseConfig('{}').layouts).toBe(undefined)
+  })
+
+  test('a folder must be a plain path inside the project, and its layout a real one', () => {
+    expect(parseConfig('{"layouts":["dashboard"]}').error).toMatch(/layouts must map folders to layouts/)
+    expect(parseConfig('{"layouts":{"apps/*":"colocated"}}').error).toMatch(/layouts: "apps\/\*" must be a plain folder/)
+    expect(parseConfig('{"layouts":{"../web":"colocated"}}').error).toMatch(/layouts: "\.\.\/web" must be a plain folder/)
+    expect(parseConfig('{"layouts":{"":"colocated"}}').error).toMatch(/layouts: "" must be a plain folder/)
+    expect(parseConfig('{"layouts":{"/srv/web":"colocated"}}').error).toMatch(/layouts: "\/srv\/web" must be a plain folder/)
+    expect(parseConfig('{"layouts":{"C:/work/web":"colocated"}}').error).toMatch(/layouts: "C:\/work\/web" must be a plain folder/)
+    expect(parseConfig('{"layouts":{"web":"nested"}}').error).toMatch(/layouts: web: layout must be one of/)
+  })
+})
+
 describe('describeConfig', () => {
   test('says the mode, the scope, the exemptions and any error in plain lines', () => {
     expect(describeConfig(parseConfig('{"mode":"enforce","scope":["src/billing/**"],"exempt":["src/main.tsx"],"roots":["packages/*"]}'))).toEqual([

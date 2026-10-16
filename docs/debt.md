@@ -26,6 +26,7 @@ when you pay it. Source tags: `arch` = the 2026-10-08 architect review,
 
 - [x] `arch 5` Test-location conventions (co-located `*.test.ts`, `__tests__/`, custom pairs, per-package roots) and `/tdd setup`. Paid 2026-10-09 (`docs/decisions/2026-10-08_conventions.md`). Left over: one layout per repo; `{ext}` follows the stack since the stacks pass; this repo could set a custom layout for `hooks/`.
 - [x] `owner` Workaround tally: config loosened, pause, test bent, skip/only markers, assertion removed, code commented out. Paid 2026-10-08 (`docs/decisions/2026-10-08_workarounds.md`). Left over: test edits made through the shell have no before-text, so skip and assertion signals come only from Edit and Write.
+- [x] `owner` Paid 2026-10-16: a folder can name its own layout (`"layouts": { "dashboard": "colocated" }`), so a repo with tests in `test/` at the root and tests beside the source in a web app (VibeCast) pairs both, and a refusal names the test where it belongs. Before, one layout covered the whole repo and the other half had to be exempt.
 - [ ] `owner` Function-level story in the catch line: name the function the change touched, from the diff.
 - [ ] `owner` Module map: new import edge in an edited file as a signal with a reason; `boundaries` in `dope-tdd.json` for hard rules.
 - [ ] `owner` Candidate mechanism: Dope TDD runs the module's own test after each edit, so RED and GREEN come from its own runs rather than from reading the agent's output.

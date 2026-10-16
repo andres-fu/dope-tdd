@@ -98,6 +98,16 @@ project, which is gdUnit4's own rule. The project's root files say which it is
 ```
 
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
+A folder whose tests sit differently from the rest names its own layout, with
+templates that start inside the folder:
+
+```json
+{ "layout": { "source": "{module}.{ext}", "test": "test/{module}.test.{ext}" }, "layouts": { "dashboard": "colocated" } }
+```
+
+Here `dashboard/src/lib/a.ts` pairs with `dashboard/src/lib/a.test.ts`, a
+refusal names that file, and everything outside `dashboard/` keeps the main
+layout. The deepest folder wins; `roots` do not apply inside one.
 Not sure? `/tdd setup` reads the repo and shows the stack and layout it finds
 with the JSON to use; `/tdd setup write` saves it.
 

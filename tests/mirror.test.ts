@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath, respelled } from '../hooks/mirror'
+import { LAYOUTS } from '../hooks/layout'
+import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from '../hooks/mirror'
+import type { LayoutConfig } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
 
@@ -58,6 +60,41 @@ describe('classifyPath', () => {
     expect(classifyPath(ROOT, `${ROOT}/src/utils/a.test.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
     expect(classifyPath(ROOT, `${ROOT}/src/utils/a.spec.tsx`)).toEqual({ kind: 'test', module: 'utils/a' })
     expect(classifyPath(ROOT, `${ROOT}/tests/utils/a.spec.ts`)).toEqual({ kind: 'test', module: 'utils/a' })
+  })
+})
+
+describe('a folder with a layout of its own: a bot at the root with tests in test/, a dashboard in it with tests beside the source', () => {
+  const VIBE: LayoutConfig = {
+    layout: { name: 'custom', source: '{module}.{ext}', test: 'test/{module}.test.{ext}' },
+    roots: [],
+    layouts: [{ folder: 'dashboard', layout: LAYOUTS.colocated }],
+  }
+
+  test('a file in the folder pairs under the folder\'s layout, and the refusal names the test beside it', () => {
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard/lib/toasts' })
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.test.ts`, VIBE)).toEqual({ kind: 'test', module: 'dashboard/lib/toasts' })
+    expect(testPathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts.test.ts(x)')
+    expect(sourcePathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts')
+    expect(testFileFor(VIBE, 'dashboard/lib/toasts', 'ts')).toBe('dashboard/src/lib/toasts.test.ts')
+  })
+
+  test('outside the folder the main layout still applies', () => {
+    expect(classifyPath(ROOT, `${ROOT}/queueOps.js`, VIBE)).toEqual({ kind: 'source', module: 'queueOps' })
+    expect(classifyPath(ROOT, `${ROOT}/test/queueOps.test.js`, VIBE)).toEqual({ kind: 'test', module: 'queueOps' })
+    expect(testPathFor(VIBE, 'queueOps')).toBe('test/queueOps.test.ts(x)')
+    expect(classifyPath(ROOT, `${ROOT}/dashboardish.js`, VIBE)).toEqual({ kind: 'source', module: 'dashboardish' })
+  })
+
+  test('in the folder, a file its layout does not place is nobody\'s source, whatever the main layout says', () => {
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/next.config.mjs`, VIBE)).toEqual({ kind: 'other' })
+  })
+
+  test('the deepest folder wins, a folder is matched in the case the file system folds, and git watches it', () => {
+    const nested: LayoutConfig = { ...VIBE, layouts: [{ folder: 'dashboard', layout: LAYOUTS.colocated }, { folder: 'dashboard/widgets', layout: LAYOUTS.__tests__ }] }
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/widgets/src/clock.ts`, nested)).toEqual({ kind: 'source', module: 'dashboard/widgets/clock' })
+    expect(testPathFor(nested, 'dashboard/widgets/clock')).toBe('dashboard/widgets/src/__tests__/clock.test.ts(x)')
+    expect(classifyPath(ROOT, `${ROOT}/Dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard/lib/toasts' })
+    expect(watchedDirs({ layout: LAYOUTS.mirror, roots: [], layouts: [{ folder: 'web/app', layout: LAYOUTS.colocated }] })).toEqual(['src', 'tests', 'web'])
   })
 })
 

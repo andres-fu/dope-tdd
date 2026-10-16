@@ -19,6 +19,21 @@ import {
 } from './engine'
 
 describe('bash bypass', () => {
+  test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {
+    fakeEngine(on)
+
+    const script = [
+      "python3 - <<'EOF'",
+      "s = open('tests/utils/a.test.ts').read()",
+      "s = s.replace(\"editAt($, 'src/utils/a.ts')\", \"editAt($, 'src/utils/b.ts')\")",
+      "open('tests/utils/a.test.ts', 'w').write(s)",
+      'EOF',
+    ].join('\n')
+    const result = await runBash($, script)
+
+    expect(result.deny).toBeUndefined()
+  })
+
   test('denies a shell write to a source file whose test was not touched', async ($, on) => {
     fakeEngine(on)
 

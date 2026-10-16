@@ -78,7 +78,13 @@ async function checkModule(root: string, config: GuardConfig, base: string, sour
   }
   const after = readFileSync(`${root}/${source}`, 'utf8')
   if (before === after) return row('UNVERIFIED', 'unchanged against the base')
-  const runner = await findRunner(root, config.stack, `${root}/${test}`, path => Promise.resolve(existsSync(path)))
+  const runner = await findRunner(
+    root,
+    config.stack,
+    `${root}/${test}`,
+    path => Promise.resolve(existsSync(path)),
+    path => Promise.resolve(existsSync(path) ? readFileSync(path, 'utf8') : null),
+  )
   if (runner === null) return row('UNVERIFIED', 'no test runner found')
   const runIn = runner.root !== root && runner.root.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? runner.root : root
   const relativeTest = relativePath(runIn, `${root}/${test}`)

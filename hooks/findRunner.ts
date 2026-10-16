@@ -15,8 +15,24 @@ export function parentDir(dir: string): string | null {
   return cut === trimmed || cut === '' ? null : cut
 }
 
-/** Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for. */
-export async function findRunner(root: string, stack: StackName, testPath: string, exists: (path: string) => Promise<boolean>): Promise<FoundRunner | null> {
+/**
+ * Walks up from the project root, because a monorepo hoists the runner into a parent directory; only the stack's own runners are looked for.
+ * `read` gives a marker's text, null when it cannot be read; without it, a runner whose marker must hold certain text is never found.
+ */
+export async function findRunner(
+  root: string,
+  stack: StackName,
+  testPath: string,
+  exists: (path: string) => Promise<boolean>,
+  read?: (path: string) => Promise<string | null>,
+): Promise<FoundRunner | null> {
+  const holds = async (path: string, text: RegExp | undefined): Promise<boolean> => {
+    if (text === undefined) {
+      return true
+    }
+    const found = read === undefined ? null : await read(path)
+    return found !== null && text.test(found)
+  }
   const candidates = runnersFor(stack, testPath)
   // First a runner installed in the test's own package (a monorepo that does not hoist): from the test's folder up to the root.
   const top = pathKey(root)
@@ -35,7 +51,7 @@ export async function findRunner(root: string, stack: StackName, testPath: strin
         return { kind: runner.kind, root, tool: fallbackTool(runner, root) }
       }
       for (const marker of runner.markers) {
-        if (await exists(`${dir}/${marker}`)) {
+        if ((await exists(`${dir}/${marker}`)) && (await holds(`${dir}/${marker}`, runner.markerText))) {
           for (const candidate of runner.tools) {
             if (await exists(`${dir}/${candidate}`)) {
               return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }

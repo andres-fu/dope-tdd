@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -21,6 +21,13 @@ import {
   MAVEN_COMPILE_ERROR,
   MAVEN_FAIL,
   MAVEN_PASS,
+  NODE_TEST_REAL_EMPTY,
+  NODE_TEST_REAL_FAIL,
+  NODE_TEST_REAL_LOAD_ERROR,
+  NODE_TEST_REAL_MISSING,
+  NODE_TEST_REAL_PASS,
+  NODE_TEST_REAL_TAP_FAIL,
+  NODE_TEST_REAL_TAP_PASS,
   PYTEST_COLLECTION_ERROR_QUIET,
   PYTEST_FAIL,
   PYTEST_REAL_DAPR_RED,
@@ -345,5 +352,66 @@ describe('the names of the tests that failed, so old failures can be told from n
     expect(failedTestsIn(DOTNET_FAIL)).toEqual(['Foo.Tests.FooTests.Bar'])
     expect(failedTestsIn(AVA_REAL_PASS)).toEqual([])
     expect(failedTestsIn(PYTEST_PASS)).toEqual([])
+  })
+})
+
+describe("Node's built-in runner, read from real output (node --test, Node 24, Windows)", () => {
+  test('its runs are test runs: a file, a quoted glob, a reporter flag; a package script is one already', () => {
+    expect(isTestRun('node --test test/helpers.test.js')).toBe(true)
+    expect(isTestRun('node --test "test/**/*.test.js"')).toBe(true)
+    expect(isTestRun('node --test --test-reporter=spec test/helpers.test.js')).toBe(true)
+    expect(isTestRun('node --test-reporter=tap --test test/helpers.test.js')).toBe(true)
+    expect(isTestRun('node.exe --test test/helpers.test.js 2>&1 | tail -40')).toBe(true)
+    expect(isTestRun('npm test')).toBe(true)
+    expect(isTestRun('node index.js')).toBe(false)
+    expect(isTestRun('node --test-reporter=spec index.js')).toBe(false)
+    expect(isTestRun('node scripts/smoke-test.js')).toBe(false)
+  })
+
+  test('the test file it names, and none for a glob', () => {
+    expect(namedTestFile('node --test test/sources/spotify.test.js', 'node')).toBe('test/sources/spotify.test.js')
+    expect(namedTestFile('node --test "test/**/*.test.js"', 'node')).toBe(null)
+  })
+
+  test('the spec summary decides: a failure is red, a clean run is green', () => {
+    expect(readRun(NODE_TEST_REAL_PASS)).toBe('pass')
+    expect(readRun(NODE_TEST_REAL_FAIL)).toBe('fail')
+    expect(failedCountIn(NODE_TEST_REAL_FAIL)).toBe(1)
+    expect(failedCountIn(NODE_TEST_REAL_PASS)).toBe(0)
+  })
+
+  test('the TAP summary reads the same', () => {
+    expect(readRun(NODE_TEST_REAL_TAP_PASS)).toBe('pass')
+    expect(readRun(NODE_TEST_REAL_TAP_FAIL)).toBe('fail')
+    expect(failedCountIn(NODE_TEST_REAL_TAP_FAIL)).toBe(1)
+  })
+
+  test('a file that throws while loading is red; a file it cannot find is no run', () => {
+    expect(readRun(NODE_TEST_REAL_LOAD_ERROR)).toBe('fail')
+    expect(failedFilesIn(NODE_TEST_REAL_LOAD_ERROR)).toEqual(['test/loaderr.test.js'])
+    expect(readRun(NODE_TEST_REAL_MISSING)).toBe('none')
+  })
+
+  test('an empty file is the one pass node reports for it; a run of only skips is no run', () => {
+    expect(readRun(NODE_TEST_REAL_EMPTY)).toBe('pass')
+    const skipped = NODE_TEST_REAL_PASS.replace('ℹ pass 2', 'ℹ pass 0').replace('ℹ skipped 0', 'ℹ skipped 2')
+    expect(readRun(skipped)).toBe('none')
+  })
+
+  test('a summary whose glyph a console code page mangled still reads', () => {
+    expect(readRun(NODE_TEST_REAL_FAIL.replace(/ℹ/g, 'Γä╣'))).toBe('fail')
+  })
+
+  test('names the failed test, not its suite, and the failed file with forward slashes', () => {
+    expect(failedTestsIn(NODE_TEST_REAL_FAIL)).toEqual(['fails on purpose'])
+    expect(failedTestsIn(NODE_TEST_REAL_TAP_FAIL)).toEqual(['fails on purpose'])
+    expect(failedTestsIn(NODE_TEST_REAL_PASS)).toEqual([])
+    expect(failedFilesIn(NODE_TEST_REAL_FAIL)).toEqual(['test/broken.test.js'])
+    expect(failedFilesIn(NODE_TEST_REAL_TAP_FAIL)).toEqual(['C:/Users/dev/vibecast/test/broken.test.js'])
+  })
+
+  test('one file runs through node --test, and that is the command a reviewer re-runs', () => {
+    expect(runnerArgv('C:/vibecast', 'node-test', 'test/helpers.test.js')).toEqual(['node', '--test', 'test/helpers.test.js'])
+    expect(runnerNamed('node-test').describe('test/helpers.test.js')).toBe('node --test test/helpers.test.js')
   })
 })

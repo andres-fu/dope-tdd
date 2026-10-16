@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { ROOT, editAt, fakeEngine, runBash, runCommand, writeAt } from './engine'
 import type { FakeWorld } from './engine'
-import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
+import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 /** The project's own files at the root, which is how the guard learns the stack without a config file. */
 function godotProject(world: FakeWorld) {
@@ -175,6 +175,35 @@ describe('the shell gate knows every stack', () => {
     const result = await runBash($, "sed -i 's/a + b/a - b/' src/pkg/calc.py")
 
     expect(result.deny).toMatch(/write the failing test first/)
+  })
+})
+
+describe("a Node project tested with Node's built-in runner", () => {
+  test('the package script names node --test, so the catch check runs the one file through node --test', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.fileContents.set(`${ROOT}/package.json`, JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } }))
+    world.fileContents.set(`${ROOT}/src/helpers.js`, 'module.exports = { add: (a, b) => a + b }')
+
+    // The real red, with its file named as this project's.
+    const redHere = NODE_TEST_REAL_FAIL.replace('test\\broken.test.js', 'tests\\helpers.test.js')
+    await writeAt($, 'tests/helpers.test.js', "test('adds', () => assert.equal(add(1, 1), 3))")
+    world.bashFails = true
+    world.bashText = redHere
+    await runBash($, 'node --test tests/helpers.test.js')
+    const red = await runCommand($, 'tdd')
+    await editAt($, 'src/helpers.js')
+    world.bashFails = false
+    world.bashText = NODE_TEST_REAL_PASS
+    world.baselineRun = { text: NODE_TEST_REAL_PASS, exitCode: 0 }
+    world.catchRun = { text: redHere, exitCode: 1 }
+    await runBash($, 'node --test tests/helpers.test.js')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.text).toMatch(/phase: RED/)
+    const check = world.gitCalls.find(argv => argv.includes('--test'))
+    expect(check).toEqual(['node', '--test', 'tests/helpers.test.js'])
+    expect(status.text).toMatch(/caught 1/)
   })
 })
 

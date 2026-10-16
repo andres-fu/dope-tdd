@@ -17,6 +17,15 @@ describe('isLoosening', () => {
     expect(parseConfig('{"catchCheck":"no"}').error).toMatch(/catchCheck must be true or false/)
   })
 
+  test('"catchCheck": true lets the experimental runners check in place; it is said, and it is not a loosening', () => {
+    const inPlace = parseConfig('{"catchCheck":true}')
+    expect(inPlace.catchCheck).toBe(true)
+    expect(isLoosening(DEFAULT_CONFIG, inPlace)).toBe(false)
+    expect(describeConfigChange(DEFAULT_CONFIG, inPlace)).toBe('in-place check for experimental runners off → on')
+    expect(describeConfigChange(inPlace, DEFAULT_CONFIG)).toBe('in-place check for experimental runners on → off')
+    expect(describeConfigChange(inPlace, parseConfig('{"catchCheck":false}'))).toBe('catch check on → off; in-place check for experimental runners on → off')
+  })
+
   test('a stronger mode, a dropped exemption, or a wider scope does not', () => {
     expect(isLoosening(parseConfig('{"mode":"observe"}'), DEFAULT_CONFIG)).toBe(false)
     expect(isLoosening(parseConfig('{"exempt":["src/main.tsx"]}'), DEFAULT_CONFIG)).toBe(false)

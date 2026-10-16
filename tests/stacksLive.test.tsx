@@ -12,6 +12,11 @@ function godotProject(world: FakeWorld) {
   world.fileContents.set(`${ROOT}/player.gd`, 'extends Node\nvar a = 1\n')
 }
 
+/** The experimental runners check in place, so a test of that check opts in the way a person would. */
+function allowInPlaceCheck(world: FakeWorld, fields = '') {
+  world.fileContents.set(`${ROOT}/dope-tdd.json`, `{ "catchCheck": true${fields === '' ? '' : `, ${fields}`} }`)
+}
+
 function pythonProject(world: FakeWorld) {
   world.hasVitest = false
   world.existingFiles.add(`${ROOT}/pyproject.toml`)
@@ -37,6 +42,7 @@ describe('a Godot project with gdUnit4, no config file', () => {
   test('red, green, and a catch check run headless through the command-line tool on the Godot binary from the environment', async ($, on) => {
     const world = fakeEngine(on, { env: { GODOT_BIN: 'C:/Godot/Godot_v4.exe' } })
     godotProject(world)
+    allowInPlaceCheck(world)
 
     const touched = await writeAt($, 'test/player_test.gd', 'extends GdUnitTestSuite\nfunc test_jump():\n\tassert_int(1).is_equal(1)\n')
     world.bashText = GDUNIT_FAIL
@@ -62,7 +68,7 @@ describe('a Godot project with gdUnit4, no config file', () => {
   test('the Godot binary named in dope-tdd.json wins over the environment', async ($, on) => {
     const world = fakeEngine(on, { env: { GODOT_BIN: 'C:/Godot/Godot_v4.exe' } })
     godotProject(world)
-    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "godot": "D:/tools/godot.exe" }')
+    allowInPlaceCheck(world, '"godot": "D:/tools/godot.exe"')
 
     await writeAt($, 'test/player_test.gd', 'func test_jump():\n\tassert_int(1).is_equal(1)\n')
     world.bashText = GDUNIT_FAIL
@@ -81,6 +87,7 @@ describe('a Python project with pytest, no config file', () => {
   test('the deny names the pytest file, the venv python runs the catch check, and the fix is caught', async ($, on) => {
     const world = fakeEngine(on)
     pythonProject(world)
+    allowInPlaceCheck(world)
     const ownFailure = PYTEST_FAIL.replace(/tests[\\/]test_other\.py/g, 'tests/pkg/test_calc.py')
 
     const blocked = await editAt($, 'src/pkg/calc.py')
@@ -104,6 +111,24 @@ describe('a Python project with pytest, no config file', () => {
     expect(green.text).toMatch(/caught 1/)
     expect(green.text).toMatch(/stack: python \(detected\)/)
   })
+  test('pytest is experimental: by default its check never writes the source, and says how to allow it', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonProject(world)
+    const ownFailure = PYTEST_FAIL.replace(/tests[\\/]test_other\.py/g, 'tests/pkg/test_calc.py')
+
+    await writeAt($, 'tests/pkg/test_calc.py', 'from pkg.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
+    world.bashText = ownFailure
+    await runBash($, 'python -m pytest tests/pkg/test_calc.py')
+    await editAt($, 'src/pkg/calc.py')
+    world.bashText = PYTEST_PASS
+    const green = await runBash($, 'python -m pytest tests/pkg/test_calc.py')
+    const status = await runCommand($, 'tdd')
+
+    expect(world.writes.filter(([path]) => path === `${ROOT}/src/pkg/calc.py`)).toEqual([])
+    expect(world.gitCalls.some(argv => argv.includes('pytest'))).toBe(false)
+    expect(green.context?.join(' ')).toMatch(/pytest is experimental, so its check would undo your change on disk; "catchCheck": true in dope-tdd.json allows it/)
+    expect(status.text).toMatch(/unverified 1/)
+  })
 })
 
 describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
@@ -112,7 +137,7 @@ describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
     world.hasVitest = false
     world.existingFiles.add(`${ROOT}/project.godot`)
     world.existingFiles.add(`${ROOT}/addons/gdUnit4/bin/GdUnitCmdTool.gd`)
-    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "layout": "godot-csharp" }')
+    allowInPlaceCheck(world, '"layout": "godot-csharp"')
     world.fileContents.set(`${ROOT}/scripts/show/BeatDeck.cs`, 'public static class BeatDeck { public static int a = 1; }')
 
     const blocked = await editAt($, 'scripts/show/BeatDeck.cs')
@@ -150,6 +175,7 @@ describe('Python without a venv in the repo', () => {
       world.hasVitest = false
       world.existingFiles.add(`${ROOT}/pyproject.toml`)
       world.existingFiles.add(`${ROOT}/${lock}`)
+      allowInPlaceCheck(world)
       world.fileContents.set(`${ROOT}/src/pkg/calc.py`, 'def add(a, b):\n    return a + b\n')
       const ownFailure = PYTEST_FAIL.replace(/tests[\/]test_other\.py/g, 'tests/pkg/test_calc.py')
 

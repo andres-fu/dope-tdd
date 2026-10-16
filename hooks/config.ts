@@ -104,15 +104,19 @@ function parseGodot(value: unknown): string | null {
   return value
 }
 
-/** Only an explicit `false` is recorded, so a config that never names it reads exactly as before. */
-function parseCatchCheck(value: unknown): { catchCheck?: false } {
-  if (value === undefined || value === true) {
+/**
+ * Only an explicit value is recorded, so a config that never names it reads exactly as before. Unset, the check runs
+ * where it never writes the user's files (a Node runner's throwaway worktree); `true` also lets the experimental
+ * runners undo the change on disk for one test run; `false` turns the check off.
+ */
+function parseCatchCheck(value: unknown): { catchCheck?: boolean } {
+  if (value === undefined) {
     return {}
   }
-  if (value !== false) {
+  if (typeof value !== 'boolean') {
     throw new Error('catchCheck must be true or false')
   }
-  return { catchCheck: false }
+  return { catchCheck: value }
 }
 
 /** The defaults for a stack that was detected rather than configured, with the stack's own exemptions. */
@@ -220,6 +224,7 @@ export function describeConfig(config: GuardConfig): string[] {
     ...(config.roots.length === 0 ? [] : [`roots: ${config.roots.join(', ')}`]),
     ...(config.godot === null ? [] : [`godot: ${config.godot}`]),
     ...(config.catchCheck === false ? [`catch check: off (${CONFIG_FILE}); a green is not re-run with the change undone`] : []),
+    ...(config.catchCheck === true ? [`catch check: on for every runner (${CONFIG_FILE}); an experimental runner undoes the change on disk for one test run`] : []),
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),
   ]
 }
@@ -253,6 +258,7 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
   const parts = [
     ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
     ...((before.catchCheck !== false) === (after.catchCheck !== false) ? [] : [`catch check ${before.catchCheck === false ? 'off → on' : 'on → off'}`]),
+    ...((before.catchCheck === true) === (after.catchCheck === true) ? [] : [`in-place check for experimental runners ${after.catchCheck === true ? 'off → on' : 'on → off'}`]),
     ...listChange('exempt', before.exempt, after.exempt),
     ...listChange('scope', before.scope, after.scope),
     ...(before.stack === after.stack ? [] : [`stack ${before.stack} → ${after.stack}`]),

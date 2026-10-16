@@ -170,15 +170,17 @@ Then give Claude a real bug or a small feature and watch the words.
   Linux and macOS, but you may be the first person to use it on a Mac or on
   Linux. If paths or shell commands misbehave, that is exactly what we want
   to hear.
-- With Python, Godot, Java or .NET, the catch check still undoes your change
-  on disk for the length of one test run, then restores it: an editor or a
-  file watcher may flicker, so don't save that file during a check. If the
-  file changed under it, your file is left alone and your change is kept in
-  `~/.dope-tdd/kept/<repo>/`, never inside the repository. Vitest, Jest and
-  ava check in a throwaway copy instead, except in a linked worktree, with
-  more than 300 changed files, or when the test is not green in the copy:
-  then they check on disk the same way.
-- Godot, Java and .NET are provisional: their summary readers were written
+- Python, Godot, Java and .NET are experimental. Their catch check would
+  undo your change on disk for one test run, so it is off unless
+  `"catchCheck": true` is in `dope-tdd.json`; until then a green there is
+  UNVERIFIED and says why. With it on, an editor or a file watcher may
+  flicker, so don't save that file during a check. If the file changed
+  under it, your file is left alone and your change is kept in
+  `~/.dope-tdd/kept/<repo>/`, never inside the repository.
+- Vitest, Jest and ava check in a throwaway copy and never touch your files,
+  except in a linked worktree, with more than 300 changed files, or when the
+  test is not green in the copy: then they check on disk the same way.
+- Godot, Java and .NET summary readers are provisional: they were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most
   valuable thing you can send. A run the reader cannot read shows as unread,

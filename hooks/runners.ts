@@ -13,7 +13,7 @@ import type { StackName } from './stacks'
  * replaced the first time a real run is on record.
  */
 
-export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
+export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'node-test' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
 
 /** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
 export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
@@ -30,6 +30,8 @@ export type Runner = {
   exts: readonly string[]
   /** Files under a directory that say the runner lives there; checked walking up from the project root. */
   markers: readonly string[]
+  /** Text a marker must hold to count, when its presence alone says nothing: every Node project has a package.json. */
+  markerText?: RegExp
   /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
   tools: readonly string[]
   fallback: string
@@ -62,12 +64,14 @@ const PYTEST = String.raw`${PY_LAUNCHER}(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:
 const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
 const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
 const DOTNET = String.raw`dotnet\s+test(?=\s|$)`
+// Node's built-in runner: `node --test`, with any flags before or after it (`--test-reporter=spec` is not `--test`).
+const NODE_TEST = String.raw`node(?:\.exe)?\s+(?:[^;&|\n]*?\s)?--test(?=\s|$)`
 
 function commandOf(body: string): RegExp {
   return new RegExp(`${START}(?:${body})`)
 }
 
-const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_SCRIPT}|${WORKSPACE_RUN}`)
+const NODE_COMMAND = commandOf(`${NODE_BINARY}|${NODE_TEST}|${NODE_SCRIPT}|${WORKSPACE_RUN}`)
 
 // turbo prefixes each line `api:test: `, pnpm -r `server test: `; the task starts with a letter, so `src/a.ts:12:` is no prefix.
 const TASK_PREFIX = /^(?:[@\w./-]+:[A-Za-z][\w-]*(?::[\w-]+)*:|[@\w./-]+ test(?::[\w-]+)?:)[ \t]?/gm
@@ -133,6 +137,31 @@ function readAva(output: string): RunOutcome {
 
 function avaFailedFiles(output: string): string[] {
   return unique([...stripAnsi(output).matchAll(AVA_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])])))
+}
+
+// --- node --test: tests/fixtures/runnerOutputs.ts holds the real output these were written from (Node 24, Windows).
+// The spec and TAP reporters end with the same counts, `ℹ tests 2` or `# tests 2`; the prefix is left loose, because a
+// console on another code page prints the ℹ as something else. A failure names its file as `test at test\x.test.js:6:3`
+// (spec) or `location: 'C:\\work\\x.test.js:6:3'` (TAP, backslashes doubled).
+const NODE_TEST_SUMMARY = /^.{0,4}tests (\d+)\r?\n.{0,4}suites \d+\r?\n.{0,4}pass (\d+)\r?\n.{0,4}fail (\d+)\r?\n.{0,4}cancelled (\d+)\r?\n/m
+const NODE_TEST_NOT_FOUND = /^Could not find '[^'\n]+'\s*$/m
+const NODE_TEST_FAILED_FILE = /^(?:test at |\s*location: ')((?:[A-Za-z]:)?[^'\n]+?\.(?:test|spec)\.[cm]?[jt]sx?):\d+:\d+/gm
+
+function readNodeTest(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const summary = NODE_TEST_SUMMARY.exec(text)
+  if (summary === null) {
+    return NODE_TEST_NOT_FOUND.test(text) ? 'none' : 'unknown'
+  }
+  if (Number(summary[3]) > 0 || Number(summary[4]) > 0) {
+    return 'fail'
+  }
+  // Only skips and todos: nothing ran that could have failed.
+  return Number(summary[2]) > 0 ? 'pass' : 'none'
+}
+
+function nodeTestFailedFiles(output: string): string[] {
+  return unique([...stripAnsi(output).matchAll(NODE_TEST_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1].replace(/\\\\/g, '\\'))])))
 }
 
 // --- pytest: tests/fixtures/runnerOutputs.ts holds the real output these were written from.
@@ -341,6 +370,23 @@ export const RUNNERS: readonly Runner[] = [
     provisional: false,
   },
   {
+    kind: 'node-test',
+    describe: testPath => `node --test ${testPath}`,
+    alsoFor: [],
+    exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
+    stack: 'node',
+    // Nothing to install: a package test script that says `node --test` is the sign. Last of the Node runners, so an installed one wins.
+    markers: ['package.json'],
+    markerText: /"test(?::[\w-]+)?"\s*:\s*"(?:[^"\\]|\\.)*?\bnode(?:\.exe)?\s(?:[^"\\]|\\.)*?--test(?=[\s"\\])/,
+    tools: [],
+    fallback: 'node',
+    command: NODE_COMMAND,
+    argv: (_root, testPath, tool) => [tool, '--test', testPath],
+    read: readNodeTest,
+    failedFiles: nodeTestFailedFiles,
+    provisional: false,
+  },
+  {
     kind: 'pytest',
     describe: testPath => `python -m pytest ${testPath}`,
     alsoFor: [],
@@ -496,16 +542,21 @@ const FAILED_TEST_NAMES: readonly RegExp[] = [
   /^\s*●\s+(?!Test suite failed to run)(.+?)\s*$/gm,
   // gdUnit4: `suite > test   FAILED`
   /^\s*(\S+\s+>\s+\S+)\s+FAILED\b/gm,
+  // node --test spec: the `failing tests:` block repeats each failed test, not its suite, under its location
+  /^test at [^\n]+\r?\n✖ (.+?) \([\d.]+m?s\)\s*$/gm,
+  // node --test TAP: `not ok 2 - name`, unless its YAML says it is a suite that failed through its subtests
+  /^\s*not ok \d+ - (.+?)\r?\n\s*---\r?\n(?:\s*(?!failureType:)\w+:[^\n]*\r?\n)*?\s*failureType: '(?!subtestsFailed)/gm,
   // dotnet: VSTest `Failed Name [3 ms]`, Microsoft.Testing.Platform `failed Name (3ms)`
   /^\s*[Ff]ailed\s+([\w.<>`,+-]+)\s+[[(]\d/gm,
 ]
 
-// How many tests the summary says failed: ava, vitest and jest, pytest, dotnet.
+// How many tests the summary says failed: ava, vitest and jest, pytest, dotnet, node --test.
 const FAILED_COUNTS: readonly RegExp[] = [
   /^\s*(\d+)\s+tests? failed\b/m,
   /^\s*Tests:?\s+(\d+) failed\b/m,
   /^=*\s*(\d+) failed\b[^\n]*\bin\s+[\d.]+s\b/m,
   /\bFailed:\s+(\d+),/,
+  /^.{0,4}pass \d+\r?\n.{0,4}fail (\d+)\r?\n/m,
 ]
 
 /** The failed count from the runner's summary, or null when it prints none: more than the names read means output was cut. */
@@ -528,12 +579,16 @@ export function failedFilesIn(output: string): string[] {
   return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }
 
-const TOKEN = /[\w./\\:-]+/g
+const TOKEN = /[\w./\\:*-]+/g
 
 function namedIn(text: string, stack: StackName): string | null {
   const rule = STACKS[stack].testFile
   for (const match of text.matchAll(TOKEN)) {
     const token = match[0].replace(/^res:\/\//, '')
+    // A glob (`"test/**/*.test.js"`) names no one file.
+    if (token.includes('*')) {
+      continue
+    }
     if (rule.test(forwardSlashes(token))) {
       return token
     }

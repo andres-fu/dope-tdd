@@ -41,3 +41,5 @@ jobs:
         run: npx -y tsx@4.19.2 --test tools/pr-check/check.spec-node.ts
       - name: Check the launcher helpers
         run: node --test tools/pool/ab.test.mjs
+      - name: Check the transcript replay
+        run: npx -y tsx@4.19.2 --test tools/replay/replay.spec-node.ts

@@ -26,6 +26,7 @@ import {
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
+  unreadableRunnerAdvice,
 } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
@@ -34,7 +35,7 @@ import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
 import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
-import { isTruncated, neverRan, runnerDidNotStart } from './runOutcome'
+import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell'
@@ -96,6 +97,8 @@ const bashCwd = atom({ plugin: 'dope-tdd', key: 'bash-cwd' } as const, '')
 const powershellCwd = atom({ plugin: 'dope-tdd', key: 'powershell-cwd' } as const, '')
 /** The git operation the guard last stood down for, or '': kept so the start and the end are each said once. */
 const gitOperation = atom({ plugin: 'dope-tdd', key: 'git-operation' } as const, '')
+/** The runners this session ran whose summary dope-tdd cannot read yet, each named to the agent once. */
+const unreadRunners = atom({ plugin: 'dope-tdd', key: 'unread-runners' } as const, [] as readonly string[])
 type ShellName = 'bash' | 'powershell'
 
 function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
@@ -1193,6 +1196,15 @@ async function runGit($: EngineInterface, root: string, args: string[]): Promise
 
 type ChangedFile = { path: string; module: string }
 
+/** Records a runner whose summary cannot be read yet; true the first time this session runs it. */
+async function noteUnreadRunner($: EngineInterface, runner: string): Promise<boolean> {
+  if ((await read($, unreadRunners)).includes(runner)) {
+    return false
+  }
+  await update($, unreadRunners, known => [...known, runner])
+  return true
+}
+
 function changedOfKind(root: string, paths: string[], kind: 'source' | 'test', config: GuardConfig): ChangedFile[] {
   return paths.flatMap(path => {
     const target = classifyPath(root, `${root}/${path}`, config)
@@ -1365,7 +1377,10 @@ async function checkShell(
   const read = ran ? readRun(output) : 'none'
   // A runner that never started ran no test: not an unread run, and the agent is told it did not start.
   const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
-  let outcome = notStarted === null ? read : 'none'
+  // A runner dope-tdd recognises but cannot read yet ran no unread run: it is named once and its runs are not counted.
+  const unreadable = read === 'unknown' && notStarted === null ? unreadableRunner(output) : null
+  const firstUnreadable = unreadable !== null && (await noteUnreadRunner($, unreadable))
+  let outcome = notStarted === null && unreadable === null ? read : 'none'
   // Tests that were failing before the change neither hide a red nor block a green: judge a run of the current
   // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
   let alreadyFailing: string[] = []
@@ -1499,6 +1514,7 @@ async function checkShell(
               `dope-tdd: ${working?.module ?? 'this module'} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
             ]),
         ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
+        ...(firstUnreadable && unreadable !== null ? [unreadableRunnerAdvice(unreadable)] : []),
         ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,
         ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),
@@ -1713,7 +1729,12 @@ async function currentStatus($: EngineInterface): Promise<string> {
   const config = await loadConfig($, root)
   const status = formatStatus(await readStats($), await $.clock.now(), config)
   const operation = await detectGitOperation($, root)
-  return operation === null ? status : `${standingDownLine(operation)}\n${status}`
+  const unread = await read($, unreadRunners)
+  const notes = [
+    ...(operation === null ? [] : [standingDownLine(operation)]),
+    ...(unread.length === 0 ? [] : [`not read: ${unread.join(', ')} (dope-tdd cannot read their summary yet; their runs are not counted)`]),
+  ]
+  return [...notes, status].join('\n')
 }
 
 export const register: Register = on => {

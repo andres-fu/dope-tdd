@@ -261,3 +261,10 @@ export const NODE_TEST_REAL_EMPTY = "✔ test\\empty.test.js (66.6921ms)\nℹ te
 export const NODE_TEST_REAL_LOAD_ERROR = "node:internal/modules/cjs/loader:1424\n  throw err;\n  ^\n\nError: Cannot find module '../nope'\nRequire stack:\n- C:\\Users\\dev\\vibecast\\test\\loaderr.test.js\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1421:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1059:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1064:22)\n    at Module._load (node:internal/modules/cjs/loader:1227:37)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.require (node:internal/modules/cjs/loader:1504:12)\n    at require (node:internal/modules/helpers:152:16)\n    at Object.<anonymous> (C:\\Users\\dev\\vibecast\\test\\loaderr.test.js:1:1)\n    at Module._compile (node:internal/modules/cjs/loader:1761:14) {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: [\n    'C:\\\\Users\\\\dev\\\\vibecast\\\\test\\\\loaderr.test.js'\n  ]\n}\n\nNode.js v24.13.0\n✖ test\\loaderr.test.js (70.4077ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.9539\n\n✖ failing tests:\n\ntest at test\\loaderr.test.js:1:1\n✖ test\\loaderr.test.js (70.4077ms)\n  'test failed'\n"
 // `node --test test/nope.test.js`, exit 1.
 export const NODE_TEST_REAL_MISSING = "Could not find 'test/nope.test.js'\n"
+
+// --- Runners whose summary dope-tdd does not read yet: the output is recognised so the agent is told plainly once,
+// instead of an "unread" on every run. Harvested from a real run on Linux, 2026-10-13: Node 22.22.0, mocha 10.7.3.
+
+// `npx mocha a.test.mjs` and `npx mocha b.test.mjs` (real).
+export const MOCHA_FAIL = '\n\n  ✔ adds\n  1) fails\n\n  1 passing (4ms)\n  1 failing\n\n  1) fails:\n\n      AssertionError [ERR_ASSERTION]: 2 == 3\n      + expected - actual\n\n      -2\n      +3\n'
+export const MOCHA_PASS = '\n\n  ✔ adds\n\n  1 passing (1ms)\n'

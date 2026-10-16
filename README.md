@@ -256,6 +256,7 @@ same way the plugin does. Run it locally from a pull request's checkout with
 claude plugin test .
 node tools/posix-root.mjs   # the same tests with a macOS/Linux-shaped fixture root
 claude plugin validate .
+npx tsx tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
 ```
 
 Tests live in `tests/`; the hooks module is `hooks/register.tsx`, with the

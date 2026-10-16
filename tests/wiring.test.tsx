@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   BAND,
   FAIL_SUMMARY,
+  FIXTURE_DRIVE,
   MINUTE,
   ROOT,
   SOURCE,
@@ -46,13 +47,22 @@ describe('bash bypass', () => {
     fakeEngine(on)
 
     const inside = await runBash($, `sed -i 's/a/b/' ${ROOT}/src/App.tsx`)
-    const gitBashStyle = await runBash($, "sed -i 's/a/b/' /c/work/throughline/src/App.tsx")
-    const elsewhere = await runBash($, "sed -i 's/a/b/' C:/other/repo/src/App.tsx")
+    const elsewhere = await runBash($, `sed -i 's/a/b/' ${FIXTURE_DRIVE}other/repo/src/App.tsx`)
 
     expect(inside.deny).toBeDefined()
-    expect(gitBashStyle.deny).toBeDefined()
     expect(elsewhere.deny).toBeUndefined()
   })
+
+  // Git Bash spells a drive as /c/: only a root on a Windows drive has that second spelling.
+  if (/^[A-Za-z]:\/$/.test(FIXTURE_DRIVE)) {
+    test('denies a Git Bash spelling of an absolute path inside the project', async ($, on) => {
+      fakeEngine(on)
+
+      const gitBashStyle = await runBash($, `sed -i 's/a/b/' /${FIXTURE_DRIVE[0]?.toLowerCase()}${ROOT.slice(2)}/src/App.tsx`)
+
+      expect(gitBashStyle.deny).toBeDefined()
+    })
+  }
 
   test('allows a shell write once the module is unlocked', async ($, on) => {
     const world = fakeEngine(on)

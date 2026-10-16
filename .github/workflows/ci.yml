@@ -31,6 +31,8 @@ jobs:
         run: claude plugin validate .
       - name: Run the plugin's tests
         run: claude plugin test .
+      - name: Run the plugin's tests again with a POSIX fixture root
+        run: node tools/posix-root.mjs
       - name: Check the scorecard arithmetic
         run: node --test tools/pool/scorecard.test.mjs
       - name: Check the bug-search rules

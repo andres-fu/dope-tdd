@@ -153,3 +153,18 @@ export function isInsideRoot(root: string, path: string): boolean {
   const candidate = pathKey(path)
   return candidate === base || candidate.startsWith(`${base}/`)
 }
+
+/**
+ * A path as the project spells it, given where it landed with every symbolic link followed: inside the root as it
+ * stands, or inside the root's own real location and spelled again from the root. Null when it landed elsewhere.
+ */
+export function respelled(root: string, realRoot: string | null, landed: string): string | null {
+  if (isInsideRoot(root, landed)) {
+    return landed
+  }
+  if (realRoot === null || !isInsideRoot(realRoot, landed)) {
+    return null
+  }
+  const rest = relativeTo(realRoot, landed)
+  return rest === undefined ? root : `${toForwardSlashes(root).replace(/\/$/, '')}/${rest}`
+}

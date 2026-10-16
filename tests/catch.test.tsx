@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, touchTest, writeAt } from './engine'
+import { FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, touchTest, writeAt } from './engine'
+
+/** A home folder on the fixture drive, so it resolves the same way the root does on any host. */
+const HOME_DIR = `${FIXTURE_DRIVE}Users/tester`
 
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
 const KEPT = `${SOURCE}.dope-tdd.kept`
@@ -382,13 +385,13 @@ describe('finding the runner', () => {
   test('a runner hoisted to a parent directory is found, so a monorepo package gets checked', async ($, on) => {
     const world = fakeEngine(on)
     world.hasVitest = false
-    world.existingFiles.add('C:/work/node_modules/vitest/vitest.mjs')
+    world.existingFiles.add(`${FIXTURE_DRIVE}work/node_modules/vitest/vitest.mjs`)
     await fixUnderGuard($, world)
 
     await runTests($, world, 'pass')
 
     const run = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
-    expect(run?.[1]).toBe('C:/work/node_modules/vitest/vitest.mjs')
+    expect(run?.[1]).toBe(`${FIXTURE_DRIVE}work/node_modules/vitest/vitest.mjs`)
   })
 
   test('with no runner anywhere the check is unverified and says so', async ($, on) => {
@@ -553,7 +556,7 @@ describe('the catch check stays out of the way', () => {
   })
 
   test('a change kept aside goes under the home folder, never into the repository where git add -A would take it', async ($, on) => {
-    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
     await fixUnderGuard($, world)
     world.onCatchRun = () => {
       world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
@@ -562,8 +565,8 @@ describe('the catch check stays out of the way', () => {
     await runTests($, world, 'pass')
 
     const kept = world.writes.find(([, text]) => text === 'export const b = 1')
-    expect(kept?.[0]).toBe('C:/Users/tester/.dope-tdd/kept/throughline/src/utils/formatDuration.ts')
-    expect(world.toasts.some(t => /your change is in C:\/Users\/tester\/\.dope-tdd\/kept\/throughline\/src\/utils\/formatDuration\.ts/.test(t))).toBe(true)
+    expect(kept?.[0]).toBe(`${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`)
+    expect(world.toasts.some(t => t.includes(`your change is in ${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`))).toBe(true)
   })
 })
 
@@ -572,7 +575,7 @@ describe('the catch check in a worktree, never in your files', () => {
   const gitRepo = (world: ReturnType<typeof fakeEngine>) => world.existingFiles.add(`${ROOT}/.git/HEAD`)
 
   test('a vitest project in a git checkout: your file is never written; the old code runs in a worktree that is removed after', async ($, on) => {
-    const world = fakeEngine(on, { env: { HOME: 'C:/Users/tester' } })
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
     gitRepo(world)
     await fixUnderGuard($, world)
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }

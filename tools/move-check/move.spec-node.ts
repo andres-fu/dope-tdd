@@ -312,3 +312,67 @@ test('only the ten largest uncovered ranges are listed; the rest are counted', (
   assert.equal((text.match(/^- a\.js:/gm) ?? []).length, 10)
   assert.match(text, /and 2 more ranges \(2 lines\)/)
 })
+
+// #64 part 2: a removed `if (name === 'key') { … }` or `case 'key':` and an added `key(…) { … }` method or `key:` entry
+// are the same code moved, paired by the key. In the refactor that found this, 37 of 114 moved pieces had this shape.
+const BOT = [
+  'const LIMIT = 10;',
+  '',
+  'async function onCommand(name, i) {',
+  "  if (name === 'ping') {",
+  "    const note = 'up to';",
+  '    return i.reply(`pong, ${note} ${LIMIT}`);',
+  '  }',
+  "  if (name === 'roll') {",
+  '    const sides = 6;',
+  '    return i.reply(String(Math.floor(Math.random() * sides) + 1));',
+  '  }',
+  '}',
+].join('\n')
+const COMMANDS = [
+  'function createCommands({ limit }) {',
+  '  return {',
+  '    async ping(i) {',
+  "      const note = 'up to';",
+  '      return i.reply(`pong, ${note} ${limit}`);',
+  '    },',
+  '    roll: async (i) => {',
+  '      const sides = 6;',
+  '      return i.reply(String(Math.floor(Math.random() * sides) + 1));',
+  '    },',
+  '  };',
+  '}',
+].join('\n')
+
+test('an if block that became a method, and one that became an entry, are paired by the key and compared', () => {
+  const moves = findMoves({ 'bot.js': BOT }, { 'bot.js': '', 'commands.js': COMMANDS })
+  assert.deepEqual(
+    moves.map(move => [move.name, move.shape, move.fromLines, move.toLines, move.result.verdict]),
+    [
+      ['ping', { from: 'if', to: 'method' }, [4, 7], [3, 6], 'RENAMED'],
+      ['roll', { from: 'if', to: 'entry' }, [8, 11], [7, 10], 'IDENTICAL'],
+    ],
+  )
+  assert.deepEqual(moves[0]?.result.verdict === 'RENAMED' ? moves[0].result.renames : [], [{ from: 'LIMIT', to: 'limit' }])
+})
+
+test('a case that became a method is paired too, its break left out', () => {
+  const base = { 'bot.js': "function on(name, i) {\n  switch (name) {\n    case 'ping':\n      i.reply('pong')\n      break\n    default:\n      i.reply('?')\n  }\n}" }
+  const head = { 'bot.js': '', 'table.js': "const table = {\n  ping(i) {\n    i.reply('pong')\n  },\n}" }
+  const [move] = findMoves(base, head)
+  assert.deepEqual([move?.name, move?.shape, move?.result.verdict], ['ping', { from: 'case', to: 'method' }, 'IDENTICAL'])
+})
+
+test('a block still in its file, or a key that is not unique on either side, is not paired', () => {
+  const kept = findMoves({ 'bot.js': BOT }, { 'bot.js': BOT, 'commands.js': COMMANDS })
+  assert.deepEqual(kept.filter(move => move.shape !== undefined), [])
+  const twice = BOT + "\nfunction other(name, i) {\n  if (name === 'ping') {\n    return 1\n  }\n}"
+  const moves = findMoves({ 'bot.js': twice }, { 'bot.js': '', 'commands.js': COMMANDS })
+  assert.deepEqual(moves.map(move => move.name), ['roll'])
+})
+
+test('the report says what shape a paired block had and has', () => {
+  const text = report(findMoves({ 'bot.js': BOT }, { 'bot.js': '', 'commands.js': COMMANDS }), 'main')
+  assert.match(text, /\| `ping` \| bot\.js:4 \(if 'ping'\) → commands\.js:3 \(method\) \| \*\*RENAMED\*\* \|/)
+  assert.match(text, /\| `roll` \| bot\.js:8 \(if 'roll'\) → commands\.js:7 \(entry\) \| \*\*IDENTICAL\*\* \|/)
+})

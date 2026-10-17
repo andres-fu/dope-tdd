@@ -331,6 +331,12 @@ and comments never count:
 The `export` a move into a new module needs is not a change, and names inside
 a template literal's `${…}` take part in renames.
 
+Code that changed shape is found too: a removed `if (x === 'key') { … }` or
+`case 'key':` block and an added `key(…) { … }` method or `key: (…) => { … }`
+entry are paired by the key and compared like any move, and the row says so:
+`bot.js:4 (if 'ping') → commands.js:3 (method)`. A key that is not unique on
+either side is never guessed at; its lines stay in the coverage count below.
+
 `--rename 'players.get(=getPlayer('` replaces a token sequence on
 the old side first, for a change that is not one name for another, and is
 marked "(given)". It applies only to pieces whose new side no longer has the

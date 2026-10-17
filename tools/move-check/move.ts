@@ -17,7 +17,9 @@ export type Comparison =
 
 /** `params` and `body` index into `tokens`, for a function: its parameter list `( … )` and its body's `{`. */
 export type Declaration = { name: string; tokens: Token[]; startLine: number; endLine: number; params?: [number, number]; body?: number }
-export type Move = { name: string; from: string; to: string; fromLines: [number, number]; toLines: [number, number]; result: Comparison }
+/** A block that moved into another shape (#64): an `if (x === 'key')` or `case 'key':` that became a method or an entry. */
+export type Shape = { from: 'if' | 'case'; to: 'method' | 'entry' }
+export type Move = { name: string; from: string; to: string; fromLines: [number, number]; toLines: [number, number]; result: Comparison; shape?: Shape }
 
 const KEYWORDS = new Set(
   (
@@ -334,6 +336,120 @@ export function findMoves(base: Readonly<Record<string, string>>, head: Readonly
       })
     }
   }
+  return [...moves, ...blockMoves(base, head, explicit)]
+}
+
+/** A keyed piece of code: the body of an `if`/`case` block on the old side, of a method or entry on the new side. */
+type Piece = { key: string; path: string; body: Token[]; lines: [number, number]; kind: Shape['from'] | Shape['to'] }
+
+const CONTROL = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'with'])
+
+const unquote = (token: Token) => (token.kind === 'string' ? token.text.slice(1, -1) : token.text)
+
+/** The texts of tokens, joined so one run can be looked for inside another without matching across token edges. */
+const joined = (tokens: readonly Token[]) => `\u0000${tokens.map(token => token.text).join('\u0000')}\u0000`
+
+/** `if (x === 'key') { … }` (either side of `===` or `==`), and `case 'key': …` up to the next case, its `break` left out. */
+function keyedBlocks(path: string, source: string): Piece[] {
+  const tokens = tokenize(source)
+  const found: Piece[] = []
+  for (let k = 0; k < tokens.length; k++) {
+    if (tokens[k]?.text === 'if' && tokens[k + 1]?.text === '(') {
+      const close = closing(tokens, k + 1)
+      const inner = tokens.slice(k + 2, close)
+      const compareAt = inner.findIndex(token => token.text === '===' || token.text === '==')
+      const keyToken =
+        inner.length >= 3 && inner.filter(token => token.text === '===' || token.text === '==').length === 1
+          ? inner[compareAt + 1]?.kind === 'string' && compareAt + 2 === inner.length
+            ? inner[compareAt + 1]
+            : inner[0]?.kind === 'string' && compareAt === 1
+              ? inner[0]
+              : undefined
+          : undefined
+      if (keyToken === undefined || tokens[close + 1]?.text !== '{') continue
+      const end = closing(tokens, close + 1)
+      found.push({ key: unquote(keyToken), path, body: tokens.slice(close + 2, end), lines: [tokens[k]?.line ?? 0, tokens[end]?.line ?? 0], kind: 'if' })
+    } else if (tokens[k]?.text === 'case' && tokens[k + 1]?.kind === 'string' && tokens[k + 2]?.text === ':') {
+      let end = k + 3
+      for (let depth = 0; end < tokens.length; end++) {
+        const text = tokens[end]?.text ?? ''
+        if (depth === 0 && (text === 'case' || text === 'default' || text === '}')) break
+        if (OPENERS.has(text)) depth++
+        else if (CLOSERS.has(text)) depth--
+      }
+      let body = tokens.slice(k + 3, end)
+      if (body[0]?.text === '{' && closing(body, 0) === body.length - 1) body = body.slice(1, -1)
+      while (body.at(-1)?.text === ';' || body.at(-1)?.text === 'break') body = body.slice(0, -1)
+      if (body.length === 0) continue
+      found.push({ key: unquote(tokens[k + 1] as Token), path, body, lines: [tokens[k]?.line ?? 0, body.at(-1)?.line ?? 0], kind: 'case' })
+    }
+  }
+  return found
+}
+
+/** `key(…) { … }`, `async key(…) { … }`, `key: (…) => { … }`, `key: function (…) { … }`, `'key': …` inside an object. */
+function keyedMembers(path: string, source: string): Piece[] {
+  const tokens = tokenize(source)
+  const found: Piece[] = []
+  for (let k = 0; k < tokens.length; k++) {
+    const token = tokens[k]
+    if (token === undefined || (token.kind !== 'name' && token.kind !== 'string') || CONTROL.has(token.text)) continue
+    const before = tokens[k - 1]?.text === 'async' ? tokens[k - 2] : tokens[k - 1]
+    if (before?.text !== '{' && before?.text !== ',') continue
+    let open = -1
+    let kind: Shape['to'] = 'method'
+    if (tokens[k + 1]?.text === '(') {
+      const params = closing(tokens, k + 1)
+      if (tokens[params + 1]?.text === '{') open = params + 1
+    } else if (tokens[k + 1]?.text === ':') {
+      kind = 'entry'
+      let at = k + 2
+      if (tokens[at]?.text === 'async') at++
+      if (tokens[at]?.text === 'function') at += tokens[at + 1]?.kind === 'name' ? 2 : 1
+      if (tokens[at]?.text === '(') {
+        const params = closing(tokens, at)
+        const arrow = tokens[params + 1]?.text === '=>' ? params + 2 : params + 1
+        if (tokens[arrow]?.text === '{') open = arrow
+      } else if (tokens[at]?.kind === 'name' && tokens[at + 1]?.text === '=>' && tokens[at + 2]?.text === '{') {
+        open = at + 2
+      }
+    }
+    if (open === -1) continue
+    const end = closing(tokens, open)
+    const start = tokens[k - 1]?.text === 'async' ? (tokens[k - 1] as Token) : token
+    found.push({ key: unquote(token), path, body: tokens.slice(open + 1, end), lines: [start.line, tokens[end]?.line ?? 0], kind })
+  }
+  return found
+}
+
+/**
+ * #64: a removed `if`/`case` block and an added method or entry with the same key are the same code moved. A block
+ * counts as removed when its body is no longer in its file; a member as added when its body was not in its file. A key
+ * that is not unique on either side is never guessed at: it stays unpaired, and the coverage line shows its lines.
+ */
+function blockMoves(base: Readonly<Record<string, string>>, head: Readonly<Record<string, string>>, explicit: readonly Rename[]): Move[] {
+  const blocks = Object.entries(base)
+    .flatMap(([path, text]) => keyedBlocks(path, text))
+    .filter(block => !joined(tokenize(head[block.path] ?? '')).includes(joined(block.body)))
+  const members = Object.entries(head)
+    .flatMap(([path, text]) => keyedMembers(path, text))
+    .filter(member => !joined(tokenize(base[member.path] ?? '')).includes(joined(member.body)))
+  const moves: Move[] = []
+  for (const block of blocks) {
+    const sameKey = blocks.filter(other => other.key === block.key)
+    const landed = members.filter(member => member.key === block.key)
+    const member = landed[0]
+    if (sameKey.length !== 1 || landed.length !== 1 || member === undefined) continue
+    moves.push({
+      name: block.key,
+      from: block.path,
+      to: member.path,
+      fromLines: block.lines,
+      toLines: member.lines,
+      result: compare(block.body, member.body, explicit),
+      shape: { from: block.kind as Shape['from'], to: member.kind as Shape['to'] },
+    })
+  }
   return moves
 }
 
@@ -434,7 +550,9 @@ export function report(moves: readonly Move[], against: string, coverage?: Cover
   }
   const rows = moves.map(move => {
     const note = cell(notes(move.result))
-    return `| \`${move.name}\` | ${move.from}:${move.fromLines[0]} → ${move.to}:${move.toLines[0]} | **${move.result.verdict}** |${note === '' ? '' : ` ${note}`} |`
+    // A block that changed shape says so (#64), so a reviewer knows `ping` was an `if` before it was a method.
+    const shapes = move.shape === undefined ? ['', ''] : [` (${move.shape.from} '${move.name}')`, ` (${move.shape.to})`]
+    return `| \`${move.name}\` | ${move.from}:${move.fromLines[0]}${shapes[0]} → ${move.to}:${move.toLines[0]}${shapes[1]} | **${move.result.verdict}** |${note === '' ? '' : ` ${note}`} |`
   })
   return [
     '## Move check',

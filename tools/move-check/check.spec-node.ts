@@ -124,10 +124,17 @@ test('the report says which removed lines no move accounts for (#64)', () => {
 
     const result = moveCheck(split, parseArgs(['--base', start]))
 
-    assert.deepEqual(result.moves.map(move => move.name).sort(), ['pick', 'retry'])
-    assert.deepEqual(result.coverage, { removed: 18, accounted: 7, uncovered: [{ path: 'bot.js', start: 1, end: 12, lines: 11 }] })
-    assert.match(result.text, /Accounted for: 7 of 18 removed lines \(39%\)/)
-    assert.match(result.text, /- bot\.js:1-12 \(11 lines\)/)
+    // Part 2 pairs the `ping` block with its method; `roll` has no method, so it stays uncovered with LIMIT.
+    assert.deepEqual(result.moves.map(move => move.name).sort(), ['pick', 'ping', 'retry'])
+    assert.deepEqual(result.coverage, {
+      removed: 18,
+      accounted: 11,
+      uncovered: [
+        { path: 'bot.js', start: 8, end: 12, lines: 5 },
+        { path: 'bot.js', start: 1, end: 3, lines: 2 },
+      ],
+    })
+    assert.match(result.text, /Accounted for: 11 of 18 removed lines \(61%\)/)
   } finally {
     rmSync(split, { recursive: true, force: true })
   }

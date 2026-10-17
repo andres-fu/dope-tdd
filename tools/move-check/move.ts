@@ -202,7 +202,10 @@ const PREFIX_ONLY = new Set(['export', 'default', 'declare'])
  * new parameters is how a dependency arrives once code is injected rather than reached for (SIGNATURE).
  */
 function compareDeclarations(before: Declaration, after: Declaration, explicit: readonly Rename[]): Comparison {
-  const whole = compare(before.tokens, after.tokens, explicit)
+  // A move into a new module needs `export` there, and one back may drop it (#60): that keyword is how code moves, not a
+  // change to the code, so the leading export, default and declare are left out of the comparison on both sides.
+  const core = (decl: Declaration) => decl.tokens.slice(decl.tokens.findIndex(token => !PREFIX_ONLY.has(token.text)))
+  const whole = compare(core(before), core(after), explicit)
   if (whole.verdict !== 'DIFFERS' || before.params === undefined || after.params === undefined || before.body === undefined || after.body === undefined) {
     return whole
   }

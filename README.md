@@ -217,6 +217,14 @@ change is put back on the way out (or at the next session start). If the
 file changed under it, your file is left alone and the change is kept in
 `~/.dope-tdd/kept/<repo>/`, never inside the repository.
 
+A new file has no old code to put back. In that throwaway copy (Node, a git
+clone) the check makes up to four small changes to it instead, one at a time:
+a flipped comparison or `&&`, a nudged integer, a negated `if`, `true` for
+`false`. Strings and comments are never touched. If the test fails for any of
+them, the file is PROVEN, and the changes it did not notice are named; if it
+passes for all of them, it is MISSED. Anywhere else a new file stays
+unverified.
+
 The counts run in every mode. Modes decide whether an edit is denied, whether
 Claude is told, and whether the catch check runs: `warn` and `enforce` check,
 `observe` only measures and touches nothing on disk in your project.

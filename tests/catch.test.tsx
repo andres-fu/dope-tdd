@@ -596,6 +596,79 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(1)
   })
 
+  test('a new file is checked with small changes to it in the worktree: one turns the test red, so PROVEN, and the rest are named (#27)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = (a) => a === 1')
+    // The first mutant (=== → !==) turns the test red; the second (1 → 2) slips through.
+    let mutantRuns = 0
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.onCatchRun = () => {
+      mutantRuns++
+      if (mutantRuns === 2) {
+        world.catchRun = { text: ' Tests  1 passed (1)\n', exitCode: 0 }
+      }
+    }
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(mutantRuns).toBe(2)
+    expect(world.writes.filter(([path]) => path === `${ROOT}/src/utils/fresh.ts`)).toEqual([])
+    expect(world.writes).toContainEqual([`${WT}/src/utils/fresh.ts`, 'export const fresh = (a) => a !== 1'])
+    expect(world.writes).toContainEqual([`${WT}/src/utils/fresh.ts`, 'export const fresh = (a) => a === 2'])
+    expect(status.text).toMatch(/proven 1/)
+    const said = result.context?.join(' ') ?? ''
+    expect(said).toMatch(/utils\/fresh is a new file: dope-tdd changed it 2 ways in a throwaway copy and the test failed for 1, so it is PROVEN\./)
+    expect(said).toMatch(/line 1: `1` → `2`/)
+  })
+
+  test('a new file whose test passes with every change made to it is MISSED, and each change is named (#27)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = (a) => a === 1')
+    world.catchRun = { text: ' Tests  1 passed (1)\n', exitCode: 0 }
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/missed 1/)
+    const said = result.context?.join(' ') ?? ''
+    expect(said).toMatch(/utils\/fresh is a new file: dope-tdd changed it 2 ways in a throwaway copy and the test passed every time/)
+    expect(said).toMatch(/line 1: `===` → `!==`/)
+  })
+
+  test('a new file changed outside after it was written is not mutated: unverified, as any change outside is (#27)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = (a) => a === 1')
+    world.fileContents.set(`${ROOT}/src/utils/fresh.ts`, 'export const fresh = (a) => a === 2 // edited in the IDE')
+
+    const result = await runTests($, world, 'pass')
+
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*changed outside/)
+    expect(world.writes.some(([path]) => path.startsWith(WT))).toBe(false)
+  })
+
+  test('a new file with nothing to change is still unverified, and says why (#27)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', "export const name = 'fresh'")
+
+    const result = await runTests($, world, 'pass')
+
+    expect(result.context?.join(' ')).toMatch(/Could not verify.*new file, with nothing in it to change/)
+    expect(world.writes.some(([path]) => path.startsWith(WT))).toBe(false)
+  })
+
   test('your uncommitted and untracked files go into the worktree with it, so the test runs on what you have', async ($, on) => {
     const world = fakeEngine(on)
     gitRepo(world)

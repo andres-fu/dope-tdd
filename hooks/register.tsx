@@ -30,6 +30,7 @@ import {
 } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
+import { mutantsOf } from './mutate'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
@@ -599,7 +600,8 @@ const MAX_COPIED_FILES = 300
 type WorktreeCheck = {
   module: string
   path: string
-  before: string
+  /** The code to try in the worktree, each in turn: the old code, or a new file's mutants. */
+  variants: readonly string[]
   after: string
   runIn: string
   relativeTest: string
@@ -619,17 +621,17 @@ function listed(answer: { exitCode: number; stdout: string } | null): string[] |
  * a watcher or a parallel agent never sees a revert. The test must first pass there as the code stands; anything the
  * worktree cannot reproduce returns null, and the check runs in place instead. The worktree is always removed.
  */
-async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome | null> {
-  const { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs } = check
+async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
+  const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs } = check
   const wt = `${root}/${CHECK_WORKTREE}`
   const locked = await change($, state => acquireCheck(state, module, nowMs))
   if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
-    return { kind: 'unverified', reason: 'another check was running' }
+    return variants.map(() => ({ kind: 'unverified', reason: 'another check was running' }))
   }
   const shared = await acquireSharedLock($, root, module, nowMs)
   if (shared.kind === 'busy') {
     await change($, releaseCheck)
-    return { kind: 'unverified', reason: `another session was checking ${shared.module}` }
+    return variants.map(() => ({ kind: 'unverified', reason: `another session was checking ${shared.module}` }))
   }
   const sharedSha = shared.kind === 'acquired' ? shared.sha : null
   try {
@@ -678,14 +680,16 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
       }
       baselined.add(baselineKey)
     }
-    await $.fs.write(inTree, before)
-    let outcome: CatchOutcome
-    try {
-      outcome = catchOutcome(await checkRun($, argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known)
-    } catch (error) {
-      outcome = catchOutcome(runFailure(error))
+    const outcomes: CatchOutcome[] = []
+    for (const variant of variants) {
+      await $.fs.write(inTree, variant)
+      try {
+        outcomes.push(catchOutcome(await checkRun($, argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known))
+      } catch (error) {
+        outcomes.push(catchOutcome(runFailure(error)))
+      }
     }
-    return outcome.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : outcome
+    return outcomes
   } catch (error) {
     $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); checking in place`)
     return null
@@ -696,6 +700,54 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
       await releaseSharedLock($, root, sharedSha)
     }
   }
+}
+
+/**
+ * A new file has no old code to put back (#27). In the worktree, with a Node runner, small changes to it are tried
+ * instead: one that turns the test red proves the test as a deliberate break would (PROVEN); none means MISSED, with
+ * each change named. Null when this cannot run here (no git checkout, an experimental runner): the file stays unverified.
+ */
+async function newFileCheck(
+  $: EngineInterface,
+  root: string,
+  config: GuardConfig,
+  module: string,
+  path: string,
+  after: string,
+  testPath: string,
+  greenRunMs: number,
+  nowMs: number,
+  known: readonly string[],
+): Promise<CatchOutcome | null> {
+  if ((await readWhole($, path)) !== after) {
+    return { kind: 'unverified', reason: 'changed outside' }
+  }
+  const command = await oneTestCommand($, root, config, testPath)
+  if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || !(await $.fs.exists(`${root}/.git/HEAD`))) {
+    return null
+  }
+  const mutants = mutantsOf(after, { typescript: /\.[cm]?tsx?$/.test(path) })
+  if (mutants.length === 0) {
+    return { kind: 'unverified', reason: 'new file, with nothing in it to change' }
+  }
+  const { runIn, relativeTest, argv } = command
+  const variants = mutants.map(mutant => mutant.text)
+  const outcomes = await checkInWorktree($, root, { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs, known })
+  if (outcomes === null) {
+    return null
+  }
+  await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
+  const caught = mutants.filter((_, k) => outcomes[k]?.kind === 'caught').length
+  const survived = mutants.filter((_, k) => outcomes[k]?.kind === 'missed').map(mutant => mutant.change)
+  const mutation = { tried: mutants.length, caught, survived }
+  if (caught > 0) {
+    return { kind: 'proven', mutation }
+  }
+  if (survived.length > 0) {
+    return { kind: 'missed', mutation }
+  }
+  const reason = outcomes.find((outcome): outcome is Extract<CatchOutcome, { kind: 'unverified' }> => outcome.kind === 'unverified')?.reason
+  return { kind: 'unverified', reason: reason === undefined ? 'new file' : `new file: ${reason}` }
 }
 
 async function verifyCatch(
@@ -735,7 +787,10 @@ async function verifyCatch(
     return 'unchecked'
   }
   if (cycleChange.before === null) {
-    return { kind: 'unverified', reason: cycleChange.beforeState === 'unreadable' ? 'could not read the file before the edit' : 'new file' }
+    if (cycleChange.beforeState === 'unreadable') {
+      return { kind: 'unverified', reason: 'could not read the file before the edit' }
+    }
+    return (await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)) ?? { kind: 'unverified', reason: 'new file' }
   }
   const { path, before, after } = cycleChange
   if ((await readWhole($, path)) !== after) {
@@ -753,10 +808,10 @@ async function verifyCatch(
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
   if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
-    const isolated = await checkInWorktree($, root, { module, path, before, after, runIn, relativeTest, argv, greenRunMs, nowMs, known })
-    if (isolated !== null) {
+    const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known }))?.[0]
+    if (isolated !== undefined) {
       await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
-      return isolated
+      return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
     }
   }
 

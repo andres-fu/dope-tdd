@@ -1,4 +1,4 @@
-import type { CatchOutcome, TddStats } from '../types'
+import type { CatchOutcome, MutationResult, TddStats } from '../types'
 import { formatAgo } from './timeText'
 
 const REFACTOR = 'Now refactor with the test untouched.'
@@ -102,6 +102,19 @@ function slippedLines(slipped: readonly string[] | undefined): string {
     : ` The change it did not notice:\n${slipped.map(line => `  ${line}`).join('\n')}\nAdd an assertion that fails without it.`
 }
 
+function mutationAdvice(module: string, kind: 'proven' | 'missed', mutation: MutationResult): string {
+  const lines = (changes: readonly string[]) => changes.map(change => `  ${change}`).join('\n')
+  const head = `dope-tdd: GREEN on ${module}. ${module} is a new file: dope-tdd changed it ${mutation.tried} way${mutation.tried === 1 ? '' : 's'} in a throwaway copy and the test`
+  if (kind === 'missed') {
+    return `${head} passed every time, so it checks none of these:\n${lines(mutation.survived)}\nAdd an assertion that fails with each change.`
+  }
+  const rest =
+    mutation.survived.length === 0
+      ? ''
+      : ` These went unnoticed:\n${lines(mutation.survived)}\nAdd an assertion for each that matters, or say why it does not.`
+  return `${head} failed for ${mutation.caught}, so it is PROVEN.${rest} ${REFACTOR}`
+}
+
 function missedAdvice(module: string, sawRed: boolean, slipped?: readonly string[]): string {
   return `${missedVerdict(module, sawRed)}${slippedLines(slipped)}`
 }
@@ -122,6 +135,9 @@ function greenAdvice(
 ): string | null {
   if (check === 'refactor') {
     return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.`
+  }
+  if ((check?.kind === 'missed' || check?.kind === 'proven') && check.mutation !== undefined) {
+    return mutationAdvice(module, check.kind, check.mutation)
   }
   if (check?.kind === 'missed') {
     return missedAdvice(module, sawRed, check.slipped)

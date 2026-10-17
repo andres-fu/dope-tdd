@@ -89,7 +89,9 @@ export function classifyPath(root: string, path: string, config: LayoutConfig = 
     return { kind: 'other' }
   }
   const folder = folderFor(config.layouts, relative, foldsCase(root))
-  const split = folder === undefined ? splitRoot(relative, config.roots) : { pkg: folder.folder, rest: relative.slice(folder.folder.length + 1) }
+  // A folder's module ids join with `//`, which no path gives: `dashboard//x` (dashboard/src/x.ts) is never the main
+  // layout's `dashboard/x` (src/dashboard/x.ts), so one test can never unlock both (review #5).
+  const split = folder === undefined ? splitRoot(relative, config.roots) : { pkg: `${folder.folder}/`, rest: relative.slice(folder.folder.length + 1) }
   if (split === null) {
     return { kind: 'other' }
   }
@@ -137,12 +139,16 @@ function joined(pkg: string, relative: string): string {
 }
 
 /** Where a module id starts and which layout places it: a folder of its own, else a package root, else the root. */
+/** The deepest folder a module id says it came from: `<folder>//<module>`, the folder as the config spells it. */
+function folderOfModule(layouts: readonly FolderLayout[] | undefined, module: string): FolderLayout | undefined {
+  return (layouts ?? []).filter(entry => module.startsWith(`${entry.folder}//`)).sort((a, b) => b.folder.length - a.folder.length)[0]
+}
+
 function placed(config: LayoutConfig, module: string): { pkg: string; rest: string; layout: Layout } {
-  // A module id from a folder starts with the folder as the config spells it, so case always counts here.
-  const folder = folderFor(config.layouts, module, false)
+  const folder = folderOfModule(config.layouts, module)
   return folder === undefined
     ? { ...moduleParts(module, config.roots), layout: config.layout }
-    : { pkg: folder.folder, rest: module.slice(folder.folder.length + 1), layout: folder.layout }
+    : { pkg: folder.folder, rest: module.slice(folder.folder.length + 2), layout: folder.layout }
 }
 
 /**
@@ -150,7 +156,7 @@ function placed(config: LayoutConfig, module: string): { pkg: string; rest: stri
  * (`dashboard/lib/pkce`) reads like a path and is not one (#24); its id otherwise, as it always was.
  */
 export function moduleLabel(config: LayoutConfig, module: string): string {
-  return folderFor(config.layouts, module, false) === undefined ? module : sourcePathFor(config, module)
+  return folderOfModule(config.layouts, module) === undefined ? module : sourcePathFor(config, module)
 }
 
 /** `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch. */

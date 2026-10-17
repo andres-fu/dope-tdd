@@ -336,7 +336,9 @@ export function recordRedFor(s: TddStats, module: string, nowMs: number): TddSta
 /**
  * A test file that passed closes the open cycle of every other module it is the test for, so none is left red behind it.
  * A null path is a green run of the whole suite: every test passed, so every open cycle closes.
- * A cycle closed this way counts as a cycle of its own, unless its test is the current module's test: that is one piece of work.
+ * A cycle closed this way counts as a cycle of its own if it saw red, unless its test is the current module's test: that is
+ * one piece of work. One that never saw red just closes (#41): the run was not about that module, so it proves nothing
+ * either way, and a cycle left open (a test touched hours ago) would count its idle hours and a never-saw-red.
  */
 export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number): TddStats {
   const norm = pathKey
@@ -348,7 +350,7 @@ export function closeCyclesForTest(s: TddStats, testPath: string | null, except:
       return acc
     }
     const closed = withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })
-    if (exceptTest !== undefined && norm(exceptTest) === norm(path)) {
+    if (!state.sawRed || (exceptTest !== undefined && norm(exceptTest) === norm(path))) {
       return closed
     }
     return {

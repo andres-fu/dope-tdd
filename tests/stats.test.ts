@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   CHECK_LOCK_TTL_MS,
   INITIAL_STATS,
+  closeCyclesForTest,
   acquireCheck,
   expireCurrent,
   isChecking,
@@ -440,5 +441,30 @@ describe('recordImporter (#25)', () => {
   test('an older state without importers reads as none', () => {
     const { importers: _gone, ...older } = INITIAL_STATS
     expect(normalizeStats(older).importers).toEqual({})
+  })
+})
+
+describe('closeCyclesForTest: what a run closes for other modules (#41)', () => {
+  const open = (module: string, sawRed: boolean) => (acc: ReturnType<typeof recordTestTouch>) => {
+    const touched = recordTestTouch(acc, { module, testPath: `C:/w/tests/${module}.test.ts` }, T0)
+    return sawRed ? recordRun(touched, false, T0 + 1_000) : touched
+  }
+
+  test('a cycle that saw red is finished work: it closes and counts, with its time', () => {
+    const s = open('utils/red', true)(INITIAL_STATS)
+    const closed = closeCyclesForTest({ ...s, current: null }, null, undefined, T0 + 60_000)
+    expect(closed.modules['utils/red']?.cycleStartMs).toBe(null)
+    expect(closed.cycles).toBe(s.cycles + 1)
+    expect(closed.neverSawRed).toBe(s.neverSawRed)
+  })
+
+  test('a cycle that never saw red closes without counting: the run was not about that module', () => {
+    const s = open('utils/stale', false)(INITIAL_STATS)
+    const closed = closeCyclesForTest({ ...s, current: null }, null, undefined, T0 + 60 * 60_000)
+    expect(closed.modules['utils/stale']?.cycleStartMs).toBe(null)
+    expect(closed.cycles).toBe(s.cycles)
+    expect(closed.cycleMsTotal).toBe(s.cycleMsTotal)
+    expect(closed.neverSawRed).toBe(s.neverSawRed)
+    expect(closed.unproven).not.toContain('utils/stale')
   })
 })

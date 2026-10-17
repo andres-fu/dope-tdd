@@ -1525,6 +1525,8 @@ async function checkShell(
     }
   }
   let afterRun = updated
+  // Whether this run closed the current module's own cycle, before it closes other modules' (#41).
+  let ownCycleClosed = false
   let elsewhere: string[] = []
   const redUnlocked: string[] = []
   if (outcome === 'unknown') {
@@ -1584,6 +1586,7 @@ async function checkShell(
       elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? failed : []
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
+    ownCycleClosed = afterRun.cycles > updated.cycles
     if (outcome === 'pass' && (named !== undefined || !filtersTests(command))) {
       // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
       afterRun = await change($, s => closeCyclesForTest(s, named ?? null, s.current?.module, nowMs))
@@ -1615,7 +1618,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule) })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed })
 
   const reminders = current.paused
     ? []

@@ -25,7 +25,14 @@ export type EventKind =
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */
-export type CatchOutcome = { kind: 'caught' } | { kind: 'proven' } | { kind: 'missed'; slipped?: readonly string[] } | { kind: 'unverified'; reason: string }
+/** A new file's check: small changes made to it in a throwaway copy, how many turned the test red, and which did not. */
+export type MutationResult = { tried: number; caught: number; survived: readonly string[] }
+
+export type CatchOutcome =
+  | { kind: 'caught' }
+  | { kind: 'proven'; mutation?: MutationResult }
+  | { kind: 'missed'; slipped?: readonly string[]; mutation?: MutationResult }
+  | { kind: 'unverified'; reason: string }
 
 export type ChangeKind = 'fix' | 'refactor'
 

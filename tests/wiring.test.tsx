@@ -871,3 +871,24 @@ describe('the briefing in the system prompt', () => {
     expect(touched.context?.join(' ')).toMatch(/Run it with: npx vitest run tests\/utils\/formatDuration\.test\.ts/)
   })
 })
+
+describe('a refused file that looks like a throwaway script (#32)', () => {
+  test('the refusal says where one-off scripts go', async ($, on) => {
+    fakeEngine(on)
+
+    const scratch = await editAt($, 'src/orig.index.tmp.ts')
+    const ordinary = await editAt($, 'src/utils/a.ts')
+
+    expect(scratch.deny).toMatch(/write the failing test first/)
+    expect(scratch.deny).toMatch(/One-off script\? Put it outside the repo \(your scratchpad or temp directory\); dope-tdd guards project sources\./)
+    expect(ordinary.deny).not.toMatch(/One-off script/)
+  })
+
+  test('the same hint comes with a shell write refused for that file', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runBash($, 'echo "x" > src/scratch/compare.ts')
+
+    expect(result.deny).toMatch(/One-off script\?/)
+  })
+})

@@ -951,9 +951,13 @@ function experimentalCheckReason(kind: RunnerKind): string {
   return `${kind} is experimental, so its check would undo your change on disk; "catchCheck": true in ${CONFIG_FILE} allows it`
 }
 
+// A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
+const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i
+
 function lockedMessage(config: GuardConfig, module: string): string {
   const guess = config.layoutGuessed === true ? ' That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.' : ''
-  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${guess}`
+  const scratch = LOOKS_THROWAWAY.test(module) ? ' One-off script? Put it outside the repo (your scratchpad or temp directory); dope-tdd guards project sources.' : ''
+  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${guess}${scratch}`
 }
 
 function sourceModuleOf(root: string, path: string, config: GuardConfig): string | null {

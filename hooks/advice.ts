@@ -95,7 +95,7 @@ function elsewhereAdvice(module: string, files: readonly string[], sawRed: boole
 }
 
 function testChangedAdvice(module: string, sourcePath: string): string {
-  return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and ${sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.`
+  return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and ${sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code. If the assertion was wrong (a pin that guessed today's behaviour wrongly), say why in your reply; it stays on the record.`
 }
 
 function slippedLines(slipped: readonly string[] | undefined): string {

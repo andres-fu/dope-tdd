@@ -205,7 +205,11 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   codebase at a time.
 - `exempt`: paths the guard never touches or counts, such as an entry file
   or generated code. Prefer this to pausing; a pause hides edits, an
-  exemption is on the record.
+  exemption is on the record. An entry file no test can load (one that
+  connects to a service or exits at load time) belongs here, committed:
+  an exemption already in the file when a session starts is not counted,
+  only one added during a session is, as a loosening the agent explains.
+  Keep the entry file to wiring and move logic into modules that are tested.
 - `catchCheck`: `false` turns the catch check off, for a repo whose dev
   server, `tsc --watch` or test watcher would rebuild on every revert. A
   green then stops at GREEN; turning it off is recorded as a loosening.
@@ -271,6 +275,17 @@ are set aside by name. By default a MISSED fails the check; `fail-on:
 untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
 same way the plugin does. Run it locally from a pull request's checkout with
 `npx tsx tools/pr-check/check.ts --base origin/main`.
+
+Where CI does not run (a fork whose upstream is private, say), run it from
+your clone of this plugin against the project, so nothing is added to the
+project's dependencies, and paste the table it prints into the pull
+request; with the move check's table beside it, a reviewer sees what the
+tests catch and what was only moved:
+
+```bash
+npx tsx ~/dope-tdd/tools/pr-check/check.ts --repo ~/my-project --base upstream/main --fail-on never
+npx tsx ~/dope-tdd/tools/move-check/check.ts --repo ~/my-project --base upstream/main
+```
 
 ## Moved code
 

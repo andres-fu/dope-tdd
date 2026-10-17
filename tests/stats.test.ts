@@ -13,6 +13,7 @@ import {
   recordCatch,
   recordChange,
   recordConfigChange,
+  recordImporter,
   recordRun,
   recordSourceEdit,
   recordTestChanged,
@@ -422,5 +423,22 @@ describe('catch check bookkeeping', () => {
 
     expect(checkedA.changes['utils/a']).toBeUndefined()
     expect(checkedA.changes['utils/b']).toEqual({ path: 'pb', before: 'b0', after: 'b1', kind: 'fix' })
+  })
+})
+
+describe('recordImporter (#25)', () => {
+  test('keeps the tests seen importing a module, newest first, once each, at most three', () => {
+    const one = recordImporter(INITIAL_STATS, 'io', 'test/a.test.ts')
+    const two = recordImporter(one, 'io', 'test/b.test.ts')
+    expect(two.importers.io).toEqual(['test/b.test.ts', 'test/a.test.ts'])
+    expect(recordImporter(two, 'io', 'test/a.test.ts').importers.io).toEqual(['test/a.test.ts', 'test/b.test.ts'])
+    expect(recordImporter(two, 'io', 'test/b.test.ts')).toBe(two)
+    const four = ['c', 'd'].reduce((acc, name) => recordImporter(acc, 'io', `test/${name}.test.ts`), two)
+    expect(four.importers.io).toEqual(['test/d.test.ts', 'test/c.test.ts', 'test/b.test.ts'])
+  })
+
+  test('an older state without importers reads as none', () => {
+    const { importers: _gone, ...older } = INITIAL_STATS
+    expect(normalizeStats(older).importers).toEqual({})
   })
 })

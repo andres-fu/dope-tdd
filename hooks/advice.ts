@@ -145,6 +145,9 @@ function greenAdvice(
   if (check?.kind === 'proven') {
     return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN. ${REFACTOR}`
   }
+  if (check?.kind === 'caught' && check.by !== undefined) {
+    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}, but its own test, ${check.own ?? 'its paired test'}, does not catch the change, but ${check.by} does: CAUGHT by ${check.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`
+  }
   if (check?.kind === 'caught') {
     return sawRed
       ? `dope-tdd: GREEN on ${module}, saw red, and its test catches the change. ${REFACTOR}`

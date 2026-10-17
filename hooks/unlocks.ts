@@ -64,6 +64,11 @@ export function contentHash(text: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+/** The same text once CRLF is read as LF: a Windows checkout and a shell edit can disagree on line endings alone (#57). */
+export function sameIgnoringLineEndings(a: string, b: string): boolean {
+  return a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n')
+}
+
 /** What is stored for an unlock: the test, when, and the hash of the test as read now; none when it could not be read. */
 export function unlockEntry(testPath: string, atMs: number, text: string | null): StoredUnlock {
   return text === null ? { testPath, atMs } : { testPath, atMs, testHash: contentHash(text) }

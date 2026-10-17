@@ -656,6 +656,65 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(result.context?.join(' ') ?? '').toMatch(/utils\/fresh is a new file: dope-tdd changed it 2 ways in a throwaway copy/)
   })
 
+  // #57: a new file goes green with a survivor named; a pin is added for it; the file is broken and restored by shell
+  // (sed), red in between. On Windows the checkout has CRLF line endings and Git Bash's `sed -i` writes LF, so the
+  // restore is the same code with other line endings: still the code from before the break, so PROVEN, never MISSED.
+  test('a new file broken and restored by shell after its survivor is pinned is PROVEN, line endings aside (#57)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    const FRESH = `${ROOT}/src/utils/fresh.ts`
+    const ORIGINAL = 'export const fresh = (a) => a === 1\r\nexport const other = 2\r\n'
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', ORIGINAL)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    let mutantRuns = 0
+    world.onCatchRun = () => {
+      mutantRuns++
+      if (mutantRuns === 2) {
+        world.catchRun = { text: ' Tests  1 passed (1)\n', exitCode: 0 }
+      }
+    }
+    const first = await runTests($, world, 'pass')
+    expect(first.context?.join(' ')).toMatch(/These went unnoticed/)
+
+    await touchTest($, world, 'utils/fresh')
+    world.untracked = 'src/utils/fresh.ts\n'
+    world.onBash = command => {
+      const sed = /^sed -i 's\/(.+)\/(.+)\/' src\/utils\/fresh\.ts$/.exec(command)
+      if (sed !== null) {
+        // As Git Bash's sed does: the edit lands, and every CRLF comes back as LF.
+        world.fileContents.set(FRESH, (world.fileContents.get(FRESH) ?? '').replace(sed[1] ?? '', sed[2] ?? '').replace(/\r\n/g, '\n'))
+        world.testModifiedAt += 1_000
+      }
+    }
+    await runBash($, "sed -i 's/=== 1/=== 2/' src/utils/fresh.ts")
+    await runTests($, world, 'fail')
+    await runBash($, "sed -i 's/=== 2/=== 1/' src/utils/fresh.ts")
+    expect(world.fileContents.get(FRESH)).toBe(ORIGINAL.replace(/\r\n/g, '\n'))
+
+    const green = await runTests($, world, 'pass')
+    const said = green.context?.join(' ') ?? ''
+
+    expect(said).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
+    expect(said).toMatch(/Only its line endings differ from before the break/)
+    expect(said).not.toMatch(/does NOT catch the change/)
+  })
+
+  test('a restore that differs in more than line endings is not taken for the code from before the break (#57)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1\r\n')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await $.tool.call({ tool: 'Write', file_path: SOURCE, content: 'export const a = 1 \n' } as never)
+
+    const green = await runTests($, world, 'pass')
+
+    expect(green.context?.join(' ') ?? '').not.toMatch(/back exactly as it was/)
+  })
+
   // #55: one deliberate break proves one behaviour. In a checkout, the pinned file also gets the small changes a new
   // file gets, so PROVEN says what else the pins do not check. The verdict stays PROVEN: the break was caught.
   describe('a pin proof also tries small changes to the pinned file (#55)', () => {

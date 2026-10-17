@@ -147,18 +147,22 @@ function mutationAdvice(module: string, kind: 'proven' | 'missed', mutation: Mut
   return `${head} failed for ${mutation.caught}, so it is PROVEN.${rest} ${REFACTOR}`
 }
 
+/** #57: said when the restore matches the code from before the break except CRLF against LF, so nobody wonders why. */
+const LINE_ENDINGS_NOTE =
+  ' Only its line endings differ from before the break (CRLF and LF: a shell edit on Windows, such as `sed -i`, can rewrite them); that does not change what the code does.'
+
 /**
  * #55: a pin proof is one deliberate break, so it proves one behaviour. The small changes tried after it say what else
  * the pins check. The verdict stays PROVEN whatever they find: the break was caught; the rest is what to pin next.
  */
-function pinnedMutationAdvice(module: string, mutation: MutationResult): string {
+function pinnedMutationAdvice(module: string, mutation: MutationResult, lineEndings: boolean): string {
   const lines = mutation.survived.map(change => `  ${change}`).join('\n')
   const caught = mutation.caught === mutation.tried ? 'all of them' : `${mutation.caught}`
   const rest =
     mutation.survived.length === 0
       ? ''
       : ` These went unnoticed:\n${lines}\nOne break proves one behaviour; add a pin for each of these that matters. A change that cannot alter what the code does (an equivalent mutant) is fine to leave; say so.`
-  return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN. dope-tdd also changed it ${mutation.tried} way${mutation.tried === 1 ? '' : 's'} in a throwaway copy: the test failed for ${caught}.${rest} ${REFACTOR}`
+  return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${lineEndings ? LINE_ENDINGS_NOTE : ''} dope-tdd also changed it ${mutation.tried} way${mutation.tried === 1 ? '' : 's'} in a throwaway copy: the test failed for ${caught}.${rest} ${REFACTOR}`
 }
 
 function missedAdvice(module: string, sawRed: boolean, slipped?: readonly string[]): string {
@@ -183,7 +187,7 @@ function greenAdvice(
     return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.`
   }
   if (check?.kind === 'proven' && check.pinned === true && check.mutation !== undefined) {
-    return pinnedMutationAdvice(module, check.mutation)
+    return pinnedMutationAdvice(module, check.mutation, check.lineEndings === true)
   }
   if ((check?.kind === 'missed' || check?.kind === 'proven') && check.mutation !== undefined) {
     return mutationAdvice(module, check.kind, check.mutation)
@@ -192,7 +196,7 @@ function greenAdvice(
     return missedAdvice(module, sawRed, check.slipped)
   }
   if (check?.kind === 'proven') {
-    return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN. ${REFACTOR}`
+    return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${check.lineEndings === true ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`
   }
   if (check?.kind === 'caught' && check.by !== undefined) {
     return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}, but its own test, ${check.own ?? 'its paired test'}, does not catch the change, but ${check.by} does: CAUGHT by ${check.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`

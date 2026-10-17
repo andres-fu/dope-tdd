@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { UNLOCK_TTL_MS, contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from '../hooks/unlocks'
+import { UNLOCK_TTL_MS, contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from '../hooks/unlocks'
 
 describe('store keys', () => {
   test('one spelling of the root, whatever Windows handed the session', () => {
@@ -77,6 +77,15 @@ describe('contentHash (#54)', () => {
   test('line endings do not count as a change', () => {
     expect(contentHash('a\r\nb\r\n')).toBe(contentHash('a\nb\n'))
     expect(contentHash('a\r\nb\r\n')).not.toBe(contentHash('ab'))
+  })
+})
+
+describe('sameIgnoringLineEndings (#57)', () => {
+  test('CRLF and LF versions of the same text are the same; any other difference is not', () => {
+    expect(sameIgnoringLineEndings('a\r\nb\r\n', 'a\nb\n')).toBe(true)
+    expect(sameIgnoringLineEndings('a\nb\n', 'a\nb\n')).toBe(true)
+    expect(sameIgnoringLineEndings('a\r\nb\r\n', 'a\nb \n')).toBe(false)
+    expect(sameIgnoringLineEndings('a\rb', 'a\nb')).toBe(false)
   })
 })
 

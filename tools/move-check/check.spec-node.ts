@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { changedCode, existsAt, parseArgs, renameRules } from './check.ts'
+import { changedCode, existsAt, moveCheck, parseArgs, renameRules } from './check.ts'
 import { findMoves } from './move.ts'
 
 const repo = mkdtempSync(join(tmpdir(), 'move-check-'))
@@ -75,4 +75,64 @@ test('pr-check and move-check read rename rules the same way: in order, both for
     { from: 'A', to: 'b' },
     { from: 'x => y', to: 'f(x)' },
   ])
+})
+
+// #64: the issue's own example. bot.js is split into commands.js (its `if` blocks became methods), pick.js and retry.js.
+// The check finds pick and retry; the report must say the `if` blocks and LIMIT are not accounted for.
+test('the report says which removed lines no move accounts for (#64)', () => {
+  const split = mkdtempSync(join(tmpdir(), 'move-check-64-'))
+  const run = (...args: string[]) => execFileSync('git', args, { cwd: split, encoding: 'utf8' }).trim()
+  const put = (path: string, text: string) => writeFileSync(join(split, path), text)
+  try {
+    run('init', '-q')
+    run('config', 'user.email', 'test@example.com')
+    run('config', 'user.name', 'test')
+    run('config', 'commit.gpgsign', 'false')
+    put('bot.js', [
+      'const LIMIT = 10;',
+      '',
+      'async function onCommand(name, i) {',
+      "  if (name === 'ping') {",
+      "    const note = 'up to';",
+      '    return i.reply(`pong, ${note} ${LIMIT}`);',
+      '  }',
+      "  if (name === 'roll') {",
+      '    const sides = 6;',
+      '    return i.reply(String(Math.floor(Math.random() * sides) + 1));',
+      '  }',
+      '}',
+      '',
+      'function pick(list) {',
+      '  return list[Math.floor(Math.random() * list.length)];',
+      '}',
+      '',
+      'async function retry(fn) {',
+      '  await new Promise(r => setTimeout(r, 500));',
+      '  return fn();',
+      '}',
+      '',
+    ].join('\n'))
+    run('add', '-A')
+    run('commit', '-q', '-m', 'base')
+    const start = run('rev-parse', 'HEAD')
+    run('rm', '-q', 'bot.js')
+    put('commands.js', "function createCommands({ limit }) {\n  return {\n    async ping(i) {\n      const note = 'up to';\n      return i.reply(`pong, ${note} ${limit}`);\n    },\n  };\n}\n")
+    put('pick.js', 'function pick(list, random = Math.random) {\n  return list[Math.floor(random() * list.length)];\n}\n')
+    put('retry.js', 'const defaultWait = (ms) => new Promise(r => setTimeout(r, ms));\nasync function retry(fn, wait = defaultWait) {\n  await wait(500);\n  return fn();\n}\n')
+    run('add', '-A')
+    run('commit', '-q', '-m', 'split')
+
+    const result = moveCheck(split, parseArgs(['--base', start]))
+
+    assert.deepEqual(result.moves.map(move => move.name).sort(), ['pick', 'retry'])
+    assert.deepEqual(result.coverage, { removed: 18, accounted: 7, uncovered: [{ path: 'bot.js', start: 1, end: 12, lines: 11 }] })
+    assert.match(result.text, /Accounted for: 7 of 18 removed lines \(39%\)/)
+    assert.match(result.text, /- bot\.js:1-12 \(11 lines\)/)
+  } finally {
+    rmSync(split, { recursive: true, force: true })
+  }
+})
+
+test('--fail-on accepts uncovered', () => {
+  assert.equal(parseArgs(['--base', 'main', '--fail-on', 'uncovered']).failOn, 'uncovered')
 })

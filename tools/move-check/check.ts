@@ -7,7 +7,7 @@
 // tree, and runs nothing from the repository.
 //
 //   node tools/move-check/check.ts --base origin/main [--head HEAD] [--repo .] [--rename 'old=new']... [--pair 'a.js:10-40=b.js:5-35']...
-//                                  [--fail-on differs|never]
+//                                  [--fail-on differs|uncovered|never]
 //
 // Node 22.18+ runs it as it is (type stripping); older Node: `npx -y tsx@4.19.2 tools/move-check/check.ts ...`.
 //
@@ -20,12 +20,12 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { compare, findMoves, report, tokensInLines } from './move.ts'
-import type { Move, Rename } from './move.ts'
+import { compare, coverageOf, findMoves, removedLinesIn, report, tokensInLines } from './move.ts'
+import type { Coverage, Move, Rename } from './move.ts'
 
 const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
-type Options = { repo: string; base: string; head: string; renames: Rename[]; pairs: string[]; failOn: 'differs' | 'never' }
+type Options = { repo: string; base: string; head: string; renames: Rename[]; pairs: string[]; failOn: 'differs' | 'uncovered' | 'never' }
 
 /**
  * The rename rules in a command line, in order: `--rename 'old=new'`, and `--rename-from '<old>' --rename-to '<new>'`
@@ -86,7 +86,7 @@ export function parseArgs(argv: string[]): Options {
         options.pairs.push(value)
         break
       case '--fail-on':
-        if (value !== 'differs' && value !== 'never') throw new Error('--fail-on must be differs or never')
+        if (value !== 'differs' && value !== 'uncovered' && value !== 'never') throw new Error('--fail-on must be differs, uncovered or never')
         options.failOn = value
         break
       default:
@@ -147,16 +147,29 @@ function pairMove(repo: string, base: string, head: string, pair: string, rename
   }
 }
 
-function main(): void {
-  const options = parseArgs(process.argv.slice(2))
-  const repo = resolve(options.repo)
+/**
+ * The moves between `base` and `head`, found and paired, with how much of the removed code they account for (#64), and
+ * the report. What main prints; exported so the check can be run on a throwaway repository in a test.
+ */
+export function moveCheck(repo: string, options: Options): { moves: Move[]; coverage: Coverage; text: string } {
   const code = changedCode(repo, options.base, options.head)
   const moves = [...findMoves(code.base, code.head, options.renames), ...options.pairs.map(pair => pairMove(repo, options.base, options.head, pair, options.renames))]
+  const paths = Object.keys(code.base)
+  const diff = paths.length === 0 ? '' : git(repo, ['diff', '-U0', '--no-renames', '--no-color', options.base, options.head, '--', ...paths])
+  const coverage = coverageOf(removedLinesIn(diff), code.base, moves)
   const sha = git(repo, ['rev-parse', '--short', options.base]).trim()
-  const text = report(moves, `${options.base} (${sha})`)
+  return { moves, coverage, text: report(moves, `${options.base} (${sha})`, coverage) }
+}
+
+function main(): void {
+  const options = parseArgs(process.argv.slice(2))
+  const { moves, coverage, text } = moveCheck(resolve(options.repo), options)
   console.log(text)
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}
+`)
   if (options.failOn === 'differs' && moves.some(move => move.result.verdict === 'DIFFERS')) process.exitCode = 1
+  // Off unless asked: lines a refactor really deleted cannot be told from lines that moved where this check cannot see.
+  if (options.failOn === 'uncovered' && coverage.uncovered.length > 0) process.exitCode = 1
 }
 
 // Run directly, not imported by pr-check or a spec. Matched by path, not `__filename` (CommonJS only) or `import.meta`

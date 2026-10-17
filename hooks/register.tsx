@@ -85,12 +85,15 @@ import {
 import { formatGlossary, formatStatus } from './summary'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from './unlocks'
 import { commentedOutLines, testEditSignals } from './workarounds'
+import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals'
+import { succeeded, tell, withContext } from './toolResult'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal'
+import type { SharedLock } from './checkJournal'
 
 const MINUTE = 60_000
 const TEST_PANE = 'dope-tdd-test'
 const STATUS_TOOL = /^mcp__dope-tdd__status$/
 const MAX_SOURCE_CHARS = 10_000
-const JOURNAL_PREFIX = 'catch-journal:'
 /** Where a change left alone after a check is kept, next to its source, named in the toast. */
 const KEPT_SUFFIX = '.dope-tdd.kept'
 const SURVEY_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', 'out', '.next', '.cache', 'target', 'vendor'])
@@ -129,16 +132,6 @@ const repairedRoots = new Set<string>()
 let guardFailureToasted = false
 
 type FileRead = { kind: 'text'; text: string } | { kind: BeforeState }
-
-function succeeded(result: ToolCallResult): boolean {
-  return result.deny === undefined && result.isError !== true
-}
-
-function withContext(result: ToolCallResult, lines: string[]): ToolCallResult {
-  return lines.length === 0 || result.deny !== undefined
-    ? result
-    : { ...result, context: [...(result.context ?? []), ...lines] }
-}
 
 function hasActivity(s: TddStats): boolean {
   return s.events.length > 0 || s.paused || s.current !== null
@@ -195,16 +188,8 @@ async function configForRender($: EngineInterface, root: string): Promise<GuardC
   return cachedConfig?.root === root ? cachedConfig.config : loadConfig($, root)
 }
 
-function tell(quiet: boolean, result: ToolCallResult, lines: string[]): ToolCallResult {
-  return quiet ? result : withContext(result, lines)
-}
-
 function absolutePath(root: string, path: string): string {
   return /^([A-Za-z]:|[\\/])/.test(path) ? path : `${root}/${path}`
-}
-
-function checkingMessage(module: string): string {
-  return `dope-tdd is verifying that the test for ${module} catches the change; retry in a moment.`
 }
 
 async function readWhole($: EngineInterface, path: string): Promise<string | null> {
@@ -319,29 +304,6 @@ function detectRunner($: EngineInterface, root: string, config: GuardConfig, tes
   )
 }
 
-type JournalFile = { path: string; before: string; after: string }
-
-function isJournalFile(value: unknown): value is JournalFile {
-  const file = value as Partial<JournalFile> | null
-  return typeof file === 'object' && file !== null && typeof file.path === 'string' && typeof file.before === 'string' && typeof file.after === 'string'
-}
-
-function journalFiles(value: unknown): JournalFile[] | null {
-  const journal = value as { files?: unknown } | null
-  return typeof journal === 'object' && journal !== null && Array.isArray(journal.files) ? journal.files.filter(isJournalFile) : null
-}
-
-/**
- * One catch-check lock per checkout, across every session on the machine.
- * The store is shared but its get-then-set is not atomic (the mods docs say
- * so), so the lock itself is a git ref updated by compare-and-swap: creating
- * it succeeds for exactly one session, an expired one is taken over only by
- * naming its exact old value, and a session can release only its own.
- * refs/worktree/ refs are per checkout, which is the right scope: two
- * worktrees of one repository revert different files. The store keeps a copy
- * so every guard can see the lock without starting git on each tool call.
- */
-const SHARED_LOCK_REF = 'refs/worktree/dope-tdd-check'
 let sharedLockUnavailableSaid = false
 /** Module and test pairs whose baseline (the check's own command, nothing reverted) was green in this load. */
 const baselined = new Set<string>()
@@ -352,25 +314,10 @@ const realRoots = new Map<string, string | null>()
 /** How many folders up a path not written yet is followed to one that exists. */
 const MAX_RESOLVE_DEPTH = 64
 
-type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy'; module: string } | { kind: 'unavailable' }
-
-function sharedLockKey(root: string): string {
-  return `check-lock:${storeRoot(root)}`
-}
-
 async function gitQuiet($: EngineInterface, root: string, args: string[], stdin?: string): Promise<{ exitCode: number; stdout: string } | null> {
   try {
     const run = await $.process.run(['git', ...args], stdin === undefined ? { cwd: root } : { cwd: root, stdin })
     return { exitCode: run.exitCode, stdout: run.stdout }
-  } catch {
-    return null
-  }
-}
-
-function parseLock(text: string | undefined): { module: string; sinceMs: number } | null {
-  try {
-    const value = JSON.parse(text ?? '') as { module?: unknown; sinceMs?: unknown }
-    return typeof value.module === 'string' && typeof value.sinceMs === 'number' ? { module: value.module, sinceMs: value.sinceMs } : null
   } catch {
     return null
   }
@@ -429,10 +376,6 @@ async function checkInFlight($: EngineInterface, root: string, nowMs: number): P
   } catch {
     return null
   }
-}
-
-function journalKeyFor(root: string, module: string): string {
-  return `${JOURNAL_PREFIX}${storeRoot(root)}:${module}`
 }
 
 async function journalKeys($: EngineInterface, root: string): Promise<string[]> {
@@ -979,31 +922,6 @@ async function checkAgainst(
   return outcome
 }
 
-function experimentalCheckReason(kind: RunnerKind): string {
-  return `${kind} is experimental, so its check would undo your change on disk; "catchCheck": true in ${CONFIG_FILE} allows it`
-}
-
-// A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
-const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i
-
-/**
- * `staleAgeMs`: the module had a carried-over unlock, dropped because its test changed since (#54); the refusal says so.
- * `sourceExt`: the extension of the file being written, so the test named is one the project's runner runs (#53).
- */
-function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: number, sourceExt?: string): string {
-  const guess = config.layoutGuessed === true ? ' That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.' : ''
-  const scratch = LOOKS_THROWAWAY.test(module) ? ' One-off script? Put it outside the repo (your scratchpad or temp directory); dope-tdd guards project sources.' : ''
-  const testPath = testPathFor(config, module, sourceExt)
-  const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPath, staleAgeMs)
-  return `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
-}
-
-/** A refused write to a locked module's file, with the stale note when a carried-over unlock was dropped for it. */
-function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number, writtenPath?: string): string {
-  const staleAt = s.stale[module]
-  return lockedMessage(config, module, staleAt === undefined ? undefined : nowMs - staleAt, writtenPath === undefined ? undefined : extOf(writtenPath))
-}
-
 /**
  * #54: a module unlocked in an earlier session, edited before its test ran this session. The refusal names the exact
  * command, so the next step is one run, not a search.
@@ -1156,10 +1074,6 @@ async function detectGitOperation($: EngineInterface, root: string): Promise<Git
   } catch {
     return null
   }
-}
-
-function standingDownLine(operation: string): string {
-  return `standing down: a git ${operation} is in progress; nothing is guarded, counted or checked until it ends`
 }
 
 /**

@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { report } from './check'
+import { findMoves } from '../move-check/move'
+import { movedRow, report } from './check'
 
 test('the report counts each verdict and lists every module with its reason', () => {
   const text = report(
@@ -12,11 +13,50 @@ test('the report counts each verdict and lists every module with its reason', ()
     ],
     'origin/main (2526e8c)',
   )
-  assert.match(text, /1 caught · 0 missed · 1 untested · 0 unverified, against origin\/main \(2526e8c\)\./)
+  assert.match(text, /1 caught · 0 missed · 0 moved · 1 untested · 0 unverified, against origin\/main \(2526e8c\)\./)
   assert.match(text, /\| memory\/liststore \| tests\/test_a\.py \| \*\*CAUGHT\*\* \|/)
   assert.match(text, /\| utils\/b \| — \| \*\*UNTESTED\*\* \|/)
 })
 
 test('a pull request that touches no guarded source says so', () => {
   assert.match(report([], 'main'), /No source file in this pull request is one the project guards\./)
+})
+
+test('a new file whose code all moved from another file, unchanged, is MOVED; the new code in it is named (#40)', () => {
+  const base = { 'index.js': 'function ping(cfg) { return fetch(cfg.url) }\nfunction swap(n) { return lavalinkNodes[n] }\nfunction keep() {}' }
+  const head = {
+    'index.js': "const { ping } = require('./pool')\nfunction keep() {}",
+    'pool.js': 'function createPool({ nodes }) {\n  function ping(cfg) { return fetch(cfg.url) }\n  function swap(n) { return nodes[n] }\n  return { ping, swap }\n}',
+  }
+  assert.deepEqual(movedRow(findMoves(base, head), 'pool.js', head['pool.js']), {
+    verdict: 'MOVED',
+    note: 'moved from index.js: `ping` identical, `swap` renamed (`lavalinkNodes` → `nodes`); new here, not checked: `createPool`',
+  })
+})
+
+test('a new file with moved code that differs keeps its verdict, and the note says where it differs (#40)', () => {
+  const base = { 'index.js': 'function ping(cfg) { return fetch(cfg.url, 5000) }' }
+  const head = { 'index.js': '', 'pool.js': 'function ping(cfg) { return fetch(cfg.url, 8000) }' }
+  assert.deepEqual(movedRow(findMoves(base, head), 'pool.js', head['pool.js']), {
+    note: 'moved code differs: `ping` before: `, 5000 ) }` · after: `, 8000 ) }`',
+  })
+})
+
+test('a new file that nothing moved into is left as it was (#40)', () => {
+  assert.equal(movedRow(findMoves({ 'a.js': 'function f() {}' }, { 'a.js': 'function f() {}', 'b.js': 'function g() {}' }), 'b.js', 'function g() {}'), null)
+})
+
+test('MOVED is counted and explained in the report, and never fails the check (#40)', () => {
+  const text = report([{ module: 'pool', source: 'pool.js', test: null, verdict: 'MOVED', note: 'moved from index.js: `ping` identical' }], 'main')
+  assert.match(text, /0 caught · 0 missed · 1 moved · 0 untested · 0 unverified, against main\./)
+  assert.match(text, /\| pool \| — \| \*\*MOVED\*\* \| moved from index\.js: `ping` identical \|/)
+  assert.match(text, /MOVED: a new file whose code came from another file unchanged/)
+})
+
+test('two new files in one pull request each list only the code that moved into them (#40)', () => {
+  const base = { 'index.js': 'function ping() { return 1 }\nfunction play() { return 2 }' }
+  const head = { 'index.js': '', 'pool.js': 'function ping() { return 1 }', 'player.js': 'function play() { return 2 }' }
+  const moves = findMoves(base, head)
+  assert.deepEqual(movedRow(moves, 'pool.js', head['pool.js']), { verdict: 'MOVED', note: 'moved from index.js: `ping` identical' })
+  assert.deepEqual(movedRow(moves, 'player.js', head['player.js']), { verdict: 'MOVED', note: 'moved from index.js: `play` identical' })
 })

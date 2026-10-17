@@ -269,8 +269,9 @@ jobs:
 ```
 
 Each changed module is CAUGHT (the test fails without the change), MISSED
-(it still passes, so nothing checks the change), UNTESTED, or UNVERIFIED with
-the reason, in the job summary. Tests that already fail on the pull request
+(it still passes, so nothing checks the change), MOVED (a new file whose code
+came from another file unchanged, by the move check below), UNTESTED, or
+UNVERIFIED with the reason, in the job summary. Tests that already fail on the pull request
 are set aside by name. By default a MISSED fails the check; `fail-on:
 untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
 same way the plugin does. Run it locally from a pull request's checkout with
@@ -290,8 +291,11 @@ npx tsx ~/dope-tdd/tools/move-check/check.ts --repo ~/my-project --base upstream
 ## Moved code
 
 A refactor that moves code into a new file has nothing for a catch check to
-undo, and pr-check reports the new module as UNTESTED. The move check shows
-that the moved code is the code it was:
+undo. The move check shows that the moved code is the code it was, and
+pr-check uses it: a new file whose moved code is all IDENTICAL, RENAMED or
+SIGNATURE reads MOVED, naming any new code beside it (a factory wrapper) as
+not checked; one whose moved code DIFFERS keeps its verdict, with the first
+difference in the note. pr-check takes the same `--rename`. On its own:
 
 ```bash
 npx tsx tools/move-check/check.ts --repo . --base origin/main

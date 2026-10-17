@@ -6,6 +6,8 @@
 //   MISSED     the test passes without the change: nothing checks it
 //   UNTESTED   no test for that module was found
 //   UNVERIFIED it could not tell, and says why
+//   MOVED      a new file whose code came from another file unchanged, by the move check (identical, renamed or
+//              with new parameters); its own new code is named as not checked. Never a failure.
 // Tests that already fail on the pull request are judged by name: only a test failing beyond them counts.
 //
 //   npx tsx tools/pr-check/check.ts --base origin/main [--repo .] [--fail-on missed|untested|never]
@@ -25,9 +27,11 @@ import { findRunner } from '../../hooks/findRunner'
 import { importCandidates } from '../../hooks/imports'
 import { classifyPath, relativePath, testFileFor } from '../../hooks/mirror'
 import { failedTestsIn } from '../../hooks/runners'
+import { declarations, findMoves } from '../move-check/move'
+import type { Move, Rename } from '../move-check/move'
 import { detectStackFrom, stackOf } from '../../hooks/stacks'
 
-type Verdict = 'CAUGHT' | 'MISSED' | 'UNTESTED' | 'UNVERIFIED'
+type Verdict = 'CAUGHT' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNVERIFIED'
 type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }
 
 function git(root: string, ...args: string[]): string {
@@ -67,12 +71,49 @@ function testFor(root: string, config: GuardConfig, module: string, changedTests
   return null
 }
 
-async function checkModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number): Promise<Row> {
+const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
+
+/**
+ * What the move check says about a source file the pull request added (#40): MOVED when code moved into it from
+ * another file and none of it differs, naming the new code beside it; a note on the difference when some does; null
+ * when nothing moved into it.
+ */
+export function movedRow(moves: readonly Move[], target: string, targetText: string): { verdict: 'MOVED'; note: string } | { note: string } | null {
+  const into = moves.filter(move => move.to === target)
+  if (into.length === 0) return null
+  const differs = into.filter(move => move.result.verdict === 'DIFFERS')
+  if (differs.length > 0) {
+    return { note: `moved code differs: ${differs.map(move => `\`${move.name}\` ${move.result.verdict === 'DIFFERS' ? move.result.difference : ''}`).join('; ')}` }
+  }
+  const renamed = (renames: readonly Rename[]) => renames.map(rename => `\`${rename.from}\` → \`${rename.to}\`${rename.explicit === true ? ' (given)' : ''}`).join(', ')
+  const each = into.map(move => {
+    const result = move.result
+    if (result.verdict === 'RENAMED') return `\`${move.name}\` renamed (${renamed(result.renames)})`
+    if (result.verdict === 'SIGNATURE') {
+      const body = result.renames.length === 0 ? '' : `; ${renamed(result.renames)}`
+      return `\`${move.name}\` with new parameters (\`${result.parameters.before}\` → \`${result.parameters.after}\`${body})`
+    }
+    return `\`${move.name}\` identical`
+  })
+  const from = [...new Set(into.map(move => move.from))].join(', ')
+  const moved = new Set(into.map(move => move.name))
+  const added = declarations(targetText).filter(decl => !moved.has(decl.name)).map(decl => `\`${decl.name}\``)
+  return { verdict: 'MOVED', note: `moved from ${from}: ${each.join(', ')}${added.length === 0 ? '' : `; new here, not checked: ${added.join(', ')}`}` }
+}
+
+async function checkModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number, moves: readonly Move[]): Promise<Row> {
+  const moved = existsSync(`${root}/${source}`) ? movedRow(moves, source, readFileSync(`${root}/${source}`, 'utf8')) : null
+  if (moved !== null && 'verdict' in moved) return { module, source, test, verdict: 'MOVED', note: moved.note }
+  const checked = await catchCheckModule(root, config, base, source, module, test, timeoutMs)
+  return moved === null ? checked : { ...checked, note: `${checked.note}; ${moved.note}` }
+}
+
+async function catchCheckModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number): Promise<Row> {
   const row = (verdict: Verdict, note: string): Row => ({ module, source, test, verdict, note })
   if (test === null) return row('UNTESTED', 'no test for this module in the pull request or beside it')
   let before: string
   try {
-    before = execFileSync('git', ['show', `${base}:${source}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    before = execFileSync('git', ['show', `${base}:${source}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
   } catch {
     return row('UNVERIFIED', 'a new file: there is no base version to put back')
   }
@@ -117,13 +158,13 @@ export function report(rows: readonly Row[], base: string): string {
     '',
     rows.length === 0
       ? 'No source file in this pull request is one the project guards.'
-      : `${count('CAUGHT')} caught · ${count('MISSED')} missed · ${count('UNTESTED')} untested · ${count('UNVERIFIED')} unverified, against ${base}.`,
+      : `${count('CAUGHT')} caught · ${count('MISSED')} missed · ${count('MOVED')} moved · ${count('UNTESTED')} untested · ${count('UNVERIFIED')} unverified, against ${base}.`,
     '',
     ...(rows.length === 0
       ? []
       : ['| Module | Test | Verdict | Why |', '| --- | --- | --- | --- |', ...rows.map(row => `| ${row.module} | ${row.test ?? '—'} | **${row.verdict}** | ${row.note} |`)]),
     '',
-    'CAUGHT: with the base version of the source put back, the test fails, so it checks what this pull request changed. MISSED: it still passes, so nothing checks the change.',
+    'CAUGHT: with the base version of the source put back, the test fails, so it checks what this pull request changed. MISSED: it still passes, so nothing checks the change. MOVED: a new file whose code came from another file unchanged (the move check), so there was nothing new to test in that code.',
     '',
   ].join('\n')
 }
@@ -147,11 +188,27 @@ async function main(): Promise<void> {
   const configText = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
   const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
   const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
+  // Moved code, for the new files: every changed code file as it was at the base and as it is now.
+  const renames = argv.flatMap((arg, at) => (arg === '--rename' && argv[at + 1] !== undefined ? [argv[at + 1] as string] : [])).map(pair => {
+    const split = pair.indexOf('=')
+    if (split <= 0) throw new Error(`--rename needs old=new, got ${pair}`)
+    return { from: pair.slice(0, split), to: pair.slice(split + 1) }
+  })
+  const code = lines(git(root, 'diff', '--name-only', base, 'HEAD')).filter(path => CODE.test(path))
+  const side = (read: (path: string) => string | null) => Object.fromEntries(code.flatMap(path => ((text => (text === null ? [] : [[path, text] as const]))(read(path)))))
+  const atBase = side(path => {
+    try {
+      return execFileSync('git', ['show', `${base}:${path}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+    } catch {
+      return null
+    }
+  })
+  const moves = findMoves(atBase, side(path => (existsSync(`${root}/${path}`) ? readFileSync(`${root}/${path}`, 'utf8') : null)), renames)
   const rows: Row[] = []
   for (const path of changed) {
     const target = classifyPath(root, `${root}/${path}`, config)
     if (target.kind !== 'source' || policyFor(config, path) === 'exempt') continue
-    rows.push(await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs))
+    rows.push(await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves))
   }
   const text = report(rows, `${baseRef} (${base.slice(0, 7)})`)
   console.log(text)

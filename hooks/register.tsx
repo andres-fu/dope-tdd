@@ -34,7 +34,7 @@ import { mutantsOf } from './mutate'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
-import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testPathFor, watchedDirs } from './mirror'
+import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
@@ -60,6 +60,7 @@ import {
   recordRun,
   closeCyclesForTest,
   recordImportUnlock,
+  recordImporter,
   recordRedFor,
   recordKnownFailures,
   recordRedNames,
@@ -792,7 +793,36 @@ async function verifyCatch(
     }
     return (await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)) ?? { kind: 'unverified', reason: 'new file' }
   }
-  const { path, before, after } = cycleChange
+  const undone = { path: cycleChange.path, before: cycleChange.before, after: cycleChange.after }
+  const own = await checkAgainst($, root, config, module, undone, testPath, greenRunMs, nowMs, known)
+  if (own.kind !== 'missed') {
+    return own
+  }
+  // Its own test misses the change: a test seen importing it may catch it, which says where the test is missing (#25).
+  for (const other of (s.importers[module] ?? []).filter(path => pathKey(path) !== pathKey(testPath)).slice(0, 2)) {
+    if (!(await $.fs.exists(other))) {
+      continue
+    }
+    const outcome = await checkAgainst($, root, config, module, undone, other, greenRunMs, nowMs, [])
+    if (outcome.kind === 'caught') {
+      return { kind: 'caught', by: relativePath(root, other), own: relativePath(root, testPath) }
+    }
+  }
+  return own
+}
+
+/** The catch check of one change against one test file: in the worktree for a Node runner in a git clone, else in place. */
+async function checkAgainst(
+  $: EngineInterface,
+  root: string,
+  config: GuardConfig,
+  module: string,
+  { path, before, after }: { path: string; before: string; after: string },
+  testPath: string,
+  greenRunMs: number,
+  nowMs: number,
+  known: readonly string[],
+): Promise<CatchOutcome> {
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
   }
@@ -1234,7 +1264,17 @@ async function checkFileWrite(
     }
     const resaved = unchanged ? [hollowTouchAdvice(relativePath(root, filePath))] : []
     // A test covers what it imports: slugify.test.ts importing src/lib/io is the test for io too.
-    const imported = (await importedModules($, root, config, filePath, source)).filter(module => module !== target.module && touched.unlocked[module] === undefined)
+    const importing = (await importedModules($, root, config, filePath, source)).filter(module => module !== target.module)
+    if (importing.length > 0) {
+      await change($, s => importing.reduce((acc, module) => recordImporter(acc, module, filePath), s))
+    }
+    // Not a module with a test of its own: its own test comes first, and this one is tried after it (#25).
+    const imported: string[] = []
+    for (const module of importing) {
+      if (touched.unlocked[module] === undefined && !(await hasOwnTest($, root, config, module))) {
+        imported.push(module)
+      }
+    }
     if (imported.length > 0) {
       await change($, s => imported.reduce((acc, module) => recordImportUnlock(acc, module, filePath), s))
       for (const module of imported) {
@@ -1523,7 +1563,8 @@ async function checkShell(
       for (const testFile of failingTests) {
         for (const module of await importedModules($, root, config, testFile)) {
           coveredByFailure.push(module)
-          if (targeted.unlocked[module] === undefined) {
+          targeted = await change($, s => recordImporter(s, module, testFile))
+          if (targeted.unlocked[module] === undefined && !(await hasOwnTest($, root, config, module))) {
             targeted = await change($, s => recordRedUnlock(s, module, testFile, false))
             await rememberUnlock($, root, module, testFile, nowMs)
             redUnlocked.push(module)
@@ -1665,6 +1706,16 @@ function filtersTests(command: string): boolean {
 }
 
 /** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */
+/** The module's own test file exists, in any of the stack's extensions: a test that imports the module does not stand in for it. */
+async function hasOwnTest($: EngineInterface, root: string, config: GuardConfig, module: string): Promise<boolean> {
+  for (const ext of stackOf(config.stack).exts) {
+    if (await $.fs.exists(`${root}/${testFileFor(config, module, ext)}`)) {
+      return true
+    }
+  }
+  return false
+}
+
 async function importedModules($: EngineInterface, root: string, config: GuardConfig, testPath: string, text?: string | null): Promise<string[]> {
   const source = text ?? (await readWhole($, testPath))
   if (source === null || source === undefined) {

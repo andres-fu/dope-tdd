@@ -29,7 +29,8 @@ export type EventKind =
 export type MutationResult = { tried: number; caught: number; survived: readonly string[] }
 
 export type CatchOutcome =
-  | { kind: 'caught' }
+  /** `by`: not the module's own test (`own`) but a test that imports it, both relative to the root (#25). */
+  | { kind: 'caught'; by?: string; own?: string }
   | { kind: 'proven'; mutation?: MutationResult }
   | { kind: 'missed'; slipped?: readonly string[]; mutation?: MutationResult }
   | { kind: 'unverified'; reason: string }
@@ -104,6 +105,8 @@ export type TddStats = {
   unguarded: number
   blocked: number
   unlocked: Readonly<Record<string, string>>
+  /** Tests seen importing a module, beside its own test: tried when its own test misses a change (#25). */
+  importers: Readonly<Record<string, readonly string[]>>
   inherited: Readonly<Record<string, number>>
   reminded: readonly string[]
   changes: Readonly<Record<string, CycleChange>>

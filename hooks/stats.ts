@@ -40,6 +40,7 @@ export const INITIAL_STATS: TddStats = {
   unguarded: 0,
   blocked: 0,
   unlocked: {},
+  importers: {},
   inherited: {},
   reminded: [],
   changes: {},
@@ -103,6 +104,7 @@ export function normalizeStats(stored: unknown): TddStats {
     unguarded: pick('unguarded', isNumber),
     blocked: pick('blocked', isNumber),
     unlocked: pick('unlocked', isRecord),
+    importers: pick('importers', isRecord),
     inherited: pick('inherited', isRecord),
     reminded: strings(pick('reminded', isStringList)),
     changes: pick('changes', isRecord),
@@ -312,6 +314,17 @@ export function recordRedUnlock(s: TddStats, module: string, testPath: string, m
 /** A test that imports this module covers it: touching that test unlocks the module, pointing at that test. */
 export function recordImportUnlock(s: TddStats, module: string, testPath: string): TddStats {
   return s.unlocked[module] !== undefined ? s : { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
+}
+
+const MAX_IMPORTERS = 3
+
+/** A test seen importing a module, newest first and at most three: what the catch check tries after its own test. */
+export function recordImporter(s: TddStats, module: string, testPath: string): TddStats {
+  const known = s.importers[module] ?? []
+  if (known[0] === testPath) {
+    return s
+  }
+  return { ...s, importers: { ...s.importers, [module]: [testPath, ...known.filter(entry => entry !== testPath)].slice(0, MAX_IMPORTERS) } }
 }
 
 /** A failing test that imports this module is a red for it too: its cycle saw red, so its green will say so. */

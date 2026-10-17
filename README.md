@@ -153,6 +153,10 @@ fixture.
 
 - `src/**/X.ts(x)` can't be edited (Edit, Write, or a shell write) until
   `tests/**/X.test.ts(x)` was created or edited in this session.
+- A test that imports a module is its test too, but only when the module has
+  no test of its own. When a module's own test misses a change, the catch
+  check tries the tests seen importing it and names the one that catches it
+  (`docs/decisions/2026-10-16_import-unlocks.md`).
 - Phases: idle → WRITING (test touched) → RED (a run reported failures) →
   GREEN (a run passed). A run is a `vitest`, `jest`, `npm test`-style command
   at the start of a shell command; its result is read from the runner's own

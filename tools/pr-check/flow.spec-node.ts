@@ -23,6 +23,9 @@ git('config', 'commit.gpgsign', 'false')
 write('src/a.js', 'function f() {\n  return 1\n}\nmodule.exports = { f }\n')
 write('src/b.js', 'function g() {\n  return 2\n}\nmodule.exports = { g }\n')
 write('src/c.js', 'function h() {\n  return 3\n}\nfunction k() {\n  return 4\n}\nmodule.exports = { h, k }\n')
+// A folder with a layout of its own, tests beside the source.
+write('dope-tdd.json', '{ "layouts": { "web": "colocated" } }\n')
+write('web/src/lib/x.js', 'function x() {\n  return 5\n}\nmodule.exports = { x }\n')
 git('add', '-A')
 git('commit', '-q', '-m', 'base')
 git('checkout', '-q', '-b', 'pr')
@@ -32,6 +35,7 @@ write('src/b.js', 'module.exports = {}\n')
 // A file moved with git mv and given a header: git calls it a rename.
 git('mv', 'src/c.js', 'src/pool.js')
 write('src/pool.js', '// the pool\nfunction h() {\n  return 3\n}\nfunction k() {\n  return 4\n}\nmodule.exports = { h, k }\n')
+write('web/src/lib/x.js', 'function x() {\n  return 6\n}\nmodule.exports = { x }\n')
 git('add', '-A')
 git('commit', '-q', '-m', 'pr')
 
@@ -50,4 +54,10 @@ test('a file moved with git mv and edited is MOVED (#6)', async () => {
   const pool = rows.find(row => row.source === 'src/pool.js')
   assert.equal(pool?.verdict, 'MOVED')
   assert.match(pool?.note ?? '', /moved from src\/c\.js: `h` identical, `k` identical/)
+})
+
+test('a module in a folder with a layout of its own is named in the table by its source path (review #5)', async () => {
+  const { rows } = await checkPullRequest(repo, 'main', { timeoutMs: 20_000 })
+  const web = rows.find(row => row.source === 'web/src/lib/x.js')
+  assert.equal(web?.module, 'web/src/lib/x')
 })

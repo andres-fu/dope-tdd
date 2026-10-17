@@ -308,6 +308,18 @@ describe('a module in a folder with a layout of its own is named by its real pat
     expect(receipt.text).toMatch(/^dope-tdd receipt for dashboard\/src\/lib\/pkce/)
   })
 
+  test('a test under the main layout never unlocks the folder\'s file of the same name, nor the other way round (review #5)', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, '{"layout":"mirror","layouts":{"dashboard":"colocated"}}')
+
+    await writeAt($, 'tests/dashboard/x.test.ts', "it('x', () => { expect(1).toBe(1) })")
+    const folderFile = await editAt($, 'dashboard/src/x.ts')
+    const mainFile = await editAt($, 'src/dashboard/x.ts')
+
+    expect(folderFile.deny).toMatch(/Touch dashboard\/src\/x\.test\.ts\(x\)/)
+    expect(mainFile.deny).toBeUndefined()
+  })
+
   test('a module outside the folder keeps its name', async ($, on) => {
     const world = fakeEngine(on)
     configure(world, VIBE)

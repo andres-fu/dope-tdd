@@ -71,17 +71,31 @@ describe('a folder with a layout of its own: a bot at the root with tests in tes
   }
 
   test('a file in the folder pairs under the folder\'s layout, and the refusal names the test beside it', () => {
-    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard/lib/toasts' })
-    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.test.ts`, VIBE)).toEqual({ kind: 'test', module: 'dashboard/lib/toasts' })
-    expect(testPathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts.test.ts(x)')
-    expect(sourcePathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts')
-    expect(testFileFor(VIBE, 'dashboard/lib/toasts', 'ts')).toBe('dashboard/src/lib/toasts.test.ts')
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard//lib/toasts' })
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/lib/toasts.test.ts`, VIBE)).toEqual({ kind: 'test', module: 'dashboard//lib/toasts' })
+    expect(testPathFor(VIBE, 'dashboard//lib/toasts')).toBe('dashboard/src/lib/toasts.test.ts(x)')
+    expect(sourcePathFor(VIBE, 'dashboard//lib/toasts')).toBe('dashboard/src/lib/toasts')
+    expect(testFileFor(VIBE, 'dashboard//lib/toasts', 'ts')).toBe('dashboard/src/lib/toasts.test.ts')
   })
 
   test('a module placed by a folder is labelled with its source path; any other keeps its id (#24)', () => {
-    expect(moduleLabel(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts')
+    expect(moduleLabel(VIBE, 'dashboard//lib/toasts')).toBe('dashboard/src/lib/toasts')
     expect(moduleLabel(VIBE, 'queueOps')).toBe('queueOps')
     expect(moduleLabel({ layout: LAYOUTS.mirror, roots: [] }, 'utils/a')).toBe('utils/a')
+  })
+
+  test('a folder module and a main-layout module never share a name, whatever folders exist (review #5)', () => {
+    const mirrored: LayoutConfig = { layout: LAYOUTS.mirror, roots: [], layouts: [{ folder: 'dashboard', layout: LAYOUTS.colocated }] }
+    const main = classifyPath(ROOT, `${ROOT}/src/dashboard/x.ts`, mirrored)
+    const folder = classifyPath(ROOT, `${ROOT}/dashboard/src/x.ts`, mirrored)
+    expect(main).toEqual({ kind: 'source', module: 'dashboard/x' })
+    expect(folder).toEqual({ kind: 'source', module: 'dashboard//x' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/dashboard/x.test.ts`, mirrored)).toEqual({ kind: 'test', module: 'dashboard/x' })
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/src/x.test.ts`, mirrored)).toEqual({ kind: 'test', module: 'dashboard//x' })
+    expect(testPathFor(mirrored, 'dashboard/x')).toBe('tests/dashboard/x.test.ts(x)')
+    expect(testPathFor(mirrored, 'dashboard//x')).toBe('dashboard/src/x.test.ts(x)')
+    expect(moduleLabel(mirrored, 'dashboard/x')).toBe('dashboard/x')
+    expect(moduleLabel(mirrored, 'dashboard//x')).toBe('dashboard/src/x')
   })
 
   test('outside the folder the main layout still applies', () => {
@@ -97,9 +111,9 @@ describe('a folder with a layout of its own: a bot at the root with tests in tes
 
   test('the deepest folder wins, a folder is matched in the case the file system folds, and git watches it', () => {
     const nested: LayoutConfig = { ...VIBE, layouts: [{ folder: 'dashboard', layout: LAYOUTS.colocated }, { folder: 'dashboard/widgets', layout: LAYOUTS.__tests__ }] }
-    expect(classifyPath(ROOT, `${ROOT}/dashboard/widgets/src/clock.ts`, nested)).toEqual({ kind: 'source', module: 'dashboard/widgets/clock' })
-    expect(testPathFor(nested, 'dashboard/widgets/clock')).toBe('dashboard/widgets/src/__tests__/clock.test.ts(x)')
-    expect(classifyPath(ROOT, `${ROOT}/Dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard/lib/toasts' })
+    expect(classifyPath(ROOT, `${ROOT}/dashboard/widgets/src/clock.ts`, nested)).toEqual({ kind: 'source', module: 'dashboard/widgets//clock' })
+    expect(testPathFor(nested, 'dashboard/widgets//clock')).toBe('dashboard/widgets/src/__tests__/clock.test.ts(x)')
+    expect(classifyPath(ROOT, `${ROOT}/Dashboard/src/lib/toasts.ts`, VIBE)).toEqual({ kind: 'source', module: 'dashboard//lib/toasts' })
     expect(watchedDirs({ layout: LAYOUTS.mirror, roots: [], layouts: [{ folder: 'web/app', layout: LAYOUTS.colocated }] })).toEqual(['src', 'tests', 'web'])
   })
 })

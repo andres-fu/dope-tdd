@@ -25,7 +25,7 @@ import { CONFIG_FILE, parseConfig, policyFor } from '../../hooks/config'
 import type { GuardConfig } from '../../hooks/config'
 import { findRunner } from '../../hooks/findRunner'
 import { importCandidates } from '../../hooks/imports'
-import { classifyPath, relativePath, testFileFor } from '../../hooks/mirror'
+import { classifyPath, moduleLabel, relativePath, testFileFor } from '../../hooks/mirror'
 import { failedTestsIn } from '../../hooks/runners'
 import { changedCode, existsAt } from '../move-check/check'
 import { declarations, findMoves } from '../move-check/move'
@@ -188,7 +188,9 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
   for (const path of changed) {
     const target = classifyPath(root, `${root}/${path}`, config)
     if (target.kind !== 'source' || policyFor(config, path) === 'exempt') continue
-    rows.push(await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves))
+    const row = await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves)
+    // The table names a module as the plugin's messages do: a folder's module by its source path (`web//x` reads `web/src/x`).
+    rows.push({ ...row, module: moduleLabel(config, row.module) })
   }
   return { rows, base }
 }

@@ -1170,7 +1170,7 @@ async function standDown(
   if (touchesCode) {
     const elsewhere = await checkInFlight($, root, await $.clock.now())
     if (elsewhere !== null) {
-      return { deny: checkingMessage(elsewhere) }
+      return { deny: checkingMessage(moduleLabel(await loadConfig($, root), elsewhere)) }
     }
   }
   const result = await proceed()
@@ -1225,11 +1225,11 @@ async function checkFileWrite(
     const latest = await readStats($)
     const nowMs = await $.clock.now()
     if (isChecking(latest, nowMs)) {
-      return { deny: checkingMessage(latest.checking?.module ?? target.module) }
+      return { deny: checkingMessage(moduleLabel(config, latest.checking?.module ?? target.module)) }
     }
     const elsewhere = await checkInFlight($, root, nowMs)
     if (elsewhere !== null) {
-      return { deny: checkingMessage(elsewhere) }
+      return { deny: checkingMessage(moduleLabel(config, elsewhere)) }
     }
   }
   const result = await proceed()
@@ -1431,11 +1431,11 @@ async function checkShell(
   if (writes.some(({ module }) => module !== null) || isTestRun(command)) {
     const nowMs = await $.clock.now()
     if (isChecking(current, nowMs)) {
-      return { deny: checkingMessage(current.checking?.module ?? 'this module') }
+      return { deny: checkingMessage(current.checking === null ? 'this module' : moduleLabel(config, current.checking.module)) }
     }
     const elsewhere = await checkInFlight($, root, nowMs)
     if (elsewhere !== null) {
-      return { deny: checkingMessage(elsewhere) }
+      return { deny: checkingMessage(moduleLabel(config, elsewhere)) }
     }
   }
 

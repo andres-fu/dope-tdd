@@ -26,6 +26,7 @@ If a pin is red on its first run, the source has not changed, so the pin guessed
 - Make one deliberate, temporary breakage in the source that the pins should notice (remove a rounding call, flip a comparison, change a constant). Keep it compiling.
 - Run the test file. It must go **RED**, and the failures should be the pins you expected. If nothing goes red, your pins do not cover that behaviour: add the missing assertion and break again.
 - Restore the source to **exactly** its original text and run again. Dope TDD reports **PROVEN**: the code is back as it was, and the red was the proof.
+- One break proves one behaviour. In a git checkout, Dope TDD then also makes a few small changes to the file in a throwaway copy and runs your test against each. Any it names as "went unnoticed" is behaviour your pins do not check yet: pin the ones that matter, or say why a change cannot alter what the code does.
 
 ## 4. Now change the code
 

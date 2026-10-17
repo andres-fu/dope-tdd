@@ -70,6 +70,18 @@ describe('paths in messages', () => {
     expect(sourcePathFor(at('mirror', ['packages/*']), 'packages/app/utils/a')).toBe('packages/app/src/utils/a')
   })
 
+  // #53: an agent touches the path it is told to; in a plain-JS repo a `.ts(x)` test would never run.
+  test('when the source being edited is known, the test is named with its extension', () => {
+    expect(testPathFor(at('mirror'), 'utils/a', 'js')).toBe('tests/utils/a.test.js')
+    expect(testPathFor(at('colocated'), 'utils/a', 'tsx')).toBe('src/utils/a.test.tsx')
+    expect(testPathFor(at('mirror'), 'utils/a', 'mjs')).toBe('tests/utils/a.test.mjs')
+  })
+
+  test('an extension the stack does not know, or none, keeps the generic name', () => {
+    expect(testPathFor(at('mirror'), 'utils/a', 'md')).toBe('tests/utils/a.test.ts(x)')
+    expect(testPathFor(at('mirror'), 'utils/a')).toBe('tests/utils/a.test.ts(x)')
+  })
+
   test('the directories git is asked about follow the layout and the roots', () => {
     expect(watchedDirs(at('mirror'))).toEqual(['src', 'tests'])
     expect(watchedDirs(at('colocated'))).toEqual(['src'])

@@ -260,6 +260,35 @@ untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
 same way the plugin does. Run it locally from a pull request's checkout with
 `npx tsx tools/pr-check/check.ts --base origin/main`.
 
+## Moved code
+
+A refactor that moves code into a new file has nothing for a catch check to
+undo, and pr-check reports the new module as UNTESTED. The move check shows
+that the moved code is the code it was:
+
+```bash
+npx tsx tools/move-check/check.ts --repo . --base origin/main
+```
+
+Each top-level function, class or `const` that left one file between the base
+and HEAD and appeared in another, including inside a factory there
+(`createX({ deps }) { function f() {} }`), is compared as tokens, so spacing
+and comments never count:
+
+- **IDENTICAL**: the same code.
+- **RENAMED**: the same once names are changed one for one everywhere in it;
+  each rename is listed for the reviewer to judge.
+- **SIGNATURE**: the same body with new parameters, which is how an injected
+  dependency arrives; both parameter lists are shown.
+- **DIFFERS**: something else changed; the first difference is shown.
+
+`--rename 'shoukaku.players.get(=getPlayer('` replaces a token sequence on
+the old side first, for a change that is not one name for another, and is
+marked "(given)". `--pair 'index.js:358-530=pool.js:40-120'` compares line
+ranges, for code that was never a declaration of its own. It reads committed
+code only and runs nothing from the repository; the output is a table to
+paste into the pull request.
+
 ## Develop
 
 ```bash

@@ -1,0 +1,391 @@
+// The move check's reading and comparing, kept free of git and the file system so it can be tested on strings.
+// Code is compared as JavaScript or TypeScript tokens: whitespace and comments never count, strings, templates and
+// regexes are one token each, and a name may differ only by a rename that holds everywhere in the declaration.
+
+export type TokenKind = 'name' | 'number' | 'string' | 'template' | 'regex' | 'punct'
+export type Token = { text: string; kind: TokenKind; line: number }
+
+export type Rename = { from: string; to: string; explicit?: true }
+export type Comparison =
+  | { verdict: 'IDENTICAL'; renames: [] }
+  | { verdict: 'RENAMED'; renames: Rename[] }
+  | { verdict: 'SIGNATURE'; parameters: { before: string; after: string }; renames: Rename[] }
+  | { verdict: 'DIFFERS'; difference: string }
+
+/** `params` and `body` index into `tokens`, for a function: its parameter list `( … )` and its body's `{`. */
+export type Declaration = { name: string; tokens: Token[]; startLine: number; endLine: number; params?: [number, number]; body?: number }
+export type Move = { name: string; from: string; to: string; fromLines: [number, number]; toLines: [number, number]; result: Comparison }
+
+const KEYWORDS = new Set(
+  (
+    'abstract any as async await boolean break case catch class const continue debugger declare default delete do else ' +
+    'enum export extends false finally for from function get if implements import in instanceof interface keyof let new ' +
+    'null number of package private protected public readonly return set static string super switch this throw true try ' +
+    'type typeof undefined var void while with yield'
+  ).split(' '),
+)
+// After one of these, a slash starts a regex; after a name, a number, `)` or `]` it divides.
+const BEFORE_REGEX = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await'])
+const PUNCTUATORS = [
+  '>>>=', '...', '===', '!==', '**=', '<<=', '>>=', '>>>', '&&=', '||=', '??=',
+  '=>', '==', '!=', '<=', '>=', '&&', '||', '??', '?.', '++', '--', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**', '<<', '>>',
+]
+
+export function tokenize(source: string): Token[] {
+  const tokens: Token[] = []
+  let line = 1
+  let i = 0
+  const lineAt = (start: number, end: number) => {
+    for (let k = start; k < end; k++) if (source[k] === '\n') line++
+  }
+  const push = (kind: TokenKind, start: number, end: number) => {
+    tokens.push({ text: source.slice(start, end), kind, line })
+    lineAt(start, end)
+    i = end
+  }
+  while (i < source.length) {
+    const char = source[i] ?? ''
+    const next = source[i + 1] ?? ''
+    if (char === '\n') {
+      line++
+      i++
+    } else if (/\s/.test(char)) {
+      i++
+    } else if (char === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i++
+    } else if (char === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2)
+      const stop = end === -1 ? source.length : end + 2
+      lineAt(i, stop)
+      i = stop
+    } else if (char === "'" || char === '"') {
+      push('string', i, endOfString(source, i))
+    } else if (char === '`') {
+      push('template', i, endOfTemplate(source, i))
+    } else if (char === '/' && regexMayStart(tokens.at(-1))) {
+      push('regex', i, endOfRegex(source, i))
+    } else if (/[A-Za-z_$#]/.test(char)) {
+      push('name', i, i + (/^[#\w$]+/.exec(source.slice(i))?.[0].length ?? 1))
+    } else if (/[0-9]/.test(char) || (char === '.' && /[0-9]/.test(next))) {
+      push('number', i, i + (/^[\w.]+/.exec(source.slice(i))?.[0].length ?? 1))
+    } else {
+      const punct = PUNCTUATORS.find(candidate => source.startsWith(candidate, i)) ?? char
+      push('punct', i, i + punct.length)
+    }
+  }
+  return tokens
+}
+
+function regexMayStart(previous: Token | undefined): boolean {
+  if (previous === undefined) return true
+  if (previous.kind === 'name') return BEFORE_REGEX.has(previous.text)
+  if (previous.kind === 'punct') return ![')', ']', '}'].includes(previous.text)
+  return false
+}
+
+function endOfString(source: string, start: number): number {
+  const quote = source[start]
+  for (let k = start + 1; k < source.length; k++) {
+    if (source[k] === '\\') k++
+    else if (source[k] === quote || source[k] === '\n') return k + 1
+  }
+  return source.length
+}
+
+function endOfRegex(source: string, start: number): number {
+  let inClass = false
+  for (let k = start + 1; k < source.length; k++) {
+    const char = source[k]
+    if (char === '\\') k++
+    else if (char === '[') inClass = true
+    else if (char === ']') inClass = false
+    else if (char === '\n') return k
+    else if (char === '/' && !inClass) return k + 1 + (/^[a-z]*/.exec(source.slice(k + 1))?.[0].length ?? 0)
+  }
+  return source.length
+}
+
+/** A template literal from its backtick, through `${ … }` expressions that may hold strings and templates of their own. */
+function endOfTemplate(source: string, start: number): number {
+  for (let k = start + 1; k < source.length; k++) {
+    const char = source[k]
+    if (char === '\\') k++
+    else if (char === '`') return k + 1
+    else if (char === '$' && source[k + 1] === '{') k = endOfExpression(source, k + 2) - 1
+  }
+  return source.length
+}
+
+function endOfExpression(source: string, start: number): number {
+  let depth = 1
+  for (let k = start; k < source.length; k++) {
+    const char = source[k]
+    if (char === "'" || char === '"') k = endOfString(source, k) - 1
+    else if (char === '`') k = endOfTemplate(source, k) - 1
+    else if (char === '{') depth++
+    else if (char === '}' && --depth === 0) return k + 1
+  }
+  return source.length
+}
+
+/** The tokens on these lines, ends included: code compared by where it sits rather than by a name. */
+export function tokensInLines(source: string, startLine: number, endLine: number): Token[] {
+  return tokenize(source).filter(token => token.line >= startLine && token.line <= endLine)
+}
+
+const OPENERS = new Set(['(', '[', '{'])
+const CLOSERS = new Set([')', ']', '}'])
+
+/** The index of the token that closes the bracket at `open`. */
+function closing(tokens: Token[], open: number): number {
+  let depth = 0
+  for (let k = open; k < tokens.length; k++) {
+    const text = tokens[k]?.text ?? ''
+    if (OPENERS.has(text)) depth++
+    else if (CLOSERS.has(text) && --depth === 0) return k
+  }
+  return tokens.length - 1
+}
+
+/** Where a `const`, `let` or `var` statement ends: its `;`, or the last token before a new line starts the next one. */
+function statementEnd(tokens: Token[], start: number): number {
+  for (let k = start; k < tokens.length; k++) {
+    if (OPENERS.has(tokens[k]?.text ?? '')) {
+      k = closing(tokens, k)
+    }
+    const token = tokens[k] as Token
+    if (token.text === ';') return k
+    const next = tokens[k + 1]
+    // A line that ends on an operator, or a next line that starts with one (`.then`, `+ 1`), carries on.
+    const endsOnOperator = token.kind === 'punct' && !CLOSERS.has(token.text)
+    const startsWithOperator = next !== undefined && next.kind === 'punct' && !OPENERS.has(next.text) && !CLOSERS.has(next.text)
+    if (next === undefined || (next.line > token.line && !endsOnOperator && !startsWithOperator)) return k
+  }
+  return tokens.length - 1
+}
+
+/** A declaration that starts at token `k`, or null: `[export] [async] function name`, `class name`, `const|let|var name`. */
+function declarationAt(tokens: Token[], k: number): Declaration | null {
+  let at = k
+  while (['export', 'default', 'declare'].includes(tokens[at]?.text ?? '')) at++
+  if (tokens[at]?.text === 'async' && tokens[at + 1]?.text === 'function') at++
+  const head = tokens[at]?.text
+  let name: string | undefined
+  let end = -1
+  let params: [number, number] | undefined
+  let body: number | undefined
+  if (head === 'function' || head === 'class') {
+    let named = at + 1
+    if (tokens[named]?.text === '*') named++
+    name = tokens[named]?.kind === 'name' ? tokens[named]?.text : undefined
+    const brace = tokens.findIndex((token, index) => index > named && token.text === '{' && (head === 'class' || precededByParams(tokens, index)))
+    end = brace === -1 ? named : closing(tokens, brace)
+    if (head === 'function' && brace !== -1 && tokens[named + 1]?.text === '(') {
+      params = [named + 1 - k, closing(tokens, named + 1) - k]
+      body = brace - k
+    }
+  } else if (head === 'const' || head === 'let' || head === 'var') {
+    name = tokens[at + 1]?.kind === 'name' ? tokens[at + 1]?.text : undefined
+    end = statementEnd(tokens, at + 1)
+  }
+  if (name === undefined || end < k) {
+    return null
+  }
+  const slice = tokens.slice(k, end + 1)
+  return { name, tokens: slice, startLine: slice[0]?.line ?? 0, endLine: slice.at(-1)?.line ?? 0, ...(params === undefined ? {} : { params, body }) }
+}
+
+/**
+ * The top-level functions, classes and `const`/`let`/`var` bindings of a file, each with its tokens and lines; with
+ * `nested`, also those inside them, such as the functions a factory (`createX({ deps }) { function f() {} }`) returns.
+ */
+export function declarations(source: string, nested = false): Declaration[] {
+  const tokens = tokenize(source)
+  const found: Declaration[] = []
+  let k = 0
+  while (k < tokens.length) {
+    const declaration = declarationAt(tokens, k)
+    if (declaration !== null) {
+      found.push(declaration)
+      if (!nested) {
+        k += declaration.tokens.length
+        continue
+      }
+    } else if (!nested && OPENERS.has(tokens[k]?.text ?? '')) {
+      k = closing(tokens, k) + 1
+      continue
+    }
+    k++
+  }
+  return found
+}
+
+/** A function body's `{` comes after its parameters' `)`, or after a return type (`): Promise<void> {`). */
+function precededByParams(tokens: Token[], brace: number): boolean {
+  let depth = 0
+  for (let k = brace - 1; k >= 0; k--) {
+    const text = tokens[k]?.text ?? ''
+    if (text === ')' && depth === 0) return true
+    if (text === '>') depth++
+    if (text === '<') depth--
+    if (text === '{' || text === ';') return false
+  }
+  return false
+}
+
+function applyExplicit(tokens: Token[], renames: readonly Rename[]): { tokens: Token[]; used: Rename[] } {
+  let out = tokens
+  const used: Rename[] = []
+  for (const rename of renames) {
+    const from = tokenize(rename.from).map(token => token.text)
+    const to = tokenize(rename.to)
+    const next: Token[] = []
+    let hit = false
+    for (let k = 0; k < out.length; ) {
+      if (from.length > 0 && from.every((text, offset) => out[k + offset]?.text === text)) {
+        next.push(...to.map(token => ({ ...token, line: out[k]?.line ?? token.line })))
+        k += from.length
+        hit = true
+      } else {
+        next.push(out[k] as Token)
+        k++
+      }
+    }
+    out = next
+    if (hit) used.push({ from: rename.from, to: rename.to, explicit: true })
+  }
+  return { tokens: out, used }
+}
+
+function context(tokens: Token[], at: number): string {
+  return tokens
+    .slice(Math.max(0, at - 1), at + 3)
+    .map(token => token.text)
+    .join(' ')
+}
+
+/** IDENTICAL, RENAMED with every rename it took, or DIFFERS from the first token that does. */
+export function compare(before: Token[], after: Token[], explicit: readonly Rename[] = []): Comparison {
+  const { tokens: old, used } = applyExplicit(before, explicit)
+  const forward = new Map<string, string>()
+  const backward = new Map<string, string>()
+  const inferred: Rename[] = []
+  const length = Math.max(old.length, after.length)
+  for (let k = 0; k < length; k++) {
+    const a = old[k]
+    const b = after[k]
+    const sameText = a !== undefined && b !== undefined && a.text === b.text
+    const renameable = a?.kind === 'name' && b?.kind === 'name' && !KEYWORDS.has(a.text) && !KEYWORDS.has(b.text)
+    if (renameable) {
+      const was = forward.get(a.text)
+      const back = backward.get(b.text)
+      if ((was === undefined || was === b.text) && (back === undefined || back === a.text)) {
+        if (was === undefined) {
+          forward.set(a.text, b.text)
+          backward.set(b.text, a.text)
+          if (a.text !== b.text) inferred.push({ from: a.text, to: b.text })
+        }
+        continue
+      }
+    } else if (sameText) {
+      continue
+    }
+    return { verdict: 'DIFFERS', difference: `before: \`${context(old, k)}\` · after: \`${context(after, k)}\`` }
+  }
+  const renames = [...used, ...inferred]
+  return renames.length === 0 ? { verdict: 'IDENTICAL', renames: [] } : { verdict: 'RENAMED', renames }
+}
+
+const PREFIX_ONLY = new Set(['export', 'default', 'declare'])
+
+/**
+ * The whole declaration; for a function that differs, its parameters and its body apart: a body that is the same with
+ * new parameters is how a dependency arrives once code is injected rather than reached for (SIGNATURE).
+ */
+function compareDeclarations(before: Declaration, after: Declaration, explicit: readonly Rename[]): Comparison {
+  const whole = compare(before.tokens, after.tokens, explicit)
+  if (whole.verdict !== 'DIFFERS' || before.params === undefined || after.params === undefined || before.body === undefined || after.body === undefined) {
+    return whole
+  }
+  const lead = (decl: Declaration) =>
+    decl.tokens
+      .slice(0, decl.params?.[0])
+      .map(token => token.text)
+      .filter(text => !PREFIX_ONLY.has(text))
+      .join(' ')
+  const body = compare(before.tokens.slice(before.body), after.tokens.slice(after.body), explicit)
+  if (lead(before) !== lead(after) || body.verdict === 'DIFFERS' || body.verdict === 'SIGNATURE') {
+    return whole
+  }
+  const text = (decl: Declaration) =>
+    decl.tokens
+      .slice(decl.params?.[0], (decl.params?.[1] ?? 0) + 1)
+      .map(token => token.text)
+      .join(' ')
+  return { verdict: 'SIGNATURE', parameters: { before: text(before), after: text(after) }, renames: body.renames }
+}
+
+/**
+ * Each top-level declaration that left a file between `base` and `head` and appeared in another file that did not have
+ * it before, compared there. Files map a path to its text; a file missing from one side did not exist there.
+ */
+export function findMoves(base: Readonly<Record<string, string>>, head: Readonly<Record<string, string>>, explicit: readonly Rename[] = []): Move[] {
+  const declared = (files: Readonly<Record<string, string>>, nested: boolean) =>
+    new Map(Object.entries(files).map(([path, text]) => [path, declarations(text, nested)] as const))
+  // What moved is a top-level declaration of the old file; where it lands may be nested, inside a factory.
+  const before = declared(base, false)
+  const beforeAnywhere = declared(base, true)
+  const after = declared(head, true)
+  const has = (map: Map<string, Declaration[]>, path: string, name: string) => map.get(path)?.some(decl => decl.name === name) ?? false
+  const moves: Move[] = []
+  for (const [from, decls] of before) {
+    for (const decl of decls) {
+      if (has(after, from, decl.name)) continue
+      const target = [...after].find(([to]) => to !== from && has(after, to, decl.name) && !has(beforeAnywhere, to, decl.name))
+      const landed = target?.[1].find(candidate => candidate.name === decl.name)
+      if (target === undefined || landed === undefined) continue
+      moves.push({
+        name: decl.name,
+        from,
+        to: target[0],
+        fromLines: [decl.startLine, decl.endLine],
+        toLines: [landed.startLine, landed.endLine],
+        result: compareDeclarations(decl, landed, explicit),
+      })
+    }
+  }
+  return moves
+}
+
+function cell(text: string): string {
+  return text.replace(/\|/g, '\\|')
+}
+
+/** The table to paste into a pull request, with a count of each verdict. */
+export function report(moves: readonly Move[], against: string): string {
+  if (moves.length === 0) {
+    return `## Move check\n\nNo declaration moved between files against ${against}.`
+  }
+  const count = (verdict: Comparison['verdict']) => moves.filter(move => move.result.verdict === verdict).length
+  const renamed = (renames: readonly Rename[]) =>
+    renames.map(rename => `\`${rename.from}\` → \`${rename.to}\`${rename.explicit === true ? ' (given)' : ''}`).join(', ')
+  const notes = (result: Comparison) => {
+    if (result.verdict === 'DIFFERS') return result.difference
+    if (result.verdict !== 'SIGNATURE') return renamed(result.renames)
+    const body = result.renames.length === 0 ? '' : `; body: ${renamed(result.renames)}`
+    return `parameters \`${result.parameters.before}\` → \`${result.parameters.after}\`${body}`
+  }
+  const rows = moves.map(move => {
+    const note = cell(notes(move.result))
+    return `| \`${move.name}\` | ${move.from}:${move.fromLines[0]} → ${move.to}:${move.toLines[0]} | **${move.result.verdict}** |${note === '' ? '' : ` ${note}`} |`
+  })
+  return [
+    '## Move check',
+    '',
+    `${count('IDENTICAL')} identical · ${count('RENAMED')} renamed · ${count('SIGNATURE')} signature changed · ${count('DIFFERS')} differs, against ${against}.`,
+    '',
+    '| Moved | Where | Verdict | Notes |',
+    '| --- | --- | --- | --- |',
+    ...rows,
+  ].join('\n')
+}

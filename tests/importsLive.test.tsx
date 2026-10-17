@@ -301,4 +301,24 @@ describe('a module with its own test (#25)', () => {
     expect(checked).not.toContain(SLUG_TEST)
     expect(status.text).toMatch(/missed 1/)
   })
+
+  test('a red run of a test that imports it leaves no red cycle behind for a module it does not unlock (review #4)', async ($, on) => {
+    const world = fakeEngine(on)
+    withOwnTest(world)
+    world.fileContents.set(`${ROOT}/${SLUG_TEST}`, TEST_TEXT)
+    world.bashFails = true
+    world.bashText = FAIL
+    await runBash($, `npx vitest run ${SLUG_TEST}`)
+    world.bashFails = false
+    world.bashText = PASS
+    await runBash($, 'npx vitest run')
+    const status = await runCommand($, 'tdd')
+    // Later, io's own test is touched and passes without failing: it never saw red, and must say so.
+    await writeAt($, IO_TEST, 'import { slugify } from "../src/lib/io.js";\nit("writes", () => { expect(slugify("a")).toBe("a") })\n')
+    world.bashText = IO_PASS
+    const green = await runBash($, `npx vitest run ${IO_TEST}`)
+
+    expect(status.text).not.toMatch(/also open: io/)
+    expect(green.context?.join(' ') ?? '').not.toMatch(/GREEN on io, saw red/)
+  })
 })

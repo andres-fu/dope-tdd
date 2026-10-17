@@ -216,3 +216,30 @@ test('export added together with a real change still shows the change', () => {
   const [sig] = findMoves({ 'a.ts': 'function f(x) { return x }' }, { 'a.ts': '', 'b.ts': 'export function f(x, y) { return x }' })
   assert.equal(sig?.result.verdict, 'SIGNATURE')
 })
+
+// #65: a rule given for one piece (pick now takes `random`) was applied to every piece, so code that still calls
+// Math.random and never changed read DIFFERS. A rule applies to a piece only where the new side no longer has its old code.
+test('a given rename skips a piece whose new side still has the old code, so unchanged code stays IDENTICAL', () => {
+  const rule = [{ from: 'Math.random(', to: 'random(' }]
+  const roll = 'return i.reply(String(Math.floor(Math.random() * sides) + 1))'
+  assert.deepEqual(compare(tokenize(roll), tokenize(roll), rule), { verdict: 'IDENTICAL', renames: [] })
+
+  const base = { 'bot.js': 'function pick(list) {\n  return list[Math.floor(Math.random() * list.length)]\n}' }
+  const head = { 'bot.js': '', 'pick.js': 'function pick(list, random = Math.random) {\n  return list[Math.floor(random() * list.length)]\n}' }
+  const [pick] = findMoves(base, head, rule)
+  assert.equal(pick?.result.verdict, 'SIGNATURE')
+  assert.deepEqual(pick?.result.verdict === 'SIGNATURE' ? pick.result.renames : [], [{ from: 'Math.random(', to: 'random(', explicit: true }])
+})
+
+// #66: a template literal was one token, so a name inside `${…}` was invisible to renames, detected or given.
+test('names inside a template literal take part in renames; the literal text around them must match', () => {
+  const before = tokenize('return i.reply(`pong, ${note} ${LIMIT}`)')
+  const after = tokenize('return i.reply(`pong, ${note} ${limit}`)')
+  assert.deepEqual(compare(before, after), { verdict: 'RENAMED', renames: [{ from: 'LIMIT', to: 'limit' }] })
+  assert.deepEqual(compare(before, after, [{ from: 'LIMIT', to: 'limit' }]), {
+    verdict: 'RENAMED',
+    renames: [{ from: 'LIMIT', to: 'limit', explicit: true }],
+  })
+  assert.equal(compare(tokenize('`pong ${a}`'), tokenize('`ping ${a}`')).verdict, 'DIFFERS')
+  assert.equal(compare(tokenize('`a ${f({ x: `${y}` })} b`'), tokenize('`a ${f({ x: `${z}` })} b`')).verdict, 'RENAMED')
+})

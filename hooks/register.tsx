@@ -1332,7 +1332,7 @@ async function checkShell(
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
-  const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after)
+  const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
   // A command that cannot have written source (Claude Code held it read-only, or it is only test runs and filters):
   // what changed while it ran was another editor or session, so it is said and never charged to the agent.
   const cannotWrite = result.isReadOnly === true || isPureTestRun(command)
@@ -1534,6 +1534,21 @@ async function checkShell(
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
+}
+
+/** The modified time now of each path that left the snapshot, null for one that is gone; quiet, since gone is expected. */
+async function mtimesOfGone($: EngineInterface, root: string, before: SourceSnapshot, after: SourceSnapshot): Promise<Record<string, number | null>> {
+  const gone = Object.keys(before).filter(path => after[path] === undefined)
+  const entries = await Promise.all(
+    gone.map(async path => {
+      try {
+        return [path, (await $.fs.stat(`${root}/${path}`)).mtimeMs] as const
+      } catch {
+        return [path, null] as const
+      }
+    }),
+  )
+  return Object.fromEntries(entries)
 }
 
 async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {

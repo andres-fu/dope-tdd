@@ -228,6 +228,51 @@ describe('bash bypass', () => {
   })
 })
 
+describe('a commit is not a write (#23)', () => {
+  test('committing a test nobody touched neither unlocks its module nor opens a cycle', async ($, on) => {
+    const world = fakeEngine(on)
+    world.untracked = 'tests/utils/a.test.ts\n'
+    world.onBash = () => {
+      world.untracked = ''
+    }
+
+    await runBash($, 'git add tests/utils/a.test.ts && git commit -m "add test"')
+    const status = await runCommand($, 'tdd')
+    const blocked = await editAt($, 'src/utils/a.ts')
+
+    expect(status.text).toMatch(/module: none/)
+    expect(blocked.deny).toMatch(/write the failing test first/)
+  })
+
+  test('committing a changed source is not an unguarded edit', async ($, on) => {
+    const world = fakeEngine(on)
+    world.numstat = '3\t1\tsrc/App.tsx\n'
+    world.onBash = () => {
+      world.numstat = ''
+    }
+
+    const result = await runBash($, 'git commit -am "wip"')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(result.context?.join('\n') ?? '').not.toMatch(/without a test/)
+  })
+
+  test('a command that rewrites a test and commits it in one go still touched the test', async ($, on) => {
+    const world = fakeEngine(on)
+    world.untracked = 'tests/utils/a.test.ts\n'
+    world.onBash = () => {
+      world.untracked = ''
+      world.testModifiedAt += 5_000
+    }
+
+    await runBash($, 'echo "test(1)" > tests/utils/a.test.ts && git add -A && git commit -m wip')
+    const edit = await editAt($, 'src/utils/a.ts')
+
+    expect(edit.deny).toBeUndefined()
+  })
+})
+
 describe('the PowerShell tool', () => {
   test('a PowerShell write to a locked source file is denied like a Bash one', async ($, on) => {
     fakeEngine(on)

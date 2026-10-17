@@ -15,6 +15,14 @@ describe('briefingText', () => {
     expect(text).toMatch(/\/dope-tdd:pin skill: pin, prove, then change/)
   })
 
+  // #54: the gate and the agent's model of it must match, carry-over included.
+  test('in enforce mode says how an unlock from an earlier session works', () => {
+    const text = briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>')
+    expect(text).toMatch(/unlocked in an earlier session \(up to 7 days\) needs one run of its test this session, red or green, before its first edit/)
+    expect(text).toMatch(/dropped if that test changed since/)
+    expect(briefingText({ ...DEFAULT_CONFIG, mode: 'warn' }, null)).not.toMatch(/earlier session/)
+  })
+
   test('in observe mode says nothing is refused, and without a runner gives no command', () => {
     const text = briefingText({ ...DEFAULT_CONFIG, mode: 'observe' }, null)
     expect(text).toMatch(/watches and records only; nothing is refused/)

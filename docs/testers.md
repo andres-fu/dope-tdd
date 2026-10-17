@@ -138,8 +138,9 @@ edit?"
 ## With it and without it
 
 The playground is built for a before-and-after. Do the **without** run
-first, because the plugin remembers which tests were touched for a week and
-would not refuse the same module twice.
+first, because the plugin remembers which tests were touched for a week: the
+same module would only wait for one run of its test, not be refused as
+untested.
 
 - **Without:** in the `playground` folder, start `claude --safe-mode`, which
   turns every plugin off for that session, and give it Walk 1 from the

@@ -14,6 +14,8 @@ import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor 
 import type { GuardConfig } from './config'
 import {
   assertionsRemovedAdvice,
+  carriedOnAdvice,
+  carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
@@ -23,6 +25,7 @@ import {
   inheritedAdvice,
   runAdvice,
   skippedAdvice,
+  staleUnlockNote,
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
@@ -54,6 +57,8 @@ import {
   normalizeStats,
   otherOpenModules,
   recordBlocked,
+  recordCarriedRun,
+  recordCarryWait,
   recordCatch,
   recordChange,
   recordConfigChange,
@@ -67,6 +72,7 @@ import {
   recordRedUnlock,
   recordRunTarget,
   recordSourceEdit,
+  recordStaleUnlocks,
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
@@ -77,7 +83,7 @@ import {
   togglePause,
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
-import { freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from './unlocks'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from './unlocks'
 import { CHECK_LOCK_TTL_MS } from './stats'
 import { commentedOutLines, testEditSignals } from './workarounds'
 
@@ -150,7 +156,9 @@ async function readStats($: EngineInterface): Promise<TddStats> {
 async function rememberUnlock($: EngineInterface, root: string, module: string, testPath: string, nowMs: number): Promise<void> {
   const key = unlockKey(root)
   const stored = freshUnlocks(await $.store.get(key), nowMs)
-  await $.store.set(key, { ...stored, [module]: { testPath, atMs: nowMs } })
+  // The test as it is now (#54), so a later session can tell whether it is still the test that earned this unlock.
+  // Unreadable: stored without a hash, which a later session keeps (still pending a run) rather than drops.
+  await $.store.set(key, { ...stored, [module]: unlockEntry(testPath, nowMs, await readWhole($, testPath)) })
 }
 
 /** The stack the root's own files say the project is, when dope-tdd.json does not name one. */
@@ -979,10 +987,28 @@ function experimentalCheckReason(kind: RunnerKind): string {
 // A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
 const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i
 
-function lockedMessage(config: GuardConfig, module: string): string {
+/** `staleAgeMs`: the module had a carried-over unlock, dropped because its test changed since (#54); the refusal says so. */
+function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: number): string {
   const guess = config.layoutGuessed === true ? ' That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.' : ''
   const scratch = LOOKS_THROWAWAY.test(module) ? ' One-off script? Put it outside the repo (your scratchpad or temp directory); dope-tdd guards project sources.' : ''
-  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${guess}${scratch}`
+  const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPathFor(config, module), staleAgeMs)
+  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
+}
+
+/** A refused edit to a locked module, with the stale note when a carried-over unlock was dropped for it. */
+function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number): string {
+  const staleAt = s.stale[module]
+  return lockedMessage(config, module, staleAt === undefined ? undefined : nowMs - staleAt)
+}
+
+/**
+ * #54: a module unlocked in an earlier session, edited before its test ran this session. The refusal names the exact
+ * command, so the next step is one run, not a search.
+ */
+async function carryWait($: EngineInterface, root: string, config: GuardConfig, s: TddStats, module: string, nowMs: number): Promise<string> {
+  const testPath = s.unlocked[module] ?? testPathFor(config, module)
+  const command = (await runCommandFor($, root, config, testPath)) ?? undefined
+  return carryWaitMessage(sourcePathFor(config, module), relativePath(root, testPath), nowMs - (s.inherited[module] ?? nowMs), command)
 }
 
 function sourceModuleOf(root: string, path: string, config: GuardConfig): string | null {
@@ -1216,7 +1242,14 @@ async function checkFileWrite(
   if (isLocked && policy === 'enforce' && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => recordBlocked(s, target.module, nowMs))
-    return { deny: lockedMessage(config, target.module) }
+    return { deny: lockedFor(config, current, target.module, nowMs) }
+  }
+  // #54: unlocked, but only by a carry-over from an earlier session. Enforce waits for one run of its test this session
+  // (warn lets the edit through and reminds after it, below). Touching the test or running it clears `inherited`.
+  if (target.kind === 'source' && !isLocked && current.inherited[target.module] !== undefined && policy === 'enforce' && !current.paused) {
+    const nowMs = await $.clock.now()
+    await change($, s => recordCarryWait(s, target.module, nowMs))
+    return { deny: await carryWait($, root, config, current, target.module, nowMs) }
   }
 
   const before = target.kind !== 'other' && !current.paused ? await readFile($, filePath) : undefined
@@ -1422,10 +1455,15 @@ async function checkShell(
   const locked = writes.flatMap(({ module, policy }) =>
     module !== null && policy === 'enforce' && current.unlocked[module] === undefined ? [module] : [],
   )
-  if (locked.length > 0 && !current.paused) {
+  // #54: a shell write to a module unlocked only by a carry-over waits for its run, as an Edit does.
+  const waiting = writes.flatMap(({ module, policy }) =>
+    module !== null && policy === 'enforce' && current.unlocked[module] !== undefined && current.inherited[module] !== undefined ? [module] : [],
+  )
+  if ((locked.length > 0 || waiting.length > 0) && !current.paused) {
     const nowMs = await $.clock.now()
-    await change($, s => locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s))
-    return { deny: locked.map(module => lockedMessage(config, module)).join('\n') }
+    await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
+    const waits = await Promise.all([...new Set(waiting)].map(module => carryWait($, root, config, current, module, nowMs)))
+    return { deny: [...locked.map(module => lockedFor(config, current, module, nowMs)), ...waits].join('\n') }
   }
   // While a file is reverted on disk, neither a write to source nor a test run may read it.
   if (writes.some(({ module }) => module !== null) || isTestRun(command)) {
@@ -1554,6 +1592,7 @@ async function checkShell(
   let ownCycleClosed = false
   let elsewhere: string[] = []
   const redUnlocked: string[] = []
+  const carriedOn: string[] = []
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
@@ -1613,6 +1652,18 @@ async function checkShell(
     }
     afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
     ownCycleClosed = afterRun.cycles > updated.cycles
+    // #54: a whole-file run of the test behind a carried-over unlock, red or green, is the run its first edit waits for.
+    // Only a run that names the file: a suite run need not have run it, and a filtered one ran only some of it.
+    if (named !== undefined && !filtersTests(command)) {
+      const carried = Object.keys(afterRun.inherited).filter(module => {
+        const testPath = afterRun.unlocked[module]
+        return testPath !== undefined && pathKey(testPath) === pathKey(named)
+      })
+      if (carried.length > 0) {
+        afterRun = await change($, s => recordCarriedRun(s, carried, nowMs))
+        carriedOn.push(...carried)
+      }
+    }
     if (outcome === 'pass' && (named !== undefined || !filtersTests(command))) {
       // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
       afterRun = await change($, s => closeCyclesForTest(s, named ?? null, s.current?.module, nowMs))
@@ -1660,6 +1711,7 @@ async function checkShell(
         ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,
         ...redUnlocked.map(module => redUnlockAdvice(moduleLabel(config, module), sourcePathFor(config, module))),
+        ...carriedOn.map(module => carriedOnAdvice(sourcePathFor(config, module), relativePath(root, afterRun.unlocked[module] ?? ''), outcome === 'pass')),
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
@@ -1712,14 +1764,25 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   const nowMs = await $.clock.now()
   const legacy = legacyUnlockKey(root) === unlockKey(root) ? {} : freshUnlocks(await $.store.get(legacyUnlockKey(root)), nowMs)
   const stored = { ...legacy, ...freshUnlocks(await $.store.get(unlockKey(root)), nowMs) }
-  const present = await Promise.all(
-    Object.entries(stored).map(async ([module, entry]) =>
-      (await lastModifiedMs($, entry.testPath)) === null ? [] : [[module, entry] as const],
-    ),
+  // Each remembered unlock is kept (pending a run, #54), dropped as stale (its test changed since), or forgotten (its test is gone).
+  const sorted = await Promise.all(
+    Object.entries(stored).map(async ([module, entry]) => {
+      if ((await lastModifiedMs($, entry.testPath)) === null) {
+        return { module, entry, fate: 'gone' as const }
+      }
+      if (entry.testHash === undefined) {
+        // Stored by an earlier build, before hashes: nothing to compare, so kept. It still waits for a run before any edit.
+        return { module, entry, fate: 'kept' as const }
+      }
+      const text = await readWhole($, entry.testPath)
+      // Unreadable now: cannot tell, so kept, for the same reason.
+      return { module, entry, fate: text !== null && contentHash(text) !== entry.testHash ? ('stale' as const) : ('kept' as const) }
+    }),
   )
-  const entries = Object.fromEntries(present.flat())
-  if (Object.keys(entries).length > 0) {
-    await change($, s => seedUnlocks(s, entries))
+  const kept = Object.fromEntries(sorted.filter(item => item.fate === 'kept').map(item => [item.module, item.entry]))
+  const stale = Object.fromEntries(sorted.filter(item => item.fate === 'stale').map(item => [item.module, item.entry]))
+  if (Object.keys(kept).length > 0 || Object.keys(stale).length > 0) {
+    await change($, s => recordStaleUnlocks(seedUnlocks(s, kept), stale, nowMs))
   }
 }
 

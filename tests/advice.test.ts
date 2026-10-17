@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, touchAdvice, unreadRunAdvice } from '../hooks/advice'
+import { carriedOnAdvice, carryWaitMessage, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
 import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch } from '../hooks/stats'
 
 const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
@@ -108,6 +108,42 @@ describe('inheritedAdvice', () => {
   test('gives the agent the history behind an unlock from an earlier session', () => {
     expect(inheritedAdvice('money/formatCents', 'tests/money/formatCents.test.ts', 2 * 60 * 60_000)).toBe(
       'dope-tdd: src/money/formatCents is unlocked because tests/money/formatCents.test.ts was touched 2H AGO in an earlier session. Run that test first if you have not this session.',
+    )
+  })
+})
+
+// #54: each message says what happened, why, and the exact next step, so an agent meeting this edge case cold
+// understands it without reading the plugin.
+describe('carried-over unlocks (#54)', () => {
+  const HOURS_2 = 2 * 60 * 60_000
+
+  test('the refused first edit says when and how it was unlocked, the command to run, why, and that no test edit is needed', () => {
+    expect(carryWaitMessage('src/money/formatCents.ts', 'tests/money/formatCents.test.ts', HOURS_2, 'npx vitest run tests/money/formatCents.test.ts')).toBe(
+      'dope-tdd: src/money/formatCents.ts was unlocked 2H AGO in an earlier session, when tests/money/formatCents.test.ts was touched. ' +
+        'Before the first edit this session, run that test once, red or green: npx vitest run tests/money/formatCents.test.ts. ' +
+        'Why: the earlier proof counts only while the test still runs, and a run now shows where things stand before your change. No test edit is needed.',
+    )
+  })
+
+  test('without a known run command, it names the test file to run', () => {
+    expect(carryWaitMessage('src/a.ts', 'tests/a.test.ts', HOURS_2)).toMatch(/run that test once, red or green: tests\/a\.test\.ts\./)
+  })
+
+  test('a green run says the unlock is active again', () => {
+    expect(carriedOnAdvice('src/a.ts', 'tests/a.test.ts', true)).toBe(
+      'dope-tdd: tests/a.test.ts ran green this session, so the unlock of src/a.ts carried over from an earlier session is active again. Edit away; your next green is checked as usual.',
+    )
+  })
+
+  test('a red run says the unlock is active and the failures were there before any edit', () => {
+    expect(carriedOnAdvice('src/a.ts', 'tests/a.test.ts', false)).toBe(
+      'dope-tdd: tests/a.test.ts ran red this session, before any edit, so the unlock of src/a.ts carried over from an earlier session is active again. Those failures were already there: they are not from your change.',
+    )
+  })
+
+  test('an unlock dropped because the test changed says why the edit is refused after all', () => {
+    expect(staleUnlockNote('tests/a.test.ts', HOURS_2)).toBe(
+      ' tests/a.test.ts unlocked it 2H AGO in an earlier session, but that test has changed since (a checkout, a merge, or an edit this guard did not see), so the earlier unlock no longer counts.',
     )
   })
 })

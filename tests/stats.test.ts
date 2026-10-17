@@ -14,7 +14,10 @@ import {
   recordCatch,
   recordChange,
   recordConfigChange,
+  recordCarriedRun,
+  recordCarryWait,
   recordImporter,
+  recordStaleUnlocks,
   recordRun,
   recordSourceEdit,
   recordTestChanged,
@@ -358,6 +361,53 @@ describe('unlocks remembered from earlier sessions', () => {
     expect(reminded.reminded).toEqual(['utils/a'])
     expect(reminded.inherited['utils/a']).toBe(5)
     expect(reminded.unlocked['utils/a']).toBe('tests/utils/a.test.ts')
+  })
+
+  // #54: a carried-over unlock is pending until its test runs once this session; the run is what makes it active.
+  test('a run of its test this session makes a carried-over unlock active: no longer inherited, still unlocked', () => {
+    const seeded = seedUnlocks(INITIAL_STATS, {
+      'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 },
+      'utils/b': { testPath: 'tests/utils/b.test.ts', atMs: 5 },
+    })
+    const ran = recordCarriedRun(seeded, ['utils/a'], 50)
+
+    expect(ran.inherited).toEqual({ 'utils/b': 5 })
+    expect(ran.unlocked['utils/a']).toBe('tests/utils/a.test.ts')
+    expect(ran.events.at(-1)).toMatchObject({ kind: 'carried-on', module: 'utils/a', atMs: 50 })
+  })
+
+  // A re-seed while this session's state survives must not re-gate a module the agent unlocked in this session:
+  // that unlock is fresher evidence than anything carried over.
+  test('seeding never makes a module unlocked in this session pending, or stale', () => {
+    const touched = recordTestTouch(INITIAL_STATS, { module: 'utils/a', testPath: 'tests/utils/a.test.ts' }, 10)
+    const seeded = seedUnlocks(touched, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } })
+    const staled = recordStaleUnlocks(touched, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } }, 20)
+
+    expect(seeded.inherited['utils/a']).toBeUndefined()
+    expect(staled.stale['utils/a']).toBeUndefined()
+    expect(staled.events.at(-1)?.kind).toBe('touched')
+  })
+
+  test('a refused first edit is on the record, but not as a test-first miss', () => {
+    const seeded = seedUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } })
+    const waited = recordCarryWait(seeded, 'utils/a', 50)
+
+    expect(waited.blocked).toBe(0)
+    expect(waited.events.at(-1)).toMatchObject({ kind: 'needs-run', module: 'utils/a', atMs: 50 })
+  })
+
+  test('an unlock dropped because its test changed is remembered with its age, until the test is touched', () => {
+    const stale = recordStaleUnlocks(INITIAL_STATS, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 } }, 50)
+
+    expect(stale.unlocked['utils/a']).toBeUndefined()
+    expect(stale.stale['utils/a']).toBe(5)
+    expect(stale.events.at(-1)).toMatchObject({ kind: 'stale-unlock', module: 'utils/a' })
+    expect(recordTestTouch(stale, { module: 'utils/a', testPath: 'tests/utils/a.test.ts' }, 60).stale['utils/a']).toBeUndefined()
+  })
+
+  test('the stale list survives a reload of the stored stats, and a bad value does not', () => {
+    expect(normalizeStats({ stale: { 'utils/a': 5 } }).stale).toEqual({ 'utils/a': 5 })
+    expect(normalizeStats({ stale: 'nope' }).stale).toEqual({})
   })
 })
 

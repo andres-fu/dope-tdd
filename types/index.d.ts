@@ -22,6 +22,12 @@ export type EventKind =
   | 'assertion-removed'
   | 'commented-out'
   | 'hollow-touch'
+  /** #54: an edit refused because a carried-over unlock waits for one run of its test this session. */
+  | 'needs-run'
+  /** #54: that run happened; the carried-over unlock is active. */
+  | 'carried-on'
+  /** #54: a carried-over unlock dropped at session start because its test changed since. */
+  | 'stale-unlock'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */
@@ -107,7 +113,13 @@ export type TddStats = {
   unlocked: Readonly<Record<string, string>>
   /** Tests seen importing a module, beside its own test: tried when its own test misses a change (#25). */
   importers: Readonly<Record<string, readonly string[]>>
+  /**
+   * Unlocks carried over from an earlier session, by when their test was touched. Pending (#54): the first edit waits
+   * for one run of the test this session; that run removes the entry and the unlock is active.
+   */
   inherited: Readonly<Record<string, number>>
+  /** Carried-over unlocks dropped because the test changed since, by when they were stored: the refusal says why (#54). */
+  stale: Readonly<Record<string, number>>
   reminded: readonly string[]
   changes: Readonly<Record<string, CycleChange>>
   checking: CheckLock | null

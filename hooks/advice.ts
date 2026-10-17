@@ -32,8 +32,36 @@ export function touchAdvice(module: string, sourcePath = defaultSource(module), 
   return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing ${sourcePath}.${run}`
 }
 
+/** Warn mode only: there the edit under a carried-over unlock goes through, and this reminder follows it. */
 export function inheritedAdvice(module: string, testPath: string, ageMs: number, sourcePath = defaultSource(module)): string {
   return `dope-tdd: ${sourcePath} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
+}
+
+/*
+ * #54, carried-over unlocks in enforce mode. An agent meets these cold, often on day 2 of a refactor, after an edit
+ * that was allowed yesterday. Each message says what happened, why, and the exact next step, so nobody has to read
+ * the plugin to understand why an unlocked module is refused.
+ */
+
+/** The first edit under a carried-over unlock, refused until its test runs once this session. */
+export function carryWaitMessage(sourcePath: string, testPath: string, ageMs: number, command?: string): string {
+  return (
+    `dope-tdd: ${sourcePath} was unlocked ${formatAgo(ageMs)} in an earlier session, when ${testPath} was touched. ` +
+    `Before the first edit this session, run that test once, red or green: ${command ?? testPath}. ` +
+    'Why: the earlier proof counts only while the test still runs, and a run now shows where things stand before your change. No test edit is needed.'
+  )
+}
+
+/** That run happened: the unlock is active, and a red is named as already there, not the agent's. */
+export function carriedOnAdvice(sourcePath: string, testPath: string, passed: boolean): string {
+  return passed
+    ? `dope-tdd: ${testPath} ran green this session, so the unlock of ${sourcePath} carried over from an earlier session is active again. Edit away; your next green is checked as usual.`
+    : `dope-tdd: ${testPath} ran red this session, before any edit, so the unlock of ${sourcePath} carried over from an earlier session is active again. Those failures were already there: they are not from your change.`
+}
+
+/** Appended to the ordinary refusal when the module had a carried-over unlock that was dropped because its test changed. */
+export function staleUnlockNote(testPath: string, ageMs: number): string {
+  return ` ${testPath} unlocked it ${formatAgo(ageMs)} in an earlier session, but that test has changed since (a checkout, a merge, or an edit this guard did not see), so the earlier unlock no longer counts.`
 }
 
 export function redUnlockAdvice(module: string, sourcePath = defaultSource(module)): string {

@@ -13,7 +13,9 @@ import type { GuardConfig } from './config'
 export function briefingText(config: GuardConfig, runCommand: string | null): string {
   const gate =
     config.mode === 'enforce'
-      ? 'An edit to a source file is refused until that module\'s test was touched in this session, or run and seen failing.'
+      ? // The carry-over clause (#54) is here so the agent's model of the gate matches it before it is ever refused.
+        'An edit to a source file is refused until that module\'s test was touched in this session, or run and seen failing. ' +
+        'A module unlocked in an earlier session (up to 7 days) needs one run of its test this session, red or green, before its first edit, and is dropped if that test changed since.'
       : config.mode === 'warn'
         ? 'An edit to a source file whose test was not touched first goes through with a warning, and is counted.'
         : 'It watches and records only; nothing is refused.'

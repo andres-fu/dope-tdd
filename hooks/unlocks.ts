@@ -2,14 +2,20 @@ import { assertionCalls } from './workarounds'
 
 export const UNLOCK_TTL_MS = 7 * 24 * 60 * 60_000
 
-export type StoredUnlock = { testPath: string; atMs: number }
+/**
+ * `testHash` is the test file's content when the unlock was stored (#54). A later session compares it: a test that
+ * changed since (a checkout, a merge, an edit this guard did not see) is not the test that earned the unlock, so the
+ * carry-over is dropped. Entries from earlier builds have none and are kept, still pending a run.
+ */
+export type StoredUnlock = { testPath: string; atMs: number; testHash?: string }
 
 function isStoredUnlock(value: unknown): value is StoredUnlock {
   return (
     typeof value === 'object' &&
     value !== null &&
     typeof (value as StoredUnlock).testPath === 'string' &&
-    typeof (value as StoredUnlock).atMs === 'number'
+    typeof (value as StoredUnlock).atMs === 'number' &&
+    ((value as StoredUnlock).testHash === undefined || typeof (value as StoredUnlock).testHash === 'string')
   )
 }
 
@@ -41,6 +47,26 @@ export function freshUnlocks(stored: unknown, nowMs: number): Record<string, Sto
     (entry): entry is [string, StoredUnlock] => isStoredUnlock(entry[1]) && nowMs - entry[1].atMs <= UNLOCK_TTL_MS,
   )
   return Object.fromEntries(fresh)
+}
+
+/**
+ * A short fingerprint of a test file's text: FNV-1a, 32 bits, as 8 hex digits. Not cryptographic; it only has to
+ * notice that a test changed between sessions. CRLF counts as LF, because a Windows checkout can rewrite line endings
+ * with no change to the test, and that must not drop an unlock.
+ */
+export function contentHash(text: string): string {
+  const normalized = text.replace(/\r\n/g, '\n')
+  let hash = 0x811c9dc5
+  for (let i = 0; i < normalized.length; i++) {
+    hash ^= normalized.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/** What is stored for an unlock: the test, when, and the hash of the test as read now; none when it could not be read. */
+export function unlockEntry(testPath: string, atMs: number, text: string | null): StoredUnlock {
+  return text === null ? { testPath, atMs } : { testPath, atMs, testHash: contentHash(text) }
 }
 
 export function hasAssertion(source: string): boolean {

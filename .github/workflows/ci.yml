@@ -6,9 +6,19 @@
 # reaches testers as an update); strict mode would fail on that alone.
 name: ci
 
+# Cost (Actions minutes are billed on a private repository; macOS counts 10x, Windows 2x):
+# - one run per change: pull requests, and pushes to main only, not every branch push as well;
+# - a new push to a pull request cancels the run still going for the one before it;
+# - macOS runs on main, not on every pull request; Linux and Windows run on both, Windows being where
+#   most of this plugin's path and line-ending bugs show up.
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   plugin:
@@ -17,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

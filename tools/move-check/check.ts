@@ -11,8 +11,9 @@
 //
 // Node 22.18+ runs it as it is (type stripping); older Node: `npx -y tsx@4.19.2 tools/move-check/check.ts ...`.
 //
-// --rename replaces a token sequence on the old side before comparing (`shoukaku.players.get(=getPlayer(`), for a change
-// that is not one name for another. --pair compares line ranges, base side then HEAD side, for code that was never a
+// --rename replaces a token sequence on the old side before comparing (`players.get(=getPlayer(`), for a change
+// that is not one name for another. A rule whose code holds `=` (`=>`, `===`) goes as --rename-from '<old>'
+// --rename-to '<new>'. --pair compares line ranges, base side then HEAD side, for code that was never a
 // declaration of its own (a loop body that became a function).
 
 import { execFileSync } from 'node:child_process'
@@ -26,8 +27,45 @@ const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
 type Options = { repo: string; base: string; head: string; renames: Rename[]; pairs: string[]; failOn: 'differs' | 'never' }
 
-function parseArgs(argv: string[]): Options {
-  const options: Options = { repo: '.', base: '', head: 'HEAD', renames: [], pairs: [], failOn: 'never' }
+/**
+ * The rename rules in a command line, in order: `--rename 'old=new'`, and `--rename-from '<old>' --rename-to '<new>'`
+ * for code that holds `=`. Shared by move-check and pr-check, so both read a rule the same way.
+ */
+export function renameRules(argv: readonly string[]): Rename[] {
+  const rules: Rename[] = []
+  let pendingFrom: string | undefined
+  for (let k = 0; k < argv.length; k++) {
+    const value = argv[k + 1] ?? ''
+    if (argv[k] === '--rename') {
+      const split = value.indexOf('=')
+      if (split <= 0) throw new Error(`--rename needs old=new, got ${value}`)
+      // #67: code holds `=` too (`=>`, `===`, a default value), and a rule split at the wrong one rewrites the old code
+      // into something that never existed, with no error. More than one `=` is refused, never guessed at.
+      if (value.indexOf('=', split + 1) !== -1) {
+        throw new Error(
+          `--rename '${value}' has more than one \`=\` (an arrow, a comparison or a default value), so where old ends and new begins cannot be told. ` +
+            "Give it as --rename-from '<old>' --rename-to '<new>' instead.",
+        )
+      }
+      rules.push({ from: value.slice(0, split), to: value.slice(split + 1) })
+      k++
+    } else if (argv[k] === '--rename-from') {
+      if (pendingFrom !== undefined) throw new Error(`--rename-from '${pendingFrom}' has no --rename-to after it`)
+      pendingFrom = value
+      k++
+    } else if (argv[k] === '--rename-to') {
+      if (pendingFrom === undefined) throw new Error('--rename-to needs a --rename-from before it')
+      rules.push({ from: pendingFrom, to: value })
+      pendingFrom = undefined
+      k++
+    }
+  }
+  if (pendingFrom !== undefined) throw new Error(`--rename-from '${pendingFrom}' has no --rename-to after it`)
+  return rules
+}
+
+export function parseArgs(argv: string[]): Options {
+  const options: Options = { repo: '.', base: '', head: 'HEAD', renames: renameRules(argv), pairs: [], failOn: 'never' }
   for (let k = 0; k < argv.length; k++) {
     const value = argv[k + 1] ?? ''
     switch (argv[k]) {
@@ -40,12 +78,10 @@ function parseArgs(argv: string[]): Options {
       case '--head':
         options.head = value
         break
-      case '--rename': {
-        const split = value.indexOf('=')
-        if (split <= 0) throw new Error(`--rename needs old=new, got ${value}`)
-        options.renames.push({ from: value.slice(0, split), to: value.slice(split + 1) })
+      case '--rename':
+      case '--rename-from':
+      case '--rename-to':
         break
-      }
       case '--pair':
         options.pairs.push(value)
         break

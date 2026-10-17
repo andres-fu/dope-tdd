@@ -29,7 +29,7 @@ import { findRunner } from '../../hooks/findRunner.ts'
 import { importCandidates } from '../../hooks/imports.ts'
 import { classifyPath, moduleLabel, relativePath, testFileFor } from '../../hooks/mirror.ts'
 import { failedTestsIn } from '../../hooks/runners.ts'
-import { changedCode, existsAt } from '../move-check/check.ts'
+import { changedCode, existsAt, renameRules } from '../move-check/check.ts'
 import { declarations, findMoves } from '../move-check/move.ts'
 import type { Move, Rename } from '../move-check/move.ts'
 import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
@@ -208,11 +208,8 @@ async function main(): Promise<void> {
   const failOn = value('--fail-on') ?? 'missed'
   const timeoutMs = Number(value('--timeout-ms') ?? 180_000)
   if (baseRef === undefined) throw new Error('--base is required (the branch the pull request goes into)')
-  const renames = argv.flatMap((arg, at) => (arg === '--rename' && argv[at + 1] !== undefined ? [argv[at + 1] as string] : [])).map(pair => {
-    const split = pair.indexOf('=')
-    if (split <= 0) throw new Error(`--rename needs old=new, got ${pair}`)
-    return { from: pair.slice(0, split), to: pair.slice(split + 1) }
-  })
+  // The move check's own reading of a rule (#67): --rename 'old=new', or --rename-from/--rename-to for code with `=`.
+  const renames = renameRules(argv)
   const { rows, base } = await checkPullRequest(root, baseRef, { timeoutMs, renames })
   const text = report(rows, `${baseRef} (${base.slice(0, 7)})`)
   console.log(text)

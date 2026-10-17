@@ -744,7 +744,19 @@ async function verifyCatch(
   if (cycleChange.before === cycleChange.after) {
     // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
     // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
-    return provedByRed ? { kind: 'proven' } : 'unchecked'
+    if (!provedByRed) {
+      return 'unchecked'
+    }
+    // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
+    // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way,
+    // and a check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
+    const pinPolicy = policyFor(config, relativePath(root, cycleChange.path))
+    if (pinPolicy === 'observe' || pinPolicy === 'exempt' || config.catchCheck === false) {
+      return { kind: 'proven' }
+    }
+    const pinCheck = await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)
+    const mutation = pinCheck !== null && (pinCheck.kind === 'proven' || pinCheck.kind === 'missed') ? pinCheck.mutation : undefined
+    return mutation === undefined ? { kind: 'proven' } : { kind: 'proven', mutation, pinned: true }
   }
   if (cycleChange.kind === 'refactor') {
     return 'refactor'

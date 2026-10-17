@@ -188,3 +188,31 @@ test('a pipe in a note is escaped so the table holds', () => {
   const text = report(findMoves({ 'a.js': 'function f(x) { return x || 1 }' }, { 'b.js': 'function f(x) { return x || 2 }', 'a.js': '' }), 'main')
   assert.ok(text.includes('| before: `\\|\\| 1 }` · after: `\\|\\| 2 }` |'), text)
 })
+
+// #60: a declaration moved into a new module has to be exported there. That keyword is part of moving, not a change
+// to the code: without this, extracting code into a module could never read IDENTICAL.
+test('a move that only adds (or drops) export, export default or declare is IDENTICAL', () => {
+  const base = { 'register.ts': 'function succeeded(r) { return r.ok }\nconst PREFIX = "x:"\nfunction gone() { return 1 }' }
+  const head = {
+    'register.ts': '',
+    'result.ts': 'export function succeeded(r) { return r.ok }\nexport const PREFIX = "x:"',
+    'other.ts': 'export default function gone() { return 1 }',
+  }
+  assert.deepEqual(
+    findMoves(base, head).map(move => [move.name, move.result.verdict]),
+    [
+      ['succeeded', 'IDENTICAL'],
+      ['PREFIX', 'IDENTICAL'],
+      ['gone', 'IDENTICAL'],
+    ],
+  )
+  const back = findMoves({ 'a.ts': 'export const LIMIT = 3' }, { 'a.ts': '', 'b.ts': 'const LIMIT = 3' })
+  assert.equal(back[0]?.result.verdict, 'IDENTICAL')
+})
+
+test('export added together with a real change still shows the change', () => {
+  const [move] = findMoves({ 'a.ts': 'const LIMIT = 3' }, { 'a.ts': '', 'b.ts': 'export const LIMIT = 4' })
+  assert.equal(move?.result.verdict, 'DIFFERS')
+  const [sig] = findMoves({ 'a.ts': 'function f(x) { return x }' }, { 'a.ts': '', 'b.ts': 'export function f(x, y) { return x }' })
+  assert.equal(sig?.result.verdict, 'SIGNATURE')
+})

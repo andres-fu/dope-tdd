@@ -38,7 +38,7 @@ import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -48,6 +48,7 @@ import type { StackName } from './stacks'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup'
 import type { Survey } from './setup'
 import {
+  CHECK_LOCK_TTL_MS,
   INITIAL_STATS,
   acquireCheck,
   expireCurrent,
@@ -55,7 +56,6 @@ import {
   markReminded,
   moduleState,
   normalizeStats,
-  otherOpenModules,
   recordBlocked,
   recordCarriedRun,
   recordCarryWait,
@@ -84,7 +84,6 @@ import {
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from './unlocks'
-import { CHECK_LOCK_TTL_MS } from './stats'
 import { commentedOutLines, testEditSignals } from './workarounds'
 
 const MINUTE = 60_000
@@ -256,7 +255,6 @@ async function projectPath($: EngineInterface, root: string, path: string): Prom
   return path
 }
 
-/** Tells a file that is not there from one that is there but cannot be read (too large, locked): only the first is a new file. */
 /**
  * The folder of the package a workspace run names: a path from where the shell is, or a name matched against each
  * package's package.json name, then its folder name, among the `roots` (a trailing `/*` is listed). Null when none.
@@ -295,6 +293,7 @@ async function packageDirFor($: EngineInterface, root: string, start: string, co
   return byFolder === undefined ? null : `${root}/${byFolder}`
 }
 
+/** Tells a file that is not there from one that is there but cannot be read (too large, locked): only the first is a new file. */
 async function readFile($: EngineInterface, path: string): Promise<FileRead> {
   try {
     return { kind: 'text', text: await $.fs.read(path) }
@@ -544,12 +543,6 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
 }
 
 /**
- * Proves `module`'s test against this cycle's change to its source: revert,
- * run only that test, restore. Only this module's change is touched; other
- * modules wait for their own green. The lock is taken in one update and
- * released whatever happens; a file that moved while reverted is left alone.
- */
-/**
  * How the plugin itself runs one test file: the runner, where it runs (a runner installed in a package runs from that
  * package, so its own config loads; otherwise the root), the test path from there, and the argv. Null with no runner.
  */
@@ -776,6 +769,12 @@ async function newFileCheck(
   return { kind: 'unverified', reason: reason === undefined ? 'new file' : `new file: ${reason}` }
 }
 
+/**
+ * Proves `module`'s test against this cycle's change to its source: revert,
+ * run only that test, restore. Only this module's change is touched; other
+ * modules wait for their own green. The lock is taken in one update and
+ * released whatever happens; a file that moved while reverted is left alone.
+ */
 async function verifyCatch(
   $: EngineInterface,
   root: string,
@@ -1709,7 +1708,7 @@ async function checkShell(
         ...(alreadyFailing.length === 0
           ? []
           : [
-              `dope-tdd: ${working === undefined || working === null ? 'this module' : moduleLabel(config, working.module)} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
+              `dope-tdd: ${working === null ? 'this module' : moduleLabel(config, working.module)} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
             ]),
         ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
         ...(firstUnreadable && unreadable !== null ? [unreadableRunnerAdvice(unreadable)] : []),
@@ -1806,7 +1805,6 @@ function filtersTests(command: string): boolean {
   return TEST_FILTER.test(command)
 }
 
-/** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */
 /** The module's own test file exists, in any of the stack's extensions: a test that imports the module does not stand in for it. */
 async function hasOwnTest($: EngineInterface, root: string, config: GuardConfig, module: string): Promise<boolean> {
   for (const ext of stackOf(config.stack).exts) {
@@ -1817,9 +1815,10 @@ async function hasOwnTest($: EngineInterface, root: string, config: GuardConfig,
   return false
 }
 
+/** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */
 async function importedModules($: EngineInterface, root: string, config: GuardConfig, testPath: string, text?: string | null): Promise<string[]> {
   const source = text ?? (await readWhole($, testPath))
-  if (source === null || source === undefined) {
+  if (source === null) {
     return []
   }
   const found: string[] = []

@@ -1,7 +1,7 @@
-import type { RunnerKind } from './runners'
-import { fallbackTool, runnersFor } from './runners'
-import { isInsideRoot, pathKey } from './mirror'
-import type { StackName } from './stacks'
+import type { RunnerKind } from './runners.ts'
+import { fallbackTool, runnersFor } from './runners.ts'
+import { isInsideRoot, pathKey } from './mirror.ts'
+import type { StackName } from './stacks.ts'
 
 /**
  * Where a test file's runner is, and what to run it with: shared by the plugin (which asks Claude Code whether a

@@ -1,4 +1,4 @@
-import type { StackName } from './stacks'
+import type { StackName } from './stacks.ts'
 
 /**
  * What a test file imports from the project, as paths relative to the root it

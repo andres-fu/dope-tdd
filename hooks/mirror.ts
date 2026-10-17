@@ -1,8 +1,8 @@
-import { globMatches } from './config'
-import { MIRROR, baseName, describeSourcePath, describeTestPath, fillTemplate, literalRoot, matchTemplate } from './layout'
-import type { FolderLayout, Layout } from './layout'
-import { stackOf } from './stacks'
-import type { StackName } from './stacks'
+import { globMatches } from './config.ts'
+import { MIRROR, baseName, describeSourcePath, describeTestPath, fillTemplate, literalRoot, matchTemplate } from './layout.ts'
+import type { FolderLayout, Layout } from './layout.ts'
+import { stackOf } from './stacks.ts'
+import type { StackName } from './stacks.ts'
 
 /** The path of the file a test is named after: `a.test.ts` → `a.ts`, `test_a.py` → `a.py`, `ATest.cs` → `A.cs`. */
 function untested(path: string): string {
@@ -13,7 +13,7 @@ function untested(path: string): string {
     .replace(/(?:Tests?|IT)(\.(?:cs|java|gd))$/, '$1')
 }
 
-export { isTestRun } from './runners'
+export { isTestRun } from './runners.ts'
 
 export type ClassifiedPath =
   | { kind: 'source'; module: string }

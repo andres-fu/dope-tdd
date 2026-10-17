@@ -1,4 +1,4 @@
-import { storeRoot } from './unlocks'
+import { storeRoot } from './unlocks.ts'
 
 export const JOURNAL_PREFIX = 'catch-journal:'
 

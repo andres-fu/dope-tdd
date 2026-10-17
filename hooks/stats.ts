@@ -1,6 +1,6 @@
 import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, ModuleState, TddEvent, TddStats } from '../types'
-import type { WorkaroundKind } from './workarounds'
-import { pathKey } from './mirror'
+import type { WorkaroundKind } from './workarounds.ts'
+import { pathKey } from './mirror.ts'
 
 const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50

@@ -2,8 +2,8 @@
 // Code is compared as JavaScript or TypeScript tokens: whitespace and comments never count, strings, templates and
 // regexes are one token each, and a name may differ only by a rename that holds everywhere in the declaration.
 
-import { tokenize } from '../../hooks/tokens'
-import type { Token } from '../../hooks/tokens'
+import { tokenize } from '../../hooks/tokens.ts'
+import type { Token } from '../../hooks/tokens.ts'
 
 export { tokenize }
 export type { Token }

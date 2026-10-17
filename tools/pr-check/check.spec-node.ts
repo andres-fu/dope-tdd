@@ -1,9 +1,9 @@
-// npx tsx --test tools/pr-check/check.spec-node.ts (not *.test.ts: the plugin test kit would load it)
+// node --test tools/pr-check/check.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { findMoves } from '../move-check/move'
-import { movedRow, report } from './check'
+import { findMoves } from '../move-check/move.ts'
+import { movedRow, report } from './check.ts'
 
 test('the report counts each verdict and lists every module with its reason', () => {
   const text = report(

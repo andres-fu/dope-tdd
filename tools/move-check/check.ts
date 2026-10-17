@@ -6,8 +6,10 @@
 // It reads committed code only (the base and the head, HEAD unless --head names another commit), never the working
 // tree, and runs nothing from the repository.
 //
-//   npx tsx tools/move-check/check.ts --base origin/main [--head HEAD] [--repo .] [--rename 'old=new']... [--pair 'a.js:10-40=b.js:5-35']...
-//                                     [--fail-on differs|never]
+//   node tools/move-check/check.ts --base origin/main [--head HEAD] [--repo .] [--rename 'old=new']... [--pair 'a.js:10-40=b.js:5-35']...
+//                                  [--fail-on differs|never]
+//
+// Node 22.18+ runs it as it is (type stripping); older Node: `npx -y tsx@4.19.2 tools/move-check/check.ts ...`.
 //
 // --rename replaces a token sequence on the old side before comparing (`shoukaku.players.get(=getPlayer(`), for a change
 // that is not one name for another. --pair compares line ranges, base side then HEAD side, for code that was never a
@@ -17,8 +19,8 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { compare, findMoves, report, tokensInLines } from './move'
-import type { Move, Rename } from './move'
+import { compare, findMoves, report, tokensInLines } from './move.ts'
+import type { Move, Rename } from './move.ts'
 
 const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
@@ -121,7 +123,9 @@ function main(): void {
   if (options.failOn === 'differs' && moves.some(move => move.result.verdict === 'DIFFERS')) process.exitCode = 1
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(__filename)) {
+// Run directly, not imported by pr-check or a spec. Matched by path, not `__filename` (CommonJS only) or `import.meta`
+// (ES modules only), so it holds under plain `node` (type stripping, ES module) and under tsx alike (#68).
+if (process.argv[1] !== undefined && /[\\/]tools[\\/]move-check[\\/]check\.ts$/.test(resolve(process.argv[1]))) {
   try {
     main()
   } catch (error) {

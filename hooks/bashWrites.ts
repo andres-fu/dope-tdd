@@ -1,5 +1,5 @@
-import { ELSEWHERE, commandSegments, expandKnown, locatedSegments } from './shell'
-import { STACKS } from './stacks'
+import { ELSEWHERE, commandSegments, expandKnown, locatedSegments } from './shell.ts'
+import { STACKS } from './stacks.ts'
 
 // A code file of any stack, anywhere: the caller's layout decides which are source. Test files are dropped below.
 const PATH_TO_SOURCE = String.raw`((?:[A-Za-z]:)?(?:[\w.~@-]*\/)*[\w.@-]+?\.(?:[cm]?[jt]sx?|py|gd|cs|java|kts?))(?![\w.-])`

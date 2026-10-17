@@ -1,4 +1,4 @@
-// npx tsx --test tools/pr-check/flow.spec-node.ts (not *.test.ts: the plugin test kit would load it)
+// node --test tools/pr-check/flow.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 // The pull-request check end to end on a throwaway repository: which rows it gives, from git as it is.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { checkPullRequest } from './check'
+import { checkPullRequest } from './check.ts'
 
 const repo = mkdtempSync(join(tmpdir(), 'pr-check-')).replace(/\\/g, '/')
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()

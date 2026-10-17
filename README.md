@@ -276,7 +276,7 @@ UNVERIFIED with the reason, in the job summary. Tests that already fail on the p
 are set aside by name. By default a MISSED fails the check; `fail-on:
 untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
 same way the plugin does. Run it locally from a pull request's checkout with
-`npx tsx tools/pr-check/check.ts --base origin/main`.
+`node tools/pr-check/check.ts --base origin/main`. The tools run on Node 22.18 or later as they are (Node strips the TypeScript types); on older Node, put `npx -y tsx@4.19.2` in place of `node`.
 
 Where CI does not run (a fork whose upstream is private, say), run it from
 your clone of this plugin against the project, so nothing is added to the
@@ -285,8 +285,8 @@ request; with the move check's table beside it, a reviewer sees what the
 tests catch and what was only moved:
 
 ```bash
-npx tsx ~/dope-tdd/tools/pr-check/check.ts --repo ~/my-project --base upstream/main --fail-on never
-npx tsx ~/dope-tdd/tools/move-check/check.ts --repo ~/my-project --base upstream/main
+node ~/dope-tdd/tools/pr-check/check.ts --repo ~/my-project --base upstream/main --fail-on never
+node ~/dope-tdd/tools/move-check/check.ts --repo ~/my-project --base upstream/main
 ```
 
 ## Moved code
@@ -299,7 +299,7 @@ not checked; one whose moved code DIFFERS keeps its verdict, with the first
 difference in the note. pr-check takes the same `--rename`. On its own:
 
 ```bash
-npx tsx tools/move-check/check.ts --repo . --base origin/main
+node tools/move-check/check.ts --repo . --base origin/main
 ```
 
 Each top-level function, class or `const` that left one file between the base
@@ -327,7 +327,7 @@ paste into the pull request.
 claude plugin test .
 node tools/posix-root.mjs   # the same tests with a macOS/Linux-shaped fixture root
 claude plugin validate .
-npx tsx tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
+node tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
 ```
 
 Tests live in `tests/`; the hooks module is `hooks/register.tsx`, with the

@@ -1,9 +1,9 @@
 import type { CatchOutcome } from '../types'
-import { failedFilesIn, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners'
-import type { RunnerKind, RunnerOptions } from './runners'
-import { stripAnsi } from './runOutcome'
+import { failedFilesIn, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
+import type { RunnerKind, RunnerOptions } from './runners.ts'
+import { stripAnsi } from './runOutcome.ts'
 
-export type { RunnerKind, RunnerOptions } from './runners'
+export type { RunnerKind, RunnerOptions } from './runners.ts'
 export type RunResult = { stdout: string; stderr: string; exitCode: number }
 export type RunFailure = 'timeout' | 'no-runner' | { failedToStart: string }
 

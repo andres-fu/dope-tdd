@@ -1,5 +1,5 @@
 import type { CatchOutcome, MutationResult, TddStats } from '../types'
-import { formatAgo } from './timeText'
+import { formatAgo } from './timeText.ts'
 
 const REFACTOR = 'Now refactor with the test untouched.'
 const PROVE = 'Break the code on purpose and run again to prove the test can fail.'

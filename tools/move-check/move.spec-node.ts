@@ -1,8 +1,8 @@
-// npx tsx --test tools/move-check/move.spec-node.ts (not *.test.ts: the plugin test kit would load it)
+// node --test tools/move-check/move.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { compare, declarations, findMoves, report, tokenize, tokensInLines } from './move'
+import { compare, declarations, findMoves, report, tokenize, tokensInLines } from './move.ts'
 
 const texts = (source: string) => tokenize(source).map(token => token.text)
 

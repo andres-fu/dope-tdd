@@ -1,9 +1,9 @@
-// npx tsx --test tools/replay/replay.spec-node.ts (not *.test.ts: the plugin test kit would load it)
+// node --test tools/replay/replay.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { formatReport, replay, shellCalls } from './replay'
-import type { ShellCall } from './replay'
+import { formatReport, replay, shellCalls } from './replay.ts'
+import type { ShellCall } from './replay.ts'
 
 function use(id: string, name: string, command: string): string {
   return JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: { command } }] } })

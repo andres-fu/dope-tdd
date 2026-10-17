@@ -1,4 +1,4 @@
-import { commandSegments } from './shell'
+import { commandSegments } from './shell.ts'
 
 export type SourceSnapshot = Readonly<Record<string, string>>
 

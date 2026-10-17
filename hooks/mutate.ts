@@ -1,5 +1,5 @@
-import { tokenize } from './tokens'
-import type { Token } from './tokens'
+import { tokenize } from './tokens.ts'
+import type { Token } from './tokens.ts'
 
 /**
  * Small changes to new code that a test of it should notice (#27): the catch check of a new file has no old code to

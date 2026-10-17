@@ -15,6 +15,8 @@ export type RunContext = {
   sourcePath?: string
   /** How messages name the module itself, when not by its id (a folder with a layout of its own, #24). */
   label?: string
+  /** This run closed the current module's own cycle; cycles it closed for other modules do not count (#41). */
+  cycleCompleted?: boolean
 }
 
 function defaultSource(module: string): string {
@@ -182,5 +184,5 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   if (after.phase === 'red') {
     return `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
   }
-  return greenAdvice(module, before.sawRed, check, after.cycles > before.cycles, context.testChanged === true, sourcePath)
+  return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath)
 }

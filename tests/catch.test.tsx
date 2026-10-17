@@ -713,3 +713,43 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(status.text).toMatch(/unverified 1/)
   })
 })
+
+describe('a green that closes other modules leaves the current module\'s story alone (#41)', () => {
+  test('a later full-suite green does not tell a module that saw red and was caught that it never saw red, and a stale open module is not a cycle', async ($, on) => {
+    const world = fakeEngine(on)
+    // A module whose test was touched long ago and never run: an open cycle that never saw red.
+    await touchTest($, world, 'utils/stale')
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    // Its own test file goes green first (as display's did), then the whole suite runs.
+    world.bashFails = false
+    const own = await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const again = await runTests($, world, 'pass')
+
+    expect(own.context?.join(' ')).toMatch(/GREEN on utils\/formatDuration, saw red, and its test catches the change/)
+    const status = await runCommand($, 'tdd')
+
+    expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
+    expect(status.text).toMatch(/cycles: 1 \(avg [^,]+, never saw red 0\)/)
+    expect(status.text).not.toMatch(/also open/)
+  })
+
+  test('a full-suite green that closes another module\'s red cycle (which counts) still says nothing wrong about the current module', async ($, on) => {
+    const world = fakeEngine(on)
+    // Another module left red: its test touched and run failing, never fixed.
+    await touchTest($, world, 'utils/other')
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/utils/other.test.ts > x\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'npx vitest run tests/utils/other.test.ts')
+    world.bashText = ''
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.bashFails = false
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const again = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
+    expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, never saw red 0\)/)
+  })
+})

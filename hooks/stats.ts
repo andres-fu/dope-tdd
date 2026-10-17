@@ -104,7 +104,8 @@ export function normalizeStats(stored: unknown): TddStats {
     unguarded: pick('unguarded', isNumber),
     blocked: pick('blocked', isNumber),
     unlocked: pick('unlocked', isRecord),
-    importers: pick('importers', isRecord),
+    // Each module's importers a list of paths, or none: a bad value must never reach the catch check.
+    importers: pick('importers', v => isRecord(v) && Object.values(v).every(list => Array.isArray(list) && list.every(path => typeof path === 'string'))),
     inherited: pick('inherited', isRecord),
     reminded: strings(pick('reminded', isStringList)),
     changes: pick('changes', isRecord),
@@ -321,10 +322,12 @@ const MAX_IMPORTERS = 3
 /** A test seen importing a module, newest first and at most three: what the catch check tries after its own test. */
 export function recordImporter(s: TddStats, module: string, testPath: string): TddStats {
   const known = s.importers[module] ?? []
-  if (known[0] === testPath) {
+  // One file spelled two ways (slashes, case where the file system folds it) is one importer.
+  const same = (entry: string) => pathKey(entry) === pathKey(testPath)
+  if (known[0] !== undefined && same(known[0])) {
     return s
   }
-  return { ...s, importers: { ...s.importers, [module]: [testPath, ...known.filter(entry => entry !== testPath)].slice(0, MAX_IMPORTERS) } }
+  return { ...s, importers: { ...s.importers, [module]: [testPath, ...known.filter(entry => !same(entry))].slice(0, MAX_IMPORTERS) } }
 }
 
 /** A failing test that imports this module is a red for it too: its cycle saw red, so its green will say so. */
@@ -353,13 +356,7 @@ export function closeCyclesForTest(s: TddStats, testPath: string | null, except:
     if (!state.sawRed || (exceptTest !== undefined && norm(exceptTest) === norm(path))) {
       return closed
     }
-    return {
-      ...closed,
-      cycles: closed.cycles + 1,
-      cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs),
-      neverSawRed: state.sawRed ? closed.neverSawRed : closed.neverSawRed + 1,
-      unproven: state.sawRed || closed.unproven.includes(module) ? closed.unproven : [...closed.unproven, module],
-    }
+    return { ...closed, cycles: closed.cycles + 1, cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs) }
   }, s)
 }
 

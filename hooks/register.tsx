@@ -1603,7 +1603,8 @@ async function checkShell(
         }
       }
       const own = targeted.current?.module
-      for (const module of [...new Set(coveredByFailure)].filter(module => module !== own)) {
+      // Only a module this test now unlocks: one with a test of its own (#37) would be left red with nothing to close it.
+      for (const module of [...new Set(coveredByFailure)].filter(module => module !== own && targeted.unlocked[module] !== undefined)) {
         targeted = await change($, s => recordRedFor(s, module, nowMs))
       }
       // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.

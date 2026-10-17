@@ -442,6 +442,20 @@ describe('recordImporter (#25)', () => {
     const { importers: _gone, ...older } = INITIAL_STATS
     expect(normalizeStats(older).importers).toEqual({})
   })
+
+  test('one test spelled two ways is one importer, not two of the three places (review)', () => {
+    const one = recordImporter(INITIAL_STATS, 'io', 'C:/w/test/a.test.ts')
+    const again = recordImporter(one, 'io', 'C:\\w\\Test\\a.test.ts')
+    expect(again.importers.io).toHaveLength(1)
+    const other = recordImporter(again, 'io', 'C:/w/test/b.test.ts')
+    expect(recordImporter(other, 'io', 'c:/w/test/A.test.ts').importers.io).toHaveLength(2)
+  })
+
+  test('a stored importers value that is not a list of paths per module reads as none, never as a crash (review)', () => {
+    expect(normalizeStats({ ...INITIAL_STATS, importers: { io: 'test/a.test.ts' } }).importers).toEqual({})
+    expect(normalizeStats({ ...INITIAL_STATS, importers: { io: [1, 2] } }).importers).toEqual({})
+    expect(normalizeStats({ ...INITIAL_STATS, importers: { io: ['test/a.test.ts'] } }).importers).toEqual({ io: ['test/a.test.ts'] })
+  })
 })
 
 describe('closeCyclesForTest: what a run closes for other modules (#41)', () => {

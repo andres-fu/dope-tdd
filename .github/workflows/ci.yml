@@ -39,6 +39,8 @@ jobs:
         run: node --test tools/pool/find-bugs.test.mjs
       - name: Check the pull-request check report
         run: npx -y tsx@4.19.2 --test tools/pr-check/check.spec-node.ts
+      - name: Check the move check
+        run: npx -y tsx@4.19.2 --test tools/move-check/move.spec-node.ts
       - name: Check the launcher helpers
         run: node --test tools/pool/ab.test.mjs
       - name: Check the transcript replay

@@ -623,6 +623,7 @@ describe('the catch check in a worktree, never in your files', () => {
     const said = result.context?.join(' ') ?? ''
     expect(said).toMatch(/utils\/fresh is a new file: dope-tdd changed it 2 ways in a throwaway copy and the test failed for 1, so it is PROVEN\./)
     expect(said).toMatch(/line 1: `1` → `2`/)
+    expect(said).toMatch(/A change that cannot alter what the code does \(an equivalent mutant\) is fine to leave; say so\./)
   })
 
   test('a new file whose test passes with every change made to it is MISSED, and each change is named (#27)', async ($, on) => {

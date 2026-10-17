@@ -64,13 +64,31 @@ function git(repo: string, args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 }
 
-/** A file's text at a commit, or null when it did not exist there. */
+/** A file's text at a commit, or null when it did not exist there (git's "does not exist" kept off stderr). */
 function textAt(repo: string, ref: string, path: string): string | null {
   try {
-    return git(repo, ['show', `${ref}:${path}`])
+    return execFileSync('git', ['show', `${ref}:${path}`], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
   } catch {
     return null
   }
+}
+
+/** True when the path is in that commit. */
+export function existsAt(repo: string, ref: string, path: string): boolean {
+  return textAt(repo, ref, path) !== null
+}
+
+/**
+ * Every code file the commits between `base` and `head` touch, as each was at the base and as it is at the head.
+ * Renames are listed as a deletion and an addition (`--no-renames`): a file moved with `git mv` and edited, the usual
+ * shape of a move into a new file, would otherwise show only its new path, and its old text would never be read (#6).
+ */
+export function changedCode(repo: string, base: string, head: string): { base: Record<string, string>; head: Record<string, string> } {
+  const paths = git(repo, ['diff', '--name-only', '--no-renames', base, head])
+    .split(/\r?\n/)
+    .filter(path => CODE.test(path))
+  const side = (ref: string) => Object.fromEntries(paths.flatMap(path => ((text => (text === null ? [] : [[path, text] as const]))(textAt(repo, ref, path)))))
+  return { base: side(base), head: side(head) }
 }
 
 /** `index.js:358-530=nodePool.js:40-120`: base side, then HEAD side. */
@@ -94,11 +112,8 @@ function pairMove(repo: string, base: string, head: string, pair: string, rename
 function main(): void {
   const options = parseArgs(process.argv.slice(2))
   const repo = resolve(options.repo)
-  const changed = git(repo, ['diff', '--name-only', options.base, options.head])
-    .split(/\r?\n/)
-    .filter(path => CODE.test(path))
-  const side = (ref: string) => Object.fromEntries(changed.flatMap(path => ((text => (text === null ? [] : [[path, text] as const]))(textAt(repo, ref, path)))))
-  const moves = [...findMoves(side(options.base), side(options.head), options.renames), ...options.pairs.map(pair => pairMove(repo, options.base, options.head, pair, options.renames))]
+  const code = changedCode(repo, options.base, options.head)
+  const moves = [...findMoves(code.base, code.head, options.renames), ...options.pairs.map(pair => pairMove(repo, options.base, options.head, pair, options.renames))]
   const sha = git(repo, ['rev-parse', '--short', options.base]).trim()
   const text = report(moves, `${options.base} (${sha})`)
   console.log(text)

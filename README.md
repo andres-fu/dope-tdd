@@ -42,7 +42,11 @@ with what you see on each surface, is in `docs/testers.md`.
 
 `/dope-tdd:pin` is a skill that walks an agent through changing untested
 code: pin what it does today, prove the pins by breaking the code on
-purpose, then change it. The band says PROVEN when the proof is in.
+purpose, then change it. The band says PROVEN when the proof is in. One break
+proves one behaviour, so in a git checkout Dope TDD then also makes a few small
+changes to the file in a throwaway copy and names any the pins did not notice.
+A restore that differs only in line endings (a Windows shell edit can rewrite
+CRLF as LF) still counts as the code being back.
 
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
@@ -153,7 +157,17 @@ fixture.
 ## How it decides
 
 - `src/**/X.ts(x)` can't be edited (Edit, Write, or a shell write) until
-  `tests/**/X.test.ts(x)` was created or edited in this session.
+  `tests/**/X.test.ts(x)` was created or edited in this session, or run and
+  seen failing. The refusal names the test with the extension of the file
+  being edited (`a.js` → `a.test.js`).
+- A module unlocked in an earlier session (up to 7 days) waits for one run of
+  its test this session, red or green, before its first edit; the carry-over
+  is dropped if that test changed since.
+- A shell write lands where the command sends it: after `cd` (also through a
+  variable the command set, `R=/tmp/x; cd $R`), a file outside the project is
+  not refused. A destination it cannot expand (`$HOME`, `$(mktemp -d)`) is not
+  refused either; the `git` check after the command still records any project
+  file that changed.
 - A test that imports a module is its test too, but only when the module has
   no test of its own. When a module's own test misses a change, the catch
   check tries the tests seen importing it and names the one that catches it

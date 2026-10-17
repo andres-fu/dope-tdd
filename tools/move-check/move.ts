@@ -275,6 +275,26 @@ export function compare(rawBefore: Token[], rawAfter: Token[], explicit: readonl
   return renames.length === 0 ? { verdict: 'IDENTICAL', renames: [] } : { verdict: 'RENAMED', renames }
 }
 
+const TRAILING_CLOSERS = new Set(['}', ')', ']', ',', ';'])
+
+/**
+ * #64 part 3: a hand-written `--pair` one line too long (a method's `},` included) differs only by the closing tokens
+ * at the end of one side, which reads like a real change. When dropping some of those trailing closers from one side
+ * makes the pair match, this is that side and the line it should end on; otherwise null.
+ */
+export function closingOnlyEnd(before: Token[], after: Token[], explicit: readonly Rename[]): { side: 'before' | 'after'; endLine: number } | null {
+  if (compare(before, after, explicit).verdict !== 'DIFFERS') return null
+  const trimmed = (tokens: Token[], side: 'before' | 'after') => {
+    for (let n = 1; n <= tokens.length && TRAILING_CLOSERS.has(tokens[tokens.length - n]?.text ?? ''); n++) {
+      const kept = tokens.slice(0, tokens.length - n)
+      const verdict = side === 'after' ? compare(before, kept, explicit).verdict : compare(kept, after, explicit).verdict
+      if (verdict !== 'DIFFERS') return { side, endLine: kept.at(-1)?.line ?? 0 }
+    }
+    return null
+  }
+  return trimmed(after, 'after') ?? trimmed(before, 'before')
+}
+
 const PREFIX_ONLY = new Set(['export', 'default', 'declare'])
 
 /**

@@ -344,7 +344,9 @@ old code, so code that never changed stays IDENTICAL. A rule whose code holds
 `=` (an arrow, `===`) goes as `--rename-from '<old>' --rename-to '<new>'`; a
 `--rename` with more than one `=` is refused rather than split in the wrong
 place. `--pair 'index.js:358-530=pool.js:40-120'` compares line ranges, for
-code that was never a declaration of its own. It reads committed code only and
+code that was never a declaration of its own. A range one line too long (a method's closing
+`},` included) says so: `range probably includes a closing line: try
+commands.js:4-5`. It reads committed code only and
 runs nothing from the repository; the output is a table to paste into the pull
 request.
 

@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { compare, coverageOf, findMoves, removedLinesIn, report, tokensInLines } from './move.ts'
+import { closingOnlyEnd, compare, coverageOf, findMoves, removedLinesIn, report, tokensInLines } from './move.ts'
 import type { Coverage, Move, Rename } from './move.ts'
 
 const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
@@ -137,13 +137,23 @@ function pairMove(repo: string, base: string, head: string, pair: string, rename
   const before = textAt(repo, base, from)
   const after = textAt(repo, head, to)
   if (before === null || after === null) throw new Error(`--pair ${pair}: ${before === null ? `${from} is not in ${base}` : `${to} is not in ${head}`}`)
+  const old = tokensInLines(before, Number(fromStart), Number(fromEnd))
+  const now = tokensInLines(after, Number(toStart), Number(toEnd))
+  const result = compare(old, now, renames)
+  // A range one line too long reads like a real change (#64): when only trailing closers differ, say the range it
+  // meant. Still DIFFERS, so nothing is hidden; the note is what changes.
+  const off = result.verdict === 'DIFFERS' ? closingOnlyEnd(old, now, renames) : null
+  const hint =
+    off === null
+      ? null
+      : `range probably includes a closing line: try ${off.side === 'after' ? `${to}:${toStart}-${off.endLine}` : `${from}:${fromStart}-${off.endLine}`}`
   return {
     name: `${from}:${fromStart}-${fromEnd}`,
     from,
     to,
     fromLines: [Number(fromStart), Number(fromEnd)],
     toLines: [Number(toStart), Number(toEnd)],
-    result: compare(tokensInLines(before, Number(fromStart), Number(fromEnd)), tokensInLines(after, Number(toStart), Number(toEnd)), renames),
+    result: hint === null ? result : { verdict: 'DIFFERS', difference: hint },
   }
 }
 

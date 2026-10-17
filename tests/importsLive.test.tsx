@@ -1,6 +1,6 @@
 import { describe, expect } from 'claude-code/testing'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
+import { MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 /**
@@ -211,5 +211,94 @@ describe('a module with its own test (#25)', () => {
     expect(checked).toContain(SLUG_TEST)
     // Its own test runs once for the baseline and once for the check, never again as one of its importers.
     expect(checked.filter(test => test === IO_TEST)).toHaveLength(2)
+  })
+
+  /** A fix on io through its own test, with slugify.test.ts seen importing it: red, edit, then the green run. */
+  async function fixIo($: Parameters<typeof runBash>[0], world: FakeWorld, change: string) {
+    world.bashFails = true
+    world.bashText = IO_FAIL
+    await runBash($, `npx vitest run ${IO_TEST}`)
+    await $.tool.call({ tool: 'Edit', file_path: IO, old_string: world.fileContents.get(IO)?.match(/return [^}]*/)?.[0] ?? 'return t', new_string: change } as never)
+    world.bashFails = false
+    world.bashText = IO_PASS
+    return runBash($, `npx vitest run ${IO_TEST}`)
+  }
+
+  test('an importer gets its own green-before check every time: one gone red since does not make a CAUGHT (review #3)', async ($, on) => {
+    const world = fakeEngine(on)
+    withOwnTest(world)
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    await writeAt($, IO_TEST, 'import { slugify } from "../src/lib/io.js";\nit("writes", () => { expect(slugify("Café")).toBe("cafe") })\n')
+    // First fix: io's own test misses, slugify catches. slugify was green before.
+    world.onCatchRun = () => {
+      const ran = world.gitCalls.at(-1)?.at(-1)
+      world.catchRun = ran === SLUG_TEST ? { text: FAIL, exitCode: 1 } : { text: IO_PASS, exitCode: 0 }
+    }
+    const first = await fixIo($, world, 'return t.normalize("NFD")')
+    // Then slugify goes red for a reason of its own, and a second change to io slips past io's own test.
+    world.baselineRun = { text: FAIL, exitCode: 1 }
+    const second = await fixIo($, world, 'return t.normalize("NFC")')
+    const status = await runCommand($, 'tdd')
+
+    expect(first.context?.join(' ')).toMatch(/CAUGHT by test\/slugify\.test\.ts/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(/CAUGHT by/)
+    expect(status.text).toMatch(/caught 1 · proven 0 · missed 1/)
+  })
+
+  test('in a git checkout too, an importer gone red since its last green-before check does not make a CAUGHT (review #3)', async ($, on) => {
+    const world = fakeEngine(on)
+    withOwnTest(world)
+    world.existingFiles.add(`${ROOT}/.git/HEAD`)
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    await writeAt($, IO_TEST, 'import { slugify } from "../src/lib/io.js";\nit("writes", () => { expect(slugify("Café")).toBe("cafe") })\n')
+    world.onCatchRun = () => {
+      const ran = world.gitCalls.at(-1)?.at(-1)
+      world.catchRun = ran === SLUG_TEST ? { text: FAIL, exitCode: 1 } : { text: IO_PASS, exitCode: 0 }
+    }
+    const first = await fixIo($, world, 'return t.normalize("NFD")')
+    world.baselineRun = { text: FAIL, exitCode: 1 }
+    const second = await fixIo($, world, 'return t.normalize("NFC")')
+
+    expect(first.context?.join(' ')).toMatch(/CAUGHT by test\/slugify\.test\.ts/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(/CAUGHT by/)
+  })
+
+  test('the check lock is taken when each check starts: an edit during a later importer check is still refused (review #7)', async ($, on) => {
+    const world = fakeEngine(on)
+    withOwnTest(world)
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    await writeAt($, IO_TEST, 'import { slugify } from "../src/lib/io.js";\nit("writes", () => { expect(slugify("Café")).toBe("cafe") })\n')
+    let during: { deny?: string } | undefined
+    world.onCatchRun = async () => {
+      const ran = world.gitCalls.at(-1)?.at(-1)
+      if (ran === SLUG_TEST) {
+        during = await editAt($, 'src/lib/io.ts')
+        world.catchRun = { text: FAIL, exitCode: 1 }
+      } else {
+        // io's own check takes two and a half minutes: past the lock's two, inside the verification's three.
+        await world.clock.advance(2.5 * MINUTE)
+        world.catchRun = { text: IO_PASS, exitCode: 0 }
+      }
+    }
+    await fixIo($, world, 'return t.normalize("NFD")')
+
+    expect(during?.deny).toMatch(/verifying that the test for io catches the change/)
+  })
+
+  test('importers are tried only within the time budget: an own check that used it up stops there (review #8)', async ($, on) => {
+    const world = fakeEngine(on)
+    withOwnTest(world)
+    await writeAt($, SLUG_TEST, TEST_TEXT)
+    await writeAt($, IO_TEST, 'import { slugify } from "../src/lib/io.js";\nit("writes", () => { expect(slugify("Café")).toBe("cafe") })\n')
+    world.onCatchRun = async () => {
+      await world.clock.advance(4 * MINUTE)
+      world.catchRun = { text: IO_PASS, exitCode: 0 }
+    }
+    await fixIo($, world, 'return t.normalize("NFD")')
+    const status = await runCommand($, 'tdd')
+
+    const checked = world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).map(argv => argv.at(-1))
+    expect(checked).not.toContain(SLUG_TEST)
+    expect(status.text).toMatch(/missed 1/)
   })
 })

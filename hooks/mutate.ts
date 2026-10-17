@@ -44,12 +44,12 @@ function guardedZero(tokens: readonly Token[], index: number): boolean {
 
 type Candidate = { line: number; start: number; end: number; replacement: string; change: string }
 
-function candidates(source: string, tokens: readonly Token[], typescript: boolean): Candidate[] {
+function candidates(source: string, tokens: readonly Token[], angles: boolean): Candidate[] {
   const found: Candidate[] = []
   tokens.forEach((token, index) => {
     const end = token.start + token.text.length
     // A string, template or regex is one token whose text is never an operator, so it is never swapped.
-    const swap = SWAPS[token.text] ?? (typescript ? undefined : PLAIN_ONLY[token.text])
+    const swap = SWAPS[token.text] ?? (angles ? PLAIN_ONLY[token.text] : undefined)
     if (swap !== undefined && !guardedZero(tokens, index)) {
       found.push({ line: token.line, start: token.start, end, replacement: swap, change: `\`${token.text}\` → \`${swap}\`` })
     } else if (token.kind === 'number' && /^\d+$/.test(token.text)) {
@@ -84,8 +84,18 @@ function closingParen(tokens: readonly Token[], open: number): Token | null {
 }
 
 /** Up to `max` mutants, spread evenly over the file in source order, the same ones every time. */
-export function mutantsOf(source: string, options: { typescript: boolean; max?: number }): Mutant[] {
-  const all = candidates(source, tokenize(source), options.typescript)
+/**
+ * True when a `<` or `>` in this file is safely a comparison: not TypeScript (generics), not a JSX file, and no tag in
+ * the text (`</`, `/>`). A flipped bracket in a tag does not parse, and a test file that fails to load reads as red,
+ * so it would count as caught (review #2).
+ */
+export function flipsAngles(path: string, text: string): boolean {
+  return !/\.(?:[cm]?tsx?|jsx)$/.test(path) && !/<\/|\/>/.test(text)
+}
+
+/** `angles`: whether `<` and `>` may be flipped (see `flipsAngles`); `<=` and `>=` always may. */
+export function mutantsOf(source: string, options: { angles: boolean; max?: number }): Mutant[] {
+  const all = candidates(source, tokenize(source), options.angles)
   const max = Math.min(options.max ?? 4, all.length)
   const picked = Array.from({ length: max }, (_, k) => all[Math.floor((k * all.length) / max)] as Candidate)
   return picked.map(candidate => ({

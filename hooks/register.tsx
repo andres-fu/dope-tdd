@@ -30,7 +30,7 @@ import {
 } from './advice'
 import { drawBand, drawTestPane } from './draw'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges'
-import { mutantsOf } from './mutate'
+import { flipsAngles, mutantsOf } from './mutate'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
@@ -597,6 +597,12 @@ const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest',
 const CHECK_WORKTREE = '.git/dope-tdd/wt'
 /** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
 const MAX_COPIED_FILES = 300
+/**
+ * How long one verification may spend beyond its first check: no importer check (#25) or further mutant (#27) starts
+ * after this. A green that tried its own test, two importers and their retries could otherwise hold the agent for
+ * many minutes (review #8).
+ */
+const VERIFY_BUDGET_MS = 3 * 60_000
 
 type WorktreeCheck = {
   module: string
@@ -610,6 +616,10 @@ type WorktreeCheck = {
   greenRunMs: number
   nowMs: number
   known: readonly string[]
+  /** Run the green-before check even if this session ran it already: an importer may have gone red since (review #3). */
+  fresh?: boolean
+  /** No variant starts after this time: the rest are unverified (review #8). */
+  deadlineMs?: number
 }
 
 function listed(answer: { exitCode: number; stdout: string } | null): string[] | null {
@@ -623,13 +633,15 @@ function listed(answer: { exitCode: number; stdout: string } | null): string[] |
  * worktree cannot reproduce returns null, and the check runs in place instead. The worktree is always removed.
  */
 async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
-  const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs } = check
+  const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
   const wt = `${root}/${CHECK_WORKTREE}`
-  const locked = await change($, state => acquireCheck(state, module, nowMs))
-  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
+  // The lock's time is when this check starts, not when the run that asked for it did (review #7).
+  const lockedAt = await $.clock.now()
+  const locked = await change($, state => acquireCheck(state, module, lockedAt))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== lockedAt) {
     return variants.map(() => ({ kind: 'unverified', reason: 'another check was running' }))
   }
-  const shared = await acquireSharedLock($, root, module, nowMs)
+  const shared = await acquireSharedLock($, root, module, lockedAt)
   if (shared.kind === 'busy') {
     await change($, releaseCheck)
     return variants.map(() => ({ kind: 'unverified', reason: `another session was checking ${shared.module}` }))
@@ -667,7 +679,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     const budget = timeBudgetMs(greenRunMs)
     // The test must pass in the worktree as the code stands, or the worktree is not the user's project.
     const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
-    if (!baselined.has(baselineKey)) {
+    if (check.fresh === true || !baselined.has(baselineKey)) {
       await $.fs.write(inTree, after)
       let base: CatchOutcome
       try {
@@ -683,6 +695,10 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     }
     const outcomes: CatchOutcome[] = []
     for (const variant of variants) {
+      if (check.deadlineMs !== undefined && (await $.clock.now()) >= check.deadlineMs) {
+        outcomes.push({ kind: 'unverified', reason: 'out of time' })
+        continue
+      }
       await $.fs.write(inTree, variant)
       try {
         outcomes.push(catchOutcome(await checkRun($, argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known))
@@ -727,13 +743,14 @@ async function newFileCheck(
   if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || !(await $.fs.exists(`${root}/.git/HEAD`))) {
     return null
   }
-  const mutants = mutantsOf(after, { typescript: /\.[cm]?tsx?$/.test(path) })
+  const mutants = mutantsOf(after, { angles: flipsAngles(path, after) })
   if (mutants.length === 0) {
     return { kind: 'unverified', reason: 'new file, with nothing in it to change' }
   }
   const { runIn, relativeTest, argv } = command
   const variants = mutants.map(mutant => mutant.text)
-  const outcomes = await checkInWorktree($, root, { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs, known })
+  const deadlineMs = (await $.clock.now()) + VERIFY_BUDGET_MS
+  const outcomes = await checkInWorktree($, root, { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs, known, deadlineMs })
   if (outcomes === null) {
     return null
   }
@@ -794,16 +811,20 @@ async function verifyCatch(
     return (await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)) ?? { kind: 'unverified', reason: 'new file' }
   }
   const undone = { path: cycleChange.path, before: cycleChange.before, after: cycleChange.after }
+  const budgetEndMs = (await $.clock.now()) + VERIFY_BUDGET_MS
   const own = await checkAgainst($, root, config, module, undone, testPath, greenRunMs, nowMs, known)
   if (own.kind !== 'missed') {
     return own
   }
   // Its own test misses the change: a test seen importing it may catch it, which says where the test is missing (#25).
   for (const other of (s.importers[module] ?? []).filter(path => pathKey(path) !== pathKey(testPath)).slice(0, 2)) {
+    if ((await $.clock.now()) >= budgetEndMs) {
+      break
+    }
     if (!(await $.fs.exists(other))) {
       continue
     }
-    const outcome = await checkAgainst($, root, config, module, undone, other, greenRunMs, nowMs, [])
+    const outcome = await checkAgainst($, root, config, module, undone, other, greenRunMs, nowMs, [], true)
     if (outcome.kind === 'caught') {
       return { kind: 'caught', by: relativePath(root, other), own: relativePath(root, testPath) }
     }
@@ -822,6 +843,8 @@ async function checkAgainst(
   greenRunMs: number,
   nowMs: number,
   known: readonly string[],
+  /** An importer's check: its green-before check runs again, as it may have gone red since (review #3). */
+  fresh = false,
 ): Promise<CatchOutcome> {
   if ((await readWhole($, path)) !== after) {
     return { kind: 'unverified', reason: 'changed outside' }
@@ -838,7 +861,7 @@ async function checkAgainst(
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
   if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
-    const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known }))?.[0]
+    const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh }))?.[0]
     if (isolated !== undefined) {
       await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
       return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
@@ -848,7 +871,7 @@ async function checkAgainst(
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
   // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.
   const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
-  if (!baselined.has(baselineKey)) {
+  if (fresh || !baselined.has(baselineKey)) {
     let base: CatchOutcome
     try {
       const run = await checkRun($, argv, { cwd: runIn, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
@@ -863,11 +886,13 @@ async function checkAgainst(
   }
 
   // The lock first, then the journal: a check that loses the lock never touches another check's journal.
-  const locked = await change($, state => acquireCheck(state, module, nowMs))
-  if (locked.checking?.module !== module || locked.checking.sinceMs !== nowMs) {
+  // The lock's time is when this check starts, not when the run that asked for it did (review #7).
+  const lockedAt = await $.clock.now()
+  const locked = await change($, state => acquireCheck(state, module, lockedAt))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== lockedAt) {
     return { kind: 'unverified', reason: 'another check was running' }
   }
-  const shared = await acquireSharedLock($, root, module, nowMs)
+  const shared = await acquireSharedLock($, root, module, lockedAt)
   if (shared.kind === 'busy') {
     await change($, releaseCheck)
     return { kind: 'unverified', reason: `another session was checking ${shared.module}` }

@@ -135,6 +135,10 @@ test('the report says which removed lines no move accounts for (#64)', () => {
       ],
     })
     assert.match(result.text, /Accounted for: 11 of 18 removed lines \(61%\)/)
+
+    // Part 3: the issue's off-by-one pair, the method's closing `},` included, gets the range it meant.
+    const paired = moveCheck(split, parseArgs(['--base', start, '--pair', 'bot.js:5-6=commands.js:4-6']))
+    assert.match(paired.text, /\| `bot\.js:5-6` \|[^\n]*\*\*DIFFERS\*\* \| range probably includes a closing line: try commands\.js:4-5 \|/)
   } finally {
     rmSync(split, { recursive: true, force: true })
   }

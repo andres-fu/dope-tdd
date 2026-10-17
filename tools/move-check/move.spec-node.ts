@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { compare, coverageOf, declarations, findMoves, removedLinesIn, report, tokenize, tokensInLines } from './move.ts'
+import { closingOnlyEnd, compare, coverageOf, declarations, findMoves, removedLinesIn, report, tokenize, tokensInLines } from './move.ts'
 
 const texts = (source: string) => tokenize(source).map(token => token.text)
 
@@ -375,4 +375,19 @@ test('the report says what shape a paired block had and has', () => {
   const text = report(findMoves({ 'bot.js': BOT }, { 'bot.js': '', 'commands.js': COMMANDS }), 'main')
   assert.match(text, /\| `ping` \| bot\.js:4 \(if 'ping'\) → commands\.js:3 \(method\) \| \*\*RENAMED\*\* \|/)
   assert.match(text, /\| `roll` \| bot\.js:8 \(if 'roll'\) → commands\.js:7 \(entry\) \| \*\*IDENTICAL\*\* \|/)
+})
+
+// #64 part 3: a hand-written --pair one line too long read as DIFFERS with `before: ; · after: ; } ,`, which looks like
+// a real change. When only trailing closers differ, the line that side should end on is given instead.
+test('a pair that differs only by trailing closing tokens says which line that side should end on', () => {
+  const block = "if (name === 'ping') {\n  const note = 'up to'\n  return i.reply(note)\n}"
+  const method = "const t = {\n  async ping(i) {\n    const note = 'up to'\n    return i.reply(note)\n  },\n}"
+  assert.deepEqual(closingOnlyEnd(tokensInLines(block, 2, 3), tokensInLines(method, 3, 5), []), { side: 'after', endLine: 4 })
+  assert.deepEqual(closingOnlyEnd(tokensInLines(method, 3, 5), tokensInLines(block, 2, 3), []), { side: 'before', endLine: 4 })
+})
+
+test('no hint when the pair matches, or differs in more than closers', () => {
+  const a = 'const x = f(1)\nreturn x\n'
+  assert.equal(closingOnlyEnd(tokensInLines(a, 1, 2), tokensInLines(a, 1, 2), []), null)
+  assert.equal(closingOnlyEnd(tokensInLines(a, 1, 2), tokensInLines('const x = f(2)\nreturn x\n}\n', 1, 3), []), null)
 })

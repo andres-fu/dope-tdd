@@ -1,5 +1,5 @@
 import { MIRROR, templateError } from './layout'
-import type { Layout } from './layout'
+import type { FolderLayout, Layout } from './layout'
 import { STACKS, defaultLayoutOf, isStackName, layoutNamed, stackOf } from './stacks'
 import type { StackName } from './stacks'
 
@@ -13,6 +13,8 @@ export type GuardConfig = {
   exempt: readonly string[]
   layout: Layout
   roots: readonly string[]
+  /** Folders whose files follow a layout of their own, deepest first wins; absent when the file names none. */
+  layouts?: readonly FolderLayout[]
   /** The language whose conventions apply: named in the file, detected from the project root, or Node by default. */
   stack: StackName
   stackSource: StackSource
@@ -82,6 +84,30 @@ function parseLayout(value: unknown, stack: StackName): Layout {
     throw new Error(`layout: ${problem}`)
   }
   return pairing === undefined ? { name: 'custom', source, test } : { name: 'custom', source, test, pairing }
+}
+
+/** `{ "dashboard": "colocated" }`: each folder, a plain path inside the project, with a preset or templates of its own. */
+function parseLayouts(value: unknown, stack: StackName): { layouts?: FolderLayout[] } {
+  if (value === undefined) {
+    return {}
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('layouts must map folders to layouts, as { "dashboard": "colocated" }')
+  }
+  const layouts = Object.entries(value).map(([key, entry]): FolderLayout => {
+    const folder = key.replace(/\\/g, '/').replace(/\/+$/, '')
+    const segments = folder.split('/')
+    // An empty segment also catches "" and a leading slash.
+    if (/^[A-Za-z]:/.test(folder) || /[*?[\]{}]/.test(folder) || segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
+      throw new Error(`layouts: "${key}" must be a plain folder inside the project, as "dashboard" or "apps/web"`)
+    }
+    try {
+      return { folder, layout: parseLayout(entry, stack) }
+    } catch (error) {
+      throw new Error(`layouts: ${folder}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  })
+  return layouts.length === 0 ? {} : { layouts }
 }
 
 function parseStack(value: unknown, detected: StackName | undefined): { stack: StackName; stackSource: StackSource } {
@@ -155,6 +181,7 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       exempt: [...own, ...stackOf(stack).exempt.filter(glob => !own.includes(glob))],
       layout: parseLayout(fields.layout, stack),
       roots: pathList(fields.roots, 'roots'),
+      ...parseLayouts(fields.layouts, stack),
       stack,
       stackSource,
       godot: parseGodot(fields.godot),
@@ -221,6 +248,7 @@ export function describeConfig(config: GuardConfig): string[] {
     ...(config.exempt.length === 0 ? [] : [`exempt: ${config.exempt.join(', ')}`]),
     ...(config.stack === 'node' && config.stackSource === 'default' ? [] : [describeStack(config)]),
     `layout: ${describeLayout(config.layout)}`,
+    ...(config.layouts ?? []).map(entry => `layout in ${entry.folder}/: ${describeLayout(entry.layout)}`),
     ...(config.roots.length === 0 ? [] : [`roots: ${config.roots.join(', ')}`]),
     ...(config.godot === null ? [] : [`godot: ${config.godot}`]),
     ...(config.catchCheck === false ? [`catch check: off (${CONFIG_FILE}); a green is not re-run with the change undone`] : []),
@@ -253,6 +281,21 @@ function sameLayout(a: Layout, b: Layout): boolean {
   return a.source === b.source && a.test === b.test && (a.pairing ?? 'path') === (b.pairing ?? 'path')
 }
 
+function folderLayoutChanges(before: readonly FolderLayout[] = [], after: readonly FolderLayout[] = []): string[] {
+  const folders = [...new Set([...before, ...after].map(entry => entry.folder))]
+  return folders.flatMap(folder => {
+    const was = before.find(entry => entry.folder === folder)?.layout
+    const now = after.find(entry => entry.folder === folder)?.layout
+    if (was === undefined) {
+      return [`layout in ${folder}/ → ${now?.name}`]
+    }
+    if (now === undefined) {
+      return [`layout in ${folder}/ ${was.name} → the main layout`]
+    }
+    return sameLayout(was, now) ? [] : [`layout in ${folder}/ ${was.name} → ${now.name}`]
+  })
+}
+
 /** What an edit to the config file changed, in words, or null when nothing the guard reads moved. */
 export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
   const parts = [
@@ -263,6 +306,7 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
     ...listChange('scope', before.scope, after.scope),
     ...(before.stack === after.stack ? [] : [`stack ${before.stack} → ${after.stack}`]),
     ...(sameLayout(before.layout, after.layout) ? [] : [`layout ${before.layout.name} → ${after.layout.name}`]),
+    ...folderLayoutChanges(before.layouts, after.layouts),
     ...listChange('roots', before.roots, after.roots),
     ...(before.godot === after.godot ? [] : [`godot ${before.godot ?? 'PATH'} → ${after.godot ?? 'PATH'}`]),
     ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),

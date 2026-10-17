@@ -26,6 +26,16 @@ describe('isLoosening', () => {
     expect(describeConfigChange(inPlace, parseConfig('{"catchCheck":false}'))).toBe('catch check on → off; in-place check for experimental runners on → off')
   })
 
+  test('a folder layout added, changed or removed is said, and is not a loosening', () => {
+    const plain = parseConfig('{}')
+    const colocated = parseConfig('{"layouts":{"web":"colocated"}}')
+    expect(describeConfigChange(plain, colocated)).toBe('layout in web/ → colocated')
+    expect(describeConfigChange(colocated, parseConfig('{"layouts":{"web":"__tests__"}}'))).toBe('layout in web/ colocated → __tests__')
+    expect(describeConfigChange(colocated, plain)).toBe('layout in web/ colocated → the main layout')
+    expect(describeConfigChange(colocated, parseConfig('{"layouts":{"web/":"colocated"}}'))).toBe(null)
+    expect(isLoosening(plain, colocated)).toBe(false)
+  })
+
   test('a stronger mode, a dropped exemption, or a wider scope does not', () => {
     expect(isLoosening(parseConfig('{"mode":"observe"}'), DEFAULT_CONFIG)).toBe(false)
     expect(isLoosening(parseConfig('{"exempt":["src/main.tsx"]}'), DEFAULT_CONFIG)).toBe(false)

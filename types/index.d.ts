@@ -38,7 +38,8 @@ export type CatchOutcome =
   /** `by`: not the module's own test (`own`) but a test that imports it, both relative to the root (#25). */
   | { kind: 'caught'; by?: string; own?: string }
   /** `pinned`: proven by a deliberate break, and `mutation` is the small-change check run on the pinned file after it (#55). */
-  | { kind: 'proven'; mutation?: MutationResult; pinned?: boolean }
+  /** `lineEndings`: the restored code matches the code from before the break except CRLF against LF (#57). */
+  | { kind: 'proven'; mutation?: MutationResult; pinned?: boolean; lineEndings?: boolean }
   | { kind: 'missed'; slipped?: readonly string[]; mutation?: MutationResult }
   | { kind: 'unverified'; reason: string }
 

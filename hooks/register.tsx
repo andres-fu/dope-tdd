@@ -83,7 +83,7 @@ import {
   togglePause,
 } from './stats'
 import { formatGlossary, formatStatus } from './summary'
-import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from './unlocks'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks'
 import { commentedOutLines, testEditSignals } from './workarounds'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals'
 import { succeeded, tell, withContext } from './toolResult'
@@ -741,22 +741,28 @@ async function verifyCatch(
   if (testPath === undefined) {
     return 'unchecked'
   }
-  if (cycleChange.before === cycleChange.after) {
+  // #57: on Windows a checkout keeps CRLF, and Git Bash's `sed -i` writes the whole file back with LF. A restore by
+  // shell is then the code from before the break with other line endings. That changes nothing the code does, so it
+  // counts as restored; reverting it would "undo" only line endings and read as MISSED. The agent is told why.
+  const lineEndingsOnly =
+    cycleChange.before !== null && cycleChange.before !== cycleChange.after && sameIgnoringLineEndings(cycleChange.before, cycleChange.after)
+  if (cycleChange.before === cycleChange.after || lineEndingsOnly) {
     // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
     // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
     if (!provedByRed) {
       return 'unchecked'
     }
+    const eol = lineEndingsOnly ? { lineEndings: true } : {}
     // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
     // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way,
     // and a check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
     const pinPolicy = policyFor(config, relativePath(root, cycleChange.path))
     if (pinPolicy === 'observe' || pinPolicy === 'exempt' || config.catchCheck === false) {
-      return { kind: 'proven' }
+      return { kind: 'proven', ...eol }
     }
     const pinCheck = await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)
     const mutation = pinCheck !== null && (pinCheck.kind === 'proven' || pinCheck.kind === 'missed') ? pinCheck.mutation : undefined
-    return mutation === undefined ? { kind: 'proven' } : { kind: 'proven', mutation, pinned: true }
+    return mutation === undefined ? { kind: 'proven', ...eol } : { kind: 'proven', mutation, pinned: true, ...eol }
   }
   if (cycleChange.kind === 'refactor') {
     return 'refactor'

@@ -46,6 +46,10 @@ jobs:
         run: npx -y tsx@4.19.2 --test tools/pr-check/check.spec-node.ts
       - name: Check the test-time report
         run: node --test tools/ci/timings.test.mjs
+      - name: Check the pull-request check end to end, on a throwaway repository
+        run: npx -y tsx@4.19.2 --test tools/pr-check/flow.spec-node.ts
+      - name: Check the move check's reading of git
+        run: npx -y tsx@4.19.2 --test tools/move-check/check.spec-node.ts
       - name: Check the move check
         run: npx -y tsx@4.19.2 --test tools/move-check/move.spec-node.ts
       - name: Check the launcher helpers

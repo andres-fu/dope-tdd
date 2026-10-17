@@ -27,12 +27,13 @@ import { findRunner } from '../../hooks/findRunner'
 import { importCandidates } from '../../hooks/imports'
 import { classifyPath, relativePath, testFileFor } from '../../hooks/mirror'
 import { failedTestsIn } from '../../hooks/runners'
+import { changedCode, existsAt } from '../move-check/check'
 import { declarations, findMoves } from '../move-check/move'
 import type { Move, Rename } from '../move-check/move'
 import { detectStackFrom, stackOf } from '../../hooks/stacks'
 
 type Verdict = 'CAUGHT' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNVERIFIED'
-type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }
+export type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }
 
 function git(root: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim()
@@ -71,14 +72,13 @@ function testFor(root: string, config: GuardConfig, module: string, changedTests
   return null
 }
 
-const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/
-
 /**
- * What the move check says about a source file the pull request added (#40): MOVED when code moved into it from
- * another file and none of it differs, naming the new code beside it; a note on the difference when some does; null
- * when nothing moved into it.
+ * What the move check says about a source file (#40): for a file the pull request added, MOVED when code moved into it
+ * from another file and none of it differs, naming the new code beside it; a note on the difference when some does;
+ * null when nothing moved into it. A file that existed at the base is never MOVED, as its own change still needs its
+ * catch check: what moved into it is a note (#1 of the 2026-10-16 review).
  */
-export function movedRow(moves: readonly Move[], target: string, targetText: string): { verdict: 'MOVED'; note: string } | { note: string } | null {
+export function movedRow(moves: readonly Move[], target: string, targetText: string, isNew = true): { verdict: 'MOVED'; note: string } | { note: string } | null {
   const into = moves.filter(move => move.to === target)
   if (into.length === 0) return null
   const differs = into.filter(move => move.result.verdict === 'DIFFERS')
@@ -96,13 +96,14 @@ export function movedRow(moves: readonly Move[], target: string, targetText: str
     return `\`${move.name}\` identical`
   })
   const from = [...new Set(into.map(move => move.from))].join(', ')
+  if (!isNew) return { note: `also received moved code from ${from}: ${each.join(', ')}` }
   const moved = new Set(into.map(move => move.name))
   const added = declarations(targetText).filter(decl => !moved.has(decl.name)).map(decl => `\`${decl.name}\``)
   return { verdict: 'MOVED', note: `moved from ${from}: ${each.join(', ')}${added.length === 0 ? '' : `; new here, not checked: ${added.join(', ')}`}` }
 }
 
 async function checkModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number, moves: readonly Move[]): Promise<Row> {
-  const moved = existsSync(`${root}/${source}`) ? movedRow(moves, source, readFileSync(`${root}/${source}`, 'utf8')) : null
+  const moved = existsSync(`${root}/${source}`) ? movedRow(moves, source, readFileSync(`${root}/${source}`, 'utf8'), !existsAt(root, base, source)) : null
   if (moved !== null && 'verdict' in moved) return { module, source, test, verdict: 'MOVED', note: moved.note }
   const checked = await catchCheckModule(root, config, base, source, module, test, timeoutMs)
   return moved === null ? checked : { ...checked, note: `${checked.note}; ${moved.note}` }
@@ -169,6 +170,29 @@ export function report(rows: readonly Row[], base: string): string {
   ].join('\n')
 }
 
+/** The check of a pull request checked out at `root`: a row per guarded source it changes, and the merge base used. */
+export async function checkPullRequest(root: string, baseRef: string, { timeoutMs = 180_000, renames = [] as readonly Rename[] } = {}): Promise<{ rows: Row[]; base: string }> {
+  if (lines(git(root, 'status', '--porcelain', '--untracked-files=no')).length > 0) {
+    throw new Error('the working tree has uncommitted changes: check out the pull request head with a clean tree')
+  }
+  const base = git(root, 'merge-base', baseRef, 'HEAD')
+  const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
+  const configText = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
+  const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
+  const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
+  // Moved code: every changed code file as it was at the base and as it is at HEAD, which is the checkout (the tree
+  // is clean), so its committed text is what is on disk.
+  const code = changedCode(root, base, 'HEAD')
+  const moves = findMoves(code.base, code.head, renames)
+  const rows: Row[] = []
+  for (const path of changed) {
+    const target = classifyPath(root, `${root}/${path}`, config)
+    if (target.kind !== 'source' || policyFor(config, path) === 'exempt') continue
+    rows.push(await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves))
+  }
+  return { rows, base }
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
   const value = (flag: string) => {
@@ -180,36 +204,12 @@ async function main(): Promise<void> {
   const failOn = value('--fail-on') ?? 'missed'
   const timeoutMs = Number(value('--timeout-ms') ?? 180_000)
   if (baseRef === undefined) throw new Error('--base is required (the branch the pull request goes into)')
-  if (lines(git(root, 'status', '--porcelain', '--untracked-files=no')).length > 0) {
-    throw new Error('the working tree has uncommitted changes: check out the pull request head with a clean tree')
-  }
-  const base = git(root, 'merge-base', baseRef, 'HEAD')
-  const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
-  const configText = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
-  const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
-  const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
-  // Moved code, for the new files: every changed code file as it was at the base and as it is now.
   const renames = argv.flatMap((arg, at) => (arg === '--rename' && argv[at + 1] !== undefined ? [argv[at + 1] as string] : [])).map(pair => {
     const split = pair.indexOf('=')
     if (split <= 0) throw new Error(`--rename needs old=new, got ${pair}`)
     return { from: pair.slice(0, split), to: pair.slice(split + 1) }
   })
-  const code = lines(git(root, 'diff', '--name-only', base, 'HEAD')).filter(path => CODE.test(path))
-  const side = (read: (path: string) => string | null) => Object.fromEntries(code.flatMap(path => ((text => (text === null ? [] : [[path, text] as const]))(read(path)))))
-  const atBase = side(path => {
-    try {
-      return execFileSync('git', ['show', `${base}:${path}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
-    } catch {
-      return null
-    }
-  })
-  const moves = findMoves(atBase, side(path => (existsSync(`${root}/${path}`) ? readFileSync(`${root}/${path}`, 'utf8') : null)), renames)
-  const rows: Row[] = []
-  for (const path of changed) {
-    const target = classifyPath(root, `${root}/${path}`, config)
-    if (target.kind !== 'source' || policyFor(config, path) === 'exempt') continue
-    rows.push(await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves))
-  }
+  const { rows, base } = await checkPullRequest(root, baseRef, { timeoutMs, renames })
   const text = report(rows, `${baseRef} (${base.slice(0, 7)})`)
   console.log(text)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)

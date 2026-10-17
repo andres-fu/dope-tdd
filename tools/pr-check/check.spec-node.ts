@@ -60,3 +60,11 @@ test('two new files in one pull request each list only the code that moved into 
   assert.deepEqual(movedRow(moves, 'pool.js', head['pool.js']), { verdict: 'MOVED', note: 'moved from index.js: `ping` identical' })
   assert.deepEqual(movedRow(moves, 'player.js', head['player.js']), { verdict: 'MOVED', note: 'moved from index.js: `play` identical' })
 })
+
+test('a file that already existed and received moved code is never MOVED: its own change is still checked, and the move is a note (#1)', () => {
+  const base = { 'a.js': 'function f() { return 1 }', 'b.js': 'function g() { return 2 }' }
+  const head = { 'a.js': 'function f() { return 3 }\nfunction g() { return 2 }', 'b.js': '' }
+  assert.deepEqual(movedRow(findMoves(base, head), 'a.js', head['a.js'], false), {
+    note: 'also received moved code from b.js: `g` identical',
+  })
+})

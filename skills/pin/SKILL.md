@@ -13,10 +13,13 @@ Use this when the code you are about to change has no test that guards it. The g
 - Write the test file where this project's layout puts it (the briefing names the layout; `/tdd` shows it too). Touching the test unlocks the module.
 - Assert what the code does now, not what you think it should do. If the current behaviour looks wrong, pin it anyway and say so in your reply; fixing it is a separate, later step.
 - Keep each test small and named after the behaviour it pins.
+- Check what the test reaches: list the module's exports and note which ones the test calls. An export only another test file reaches (or none) is not pinned by this test; pin it here, or say in your reply that it is left out and why.
 
 ## 2. Run the pins
 
 Run only that test file, with the command the briefing gives. It should pass. Dope TDD will say **NEVER SAW RED**: correct, because a test that has never failed has proven nothing yet.
+
+If a pin is red on its first run, the source has not changed, so the pin guessed today's behaviour wrongly. Fix the assertion to what the code does, and say in your reply which pin was wrong and why. Dope TDD records it as **test changed** after red: that is expected here, and it stays on the record because the same steps would also hide a test rewritten to match a bug. Then prove the corrected pin in step 3 as usual.
 
 ## 3. Prove the pins can fail
 

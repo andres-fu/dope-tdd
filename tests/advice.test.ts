@@ -70,7 +70,7 @@ describe('runAdvice when the test changed after red and the code did not', () =>
     const green = recordRun(retouched, true, at(3))
 
     expect(runAdvice(retouched, green, undefined, { testChanged: true })).toBe(
-      'dope-tdd: GREEN on money/formatCents, saw red, but the test changed after red and src/money/formatCents did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code.',
+      'dope-tdd: GREEN on money/formatCents, saw red, but the test changed after red and src/money/formatCents did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code. If the assertion was wrong (a pin that guessed today\'s behaviour wrongly), say why in your reply; it stays on the record.',
     )
   })
 })

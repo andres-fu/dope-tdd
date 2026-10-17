@@ -657,6 +657,38 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(world.writes.some(([path]) => path.startsWith(WT))).toBe(false)
   })
 
+  test('a new JSX file never has a < or > flipped: a broken tag would fail to load and read as caught (review #2)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/badge', 'jsx')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/badge.jsx', 'export const Badge = ({ n }) => <b className="badge">{n > 9 ? 9 : n}</b>')
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+
+    const tried = world.writes.filter(([path]) => path === `${WT}/src/utils/badge.jsx`).map(([, text]) => text)
+    expect(tried.length).toBeGreaterThan(0)
+    expect(tried.some(text => /<=|>=/.test(text))).toBe(false)
+  })
+
+  test('a new file\'s mutants stop at the time budget: one that would start after it is not tried (review #8)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/fresh')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = (a) => a === 1')
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.onCatchRun = () => world.clock.advance(4 * MINUTE)
+
+    const result = await runTests($, world, 'pass')
+
+    const tried = world.writes.filter(([path]) => path === `${WT}/src/utils/fresh.ts`).map(([, text]) => text)
+    expect(tried).toContain('export const fresh = (a) => a !== 1')
+    expect(tried).not.toContain('export const fresh = (a) => a === 2')
+    expect(result.context?.join(' ')).toMatch(/changed it 2 ways in a throwaway copy and the test failed for 1, so it is PROVEN/)
+  })
+
   test('a new file with nothing to change is still unverified, and says why (#27)', async ($, on) => {
     const world = fakeEngine(on)
     gitRepo(world)

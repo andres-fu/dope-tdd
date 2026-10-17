@@ -132,6 +132,73 @@ function precededByParams(tokens: Token[], brace: number): boolean {
   return false
 }
 
+/**
+ * Template literals opened up for comparing (#66): the shared tokenizer keeps a template whole (the small-change check
+ * relies on that), so a name in `${…}` was invisible to renames. Here each `${…}` expression becomes ordinary tokens,
+ * and the literal text between them stays as fixed tokens that must match exactly.
+ */
+function openTemplates(tokens: readonly Token[]): Token[] {
+  return tokens.flatMap(token => (token.kind === 'template' && token.text.includes('${') ? templateParts(token) : [token]))
+}
+
+function templateParts(token: Token): Token[] {
+  const text = token.text
+  const parts: Token[] = []
+  let chunk = ''
+  for (let k = 0; k < text.length; k++) {
+    if (text[k] === '\\') {
+      chunk += text.slice(k, k + 2)
+      k++
+      continue
+    }
+    if (text[k] === '$' && text[k + 1] === '{') {
+      const end = expressionEnd(text, k + 2)
+      parts.push({ ...token, kind: 'string', text: `${chunk}\${` })
+      parts.push(...openTemplates(tokenize(text.slice(k + 2, end)).map(inner => ({ ...inner, line: token.line }))))
+      chunk = '}'
+      k = end
+      continue
+    }
+    chunk += text[k]
+  }
+  parts.push({ ...token, kind: 'string', text: chunk })
+  return parts
+}
+
+/** Where the `${` expression starting at `from` closes: its matching `}`, past nested braces, strings and templates. */
+function expressionEnd(text: string, from: number): number {
+  let depth = 0
+  for (let k = from; k < text.length; k++) {
+    const ch = text[k]
+    if (ch === '\\') {
+      k++
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      k = quoteEnd(text, k)
+    } else if (ch === '{') {
+      depth++
+    } else if (ch === '}') {
+      if (depth === 0) return k
+      depth--
+    }
+  }
+  return text.length - 1
+}
+
+/** Where the quote opened at `from` closes; a template's own `${…}` are stepped over whole. */
+function quoteEnd(text: string, from: number): number {
+  const quote = text[from]
+  for (let k = from + 1; k < text.length; k++) {
+    if (text[k] === '\\') {
+      k++
+    } else if (quote === '`' && text[k] === '$' && text[k + 1] === '{') {
+      k = expressionEnd(text, k + 2)
+    } else if (text[k] === quote) {
+      return k
+    }
+  }
+  return text.length - 1
+}
+
 /** Whether `tokens` hold the run of texts `run` anywhere. */
 function holds(tokens: readonly Token[], run: readonly string[]): boolean {
   return run.length > 0 && tokens.some((_, k) => run.every((text, offset) => tokens[k + offset]?.text === text))
@@ -174,8 +241,9 @@ function context(tokens: Token[], at: number): string {
 }
 
 /** IDENTICAL, RENAMED with every rename it took, or DIFFERS from the first token that does. */
-export function compare(before: Token[], after: Token[], explicit: readonly Rename[] = []): Comparison {
-  const { tokens: old, used } = applyExplicit(before, explicit, after)
+export function compare(rawBefore: Token[], rawAfter: Token[], explicit: readonly Rename[] = []): Comparison {
+  const after = openTemplates(rawAfter)
+  const { tokens: old, used } = applyExplicit(openTemplates(rawBefore), explicit, after)
   const forward = new Map<string, string>()
   const backward = new Map<string, string>()
   const inferred: Rename[] = []

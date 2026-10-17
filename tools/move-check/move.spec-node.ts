@@ -230,3 +230,16 @@ test('a given rename skips a piece whose new side still has the old code, so unc
   assert.equal(pick?.result.verdict, 'SIGNATURE')
   assert.deepEqual(pick?.result.verdict === 'SIGNATURE' ? pick.result.renames : [], [{ from: 'Math.random(', to: 'random(', explicit: true }])
 })
+
+// #66: a template literal was one token, so a name inside `${…}` was invisible to renames, detected or given.
+test('names inside a template literal take part in renames; the literal text around them must match', () => {
+  const before = tokenize('return i.reply(`pong, ${note} ${LIMIT}`)')
+  const after = tokenize('return i.reply(`pong, ${note} ${limit}`)')
+  assert.deepEqual(compare(before, after), { verdict: 'RENAMED', renames: [{ from: 'LIMIT', to: 'limit' }] })
+  assert.deepEqual(compare(before, after, [{ from: 'LIMIT', to: 'limit' }]), {
+    verdict: 'RENAMED',
+    renames: [{ from: 'LIMIT', to: 'limit', explicit: true }],
+  })
+  assert.equal(compare(tokenize('`pong ${a}`'), tokenize('`ping ${a}`')).verdict, 'DIFFERS')
+  assert.equal(compare(tokenize('`a ${f({ x: `${y}` })} b`'), tokenize('`a ${f({ x: `${z}` })} b`')).verdict, 'RENAMED')
+})

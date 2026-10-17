@@ -23,6 +23,15 @@ describe('changedPaths', () => {
     expect(changedPaths(before, after).sort()).toEqual(['src/b.ts', 'src/gone.ts', 'src/new.ts'])
   })
 
+  test('a path that left the diff with its modified time unchanged was committed or staged, not written (#23)', () => {
+    const before = { 'tests/a.test.ts': 'untracked:1000', 'src/a.ts': '3/1:1000', 'src/b.ts': '1/0:1000', 'src/gone.ts': '5/0:1000' }
+    // Committed, committed, rewritten and committed in one command, deleted.
+    const now = { 'tests/a.test.ts': 1000, 'src/a.ts': 1000, 'src/b.ts': 2000, 'src/gone.ts': null }
+    expect(changedPaths(before, {}, now).sort()).toEqual(['src/b.ts', 'src/gone.ts'])
+    // Without the current times every vanished path still counts, as before.
+    expect(changedPaths(before, {}).sort()).toEqual(['src/a.ts', 'src/b.ts', 'src/gone.ts', 'tests/a.test.ts'])
+  })
+
   test('is empty when nothing changed', () => {
     expect(changedPaths({ 'src/a.ts': '1/0' }, { 'src/a.ts': '1/0' })).toEqual([])
   })

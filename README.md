@@ -314,14 +314,26 @@ and comments never count:
   dependency arrives; both parameter lists are shown.
 - **DIFFERS**: something else changed; the first difference is shown.
 
+The `export` a move into a new module needs is not a change, and names inside
+a template literal's `${…}` take part in renames.
+
 `--rename 'players.get(=getPlayer('` replaces a token sequence on
 the old side first, for a change that is not one name for another, and is
-marked "(given)". A rule whose code holds `=` (an arrow, `===`) goes as
-`--rename-from '<old>' --rename-to '<new>'`; a `--rename` with more than one
-`=` is refused rather than split in the wrong place. `--pair 'index.js:358-530=pool.js:40-120'` compares line
-ranges, for code that was never a declaration of its own. It reads committed
-code only and runs nothing from the repository; the output is a table to
-paste into the pull request.
+marked "(given)". It applies only to pieces whose new side no longer has the
+old code, so code that never changed stays IDENTICAL. A rule whose code holds
+`=` (an arrow, `===`) goes as `--rename-from '<old>' --rename-to '<new>'`; a
+`--rename` with more than one `=` is refused rather than split in the wrong
+place. `--pair 'index.js:358-530=pool.js:40-120'` compares line ranges, for
+code that was never a declaration of its own. It reads committed code only and
+runs nothing from the repository; the output is a table to paste into the pull
+request.
+
+Under the counts, the report says how much of the removed code the moves
+account for: `Accounted for: 212 of 340 removed lines (62%)`, then the largest
+ranges no move covers (edits, deletions, or moves the check did not find), so
+a partial report never reads as complete. Blank and comment-only lines are not
+counted. `--fail-on uncovered` fails the run when any remain; it is off by
+default, since lines a refactor really deleted look the same.
 
 ## Develop
 

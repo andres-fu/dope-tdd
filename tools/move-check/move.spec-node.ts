@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { compare, declarations, findMoves, report, tokenize, tokensInLines } from './move.ts'
+import { compare, coverageOf, declarations, findMoves, removedLinesIn, report, tokenize, tokensInLines } from './move.ts'
 
 const texts = (source: string) => tokenize(source).map(token => token.text)
 
@@ -242,4 +242,73 @@ test('names inside a template literal take part in renames; the literal text aro
   })
   assert.equal(compare(tokenize('`pong ${a}`'), tokenize('`ping ${a}`')).verdict, 'DIFFERS')
   assert.equal(compare(tokenize('`a ${f({ x: `${y}` })} b`'), tokenize('`a ${f({ x: `${z}` })} b`')).verdict, 'RENAMED')
+})
+
+// #64 part 1: a report that found a third of the moved code read as complete. It now says what no move accounts for.
+test('the lines each file lost are read from git diff -U0, on the base side', () => {
+  const diff = [
+    'diff --git a/bot.js b/bot.js',
+    'deleted file mode 100644',
+    '--- a/bot.js',
+    '+++ /dev/null',
+    '@@ -1,3 +0,0 @@',
+    '-const A = 1',
+    '-',
+    '-const B = 2',
+    'diff --git a/keep.js b/keep.js',
+    '--- a/keep.js',
+    '+++ b/keep.js',
+    '@@ -5 +5 @@',
+    '-old',
+    '+new',
+    '@@ -9,0 +10,2 @@',
+    '+added',
+    '+added',
+    'diff --git a/new.js b/new.js',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/new.js',
+    '@@ -0,0 +1 @@',
+    '+x',
+  ].join('\n')
+  assert.deepEqual(removedLinesIn(diff), { 'bot.js': [1, 2, 3], 'keep.js': [5] })
+})
+
+test('coverage counts removed code lines inside a move as accounted for, and lists the rest as ranges, largest first', () => {
+  const baseText = 'const A = 1\n\n// a note\nfunction f() {\n  return 1\n}\nconst B = 2\nconst C = 3\n'
+  const removed = { 'a.js': [1, 2, 3, 4, 5, 6, 7, 8], 'b.js': [4] }
+  const moves = findMoves({ 'a.js': 'function f() {\n  return 1\n}' }, { 'a.js': '', 'm.js': 'function f() {\n  return 1\n}' })
+  const moved = moves.map(move => ({ ...move, fromLines: [4, 6] as [number, number] }))
+  const coverage = coverageOf(removed, { 'a.js': baseText, 'b.js': 'x\nx\nx\nlost()\n' }, moved)
+  // a.js: lines 2 (blank) and 3 (comment) are not code; 4-6 are the move; 1, 7, 8 are not accounted for. b.js: 4.
+  assert.deepEqual(coverage, {
+    removed: 7,
+    accounted: 3,
+    uncovered: [
+      { path: 'a.js', start: 7, end: 8, lines: 2 },
+      { path: 'a.js', start: 1, end: 1, lines: 1 },
+      { path: 'b.js', start: 4, end: 4, lines: 1 },
+    ],
+  })
+})
+
+test('a run of uncovered lines is one range across blank and comment lines', () => {
+  const coverage = coverageOf({ 'a.js': [1, 2, 3, 4] }, { 'a.js': 'a()\n\n// note\nb()\n' }, [])
+  assert.deepEqual(coverage.uncovered, [{ path: 'a.js', start: 1, end: 4, lines: 2 }])
+})
+
+test('the report says how much of the removed code the moves account for, and where the rest is', () => {
+  const coverage = { removed: 18, accounted: 7, uncovered: [{ path: 'bot.js', start: 1, end: 12, lines: 11 }] }
+  const text = report([], 'main', coverage)
+  assert.match(text, /Accounted for: 7 of 18 removed lines \(39%\)\. Not by any move above \(edits, deletions, or moves this check did not find\):/)
+  assert.match(text, /- bot\.js:1-12 \(11 lines\)/)
+  const all = report([], 'main', { removed: 4, accounted: 4, uncovered: [] })
+  assert.match(all, /Accounted for: 4 of 4 removed lines \(100%\)\.$/m)
+})
+
+test('only the ten largest uncovered ranges are listed; the rest are counted', () => {
+  const uncovered = Array.from({ length: 12 }, (_, k) => ({ path: 'a.js', start: k * 10 + 1, end: k * 10 + 1, lines: 1 }))
+  const text = report([], 'main', { removed: 12, accounted: 0, uncovered })
+  assert.equal((text.match(/^- a\.js:/gm) ?? []).length, 10)
+  assert.match(text, /and 2 more ranges \(2 lines\)/)
 })

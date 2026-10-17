@@ -342,9 +342,86 @@ function cell(text: string): string {
 }
 
 /** The table to paste into a pull request, with a count of each verdict. */
-export function report(moves: readonly Move[], against: string): string {
+/** How much of the removed code the moves account for (#64), and the rest as ranges, largest first. */
+export type Coverage = { removed: number; accounted: number; uncovered: { path: string; start: number; end: number; lines: number }[] }
+
+/** The base-side line numbers each file lost, read from `git diff -U0` output (#64). A file only added has none. */
+export function removedLinesIn(diff: string): Record<string, number[]> {
+  const removed: Record<string, number[]> = {}
+  let path: string | null = null
+  for (const line of diff.split(/\r?\n/)) {
+    const old = /^--- (?:a\/(.+)|\/dev\/null)$/.exec(line)
+    if (old !== null) {
+      path = old[1] ?? null
+      continue
+    }
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+/.exec(line)
+    if (hunk !== null && path !== null) {
+      const start = Number(hunk[1])
+      const count = hunk[2] === undefined ? 1 : Number(hunk[2])
+      for (let k = 0; k < count; k++) (removed[path] ??= []).push(start + k)
+    }
+  }
+  return removed
+}
+
+/** A line that holds no code: blank, or only a comment. It is neither counted nor breaks a run of uncovered lines. */
+function holdsNoCode(line: string | undefined): boolean {
+  const text = (line ?? '').trim()
+  return text === '' || text.startsWith('//') || text.startsWith('/*') || text.startsWith('*')
+}
+
+/**
+ * The removed code lines a move accounts for (inside its old lines) and the ones none does, as ranges. A report that
+ * found a third of what moved used to read as complete; this is what makes it say so (#64).
+ */
+export function coverageOf(removed: Readonly<Record<string, readonly number[]>>, baseTexts: Readonly<Record<string, string>>, moves: readonly Move[]): Coverage {
+  let total = 0
+  let accounted = 0
+  const uncovered: Coverage['uncovered'] = []
+  for (const [path, lines] of Object.entries(removed)) {
+    const text = (baseTexts[path] ?? '').split(/\r?\n/)
+    const inMove = (line: number) => moves.some(move => move.from === path && line >= move.fromLines[0] && line <= move.fromLines[1])
+    let run: Coverage['uncovered'][number] | null = null
+    for (const line of [...lines].sort((a, b) => a - b)) {
+      if (holdsNoCode(text[line - 1])) continue
+      total++
+      if (inMove(line)) {
+        accounted++
+        run = null
+        continue
+      }
+      // A run goes on across lines that hold no code; any code line in between, removed or not, ends it.
+      const joins = run !== null && Array.from({ length: line - run.end - 1 }, (_, k) => text[run!.end + k]).every(holdsNoCode)
+      if (run !== null && joins) {
+        run.end = line
+        run.lines++
+      } else {
+        run = { path, start: line, end: line, lines: 1 }
+        uncovered.push(run)
+      }
+    }
+  }
+  return { removed: total, accounted, uncovered: uncovered.sort((a, b) => b.lines - a.lines) }
+}
+
+const LISTED_RANGES = 10
+
+function coverageLines(coverage: Coverage): string[] {
+  if (coverage.removed === 0) return []
+  const percent = Math.round((coverage.accounted / coverage.removed) * 100)
+  const head = `Accounted for: ${coverage.accounted} of ${coverage.removed} removed lines (${percent}%).`
+  if (coverage.uncovered.length === 0) return ['', head]
+  const where = (range: Coverage['uncovered'][number]) => `${range.path}:${range.start === range.end ? range.start : `${range.start}-${range.end}`}`
+  const listed = coverage.uncovered.slice(0, LISTED_RANGES).map(range => `- ${where(range)} (${range.lines} line${range.lines === 1 ? '' : 's'})`)
+  const rest = coverage.uncovered.slice(LISTED_RANGES)
+  const more = rest.length === 0 ? [] : [`- … and ${rest.length} more ranges (${rest.reduce((sum, range) => sum + range.lines, 0)} lines)`]
+  return ['', `${head} Not by any move above (edits, deletions, or moves this check did not find):`, ...listed, ...more]
+}
+
+export function report(moves: readonly Move[], against: string, coverage?: Coverage): string {
   if (moves.length === 0) {
-    return `## Move check\n\nNo declaration moved between files against ${against}.`
+    return [`## Move check\n\nNo declaration moved between files against ${against}.`, ...(coverage === undefined ? [] : coverageLines(coverage))].join('\n')
   }
   const count = (verdict: Comparison['verdict']) => moves.filter(move => move.result.verdict === verdict).length
   const renamed = (renames: readonly Rename[]) =>
@@ -363,6 +440,7 @@ export function report(moves: readonly Move[], against: string): string {
     '## Move check',
     '',
     `${count('IDENTICAL')} identical · ${count('RENAMED')} renamed · ${count('SIGNATURE')} signature changed · ${count('DIFFERS')} differs, against ${against}.`,
+    ...(coverage === undefined ? [] : coverageLines(coverage)),
     '',
     '| Moved | Where | Verdict | Notes |',
     '| --- | --- | --- | --- |',

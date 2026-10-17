@@ -79,15 +79,28 @@ function declarationAt(tokens: Token[], k: number): Declaration | null {
     let named = at + 1
     if (tokens[named]?.text === '*') named++
     name = tokens[named]?.kind === 'name' ? tokens[named]?.text : undefined
-    const brace = tokens.findIndex((token, index) => index > named && token.text === '{' && (head === 'class' || precededByParams(tokens, index)))
+    const paramsOpen = head === 'function' ? parametersAt(tokens, named + 1) : -1
+    const brace =
+      paramsOpen !== -1
+        ? bodyBraceAfter(tokens, closing(tokens, paramsOpen))
+        : tokens.findIndex((token, index) => index > named && token.text === '{' && (head === 'class' || precededByParams(tokens, index)))
     end = brace === -1 ? named : closing(tokens, brace)
-    if (head === 'function' && brace !== -1 && tokens[named + 1]?.text === '(') {
+    if (head === 'function' && brace !== -1 && paramsOpen === named + 1) {
       params = [named + 1 - k, closing(tokens, named + 1) - k]
       body = brace - k
     }
   } else if (head === 'const' || head === 'let' || head === 'var') {
     name = tokens[at + 1]?.kind === 'name' ? tokens[at + 1]?.text : undefined
     end = statementEnd(tokens, at + 1)
+  } else if (head === 'type' && tokens[at + 1]?.kind === 'name' && ['=', '<'].includes(tokens[at + 2]?.text ?? '')) {
+    // #76: `type X = …` and `type X<T> = …`. `type` is no reserved word, so a value or call named type is left alone.
+    name = tokens[at + 1]?.text
+    end = statementEnd(tokens, at + 1)
+  } else if (head === 'interface' && tokens[at + 1]?.kind === 'name') {
+    // #76: `interface X [extends …] { … }`, to its closing brace.
+    name = tokens[at + 1]?.text
+    const brace = tokens.findIndex((token, index) => index > at + 1 && token.text === '{')
+    end = brace === -1 ? -1 : closing(tokens, brace)
   }
   if (name === undefined || end < k) {
     return null
@@ -119,6 +132,41 @@ export function declarations(source: string, nested = false): Declaration[] {
     k++
   }
   return found
+}
+
+/** The `(` of a function's parameters at `at`, past type parameters (`<T, U extends X>`); -1 when there is none. */
+function parametersAt(tokens: Token[], at: number): number {
+  if (tokens[at]?.text === '(') return at
+  if (tokens[at]?.text !== '<') return -1
+  let depth = 0
+  for (let k = at; k < tokens.length; k++) {
+    if (tokens[k]?.text === '<') depth++
+    else if (tokens[k]?.text === '>' && --depth === 0) return tokens[k + 1]?.text === '(' ? k + 1 : -1
+  }
+  return -1
+}
+
+// After one of these, a `{` opens an object type in a return type annotation, not the function's body.
+const TYPE_POSITION = new Set([':', '|', '&', '<', ',', '(', '[', '=>', 'keyof', 'typeof'])
+
+/**
+ * The `{` of a function's body after its parameters close at `paramsClose`, past a return type. Found while checking
+ * #76 on real history: `): { module: string } | null {` was cut at the type's `}`, so the body was never compared and a
+ * changed body read IDENTICAL. A `{` in a type position opens an object type and is stepped over whole.
+ */
+function bodyBraceAfter(tokens: Token[], paramsClose: number): number {
+  for (let k = paramsClose + 1; k < tokens.length; k++) {
+    const text = tokens[k]?.text ?? ''
+    if (text === '{') {
+      if (!TYPE_POSITION.has(tokens[k - 1]?.text ?? '')) return k
+      k = closing(tokens, k)
+    } else if (text === '(' || text === '[') {
+      k = closing(tokens, k)
+    } else if (text === ';') {
+      return -1
+    }
+  }
+  return -1
 }
 
 /** A function body's `{` comes after its parameters' `)`, or after a return type (`): Promise<void> {`). */

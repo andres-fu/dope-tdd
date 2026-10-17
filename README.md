@@ -316,8 +316,8 @@ difference in the note. pr-check takes the same `--rename`. On its own:
 node tools/move-check/check.ts --repo . --base origin/main
 ```
 
-Each top-level function, class or `const` that left one file between the base
-and HEAD and appeared in another, including inside a factory there
+Each top-level function, class, `const`, `type` alias or `interface` that left
+one file between the base and HEAD and appeared in another, including inside a factory there
 (`createX({ deps }) { function f() {} }`), is compared as tokens, so spacing
 and comments never count:
 

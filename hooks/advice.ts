@@ -13,6 +13,8 @@ export type RunContext = {
   testChanged?: boolean
   /** How messages name the module's source under the project's layout; `src/<module>` by default. */
   sourcePath?: string
+  /** How messages name the module itself, when not by its id (a folder with a layout of its own, #24). */
+  label?: string
 }
 
 function defaultSource(module: string): string {
@@ -168,10 +170,11 @@ function greenAdvice(
 }
 
 export function runAdvice(before: TddStats, after: TddStats, check?: Check, context: RunContext = {}): string | null {
-  const module = after.current?.module
-  if (module === undefined) {
+  const id = after.current?.module
+  if (id === undefined) {
     return null
   }
+  const module = context.label ?? id
   const sourcePath = context.sourcePath ?? defaultSource(module)
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
     return elsewhereAdvice(module, context.elsewhere, before.sawRed, sourcePath)

@@ -281,3 +281,17 @@ describe('/tdd why', () => {
     }
   })
 })
+
+describe('a module in a folder with a layout of its own (#24)', () => {
+  test('the band names it by its source path', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":{"source":"{module}.{ext}","test":"test/{module}.test.{ext}"},"layouts":{"dashboard":"colocated"}}')
+    await writeAt($, 'dashboard/src/lib/pkce.test.ts', "it('x', () => { expect(1).toBe(2) })")
+
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
+      expect(await ui.find({ type: 'Text', text: 'DASHBOARD/SRC/LIB/PKCE' })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+})

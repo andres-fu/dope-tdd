@@ -34,7 +34,7 @@ import { mutantsOf } from './mutate'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
-import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
+import { classifyPath, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
@@ -1241,14 +1241,14 @@ async function checkFileWrite(
     const commented = before === undefined || after === null ? [] : await noteCommentedOut($, root, target.module, filePath, beforeText(before), after, nowMs)
     const sourcePath = sourcePathFor(config, target.module)
     if (isLocked) {
-      const warned = policy === 'warn' ? [unguardedAdvice(target.module, sourcePath, testPathFor(config, target.module))] : []
+      const warned = policy === 'warn' ? [unguardedAdvice(moduleLabel(config, target.module), sourcePath, testPathFor(config, target.module))] : []
       return tell(quiet, result, [...warned, ...commented])
     }
     const testPath = edited.unlocked[target.module]
     const inherited =
       inheritedAt === undefined || testPath === undefined
         ? []
-        : [inheritedAdvice(target.module, relativePath(root, testPath), nowMs - inheritedAt, sourcePath)]
+        : [inheritedAdvice(moduleLabel(config, target.module), relativePath(root, testPath), nowMs - inheritedAt, sourcePath)]
     return tell(quiet, result, [...inherited, ...commented])
   }
   if (target.kind === 'test') {
@@ -1281,9 +1281,9 @@ async function checkFileWrite(
         await rememberUnlock($, root, module, filePath, nowMs)
       }
     }
-    const importLines = imported.length === 0 ? [] : [importAdvice(relativePath(root, filePath), imported)]
+    const importLines = imported.length === 0 ? [] : [importAdvice(relativePath(root, filePath), imported.map(module => moduleLabel(config, module)))]
     const command = (await runCommandFor($, root, config, filePath)) ?? undefined
-    return touched.paused ? result : tell(quiet, result, [touchAdvice(target.module, sourcePathFor(config, target.module), command), ...importLines, ...hollow, ...signals, ...resaved])
+    return touched.paused ? result : tell(quiet, result, [touchAdvice(moduleLabel(config, target.module), sourcePathFor(config, target.module), command), ...importLines, ...hollow, ...signals, ...resaved])
   }
   return result
 }
@@ -1611,7 +1611,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule) })
 
   const reminders = current.paused
     ? []
@@ -1620,13 +1620,13 @@ async function checkShell(
         ...(alreadyFailing.length === 0
           ? []
           : [
-              `dope-tdd: ${working?.module ?? 'this module'} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
+              `dope-tdd: ${working === undefined || working === null ? 'this module' : moduleLabel(config, working.module)} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
             ]),
         ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
         ...(firstUnreadable && unreadable !== null ? [unreadableRunnerAdvice(unreadable)] : []),
         ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
         ...commented,
-        ...redUnlocked.map(module => redUnlockAdvice(module, sourcePathFor(config, module))),
+        ...redUnlocked.map(module => redUnlockAdvice(moduleLabel(config, module), sourcePathFor(config, module))),
         ...(advice === null ? [] : [advice]),
       ]
   return tell(quiet, result, reminders)
@@ -1755,15 +1755,18 @@ async function briefingCommand($: EngineInterface, root: string, config: GuardCo
  */
 async function receiptText($: EngineInterface, root: string, config: GuardConfig, named: string | undefined, nowMs: number): Promise<string> {
   const s = await readStats($)
-  const module = named ?? s.current?.module
+  // A module may be named as its label (`dashboard/src/lib/pkce`) as well as its id.
+  const known = [...new Set([...Object.keys(s.unlocked), ...Object.keys(s.modules)])]
+  const module = named === undefined ? s.current?.module : (known.find(id => id === named || moduleLabel(config, id) === named) ?? named)
   const status = formatStatus(s, nowMs, config)
   if (module === undefined) {
     return ['dope-tdd receipt', '```', status, '```', 'No module is current; name one: /tdd receipt <module>.'].join('\n')
   }
-  const lines = [`dope-tdd receipt for ${module}`, '```', status, '```']
+  const label = moduleLabel(config, module)
+  const lines = [`dope-tdd receipt for ${label}`, '```', status, '```']
   const testPath = s.unlocked[module]
   if (testPath === undefined) {
-    lines.push(`No test on record for ${module}; the receipt is the status alone.`)
+    lines.push(`No test on record for ${label}; the receipt is the status alone.`)
     return lines.join('\n')
   }
   const runner = await detectRunner($, root, config, testPath)
@@ -1783,7 +1786,7 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   lines.push('```')
   lines.push(
     change === undefined
-      ? `No change to ${module} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
+      ? `No change to ${label} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
       : `The first run passes. The second runs the same test against the code on ${base}, before the change, and fails, which is what the catch check saw. The last line puts the change back.`,
   )
   return lines.join('\n')
@@ -2007,7 +2010,7 @@ export const register: Register = on => {
       nowMs,
       logo,
       standingDown,
-      onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current?.module ?? ''}` }),
+      onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current === null ? '' : moduleLabel(config, current.current.module)}` }),
       onTogglePause: async () => {
         const nowMs = await $.clock.now()
         const toggled = await change($, s => togglePause(s, nowMs))
@@ -2023,6 +2026,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: TEST_PANE }, async ($, e) => {
     const { current } = await readStats($)
     const source = current ? await readSource($, current.testPath) : null
-    return drawTestPane($.ui.resolve(e), { current, source })
+    const label = current === null ? undefined : moduleLabel(await configForRender($, await $.session.root()), current.module)
+    return drawTestPane($.ui.resolve(e), { current, source, label })
   })
 }

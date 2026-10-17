@@ -2,6 +2,7 @@ import type { Elements, RenderSurface } from 'claude-code'
 
 import type { CatchOutcome, CurrentTest, TddStats } from '../types'
 import type { GuardConfig } from './config'
+import { moduleLabel } from './mirror'
 import { ACCENT, ALARM_TEXT, RED_TIMER_ALARM_MS } from './theme'
 import { formatSpan } from './timeText'
 
@@ -72,7 +73,7 @@ function drawCatchWord(el: AnyElements, outcome: CatchOutcome | { kind: 'refacto
   return <Text dimColor>UNVERIFIED</Text>
 }
 
-function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest) {
+function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest, label: string) {
   const { Box, Text } = el
   const closedCycle = s.phase === 'green' && s.lastCycle?.module === current.module ? s.lastCycle : null
   const sawRed = (s.phase !== 'green' && s.sawRed) || closedCycle?.sawRed === true
@@ -81,7 +82,7 @@ function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest) {
 
   return (
     <Box flexDirection="row" gap={2}>
-      <Text bold>{current.module.toUpperCase()}</Text>
+      <Text bold>{label.toUpperCase()}</Text>
       {neverSawRed && <Text bold color={ACCENT.paused}>NEVER SAW RED</Text>}
       {!neverSawRed && sawRed && <Text dimColor>SAW RED</Text>}
       {s.redElsewhere.length > 0 && <Text dimColor>RED ELSEWHERE</Text>}
@@ -153,7 +154,7 @@ export function drawBand(el: AnyElements, model: BandModel) {
         {drawPhase(el, s, nowMs, model.standingDown)}
         {drawTrail(el, s)}
       </Box>
-      {s.current !== null && drawVerdict(el, s, s.current)}
+      {s.current !== null && drawVerdict(el, s, s.current, moduleLabel(config, s.current.module))}
       {drawTally(el, s, config)}
       <Box flexDirection="row" gap={1}>
         {s.current !== null && <Button key="view-test" label="VIEW TEST" onPress={model.onViewTest} />}
@@ -164,7 +165,7 @@ export function drawBand(el: AnyElements, model: BandModel) {
   )
 }
 
-export function drawTestPane(el: AnyElements, model: { current: CurrentTest | null; source: string | null }) {
+export function drawTestPane(el: AnyElements, model: { current: CurrentTest | null; source: string | null; label?: string }) {
   const { Box, Text, Code } = el
   const { current, source } = model
 
@@ -173,7 +174,7 @@ export function drawTestPane(el: AnyElements, model: { current: CurrentTest | nu
   }
   return (
     <Box flexDirection="column" gap={1}>
-      <Text bold color={ACCENT.ember}>{current.module.toUpperCase()}</Text>
+      <Text bold color={ACCENT.ember}>{(model.label ?? current.module).toUpperCase()}</Text>
       {source === null
         ? <Text color={ACCENT.ember}>{`NOT FOUND: ${current.testPath}`}</Text>
         : <Code source={source} path={current.testPath} startLine={1} />}

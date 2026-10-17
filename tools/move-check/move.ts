@@ -132,11 +132,21 @@ function precededByParams(tokens: Token[], brace: number): boolean {
   return false
 }
 
-function applyExplicit(tokens: Token[], renames: readonly Rename[]): { tokens: Token[]; used: Rename[] } {
+/** Whether `tokens` hold the run of texts `run` anywhere. */
+function holds(tokens: readonly Token[], run: readonly string[]): boolean {
+  return run.length > 0 && tokens.some((_, k) => run.every((text, offset) => tokens[k + offset]?.text === text))
+}
+
+function applyExplicit(tokens: Token[], renames: readonly Rename[], after: readonly Token[]): { tokens: Token[]; used: Rename[] } {
   let out = tokens
   const used: Rename[] = []
   for (const rename of renames) {
     const from = tokenize(rename.from).map(token => token.text)
+    // #65: a rule is given for the pieces where the old code was replaced. A piece whose new side still has that code
+    // did not change it, so the rule is not applied there: applied, it would make unchanged code read DIFFERS.
+    if (holds(after, from)) {
+      continue
+    }
     const to = tokenize(rename.to)
     const next: Token[] = []
     let hit = false
@@ -165,7 +175,7 @@ function context(tokens: Token[], at: number): string {
 
 /** IDENTICAL, RENAMED with every rename it took, or DIFFERS from the first token that does. */
 export function compare(before: Token[], after: Token[], explicit: readonly Rename[] = []): Comparison {
-  const { tokens: old, used } = applyExplicit(before, explicit)
+  const { tokens: old, used } = applyExplicit(before, explicit, after)
   const forward = new Map<string, string>()
   const backward = new Map<string, string>()
   const inferred: Rename[] = []

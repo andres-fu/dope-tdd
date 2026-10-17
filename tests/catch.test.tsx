@@ -628,6 +628,117 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(said).toMatch(/A change that cannot alter what the code does \(an equivalent mutant\) is fine to leave; say so\./)
   })
 
+  // #52: test first (red, no module), the new file written, red again because a pin was wrong, the pin fixed in the
+  // test, green. The "test changed after red" note is fair, but the new file still needs its small-change proof.
+  test('a new file whose first green follows a pin correction is still checked with small changes (#52)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    const runOwnTest = (outcome: 'pass' | 'fail') => {
+      world.bashFails = outcome === 'fail'
+      return runBash($, 'npx vitest run tests/utils/fresh.test.ts')
+    }
+    await touchTest($, world, 'utils/fresh')
+    await runOwnTest('fail')
+    await writeAt($, 'src/utils/fresh.ts', 'export const fresh = (a) => a === 1')
+    await runOwnTest('fail')
+    await touchTest($, world, 'utils/fresh')
+    let mutantRuns = 0
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    world.onCatchRun = () => {
+      mutantRuns++
+    }
+
+    const result = await runOwnTest('pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(mutantRuns).toBeGreaterThan(0)
+    expect(status.text).toMatch(/proven 1/)
+    expect(result.context?.join(' ') ?? '').toMatch(/utils\/fresh is a new file: dope-tdd changed it 2 ways in a throwaway copy/)
+  })
+
+  // #55: one deliberate break proves one behaviour. In a checkout, the pinned file also gets the small changes a new
+  // file gets, so PROVEN says what else the pins do not check. The verdict stays PROVEN: the break was caught.
+  describe('a pin proof also tries small changes to the pinned file (#55)', () => {
+    const PINNED = 'export const a = (x) => x === 1'
+    async function pinAndProve($: Parameters<typeof runCommand>[0], world: ReturnType<typeof fakeEngine>) {
+      world.fileContents.set(SOURCE, PINNED)
+      await touchTest($, world, 'utils/formatDuration')
+      await runTests($, world, 'pass')
+      await editAt($, 'src/utils/formatDuration.ts')
+      await runTests($, world, 'fail')
+      await $.tool.call({ tool: 'Edit', file_path: SOURCE, old_string: 'const b', new_string: 'const a' } as never)
+    }
+
+    test('one change caught and one not: PROVEN, and the one the pins missed is named', async ($, on) => {
+      const world = fakeEngine(on)
+      gitRepo(world)
+      await pinAndProve($, world)
+      let mutantRuns = 0
+      world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+      world.onCatchRun = () => {
+        mutantRuns++
+        if (mutantRuns === 2) {
+          world.catchRun = { text: ' Tests  1 passed (1)\n', exitCode: 0 }
+        }
+      }
+
+      const green = await runTests($, world, 'pass')
+      const status = await runCommand($, 'tdd')
+      const said = green.context?.join(' ') ?? ''
+
+      expect(mutantRuns).toBe(2)
+      expect(world.fileContents.get(SOURCE)).toBe(PINNED)
+      expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+      expect(said).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN\./)
+      expect(said).toMatch(/dope-tdd also changed it 2 ways in a throwaway copy: the test failed for 1\. These went unnoticed:/)
+      expect(said).toMatch(/line 1: `1` → `2`/)
+      expect(status.text).toMatch(/proven 1 · missed 0/)
+    })
+
+    test('every change caught: PROVEN, and it says so', async ($, on) => {
+      const world = fakeEngine(on)
+      gitRepo(world)
+      await pinAndProve($, world)
+      world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+      const green = await runTests($, world, 'pass')
+
+      expect(green.context?.join(' ')).toMatch(/dope-tdd also changed it 2 ways in a throwaway copy: the test failed for all of them\./)
+    })
+
+    test('no change caught: still PROVEN for the break, never MISSED, with every change named', async ($, on) => {
+      const world = fakeEngine(on)
+      gitRepo(world)
+      await pinAndProve($, world)
+      world.catchRun = { text: ' Tests  1 passed (1)\n', exitCode: 0 }
+
+      const green = await runTests($, world, 'pass')
+      const status = await runCommand($, 'tdd')
+      const said = green.context?.join(' ') ?? ''
+
+      expect(said).toMatch(/: PROVEN\./)
+      expect(said).toMatch(/the test failed for 0\. These went unnoticed:/)
+      expect(said).toMatch(/line 1: `===` → `!==`/)
+      expect(status.text).toMatch(/proven 1 · missed 0/)
+    })
+
+    test('with the catch check off in dope-tdd.json, no change is tried', async ($, on) => {
+      const world = fakeEngine(on)
+      gitRepo(world)
+      world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"catchCheck":false}')
+      await pinAndProve($, world)
+      let mutantRuns = 0
+      world.onCatchRun = () => {
+        mutantRuns++
+      }
+
+      const green = await runTests($, world, 'pass')
+
+      expect(mutantRuns).toBe(0)
+      expect(green.context?.join(' ')).not.toMatch(/throwaway copy/)
+    })
+  })
+
   test('a new file whose test passes with every change made to it is MISSED, and each change is named (#27)', async ($, on) => {
     const world = fakeEngine(on)
     gitRepo(world)

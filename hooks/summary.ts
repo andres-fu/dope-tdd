@@ -1,10 +1,10 @@
 import type { TddStats } from '../types'
-import { describeConfig } from './config'
-import type { GuardConfig } from './config'
-import { moduleLabel } from './mirror'
-import { otherOpenModules } from './stats'
-import { formatAgo, formatSpan } from './timeText'
-import { WORKAROUND_KINDS } from './workarounds'
+import { describeConfig } from './config.ts'
+import type { GuardConfig } from './config.ts'
+import { moduleLabel } from './mirror.ts'
+import { otherOpenModules } from './stats.ts'
+import { formatAgo, formatSpan } from './timeText.ts'
+import { WORKAROUND_KINDS } from './workarounds.ts'
 
 const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
   config: 'config loosened',

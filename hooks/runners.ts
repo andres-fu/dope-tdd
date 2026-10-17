@@ -1,8 +1,8 @@
-import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome'
-import type { RunOutcome } from './runOutcome'
-import { ELSEWHERE, commandSegments, executedText, locatedSegments } from './shell'
-import { STACKS } from './stacks'
-import type { StackName } from './stacks'
+import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome.ts'
+import type { RunOutcome } from './runOutcome.ts'
+import { ELSEWHERE, commandSegments, executedText, locatedSegments } from './shell.ts'
+import { STACKS } from './stacks.ts'
+import type { StackName } from './stacks.ts'
 
 /**
  * A runner is how a stack's tests get run and read: the files that say it is

@@ -1,4 +1,4 @@
-// npx tsx --test tools/move-check/check.spec-node.ts (not *.test.ts: the plugin test kit would load it)
+// node --test tools/move-check/check.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 // The git side of the move check, on a throwaway repository: what it reads at the base and at the head.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { changedCode, existsAt } from './check'
-import { findMoves } from './move'
+import { changedCode, existsAt } from './check.ts'
+import { findMoves } from './move.ts'
 
 const repo = mkdtempSync(join(tmpdir(), 'move-check-'))
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()

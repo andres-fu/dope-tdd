@@ -1,9 +1,9 @@
 import type { TddStats } from '../types'
-import { staleUnlockNote } from './advice'
-import type { RunnerKind } from './catchCheck'
-import { CONFIG_FILE } from './config'
-import type { GuardConfig } from './config'
-import { extOf, sourcePathFor, testPathFor } from './mirror'
+import { staleUnlockNote } from './advice.ts'
+import type { RunnerKind } from './catchCheck.ts'
+import { CONFIG_FILE } from './config.ts'
+import type { GuardConfig } from './config.ts'
+import { extOf, sourcePathFor, testPathFor } from './mirror.ts'
 
 // A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
 export const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i

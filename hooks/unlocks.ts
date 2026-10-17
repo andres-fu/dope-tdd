@@ -1,4 +1,4 @@
-import { assertionCalls } from './workarounds'
+import { assertionCalls } from './workarounds.ts'
 
 export const UNLOCK_TTL_MS = 7 * 24 * 60 * 60_000
 

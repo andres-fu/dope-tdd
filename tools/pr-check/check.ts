@@ -10,7 +10,9 @@
 //              with new parameters); its own new code is named as not checked. Never a failure.
 // Tests that already fail on the pull request are judged by name: only a test failing beyond them counts.
 //
-//   npx tsx tools/pr-check/check.ts --base origin/main [--repo .] [--fail-on missed|untested|never]
+//   node tools/pr-check/check.ts --base origin/main [--repo .] [--fail-on missed|untested|never]
+//
+// Node 22.18+ runs it as it is (type stripping); older Node: `npx -y tsx@4.19.2 tools/pr-check/check.ts ...`.
 //
 // The repository must be checked out at the pull request's head with a clean working tree; the project's
 // dependencies must be installed. The same rules as the plugin: dope-tdd.json, the stack's layouts and runners.
@@ -19,18 +21,18 @@ import { spawnSync, execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { catchOutcome, runnerArgv } from '../../hooks/catchCheck'
-import type { RunFailure, RunResult } from '../../hooks/catchCheck'
-import { CONFIG_FILE, parseConfig, policyFor } from '../../hooks/config'
-import type { GuardConfig } from '../../hooks/config'
-import { findRunner } from '../../hooks/findRunner'
-import { importCandidates } from '../../hooks/imports'
-import { classifyPath, moduleLabel, relativePath, testFileFor } from '../../hooks/mirror'
-import { failedTestsIn } from '../../hooks/runners'
-import { changedCode, existsAt } from '../move-check/check'
-import { declarations, findMoves } from '../move-check/move'
-import type { Move, Rename } from '../move-check/move'
-import { detectStackFrom, stackOf } from '../../hooks/stacks'
+import { catchOutcome, runnerArgv } from '../../hooks/catchCheck.ts'
+import type { RunFailure, RunResult } from '../../hooks/catchCheck.ts'
+import { CONFIG_FILE, parseConfig, policyFor } from '../../hooks/config.ts'
+import type { GuardConfig } from '../../hooks/config.ts'
+import { findRunner } from '../../hooks/findRunner.ts'
+import { importCandidates } from '../../hooks/imports.ts'
+import { classifyPath, moduleLabel, relativePath, testFileFor } from '../../hooks/mirror.ts'
+import { failedTestsIn } from '../../hooks/runners.ts'
+import { changedCode, existsAt } from '../move-check/check.ts'
+import { declarations, findMoves } from '../move-check/move.ts'
+import type { Move, Rename } from '../move-check/move.ts'
+import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
 
 type Verdict = 'CAUGHT' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNVERIFIED'
 export type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }

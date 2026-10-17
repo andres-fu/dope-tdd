@@ -1,7 +1,7 @@
-import { MIRROR, templateError } from './layout'
-import type { FolderLayout, Layout } from './layout'
-import { STACKS, defaultLayoutOf, isStackName, layoutNamed, stackOf } from './stacks'
-import type { StackName } from './stacks'
+import { MIRROR, templateError } from './layout.ts'
+import type { FolderLayout, Layout } from './layout.ts'
+import { STACKS, defaultLayoutOf, isStackName, layoutNamed, stackOf } from './stacks.ts'
+import type { StackName } from './stacks.ts'
 
 export type GuardMode = 'enforce' | 'warn' | 'observe'
 export type Policy = GuardMode | 'exempt'

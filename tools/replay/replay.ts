@@ -3,7 +3,7 @@
 // call in the transcripts it asks: is this a test run, and what did the runner's output read as; which source files
 // does the command write; and is it a command that looks like a write the detector did not see. It runs nothing.
 //
-//   npx tsx tools/replay/replay.ts [--transcripts <dir>] [--json] [--samples <n>]
+//   node tools/replay/replay.ts [--transcripts <dir>] [--json] [--samples <n>]
 //
 // <dir> defaults to ~/.claude/projects. The report prints commands from your own sessions: read it locally, and do
 // not paste it anywhere public without reading it first.
@@ -13,10 +13,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 
-import { findSourceWrites } from '../../hooks/bashWrites'
-import { runnerDidNotStart, unreadableRunner } from '../../hooks/runOutcome'
-import { isTestRun, readRun } from '../../hooks/runners'
-import { STACKS } from '../../hooks/stacks'
+import { findSourceWrites } from '../../hooks/bashWrites.ts'
+import { runnerDidNotStart, unreadableRunner } from '../../hooks/runOutcome.ts'
+import { isTestRun, readRun } from '../../hooks/runners.ts'
+import { STACKS } from '../../hooks/stacks.ts'
 
 export type ShellCall = { tool: 'Bash' | 'PowerShell'; command: string; output: string | null; file: string }
 

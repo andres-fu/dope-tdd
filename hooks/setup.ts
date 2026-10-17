@@ -1,11 +1,11 @@
-import { CONFIG_FILE, describeLayout, globMatches } from './config'
-import type { GuardConfig } from './config'
-import { LAYOUTS, baseName, matchTemplate } from './layout'
-import type { Layout, NodeLayoutName } from './layout'
-import { classifyPath, sourcePathFor, splitRoot, testFileFor } from './mirror'
-import type { LayoutConfig } from './mirror'
-import { STACKS, defaultLayoutOf, detectStackFrom, isCodeFileAny, isCodeFileIn, isTestFileIn, stackMarker } from './stacks'
-import type { Stack, StackName } from './stacks'
+import { CONFIG_FILE, describeLayout, globMatches } from './config.ts'
+import type { GuardConfig } from './config.ts'
+import { LAYOUTS, baseName, matchTemplate } from './layout.ts'
+import type { Layout, NodeLayoutName } from './layout.ts'
+import { classifyPath, sourcePathFor, splitRoot, testFileFor } from './mirror.ts'
+import type { LayoutConfig } from './mirror.ts'
+import { STACKS, defaultLayoutOf, detectStackFrom, isCodeFileAny, isCodeFileIn, isTestFileIn, stackMarker } from './stacks.ts'
+import type { Stack, StackName } from './stacks.ts'
 
 /** What a walk of the project found: every code file and every directory with a package.json, relative to the root, and the names at the root. */
 export type Survey = { files: readonly string[]; packageDirs: readonly string[]; rootEntries?: readonly string[] }

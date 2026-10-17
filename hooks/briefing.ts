@@ -1,5 +1,5 @@
-import { describeLayout } from './config'
-import type { GuardConfig } from './config'
+import { describeLayout } from './config.ts'
+import type { GuardConfig } from './config.ts'
 
 /**
  * What Claude is told about Dope TDD before its first edit, as a section of

@@ -1,5 +1,5 @@
-import { LAYOUTS } from './layout'
-import type { Layout } from './layout'
+import { LAYOUTS } from './layout.ts'
+import type { Layout } from './layout.ts'
 
 /**
  * A stack is a language and its conventions: which extensions a template's

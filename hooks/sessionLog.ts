@@ -1,5 +1,5 @@
 import type { TddStats } from '../types'
-import type { GuardConfig } from './config'
+import type { GuardConfig } from './config.ts'
 
 /**
  * One session's record, left on this machine when the session ends: the counts

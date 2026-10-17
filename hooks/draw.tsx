@@ -1,10 +1,10 @@
 import type { Elements, RenderSurface } from 'claude-code'
 
 import type { CatchOutcome, CurrentTest, TddStats } from '../types'
-import type { GuardConfig } from './config'
-import { moduleLabel } from './mirror'
-import { ACCENT, ALARM_TEXT, RED_TIMER_ALARM_MS } from './theme'
-import { formatSpan } from './timeText'
+import type { GuardConfig } from './config.ts'
+import { moduleLabel } from './mirror.ts'
+import { ACCENT, ALARM_TEXT, RED_TIMER_ALARM_MS } from './theme.ts'
+import { formatSpan } from './timeText.ts'
 
 type AnyElements = Elements[RenderSurface]
 

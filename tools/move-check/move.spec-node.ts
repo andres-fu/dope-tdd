@@ -391,3 +391,38 @@ test('no hint when the pair matches, or differs in more than closers', () => {
   assert.equal(closingOnlyEnd(tokensInLines(a, 1, 2), tokensInLines(a, 1, 2), []), null)
   assert.equal(closingOnlyEnd(tokensInLines(a, 1, 2), tokensInLines('const x = f(2)\nreturn x\n}\n', 1, 3), []), null)
 })
+
+// #76: only functions, classes and const/let/var were declarations, so a moved `type` or `interface` was never found.
+test('a type alias and an interface that moved are found and compared like any declaration', () => {
+  const base = {
+    'register.ts': "type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy' }\ninterface JournalFile {\n  path: string\n  before: string\n}\nconst keep = 1",
+  }
+  const head = {
+    'register.ts': 'const keep = 1',
+    'journal.ts': "export type SharedLock = { kind: 'acquired'; sha: string } | { kind: 'busy' }\nexport interface JournalFile extends Base {\n  path: string\n  after: string\n}",
+  }
+  assert.deepEqual(
+    findMoves(base, head).map(move => [move.name, move.fromLines, move.result.verdict]),
+    [
+      ['SharedLock', [1, 1], 'IDENTICAL'],
+      ['JournalFile', [2, 5], 'DIFFERS'],
+    ],
+  )
+})
+
+test('a value or property named type is not a type declaration', () => {
+  assert.deepEqual(declarations('const type = 1\ntype(1)\nobj.type = 2\nexport type { A } from "./a"').map(decl => decl.name), ['type'])
+})
+
+// Found while checking #76 on real history: a function whose return type is an object type (`): { a: string } {`)
+// was cut off at that type's `}`, so its body was never compared and a changed body still read IDENTICAL.
+test('a function with an object return type is read to the end of its body, so a changed body is DIFFERS', () => {
+  const before = 'function parseLock(text: string): { module: string } | null {\n  return JSON.parse(text)\n}'
+  const after = 'function parseLock(text: string): { module: string } | null {\n  return null\n}'
+  const [decl] = declarations(before)
+  assert.deepEqual([decl?.name, decl?.startLine, decl?.endLine], ['parseLock', 1, 3])
+  const [move] = findMoves({ 'a.ts': before }, { 'a.ts': '', 'b.ts': after })
+  assert.equal(move?.result.verdict, 'DIFFERS')
+  const generic = declarations('function wrap<T>(x: T): Promise<{ value: T }> {\n  return Promise.resolve({ value: x })\n}')
+  assert.deepEqual([generic[0]?.name, generic[0]?.endLine], ['wrap', 3])
+})

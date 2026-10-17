@@ -102,6 +102,8 @@ export type FakeWorld = {
   unreadable: Set<string>
   /** Symbolic links, link path to target: `fs.stat` with `resolve` answers the real path through them. */
   links: Map<string, string>
+  /** The plugin store, readable by tests (#54): mock.store answers the hooks but gives a test nothing to inspect. */
+  store: Map<string, unknown>
 }
 
 /** Where a path lands with every link in `links` followed (the longest link that prefixes it wins). */
@@ -148,9 +150,19 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     writeFails: () => false,
     unreadable: new Set(),
     links: new Map(),
+    store: new Map(Object.entries(options.store ?? {})),
   }
 
-  mock.store(on, options.store)
+  on('store.get', (_$, e) => ({ value: world.store.get((e as { key: string }).key) }) as never)
+  on('store.set', (_$, e) => {
+    world.store.set((e as { key: string }).key, (e as { value: unknown }).value)
+    return { value: undefined } as never
+  })
+  on('store.delete', (_$, e) => {
+    world.store.delete((e as { key: string }).key)
+    return { value: undefined } as never
+  })
+  on('store.keys', () => ({ value: [...world.store.keys()] }) as never)
   mock.env(on, options.env ?? {})
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))

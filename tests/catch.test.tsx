@@ -446,6 +446,8 @@ describe('what the check cannot see is said, not skipped', () => {
     await runTests($, world, 'fail')
     await runTests($, world, 'pass')
     world.fileContents.set(SOURCE, 'export const a = 1')
+    // #54: the carry-over waits for one run of its test this session before the first edit.
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
     await editAt($, 'src/utils/formatDuration.ts')
 
     await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')

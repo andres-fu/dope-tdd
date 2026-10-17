@@ -2,7 +2,7 @@ import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, test } from './engine'
+import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, runBash, test } from './engine'
 import type { FakeOptions } from './engine'
 
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
@@ -33,12 +33,16 @@ describe('after /clear the guard picks up what it remembered', () => {
   })
 
   for (const source of ['clear', 'resume', 'fork'] as const) {
-    test(`after ${source}, a test touched before is still remembered, so its source can be edited`, async ($, on) => {
+    // #54: remembered as a carry-over, so the first edit waits for one run of its test, then goes through.
+    test(`after ${source}, a test touched before is still remembered, so its source can be edited once its test has run`, async ($, on) => {
       engineAfterClear(on, REMEMBERED)
 
       await cleared($, source)
+      const waiting = await editAt($, 'src/utils/formatDuration.ts')
+      await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
       const edit = await editAt($, 'src/utils/formatDuration.ts')
 
+      expect(waiting.deny).toMatch(/in an earlier session.*run that test once/)
       expect(edit.deny).toBeUndefined()
     })
   }

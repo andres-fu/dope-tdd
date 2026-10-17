@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { UNLOCK_TTL_MS, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockKey } from '../hooks/unlocks'
+import { UNLOCK_TTL_MS, contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, storeRoot, unlockEntry, unlockKey } from '../hooks/unlocks'
 
 describe('store keys', () => {
   test('one spelling of the root, whatever Windows handed the session', () => {
@@ -63,5 +63,44 @@ describe('freshUnlocks', () => {
     }
     expect(Object.keys(freshUnlocks(stored, now))).toEqual(['fresh'])
     expect(freshUnlocks('garbage', now)).toEqual({})
+  })
+})
+
+describe('contentHash (#54)', () => {
+  test('the same text hashes the same; any change to it does not', () => {
+    expect(contentHash("it('a', () => {})\n")).toBe(contentHash("it('a', () => {})\n"))
+    expect(contentHash("it('a', () => {})\n")).not.toBe(contentHash("it('b', () => {})\n"))
+    expect(contentHash('')).toMatch(/^[0-9a-f]{8}$/)
+  })
+
+  // A checkout on Windows can rewrite LF as CRLF with no change to the test; that must not drop a carried-over unlock.
+  test('line endings do not count as a change', () => {
+    expect(contentHash('a\r\nb\r\n')).toBe(contentHash('a\nb\n'))
+    expect(contentHash('a\r\nb\r\n')).not.toBe(contentHash('ab'))
+  })
+})
+
+describe('freshUnlocks keeps the test hash (#54)', () => {
+  test('an entry with a hash keeps it; one stored by an earlier build, without, is still fresh', () => {
+    const fresh = freshUnlocks(
+      {
+        'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 10, testHash: '0badf00d' },
+        'utils/b': { testPath: 'tests/utils/b.test.ts', atMs: 10 },
+      },
+      20,
+    )
+    expect(fresh['utils/a']).toEqual({ testPath: 'tests/utils/a.test.ts', atMs: 10, testHash: '0badf00d' })
+    expect(fresh['utils/b']).toEqual({ testPath: 'tests/utils/b.test.ts', atMs: 10 })
+  })
+})
+
+describe('unlockEntry (#54)', () => {
+  test('stores the hash of the test as it was read', () => {
+    expect(unlockEntry('tests/a.test.ts', 7, "it('a', () => {})\n")).toEqual({ testPath: 'tests/a.test.ts', atMs: 7, testHash: contentHash("it('a', () => {})\n") })
+  })
+
+  // Without a hash a later session keeps the unlock (still pending a run) instead of dropping it on a guess.
+  test('an unreadable test is stored without a hash', () => {
+    expect(unlockEntry('tests/a.test.ts', 7, null)).toEqual({ testPath: 'tests/a.test.ts', atMs: 7 })
   })
 })

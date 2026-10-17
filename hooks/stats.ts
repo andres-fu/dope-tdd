@@ -42,6 +42,7 @@ export const INITIAL_STATS: TddStats = {
   unlocked: {},
   importers: {},
   inherited: {},
+  stale: {},
   reminded: [],
   changes: {},
   checking: null,
@@ -107,6 +108,7 @@ export function normalizeStats(stored: unknown): TddStats {
     // Each module's importers a list of paths, or none: a bad value must never reach the catch check.
     importers: pick('importers', v => isRecord(v) && Object.values(v).every(list => Array.isArray(list) && list.every(path => typeof path === 'string'))),
     inherited: pick('inherited', isRecord),
+    stale: pick('stale', isRecord),
     reminded: strings(pick('reminded', isStringList)),
     changes: pick('changes', isRecord),
     // An older version stored a boolean here; a stuck `true` from a crash is exactly what must not survive.
@@ -183,6 +185,7 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
     unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
     unproven: s.unproven.filter(module => module !== touched.module),
     inherited: without(s.inherited, touched.module),
+    stale: without(s.stale, touched.module),
     reminded: s.reminded.filter(module => module !== touched.module),
   }
   return logged(mirrored(withModule(base, touched.module, state), state), 'touched', nowMs, touched.module)
@@ -308,7 +311,12 @@ export function recordBlocked(s: TddStats, module: string, nowMs: number): TddSt
  * named it. A fake refactor still goes red on the unchanged test next run.
  */
 export function recordRedUnlock(s: TddStats, module: string, testPath: string, makeCurrent: boolean): TddStats {
-  const unlocked = { ...s, unlocked: { ...s.unlocked, [module]: testPath }, unproven: s.unproven.filter(entry => entry !== module) }
+  const unlocked = {
+    ...s,
+    unlocked: { ...s.unlocked, [module]: testPath },
+    unproven: s.unproven.filter(entry => entry !== module),
+    stale: without(s.stale, module),
+  }
   return makeCurrent ? mirrored({ ...unlocked, current: { module, testPath } }, moduleState(s, module)) : unlocked
 }
 
@@ -381,12 +389,51 @@ export function seedUnlocks(
   s: TddStats,
   entries: Readonly<Record<string, { testPath: string; atMs: number }>>,
 ): TddStats {
-  const pairs = Object.entries(entries)
+  // A module unlocked in this session (touched, or seen red) stays as it is: a re-seed while this session's state
+  // survives must not make it wait for a run again (#54). That unlock is fresher evidence than the carried-over one.
+  const pairs = Object.entries(entries).filter(([module]) => !unlockedThisSession(s, module))
   return {
     ...s,
     unlocked: { ...s.unlocked, ...Object.fromEntries(pairs.map(([module, entry]) => [module, entry.testPath])) },
     inherited: { ...s.inherited, ...Object.fromEntries(pairs.map(([module, entry]) => [module, entry.atMs])) },
   }
+}
+
+/**
+ * #54: a whole-file run of the test behind a carried-over unlock, red or green, this session. That run is the evidence
+ * the carry-over waited for: the test still runs, and its result is the baseline before any edit. The unlock is active.
+ */
+export function recordCarriedRun(s: TddStats, modules: readonly string[], nowMs: number): TddStats {
+  return modules.reduce(
+    (acc, module) => logged({ ...acc, inherited: without(acc.inherited, module) }, 'carried-on', nowMs, module),
+    s,
+  )
+}
+
+/**
+ * #54: an edit refused while a carried-over unlock waits for its run. On the record, but not counted as `blocked`:
+ * the test was written first, in an earlier session, so this is no test-first miss.
+ */
+export function recordCarryWait(s: TddStats, module: string, nowMs: number): TddStats {
+  return logged(s, 'needs-run', nowMs, module)
+}
+
+/**
+ * #54: carried-over unlocks whose test changed since they were stored. They do not unlock; they are kept by age so the
+ * refusal can say why an edit that was allowed yesterday is refused today. A touch or a red run of the test clears it.
+ */
+export function recordStaleUnlocks(
+  s: TddStats,
+  entries: Readonly<Record<string, { testPath: string; atMs: number }>>,
+  nowMs: number,
+): TddStats {
+  return Object.entries(entries)
+    .filter(([module]) => !unlockedThisSession(s, module))
+    .reduce((acc, [module, entry]) => logged({ ...acc, stale: { ...acc.stale, [module]: entry.atMs } }, 'stale-unlock', nowMs, module), s)
+}
+
+function unlockedThisSession(s: TddStats, module: string): boolean {
+  return s.unlocked[module] !== undefined && s.inherited[module] === undefined
 }
 
 export function markReminded(s: TddStats, module: string): TddStats {
@@ -475,6 +522,7 @@ export function resetStats(s: TddStats): TddStats {
     paused: s.paused,
     unlocked: s.unlocked,
     inherited: s.inherited,
+    stale: s.stale,
     reminded: s.reminded,
     changes: s.changes,
     current: s.current,

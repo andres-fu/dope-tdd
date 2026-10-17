@@ -220,3 +220,12 @@ already there set aside by name (the first live proof of the known-failures rule
 checked read MISSED and exited 1; the working trees were left clean. On GitHub Actions (ubuntu), as a
 composite action used from a private repo by another private repo of the same owner, on a fork-only test PR
 in andres-fu/DungeonLobby: RoomManager CAUGHT and dice CAUGHT. Test PR closed and its branch deleted.
+
+## 2026-10-17 — VibeCast, day 2 of a refactor: carried-over unlocks gate the first edit (#54)
+
+A new session on VibeCast opened with `runs: 0` and 27 modules "unlocked earlier", every one editable with no run
+this session. The 2026-10-08 note ("the line can only arrive after the edit it rides on, and that was enough") held
+for one module in a two-session demo. It does not hold on a multi-day refactor, where most modules were unlocked
+yesterday. Now a carried-over unlock is pending: the first edit is refused with the command to run and why, and one
+whole-file run of its test (red or green) makes it active. A test that changed since the unlock was stored (a checkout,
+a merge) drops the carry-over, and the refusal says so. Cost: one run per carried-over module actually edited.

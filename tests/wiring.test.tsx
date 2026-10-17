@@ -1,6 +1,8 @@
 import { describe, expect } from 'claude-code/testing'
 
-import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { contentHash, unlockKey } from '../hooks/unlocks'
+
+import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, TEST_SOURCE, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
 
 describe('bash bypass', () => {
   test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {
@@ -607,31 +609,116 @@ describe('the agent is told', () => {
 describe('memory across sessions', () => {
   const HOUR = 60 * MINUTE
   const DAY = 24 * HOUR
-  const remembered = (ageMs: number) => ({
+  const TEST_FILE = `${ROOT}/tests/utils/formatDuration.test.ts`
+  const RUN_OWN_TEST = 'npx vitest run tests/utils/formatDuration.test.ts'
+  const remembered = (ageMs: number, extra: Record<string, unknown> = {}) => ({
     [`unlocks:${ROOT}`]: {
-      'utils/formatDuration': { testPath: `${ROOT}/tests/utils/formatDuration.test.ts`, atMs: T0 - ageMs },
+      'utils/formatDuration': { testPath: TEST_FILE, atMs: T0 - ageMs, ...extra },
     },
   })
 
-  test('a test touched in an earlier session still unlocks its module, and the agent is told once', async ($, on) => {
+  // #54: a carry-over is pending. The first edit waits for one run of the test this session, so every edit has a
+  // baseline from this session and a test reverted or broken since cannot hide behind yesterday's unlock.
+  test('a test touched in an earlier session is remembered, but the first edit waits for one run of it, and says why', async ($, on) => {
     fakeEngine(on, { store: remembered(2 * HOUR) })
     await startSession($)
 
     const first = await editAt($, 'src/utils/formatDuration.ts')
-    const second = await editAt($, 'src/utils/formatDuration.ts')
     const status = await runCommand($, 'tdd')
 
-    expect(first.deny).toBeUndefined()
-    expect(first.context?.join(' ')).toMatch(/touched 2H AGO in an earlier session/)
-    expect(second.context).toBeUndefined()
+    expect(first.deny).toMatch(/unlocked 2H AGO in an earlier session, when tests\/utils\/formatDuration\.test\.ts was touched/)
+    expect(first.deny).toMatch(/run that test once, red or green: .*tests\/utils\/formatDuration\.test\.ts/)
+    expect(first.deny).toMatch(/Why: /)
+    expect(first.deny).not.toMatch(/write the failing test first/)
     expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
+    expect(status.text).toMatch(/blocked 0/)
+    expect(status.text).toMatch(/needs-run/)
+  })
+
+  test('a green run of its test makes it active: the agent is told, and the edit goes through', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR) })
+    world.existingFiles.add(TEST_FILE)
+    await startSession($)
+
+    const run = await runBash($, RUN_OWN_TEST)
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(run.context?.join(' ')).toMatch(/ran green this session, so the unlock of src\/utils\/formatDuration carried over from an earlier session is active again/)
+    expect(edit.deny).toBeUndefined()
+    expect(status.text).not.toMatch(/unlocked earlier/)
+  })
+
+  test('a red run activates it too, and says the failures were already there', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR) })
+    world.existingFiles.add(TEST_FILE)
+    await startSession($)
+
+    world.bashFails = true
+    const run = await runBash($, RUN_OWN_TEST)
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(run.context?.join(' ')).toMatch(/ran red this session, before any edit/)
+    expect(edit.deny).toBeUndefined()
+  })
+
+  test('a run of another test file, or the whole suite, does not activate it', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR) })
+    world.existingFiles.add(`${ROOT}/tests/utils/other.test.ts`)
+    await startSession($)
+
+    await runBash($, 'npx vitest run tests/utils/other.test.ts')
+    await runTests($, world, 'pass')
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(edit.deny).toMatch(/run that test once/)
+  })
+
+  test('a run filtered to some tests by name does not activate it', async ($, on) => {
+    fakeEngine(on, { store: remembered(2 * HOUR) })
+    await startSession($)
+
+    await runBash($, `${RUN_OWN_TEST} -t months`)
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(edit.deny).toMatch(/run that test once/)
+  })
+
+  test('a shell write to the source waits for the run the same way', async ($, on) => {
+    fakeEngine(on, { store: remembered(2 * HOUR) })
+    await startSession($)
+
+    const result = await runBash($, "sed -i 's/a/b/' src/utils/formatDuration.ts")
+
+    expect(result.deny).toMatch(/unlocked 2H AGO in an earlier session/)
+  })
+
+  test('touching the test this session unlocks it outright, as before', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR) })
+    await startSession($)
+
+    await touchTest($, world, 'utils/formatDuration')
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(edit.deny).toBeUndefined()
+  })
+
+  test('in warn mode the edit goes through, with the reminder after it', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR) })
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"warn"}')
+    await startSession($)
+
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(edit.deny).toBeUndefined()
+    expect(edit.context?.join(' ')).toMatch(/touched 2H AGO in an earlier session/)
   })
 
   test('an unlock remembered under the normalised root is found by a session that spells the root the other way', async ($, on) => {
     fakeEngine(on, {
       store: {
         [`unlocks:${ROOT.replace(/^C:/, 'c:')}`]: {
-          'utils/formatDuration': { testPath: `${ROOT}/tests/utils/formatDuration.test.ts`, atMs: T0 - 2 * HOUR },
+          'utils/formatDuration': { testPath: TEST_FILE, atMs: T0 - 2 * HOUR },
         },
       },
     })
@@ -639,17 +726,43 @@ describe('memory across sessions', () => {
 
     const result = await editAt($, 'src/utils/formatDuration.ts')
 
-    expect(result.deny).toBeUndefined()
+    expect(result.deny).toMatch(/unlocked 2H AGO in an earlier session/)
   })
 
-  test('touching a test is remembered for the next session', async ($, on) => {
+  // What the next session seeds from. Read from the store itself: the fake engine keeps $.state across startSession,
+  // and a re-seed never re-gates a module unlocked in this session, so a status line here would not show it.
+  test('touching a test is remembered for the next session, with a hash of its content', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/calculateDuration')
 
+    const stored = world.store.get(unlockKey(ROOT)) as Record<string, { testPath: string; testHash?: string }>
+
+    expect(stored['utils/calculateDuration']?.testPath).toBe(`${ROOT}/tests/utils/calculateDuration.test.ts`)
+    expect(stored['utils/calculateDuration']?.testHash).toBe(contentHash(TEST_SOURCE))
+  })
+
+  test('a carried-over unlock whose test is unchanged since stays pending', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR, { testHash: contentHash(TEST_SOURCE) }) })
+    world.existingFiles.add(TEST_FILE)
     await startSession($)
+
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
+
+    expect(edit.deny).toMatch(/run that test once/)
+  })
+
+  test('a carried-over unlock whose test changed since is dropped, and the refusal says why', async ($, on) => {
+    const world = fakeEngine(on, { store: remembered(2 * HOUR, { testHash: contentHash('the test as it was') }) })
+    world.existingFiles.add(TEST_FILE)
+    await startSession($)
+
+    const edit = await editAt($, 'src/utils/formatDuration.ts')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/unlocked earlier: utils.calculateDuration/)
+    expect(edit.deny).toMatch(/write the failing test first/)
+    expect(edit.deny).toMatch(/unlocked it 2H AGO in an earlier session, but that test has changed since/)
+    expect(status.text).not.toMatch(/unlocked earlier/)
+    expect(status.text).toMatch(/stale-unlock/)
   })
 
   test('an unlock older than seven days is forgotten', async ($, on) => {
@@ -658,7 +771,7 @@ describe('memory across sessions', () => {
 
     const result = await editAt($, 'src/utils/formatDuration.ts')
 
-    expect(result.deny).toBeDefined()
+    expect(result.deny).toMatch(/write the failing test first/)
   })
 })
 

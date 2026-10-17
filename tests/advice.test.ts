@@ -82,6 +82,18 @@ describe('unreadRunAdvice', () => {
     )
     expect(unreadRunAdvice(true)).toMatch(/\(the result was truncated\)/)
   })
+
+  test('for node --test, which prints its summary before the failures, the hint keeps the top or uses TAP (#18)', () => {
+    expect(unreadRunAdvice(false, 'node-test')).toBe(
+      'dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. node --test prints its summary before the failures, so a tail cuts it: run the one test file without a pipe, or with --test-reporter=tap | tail -40.',
+    )
+  })
+
+  test('a node --test run that crashed reading its test process is said as that, with what to do (#26)', () => {
+    expect(unreadRunAdvice(false, 'node-test', true)).toBe(
+      'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.',
+    )
+  })
 })
 
 describe('configChangedAdvice', () => {

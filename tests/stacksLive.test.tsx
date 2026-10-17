@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { ROOT, editAt, fakeEngine, runBash, runCommand, writeAt } from './engine'
 import type { FakeWorld } from './engine'
-import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
+import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 /** The project's own files at the root, which is how the guard learns the stack without a config file. */
 function godotProject(world: FakeWorld) {
@@ -230,6 +230,98 @@ describe("a Node project tested with Node's built-in runner", () => {
     const check = world.gitCalls.find(argv => argv.includes('--test'))
     expect(check).toEqual(['node', '--test', 'tests/helpers.test.js'])
     expect(status.text).toMatch(/caught 1/)
+  })
+
+  test('a check run that node --test crashed on is run once more, and the second run decides (#26)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.fileContents.set(`${ROOT}/package.json`, JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } }))
+    world.fileContents.set(`${ROOT}/src/helpers.js`, 'module.exports = { add: (a, b) => a + b }')
+    const redHere = NODE_TEST_REAL_FAIL.replace('test\\broken.test.js', 'tests\\helpers.test.js')
+    const crashHere = NODE_TEST_REAL_IPC_CRASH.replace(/test\\sources\\youtube\.test\.js/g, 'tests\\helpers.test.js')
+
+    await writeAt($, 'tests/helpers.test.js', "test('adds', () => assert.equal(add(1, 1), 3))")
+    world.bashFails = true
+    world.bashText = redHere
+    await runBash($, 'node --test tests/helpers.test.js')
+    await editAt($, 'src/helpers.js')
+    world.bashFails = false
+    world.bashText = NODE_TEST_REAL_PASS
+    world.baselineRun = { text: NODE_TEST_REAL_PASS, exitCode: 0 }
+    // The first check run crashes; the second one is a real red.
+    let checkRuns = 0
+    world.catchRun = { text: crashHere, exitCode: 1 }
+    world.onCatchRun = () => {
+      checkRuns++
+      if (checkRuns === 2) {
+        world.catchRun = { text: redHere, exitCode: 1 }
+      }
+    }
+    await runBash($, 'node --test tests/helpers.test.js')
+    const status = await runCommand($, 'tdd')
+
+    expect(checkRuns).toBe(2)
+    expect(status.text).toMatch(/caught 1/)
+    expect(world.logs.join('\n')).toMatch(/node --test could not read its test process output; ran it once more/)
+  })
+
+  test('a check that crashes twice is unverified with the reason, never caught (#26)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.fileContents.set(`${ROOT}/package.json`, JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } }))
+    world.fileContents.set(`${ROOT}/src/helpers.js`, 'module.exports = { add: (a, b) => a + b }')
+    const redHere = NODE_TEST_REAL_FAIL.replace('test\\broken.test.js', 'tests\\helpers.test.js')
+    const crashHere = NODE_TEST_REAL_IPC_CRASH.replace(/test\\sources\\youtube\.test\.js/g, 'tests\\helpers.test.js')
+
+    await writeAt($, 'tests/helpers.test.js', "test('adds', () => assert.equal(add(1, 1), 3))")
+    world.bashFails = true
+    world.bashText = redHere
+    await runBash($, 'node --test tests/helpers.test.js')
+    await editAt($, 'src/helpers.js')
+    world.bashFails = false
+    world.bashText = NODE_TEST_REAL_PASS
+    world.baselineRun = { text: NODE_TEST_REAL_PASS, exitCode: 0 }
+    world.catchRun = { text: crashHere, exitCode: 1 }
+    await runBash($, 'node --test tests/helpers.test.js')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/caught 1/)
+    expect(status.text).toMatch(/unverified 1/)
+  })
+
+  test("the agent's own run that node --test crashed on is not a red, and the advice says what happened (#26)", async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.fileContents.set(`${ROOT}/package.json`, JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } }))
+    world.fileContents.set(`${ROOT}/src/helpers.js`, 'module.exports = { add: (a, b) => a + b }')
+
+    world.bashFails = true
+    world.bashText = NODE_TEST_REAL_IPC_CRASH.replace(/test\\sources\\youtube\.test\.js/g, 'tests\\helpers.test.js')
+    const result = await runBash($, 'node --test tests/helpers.test.js')
+    const status = await runCommand($, 'tdd')
+    const blocked = await editAt($, 'src/helpers.js')
+
+    expect(result.context?.join(' ')).toMatch(/node --test could not read its test process output .*nothing was counted/)
+    expect(status.text).not.toMatch(/phase: RED/)
+    expect(blocked.deny).toMatch(/write the failing test first/)
+  })
+
+  test('a node --test run filtered to its counts is read, and an unread one gets the node --test hint (#18)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.fileContents.set(`${ROOT}/package.json`, JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } }))
+    world.fileContents.set(`${ROOT}/src/helpers.js`, 'module.exports = { add: (a, b) => a + b }')
+
+    await writeAt($, 'tests/helpers.test.js', "test('adds', () => assert.equal(add(1, 1), 3))")
+    world.bashFails = true
+    world.bashText = '  ✖ adds (0.7ms)\nℹ tests 1\nℹ pass 0\nℹ fail 1\n'
+    await runBash($, 'node --test tests/helpers.test.js 2>&1 | grep -E "✖|ℹ (tests|pass|fail)"')
+    const red = await runCommand($, 'tdd')
+    world.bashText = '  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n      at TestContext.<anonymous> (tests\\helpers.test.js:6:41)\n'
+    const cut = await runBash($, 'node --test tests/helpers.test.js 2>&1 | tail -2')
+
+    expect(red.text).toMatch(/phase: RED/)
+    expect(cut.context?.join(' ')).toMatch(/node --test prints its summary before the failures/)
   })
 })
 

@@ -20,6 +20,25 @@ describe('bash bypass', () => {
     expect(result.deny).toBeUndefined()
   })
 
+  // #69: the exact command from the issue. Its files land in /tmp, outside the project: nothing to refuse.
+  test('a scratch repo built in a temp dir through a variable is not refused', async ($, on) => {
+    const world = fakeEngine(on)
+    // As in the issue's project: every .js file at any depth is a source, so `$R/bot.js` read as inside it is gated.
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":{"source":"{module}.{ext}","test":"test/{module}.test.{ext}"}}')
+
+    const result = await runBash($, "R=/tmp/scratch/repro; mkdir -p $R && cd $R && git init -q\ncat > bot.js <<'EOF'\nmodule.exports = 1\nEOF")
+
+    expect(result.deny).toBeUndefined()
+  })
+
+  test('a write through a variable that points into the project is still refused', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runBash($, "D=src/utils; sed -i 's/a/b/' $D/calculateDuration.ts")
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
   test('denies a shell write to a source file whose test was not touched', async ($, on) => {
     fakeEngine(on)
 

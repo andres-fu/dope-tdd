@@ -1,4 +1,4 @@
-import { ELSEWHERE, commandSegments, locatedSegments } from './shell'
+import { ELSEWHERE, commandSegments, expandKnown, locatedSegments } from './shell'
 import { STACKS } from './stacks'
 
 // A code file of any stack, anywhere: the caller's layout decides which are source. Test files are dropped below.
@@ -81,10 +81,14 @@ export function findSourceWrites(command: string, root?: string): string[] {
   if (root === undefined) {
     return [...new Set(commandSegments(normalized).flatMap(writesIn).filter(isSourceFile))]
   }
-  const written = locatedSegments(normalized, root).flatMap(({ segment, cwd }) =>
-    writesIn(segment)
+  const written = locatedSegments(normalized, root).flatMap(({ segment, cwd, vars }) =>
+    // Paths through a variable the command set are expanded (#69); one through any other variable lands somewhere this
+    // cannot see, so it is written as under ELSEWHERE and never taken for a file of this project.
+    writesIn(expandKnown(segment, vars).replace(/\$\{\w+\}\/|\$[A-Za-z_]\w*\//g, `${ELSEWHERE}/`))
       .filter(isSourceFile)
-      .map(path => (/^(?:[A-Za-z]:)?\//.test(path) ? path : cwd === ELSEWHERE ? `${ELSEWHERE}/${path}` : `${cwd}/${path}`)),
+      .map(path =>
+        /^(?:[A-Za-z]:)?\//.test(path) || path.startsWith(`${ELSEWHERE}/`) ? path : cwd === ELSEWHERE ? `${ELSEWHERE}/${path}` : `${cwd}/${path}`,
+      ),
   )
   return [...new Set(written)]
 }

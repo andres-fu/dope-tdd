@@ -37,7 +37,7 @@ import { flipsAngles, mutantsOf } from './mutate'
 import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
-import { classifyPath, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
+import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror'
 import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
@@ -987,18 +987,22 @@ function experimentalCheckReason(kind: RunnerKind): string {
 // A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
 const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i
 
-/** `staleAgeMs`: the module had a carried-over unlock, dropped because its test changed since (#54); the refusal says so. */
-function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: number): string {
+/**
+ * `staleAgeMs`: the module had a carried-over unlock, dropped because its test changed since (#54); the refusal says so.
+ * `sourceExt`: the extension of the file being written, so the test named is one the project's runner runs (#53).
+ */
+function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: number, sourceExt?: string): string {
   const guess = config.layoutGuessed === true ? ' That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.' : ''
   const scratch = LOOKS_THROWAWAY.test(module) ? ' One-off script? Put it outside the repo (your scratchpad or temp directory); dope-tdd guards project sources.' : ''
-  const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPathFor(config, module), staleAgeMs)
-  return `dope-tdd: write the failing test first. Touch ${testPathFor(config, module)}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
+  const testPath = testPathFor(config, module, sourceExt)
+  const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPath, staleAgeMs)
+  return `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
 }
 
-/** A refused edit to a locked module, with the stale note when a carried-over unlock was dropped for it. */
-function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number): string {
+/** A refused write to a locked module's file, with the stale note when a carried-over unlock was dropped for it. */
+function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number, writtenPath?: string): string {
   const staleAt = s.stale[module]
-  return lockedMessage(config, module, staleAt === undefined ? undefined : nowMs - staleAt)
+  return lockedMessage(config, module, staleAt === undefined ? undefined : nowMs - staleAt, writtenPath === undefined ? undefined : extOf(writtenPath))
 }
 
 /**
@@ -1242,7 +1246,7 @@ async function checkFileWrite(
   if (isLocked && policy === 'enforce' && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => recordBlocked(s, target.module, nowMs))
-    return { deny: lockedFor(config, current, target.module, nowMs) }
+    return { deny: lockedFor(config, current, target.module, nowMs, filePath) }
   }
   // #54: unlocked, but only by a carry-over from an earlier session. Enforce waits for one run of its test this session
   // (warn lets the edit through and reminds after it, below). Touching the test or running it clears `inherited`.
@@ -1303,7 +1307,7 @@ async function checkFileWrite(
     const commented = before === undefined || after === null ? [] : await noteCommentedOut($, root, target.module, filePath, beforeText(before), after, nowMs)
     const sourcePath = sourcePathFor(config, target.module)
     if (isLocked) {
-      const warned = policy === 'warn' ? [unguardedAdvice(moduleLabel(config, target.module), sourcePath, testPathFor(config, target.module))] : []
+      const warned = policy === 'warn' ? [unguardedAdvice(moduleLabel(config, target.module), sourcePath, testPathFor(config, target.module, extOf(filePath)))] : []
       return tell(quiet, result, [...warned, ...commented])
     }
     const testPath = edited.unlocked[target.module]
@@ -1463,7 +1467,8 @@ async function checkShell(
     const nowMs = await $.clock.now()
     await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
     const waits = await Promise.all([...new Set(waiting)].map(module => carryWait($, root, config, current, module, nowMs)))
-    return { deny: [...locked.map(module => lockedFor(config, current, module, nowMs)), ...waits].join('\n') }
+    const writtenPath = (module: string) => writes.find(write => write.module === module)?.path
+    return { deny: [...locked.map(module => lockedFor(config, current, module, nowMs, writtenPath(module))), ...waits].join('\n') }
   }
   // While a file is reverted on disk, neither a write to source nor a test run may read it.
   if (writes.some(({ module }) => module !== null) || isTestRun(command)) {

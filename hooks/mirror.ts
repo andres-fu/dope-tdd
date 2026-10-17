@@ -159,10 +159,24 @@ export function moduleLabel(config: LayoutConfig, module: string): string {
   return folderOfModule(config.layouts, module) === undefined ? module : sourcePathFor(config, module)
 }
 
-/** `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch. */
-export function testPathFor(config: LayoutConfig, module: string): string {
+/**
+ * `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch.
+ * `sourceExt` is the extension of the source being edited, when one is: the test is then named with it (`a.js` →
+ * `a.test.js`), because the agent creates exactly the file it is told to, and in a plain-JS repo a `.ts(x)` test is
+ * one the runner never runs (#53). A layout that names its own display extension keeps it.
+ */
+export function testPathFor(config: LayoutConfig, module: string, sourceExt?: string): string {
   const { pkg, rest, layout } = placed(config, module)
-  return joined(pkg, describeTestPath(layout, rest, layout.displayExt ?? stackOf(config.stack).displayExt))
+  const stack = stackOf(config.stack)
+  const known = sourceExt !== undefined && stack.exts.includes(sourceExt) ? sourceExt : undefined
+  return joined(pkg, describeTestPath(layout, rest, layout.displayExt ?? known ?? stack.displayExt))
+}
+
+/** The extension of a path's file name, without the dot; undefined for a name with none. */
+export function extOf(path: string): string | undefined {
+  const name = path.slice(path.replace(/\\/g, '/').lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1) : undefined
 }
 
 /** `src/utils/a`: how messages name the source of a module. */

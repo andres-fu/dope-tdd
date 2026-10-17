@@ -39,4 +39,17 @@ describe('mutantsOf: small changes a test of new code should notice (#27)', () =
     expect(picked).toEqual(['line 1: `===` → `!==`', 'line 2: `2` → `3`'])
     expect(mutantsOf(source, { typescript: false, max: 2 }).map(mutant => mutant.change)).toEqual(picked)
   })
+
+  test('a comparison with 0 that the same condition already guards with a falsy check is not mutated: no test could catch it (#42)', () => {
+    const changes = (source: string) => mutantsOf(source, { typescript: false, max: 8 }).map(mutant => mutant.change)
+    // VibeCast's display.js: `!length` already covers 0, so `<= 0` and `< 0` behave the same.
+    expect(changes("if (!length || length <= 0) return '-'")).not.toContain('line 1: `<=` → `<`')
+    expect(changes('if (!items.length || items.length < 0) skip()')).not.toContain('line 1: `<` → `<=`')
+    expect(changes('if (n === 0 || n >= 0) go()')).not.toContain('line 1: `>=` → `>`')
+    // Another name, or another bound, is not covered: still mutated.
+    expect(changes('if (!total || length <= 0) stop()')).toContain('line 1: `<=` → `<`')
+    expect(changes('if (!length || length <= 1) stop()')).toContain('line 1: `<=` → `<`')
+    // After && the guard does not take 0 for it: `!0 && 0 <= 0` is true, `!0 && 0 < 0` is not.
+    expect(changes('if (!length && length <= 0) stop()')).toContain('line 1: `<=` → `<`')
+  })
 })

@@ -23,6 +23,25 @@ const SWAPS: Readonly<Record<string, string>> = {
 // `Array<number>` and `<T>(x: T)` read as comparisons to a tokenizer: in TypeScript, < and > are left alone.
 const PLAIN_ONLY: Readonly<Record<string, string>> = { '<': '<=', '>': '>=' }
 
+const COMPARISONS = new Set(['<', '<=', '>', '>='])
+
+/**
+ * `x <= 0` (or `<`, `>`, `>=`) right after `!x ||` or `x === 0 ||`: the guard already takes 0, so moving the bound
+ * across 0 cannot change what the code does, and no test could catch it (#42). Such a mutant is not made.
+ */
+function guardedZero(tokens: readonly Token[], index: number): boolean {
+  if (!COMPARISONS.has(tokens[index]?.text ?? '') || tokens[index + 1]?.text !== '0') return false
+  let start = index
+  while (start > 0 && (tokens[start - 1]?.kind === 'name' || tokens[start - 1]?.text === '.' || tokens[start - 1]?.text === '?.')) start--
+  const operand = tokens.slice(start, index).map(token => token.text)
+  if (operand.length === 0 || tokens[start - 1]?.text !== '||') return false
+  const before = (count: number) => tokens.slice(start - 1 - count, start - 1).map(token => token.text)
+  const same = (texts: readonly string[]) => texts.length === operand.length && texts.every((text, k) => text === operand[k])
+  const negated = tokens[start - 2 - operand.length]?.text === '!' && same(before(operand.length))
+  const equalsZero = before(2)[1] === '0' && ['===', '=='].includes(before(2)[0] ?? '') && same(before(operand.length + 2).slice(0, operand.length))
+  return negated || equalsZero
+}
+
 type Candidate = { line: number; start: number; end: number; replacement: string; change: string }
 
 function candidates(source: string, tokens: readonly Token[], typescript: boolean): Candidate[] {
@@ -31,7 +50,7 @@ function candidates(source: string, tokens: readonly Token[], typescript: boolea
     const end = token.start + token.text.length
     // A string, template or regex is one token whose text is never an operator, so it is never swapped.
     const swap = SWAPS[token.text] ?? (typescript ? undefined : PLAIN_ONLY[token.text])
-    if (swap !== undefined) {
+    if (swap !== undefined && !guardedZero(tokens, index)) {
       found.push({ line: token.line, start: token.start, end, replacement: swap, change: `\`${token.text}\` → \`${swap}\`` })
     } else if (token.kind === 'number' && /^\d+$/.test(token.text)) {
       const nudged = String(Number(token.text) + 1)

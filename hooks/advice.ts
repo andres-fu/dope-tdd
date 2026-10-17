@@ -115,7 +115,7 @@ function mutationAdvice(module: string, kind: 'proven' | 'missed', mutation: Mut
   const rest =
     mutation.survived.length === 0
       ? ''
-      : ` These went unnoticed:\n${lines(mutation.survived)}\nAdd an assertion for each that matters, or say why it does not.`
+      : ` These went unnoticed:\n${lines(mutation.survived)}\nAdd an assertion for each that matters. A change that cannot alter what the code does (an equivalent mutant) is fine to leave; say so.`
   return `${head} failed for ${mutation.caught}, so it is PROVEN.${rest} ${REFACTOR}`
 }
 

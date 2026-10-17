@@ -689,6 +689,21 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(result.context?.join(' ')).toMatch(/changed it 2 ways in a throwaway copy and the test failed for 1, so it is PROVEN/)
   })
 
+  test('a new TypeScript file has its values changed, never its types (review #9)', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await touchTest($, world, 'utils/port')
+    await runTests($, world, 'fail')
+    await writeAt($, 'src/utils/port.ts', 'export const port: 8080 = 8080')
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+
+    const tried = world.writes.filter(([path]) => path === `${WT}/src/utils/port.ts`).map(([, text]) => text)
+    expect(tried).toContain('export const port: 8080 = 8081')
+    expect(tried).not.toContain('export const port: 8081 = 8080')
+  })
+
   test('a new file with nothing to change is still unverified, and says why (#27)', async ($, on) => {
     const world = fakeEngine(on)
     gitRepo(world)

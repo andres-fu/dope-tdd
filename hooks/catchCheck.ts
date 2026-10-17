@@ -1,5 +1,5 @@
 import type { CatchOutcome } from '../types'
-import { failedFilesIn, failedTestsIn, readRun, runnerNamed } from './runners'
+import { failedFilesIn, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners'
 import type { RunnerKind, RunnerOptions } from './runners'
 import { stripAnsi } from './runOutcome'
 
@@ -73,6 +73,10 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string, kno
   const output = stripAnsi(`${run.stdout}\n${run.stderr}`)
   if (NO_TESTS_RAN.test(output)) {
     return { kind: 'unverified', reason: 'no tests ran' }
+  }
+  // Before the summary: the crash reads as a red of the whole file, which is how a false CAUGHT came about (#26).
+  if (nodeRunnerCrashed(output)) {
+    return { kind: 'unverified', reason: 'node --test could not read its test process output (a Node bug when a test prints non-ASCII text)' }
   }
   const outcome = readRun(output)
   if (outcome === 'none') {

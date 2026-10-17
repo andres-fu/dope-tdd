@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from '../hooks/catchCheck'
+import { NODE_TEST_REAL_IPC_CRASH } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
   test('a timeout is a timeout; anything else is a runner that could not start, with its message', () => {
@@ -56,6 +57,14 @@ describe('catchOutcome', () => {
       reason: 'no runner summary',
     })
     expect(catchOutcome({ stdout: '', stderr: '', exitCode: 0 })).toEqual({ kind: 'unverified', reason: 'no runner summary' })
+  })
+
+  test('node --test crashing on its child process output is unverified, never caught, and says why (#26)', () => {
+    // The crash names the file as one failed test: read as a red, it was a CAUGHT no assertion earned.
+    expect(catchOutcome({ stdout: NODE_TEST_REAL_IPC_CRASH, stderr: '', exitCode: 1 }, 'test/sources/youtube.test.js')).toEqual({
+      kind: 'unverified',
+      reason: 'node --test could not read its test process output (a Node bug when a test prints non-ASCII text)',
+    })
   })
 
   test('reads a coloured summary', () => {

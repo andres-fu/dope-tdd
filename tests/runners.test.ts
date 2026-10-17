@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -23,6 +23,7 @@ import {
   MAVEN_PASS,
   NODE_TEST_REAL_EMPTY,
   NODE_TEST_REAL_FAIL,
+  NODE_TEST_REAL_IPC_CRASH,
   NODE_TEST_REAL_LOAD_ERROR,
   NODE_TEST_REAL_MISSING,
   NODE_TEST_REAL_PASS,
@@ -408,6 +409,35 @@ describe("Node's built-in runner, read from real output (node --test, Node 24, W
     expect(failedTestsIn(NODE_TEST_REAL_PASS)).toEqual([])
     expect(failedFilesIn(NODE_TEST_REAL_FAIL)).toEqual(['test/broken.test.js'])
     expect(failedFilesIn(NODE_TEST_REAL_TAP_FAIL)).toEqual(['C:/Users/dev/vibecast/test/broken.test.js'])
+  })
+
+  test('a summary a filter thinned still reads, as long as tests, pass and fail are all there (#18)', () => {
+    const kept = (output: string, pattern: RegExp) => output.split('\n').filter(line => pattern.test(line)).join('\n')
+    // `| grep -E "✖|ℹ (tests|pass|fail)"` and `| head -30 | grep …`, as the VibeCast agent ran them
+    expect(readRun(kept(NODE_TEST_REAL_FAIL, /✖|ℹ (tests|pass|fail)/))).toBe('fail')
+    expect(readRun(kept(NODE_TEST_REAL_PASS, /✖|ℹ (tests|pass|fail)/))).toBe('pass')
+    expect(readRun(kept(NODE_TEST_REAL_TAP_FAIL, /^# (tests|pass|fail) /))).toBe('fail')
+    // `| grep -E "^ℹ (tests|fail)"`: a red says so on its own; a green needs its pass count
+    expect(readRun(kept(NODE_TEST_REAL_FAIL, /^ℹ (tests|fail) /))).toBe('fail')
+    expect(readRun(kept(NODE_TEST_REAL_PASS, /^ℹ (tests|fail) /))).toBe('unknown')
+  })
+
+  test('a thinned summary is never green when anything could hide behind it', () => {
+    expect(readRun('ℹ tests 3\nℹ pass 2\nℹ fail 0\n')).toBe('unknown')
+    expect(readRun('ℹ tests 2\nℹ pass 2\nℹ fail 0\nℹ cancelled 1\n')).toBe('fail')
+    expect(readRun('ℹ pass 2\nℹ fail 0\n')).toBe('unknown')
+    expect(readRun('ℹ tests 0\nℹ pass 0\nℹ fail 0\n')).toBe('none')
+    // A log line that happens to start with the words is not a count
+    expect(readRun('ℹ tests 2 queued\nℹ pass 2\nℹ fail 0\n')).toBe('unknown')
+  })
+
+  test('the runner crashing on its child process output is no run, not a red (#26)', () => {
+    expect(readRun(NODE_TEST_REAL_IPC_CRASH)).toBe('unknown')
+    expect(nodeRunnerCrashed(NODE_TEST_REAL_IPC_CRASH)).toBe(true)
+    expect(nodeRunnerCrashed(NODE_TEST_REAL_FAIL)).toBe(false)
+    expect(nodeRunnerCrashed(NODE_TEST_REAL_LOAD_ERROR)).toBe(false)
+    // The words alone, printed by a test, are not Node's own crash
+    expect(nodeRunnerCrashed("console: 'Unable to deserialize cloned data due to invalid or unsupported version.'")).toBe(false)
   })
 
   test('one file runs through node --test, and that is the command a reviewer re-runs', () => {

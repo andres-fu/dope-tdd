@@ -34,7 +34,7 @@ import type { SourceSnapshot } from './gitChanges'
 import { findGitOperation, gitDirFromFile } from './gitOperation'
 import type { GitOperation } from './gitOperation'
 import { classifyPath, isInsideRoot, pathKey, relativePath, respelled, sourcePathFor, testPathFor, watchedDirs } from './mirror'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isPureTestRun, isTestRun, namedTestFile, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, testRunLocation, workspaceTarget } from './runners'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome'
 import { guideKey, guidePath, guideSection } from './fieldGuide'
 import { sessionLogPath, sessionRecord } from './sessionLog'
@@ -577,6 +577,19 @@ async function allFailingNames($: EngineInterface, root: string, config: GuardCo
   }
 }
 
+/**
+ * A catch-check run, run once more when node --test could not read its test process output (a Node bug, #26): one
+ * crash is common with non-ASCII output, two in a row rarer. A second crash is left for catchOutcome to call unverified.
+ */
+async function checkRun($: EngineInterface, argv: string[], init: Parameters<EngineInterface['process']['run']>[1]) {
+  const run = await $.process.run(argv, init)
+  if (!nodeRunnerCrashed(`${run.stdout}\n${run.stderr}`)) {
+    return run
+  }
+  $.ui.log('dope-tdd: node --test could not read its test process output; ran it once more')
+  return $.process.run(argv, init)
+}
+
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
 const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
 const CHECK_WORKTREE = '.git/dope-tdd/wt'
@@ -655,7 +668,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
       await $.fs.write(inTree, after)
       let base: CatchOutcome
       try {
-        base = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: budget }), relativeTest, check.known)
+        base = catchOutcome(await checkRun($, argv, { cwd, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: budget }), relativeTest, check.known)
       } catch (error) {
         base = catchOutcome(runFailure(error))
       }
@@ -668,7 +681,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     await $.fs.write(inTree, before)
     let outcome: CatchOutcome
     try {
-      outcome = catchOutcome(await $.process.run(argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known)
+      outcome = catchOutcome(await checkRun($, argv, { cwd, env: { CI: '1' }, timeoutMs: budget }), relativeTest, check.known)
     } catch (error) {
       outcome = catchOutcome(runFailure(error))
     }
@@ -753,7 +766,7 @@ async function verifyCatch(
   if (!baselined.has(baselineKey)) {
     let base: CatchOutcome
     try {
-      const run = await $.process.run(argv, { cwd: runIn, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
+      const run = await checkRun($, argv, { cwd: runIn, env: { CI: '1', DOPE_TDD_BASELINE: '1' }, timeoutMs: timeBudgetMs(greenRunMs) })
       base = catchOutcome(run, relativeTest, known)
     } catch (error) {
       base = catchOutcome(runFailure(error))
@@ -801,7 +814,7 @@ async function verifyCatch(
     await $.fs.write(path, before)
     reverted = true
     try {
-      const run = await $.process.run(argv, {
+      const run = await checkRun($, argv, {
         cwd: runIn,
         env: { CI: '1' },
         timeoutMs: timeBudgetMs(greenRunMs),
@@ -1501,7 +1514,7 @@ async function checkShell(
     outcome === 'none'
       ? null
       : outcome === 'unknown'
-        ? unreadRunAdvice(isTruncated(output))
+        ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
         : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath })
 
   const reminders = current.paused

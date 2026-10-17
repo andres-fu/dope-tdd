@@ -145,19 +145,63 @@ function avaFailedFiles(output: string): string[] {
 // (spec) or `location: 'C:\\work\\x.test.js:6:3'` (TAP, backslashes doubled).
 const NODE_TEST_SUMMARY = /^.{0,4}tests (\d+)\r?\n.{0,4}suites \d+\r?\n.{0,4}pass (\d+)\r?\n.{0,4}fail (\d+)\r?\n.{0,4}cancelled (\d+)\r?\n/m
 const NODE_TEST_NOT_FOUND = /^Could not find '[^'\n]+'\s*$/m
+// A summary a filter thinned (`| grep -E "ℹ (tests|pass|fail)"`): each count on a line of its own, nothing after it.
+const NODE_TEST_COUNT = (word: string): RegExp => new RegExp(String.raw`^.{0,4}${word} (\d+)\s*$`, 'm')
+// Node's runner failing to read a test file's child process (Node 24, a test that prints non-ASCII text): it reports
+// the file as one failed test. The stack line is Node's own, so a test printing the message does not look like it.
+const NODE_RUNNER_CRASH = /Unable to deserialize cloned data[^\n]*\r?\n\s+at #processRawBuffer \(node:internal\/test_runner\//
 const NODE_TEST_FAILED_FILE = /^(?:test at |\s*location: ')((?:[A-Za-z]:)?[^'\n]+?\.(?:test|spec)\.[cm]?[jt]sx?):\d+:\d+/gm
+
+/** True when node --test could not read a test file's output: its red is the runner's, not the test's. */
+export function nodeRunnerCrashed(output: string): boolean {
+  return NODE_RUNNER_CRASH.test(stripAnsi(output))
+}
 
 function readNodeTest(output: string): RunOutcome {
   const text = stripAnsi(output)
+  if (NODE_RUNNER_CRASH.test(text)) {
+    return 'unknown'
+  }
   const summary = NODE_TEST_SUMMARY.exec(text)
   if (summary === null) {
-    return NODE_TEST_NOT_FOUND.test(text) ? 'none' : 'unknown'
+    return NODE_TEST_NOT_FOUND.test(text) ? 'none' : readThinnedNodeTest(text)
   }
   if (Number(summary[3]) > 0 || Number(summary[4]) > 0) {
     return 'fail'
   }
   // Only skips and todos: nothing ran that could have failed.
   return Number(summary[2]) > 0 ? 'pass' : 'none'
+}
+
+/**
+ * The counts a filter kept. A red needs tests and fail; a green needs every test to have passed, because what the
+ * filter dropped (cancelled, skipped, todo) could hide behind a pass count short of the total.
+ */
+function readThinnedNodeTest(text: string): RunOutcome {
+  const count = (word: string): number | undefined => {
+    const found = NODE_TEST_COUNT(word).exec(text)?.[1]
+    return found === undefined ? undefined : Number(found)
+  }
+  const tests = count('tests')
+  const fail = count('fail')
+  if (tests === undefined || fail === undefined) {
+    return 'unknown'
+  }
+  if (fail > 0 || (count('cancelled') ?? 0) > 0) {
+    return 'fail'
+  }
+  // No pass line is never green: undefined equals no total.
+  const pass = count('pass')
+  if (tests === 0 && pass === 0) {
+    return 'none'
+  }
+  return pass === tests ? 'pass' : 'unknown'
+}
+
+/** A segment of the command runs Node's built-in runner directly. */
+export function isNodeTestRun(command: string): boolean {
+  const direct = commandOf(NODE_TEST)
+  return commandSegments(command).some(segment => direct.test(executedText(segment)))
 }
 
 function nodeTestFailedFiles(output: string): string[] {

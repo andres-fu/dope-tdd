@@ -52,9 +52,17 @@ export function unguardedAdvice(module: string, sourcePath = defaultSource(modul
   return `dope-tdd: ${sourcePath} was edited with no test touched first. Write ${testPath} next and see it fail.`
 }
 
-export function unreadRunAdvice(truncated: boolean): string {
+/** `runner` is the one that ran, when the command says (node --test prints its summary before the failures). */
+export function unreadRunAdvice(truncated: boolean, runner?: 'node-test', crashed = false): string {
+  if (crashed) {
+    return 'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'
+  }
   const why = truncated ? ' (the result was truncated)' : ''
-  return `dope-tdd: a test run happened but its summary line was not in the output${why}, so nothing was counted. Run the one test file, or pipe through tail -40, so the summary survives.`
+  const how =
+    runner === 'node-test'
+      ? 'node --test prints its summary before the failures, so a tail cuts it: run the one test file without a pipe, or with --test-reporter=tap | tail -40.'
+      : 'Run the one test file, or pipe through tail -40, so the summary survives.'
+  return `dope-tdd: a test run happened but its summary line was not in the output${why}, so nothing was counted. ${how}`
 }
 
 export function unreadableRunnerAdvice(runner: string): string {

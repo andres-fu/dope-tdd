@@ -55,4 +55,17 @@ describe('locatedSegments', () => {
     expect(locatedSegments('cd ~/x && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
     expect(locatedSegments('cd ~ && cd C:/back && ls', 'C:/work')[2]?.cwd).toBe('C:/back')
   })
+
+  // #69: `R=/tmp/x; cd $R` was read as a folder named `$R` inside the project, so scratch files were gated.
+  test('a cd through a variable set earlier in the command goes where the variable points', () => {
+    expect(locatedSegments('R=/tmp/scratch/repro; mkdir -p $R && cd $R && ls', 'C:/work')[3]?.cwd).toBe('/tmp/scratch/repro')
+    expect(locatedSegments('export R="C:/other repo"; cd "${R}" && ls', 'C:/work')[2]?.cwd).toBe('C:/other repo')
+    expect(locatedSegments('D=server; cd $D && ls', 'C:/work')[2]?.cwd).toBe('C:/work/server')
+  })
+
+  test('a cd through a variable or command this cannot expand goes somewhere it cannot see', () => {
+    expect(locatedSegments('cd $SOMEWHERE && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+    expect(locatedSegments('cd "$(mktemp -d)" && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+    expect(locatedSegments('cd %TEMP% && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+  })
 })

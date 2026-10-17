@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { findSourceWrites } from '../hooks/bashWrites'
+import { ELSEWHERE } from '../hooks/shell'
 
 describe('findSourceWrites', () => {
   test('sees in-place sed edits of source files', () => {
@@ -118,5 +119,17 @@ describe('findSourceWrites with a root', () => {
     expect(findSourceWrites("cd ../other && echo x > src/x.ts", 'C:/work')).toEqual(['C:/other/src/x.ts'])
     expect(findSourceWrites('echo x > src/x.ts', 'C:/work')).toEqual(['C:/work/src/x.ts'])
     expect(findSourceWrites('echo x > C:/work/src/y.ts', 'C:/work')).toEqual(['C:/work/src/y.ts'])
+  })
+
+  // #69: scratch files built in a temp dir through a variable are not the project's sources.
+  test('writes after a cd into a variable set in the command resolve there, outside the project', () => {
+    const command = "R=/tmp/scratch/repro; mkdir -p $R && cd $R && git init -q\ncat > bot.js <<'EOF'\nmodule.exports = 1\nEOF\ncat > commands.js <<'EOF'\nmodule.exports = 2\nEOF"
+    expect(findSourceWrites(command, 'C:/work')).toEqual(['/tmp/scratch/repro/bot.js', '/tmp/scratch/repro/commands.js'])
+  })
+
+  test('a written path through a variable is expanded; one that cannot be is somewhere this cannot see', () => {
+    expect(findSourceWrites('D=src; echo x > $D/a.ts', 'C:/work')).toEqual(['C:/work/src/a.ts'])
+    expect(findSourceWrites('R=/tmp/x; echo x > ${R}/a.ts', 'C:/work')).toEqual(['/tmp/x/a.ts'])
+    expect(findSourceWrites('echo x > $OUT/a.ts', 'C:/work')).toEqual([`${ELSEWHERE}/a.ts`])
   })
 })

@@ -106,7 +106,7 @@ export function commandSegments(command: string): string[] {
   return segments.map(segment => segment.trim()).filter(segment => segment !== '')
 }
 
-export type LocatedSegment = { segment: string; cwd: string }
+export type LocatedSegment = { segment: string; cwd: string; vars: ShellVars }
 
 /** The directory a command's segments run in: a `cd` moves every segment after it. Outside the root is still a place, named as it is. */
 export const ELSEWHERE = '~'
@@ -145,12 +145,51 @@ function normalizePath(path: string): string {
  */
 export function locatedSegments(command: string, root: string): LocatedSegment[] {
   let cwd = root.replace(/\\/g, '/').replace(/\/$/, '')
+  let vars: ShellVars = new Map()
   const located: LocatedSegment[] = []
   for (const segment of commandSegments(command)) {
-    located.push({ segment, cwd })
-    cwd = movedBy(cwd, segment)
+    located.push({ segment, cwd, vars })
+    cwd = movedBy(cwd, segment, vars)
+    vars = withAssignment(vars, segment)
   }
   return located
+}
+
+/**
+ * Shell variables a command set before a segment (`R=/tmp/x;`, `export R=...`), by name (#69). Only what the command
+ * itself assigns is known; the environment is not, so `$HOME` or `$(mktemp -d)` stays unexpanded.
+ */
+export type ShellVars = ReadonlyMap<string, string>
+
+const ASSIGNMENT = /^(?:export\s+)?([A-Za-z_]\w*)=("[^"]*"|'[^']*'|\S*)$/
+
+function withAssignment(vars: ShellVars, segment: string): ShellVars {
+  const assignment = ASSIGNMENT.exec(segment.trim())
+  if (assignment === null) {
+    return vars
+  }
+  const [, name = '', raw = ''] = assignment
+  const value = raw.replace(/^(['"])(.*)\1$/, '$2')
+  const expanded = raw.startsWith("'") ? value : expandVariables(value, vars)
+  const next = new Map(vars)
+  // A value this cannot know (another variable, a command) makes the name unknown, not wrong.
+  if (expanded === null) {
+    next.delete(name)
+  } else {
+    next.set(name, expanded)
+  }
+  return next
+}
+
+/** `text` with the variables the command set put in; null when anything is left that the shell would expand. */
+export function expandVariables(text: string, vars: ShellVars): string | null {
+  const out = expandKnown(text, vars)
+  return /\$|%\w+%|`/.test(out) ? null : out
+}
+
+/** `text` with the variables the command set put in, and every other `$NAME` or `${NAME}` left as it is. */
+export function expandKnown(text: string, vars: ShellVars): string {
+  return text.replace(/\$\{(\w+)\}|\$([A-Za-z_]\w*)/g, (whole: string, braced?: string, bare?: string) => vars.get(braced ?? bare ?? '') ?? whole)
 }
 
 // Commands that only read. `find` with -exec or -delete and `git` verbs that write are not among them.
@@ -166,16 +205,21 @@ export function isPureRead(command: string): boolean {
 
 /** Where the shell is after the whole command, starting from `start`: the next call starts there. */
 export function cwdAfter(command: string, start: string): string {
-  return commandSegments(command).reduce(movedBy, start.replace(/\\/g, '/').replace(/\/$/, ''))
+  const located = locatedSegments(command, start)
+  const last = located.at(-1)
+  return last === undefined ? start.replace(/\\/g, '/').replace(/\/$/, '') : movedBy(last.cwd, last.segment, last.vars)
 }
 
-function movedBy(cwd: string, segment: string): string {
+function movedBy(cwd: string, segment: string, vars: ShellVars): string {
   const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
   if (cd === null) {
     return cwd
   }
-  const target = (cd[1] ?? '').trim().replace(/^(['"])(.*)\1$/, '$2')
-  if (target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
+  const quoted = (cd[1] ?? '').trim()
+  const unquoted = quoted.replace(/^(['"])(.*)\1$/, '$2')
+  // A target this cannot expand (`$SOMEWHERE`, `$(mktemp -d)`, `%TEMP%`) goes somewhere it cannot see (#69).
+  const target = quoted.startsWith("'") ? unquoted : expandVariables(unquoted, vars)
+  if (target === null || target === '' || target === '-' || target === '~' || target.startsWith('~/')) {
     return ELSEWHERE
   }
   if (cwd === ELSEWHERE) {

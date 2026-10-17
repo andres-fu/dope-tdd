@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { BAND, editAt, fakeEngine, runCommand, runTests, touchTest } from './engine'
+import { BAND, editAt, fakeEngine, runCommand, runTests, test, touchTest } from './engine'
 
 describe('scenario: fixing a bug in code that has no tests', () => {
   test('reproduce it red, fix it green, and the status tells that story', async ($, on) => {

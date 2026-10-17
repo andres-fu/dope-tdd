@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
 import { ACCENT } from '../hooks/theme'
-import { BAND, MINUTE, ROOT, SOURCE, TEST_SOURCE, editAt, fakeEngine, fixUnderGuard, runTests, startSession, touchTest, writeAt } from './engine'
+import { BAND, MINUTE, ROOT, SOURCE, TEST_SOURCE, editAt, fakeEngine, fixUnderGuard, runTests, startSession, test, touchTest, writeAt } from './engine'
 
 const SURFACES = ['terminal', 'desktop'] as const
 

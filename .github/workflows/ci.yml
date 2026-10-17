@@ -30,7 +30,12 @@ jobs:
       - name: Validate the plugin the way the engine reads it
         run: claude plugin validate .
       - name: Run the plugin's tests
-        run: claude plugin test .
+        shell: bash
+        run: claude plugin test . | tee test-output.txt
+      - name: Report where the test time went
+        if: always()
+        shell: bash
+        run: node tools/ci/timings.mjs test-output.txt --slow-ms 1000
       - name: Run the plugin's tests again with a POSIX fixture root
         run: node tools/posix-root.mjs
       - name: Check the scorecard arithmetic
@@ -39,6 +44,8 @@ jobs:
         run: node --test tools/pool/find-bugs.test.mjs
       - name: Check the pull-request check report
         run: npx -y tsx@4.19.2 --test tools/pr-check/check.spec-node.ts
+      - name: Check the test-time report
+        run: node --test tools/ci/timings.test.mjs
       - name: Check the move check
         run: npx -y tsx@4.19.2 --test tools/move-check/move.spec-node.ts
       - name: Check the launcher helpers

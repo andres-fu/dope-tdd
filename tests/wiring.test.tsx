@@ -1,23 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import {
-  BAND,
-  FAIL_SUMMARY,
-  FIXTURE_DRIVE,
-  MINUTE,
-  ROOT,
-  SOURCE,
-  T0,
-  editAt,
-  fakeEngine,
-  runBash,
-  runCommand,
-  runPowerShell,
-  runTests,
-  startSession,
-  touchTest,
-  writeAt,
-} from './engine'
+import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
 
 describe('bash bypass', () => {
   test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {

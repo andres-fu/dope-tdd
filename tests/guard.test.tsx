@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { ROOT, fakeEngine } from './engine'
+import { ROOT, fakeEngine, test } from './engine'
 
 const SURFACES = ['terminal', 'desktop'] as const
 

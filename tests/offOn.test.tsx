@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { editAt, fakeEngine, runCommand } from './engine'
+import { editAt, fakeEngine, runCommand, test } from './engine'
 
 function tdd($: Engine, args: string) {
   return $.command.run({ command: 'tdd', args } as never)

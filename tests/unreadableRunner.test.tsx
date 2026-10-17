@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { fakeEngine, runBash, runCommand } from './engine'
+import { fakeEngine, runBash, runCommand, test } from './engine'
 import { MOCHA_FAIL, MOCHA_PASS } from './fixtures/runnerOutputs'
 
 describe('a runner dope-tdd cannot read yet is named once, not reported as unread on every run', () => {

@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine } from './engine'
+import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, test } from './engine'
 import type { FakeOptions } from './engine'
 
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`

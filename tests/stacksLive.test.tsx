@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, writeAt } from './engine'
+import { ROOT, editAt, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 

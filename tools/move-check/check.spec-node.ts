@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { changedCode, existsAt } from './check.ts'
+import { changedCode, existsAt, parseArgs, renameRules } from './check.ts'
 import { findMoves } from './move.ts'
 
 const repo = mkdtempSync(join(tmpdir(), 'move-check-'))
@@ -51,4 +51,28 @@ test('a path is known at a commit or not', () => {
   assert.equal(existsAt(repo, base, 'src/b.ts'), true)
   assert.equal(existsAt(repo, base, 'src/pool.ts'), false)
   assert.equal(existsAt(repo, 'HEAD', 'src/pool.ts'), true)
+})
+
+// #67: `--rename 'old=new'` split at the first `=`, so a rule holding `=>` or `===` was silently misread.
+test('a --rename with one = is old and new; one with more is refused, with what to use instead', () => {
+  assert.deepEqual(parseArgs(['--base', 'main', '--rename', 'LIMIT=limit']).renames, [{ from: 'LIMIT', to: 'limit' }])
+  assert.throws(
+    () => parseArgs(['--base', 'main', '--rename', 'new Promise(r => setTimeout(r, 500))=wait(500)']),
+    /more than one `=`.*--rename-from '<old>' --rename-to '<new>'/s,
+  )
+  assert.throws(() => parseArgs(['--base', 'main', '--rename', 'a===b=c']), /more than one `=`/)
+})
+
+test('--rename-from and --rename-to take any code, = included, as one rule', () => {
+  const options = parseArgs(['--base', 'main', '--rename-from', 'new Promise(r => setTimeout(r, 500))', '--rename-to', 'wait(500)'])
+  assert.deepEqual(options.renames, [{ from: 'new Promise(r => setTimeout(r, 500))', to: 'wait(500)' }])
+  assert.throws(() => parseArgs(['--base', 'main', '--rename-to', 'x']), /--rename-to needs a --rename-from before it/)
+  assert.throws(() => parseArgs(['--base', 'main', '--rename-from', 'x']), /--rename-from 'x' has no --rename-to after it/)
+})
+
+test('pr-check and move-check read rename rules the same way: in order, both forms, among other flags', () => {
+  assert.deepEqual(renameRules(['--repo', '.', '--rename', 'A=b', '--base', 'main', '--rename-from', 'x => y', '--rename-to', 'f(x)']), [
+    { from: 'A', to: 'b' },
+    { from: 'x => y', to: 'f(x)' },
+  ])
 })

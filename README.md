@@ -314,9 +314,11 @@ and comments never count:
   dependency arrives; both parameter lists are shown.
 - **DIFFERS**: something else changed; the first difference is shown.
 
-`--rename 'shoukaku.players.get(=getPlayer('` replaces a token sequence on
+`--rename 'players.get(=getPlayer('` replaces a token sequence on
 the old side first, for a change that is not one name for another, and is
-marked "(given)". `--pair 'index.js:358-530=pool.js:40-120'` compares line
+marked "(given)". A rule whose code holds `=` (an arrow, `===`) goes as
+`--rename-from '<old>' --rename-to '<new>'`; a `--rename` with more than one
+`=` is refused rather than split in the wrong place. `--pair 'index.js:358-530=pool.js:40-120'` compares line
 ranges, for code that was never a declaration of its own. It reads committed
 code only and runs nothing from the repository; the output is a table to
 paste into the pull request.

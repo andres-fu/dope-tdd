@@ -743,7 +743,7 @@ async function newFileCheck(
   if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || !(await $.fs.exists(`${root}/.git/HEAD`))) {
     return null
   }
-  const mutants = mutantsOf(after, { angles: flipsAngles(path, after) })
+  const mutants = mutantsOf(after, { angles: flipsAngles(path, after), types: /\.[cm]?tsx?$/.test(path) })
   if (mutants.length === 0) {
     return { kind: 'unverified', reason: 'new file, with nothing in it to change' }
   }

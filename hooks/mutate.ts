@@ -44,9 +44,76 @@ function guardedZero(tokens: readonly Token[], index: number): boolean {
 
 type Candidate = { line: number; start: number; end: number; replacement: string; change: string }
 
-function candidates(source: string, tokens: readonly Token[], angles: boolean): Candidate[] {
-  const found: Candidate[] = []
+const OPEN = new Set(['(', '[', '{', '<'])
+const CLOSE = new Set([')', ']', '}', '>'])
+// A line that ends on one of these, or a next line that starts with | or &, carries a type on.
+const TYPE_GOES_ON = new Set(['|', '&', '=', '=>', ',', '?', ':', 'extends', 'keyof', 'typeof', '<'])
+
+/**
+ * The end (exclusive) of a type that starts at `start`: the first token at its depth that ends it. `{` ends a return
+ * type (`): T {`) unless the type itself starts with it; a new line ends one that does not go on.
+ */
+function typeEnd(tokens: readonly Token[], start: number, ends: ReadonlySet<string>, braceEnds: boolean): number {
+  let depth = 0
+  for (let k = start; k < tokens.length; k++) {
+    const text = tokens[k]?.text ?? ''
+    if (depth === 0 && ends.has(text) && !(text === '{' && (!braceEnds || k === start))) return k
+    if (OPEN.has(text)) depth++
+    else if (CLOSE.has(text)) {
+      if (depth === 0) return k
+      depth--
+    }
+    const next = tokens[k + 1]
+    if (depth === 0 && next !== undefined && next.line > (tokens[k]?.line ?? 0) && !TYPE_GOES_ON.has(text) && next.text !== '|' && next.text !== '&') return k + 1
+  }
+  return tokens.length
+}
+
+/**
+ * The tokens of a TypeScript file that sit in a type: a `type` alias, an `interface`, and the type after a variable's,
+ * a parameter's or a function's `:`. A literal there (`port: 8080`, `flag: true`, `0 | 1`) has no effect at run time,
+ * so changing it proves nothing and would survive as a false gap (review #9). Values are never in it: object literals
+ * (`{ a: 1 }`) and ternaries (`? 1 : 2`) are not annotations.
+ */
+function typeTokens(tokens: readonly Token[]): Set<number> {
+  const inType = new Set<number>()
+  const mark = (from: number, to: number) => {
+    for (let k = from; k < to; k++) inType.add(k)
+  }
+  const brackets: string[] = []
   tokens.forEach((token, index) => {
+    const text = token.text
+    const previous = tokens[index - 1]?.text
+    if (text === 'type' && tokens[index + 1]?.kind === 'name' && (tokens[index + 2]?.text === '=' || tokens[index + 2]?.text === '<')) {
+      mark(index, typeEnd(tokens, index + 1, new Set([';']), false))
+    } else if (text === 'interface' && tokens[index + 1]?.kind === 'name') {
+      const open = tokens.findIndex((candidate, k) => k > index && candidate.text === '{')
+      if (open !== -1) mark(index, typeEnd(tokens, open, new Set(), false))
+    } else if (text === ':') {
+      const named = previous === '?' ? index - 2 : index - 1
+      const before = tokens[named - 1]?.text
+      const innermost = brackets[brackets.length - 1]
+      if (tokens[named]?.kind === 'name' && ['const', 'let', 'var'].includes(before ?? '')) {
+        mark(index + 1, typeEnd(tokens, index + 1, new Set(['=', ';', ',']), false))
+      } else if (tokens[named]?.kind === 'name' && (before === '(' || before === ',') && innermost === '(') {
+        mark(index + 1, typeEnd(tokens, index + 1, new Set([',', '=']), false))
+      } else if (previous === ')') {
+        // A return type ends at the body's { or an arrow; a ternary's `(x) : y` ends neither way.
+        const end = typeEnd(tokens, index + 1, new Set(['{', '=>', ';', ',']), true)
+        if (tokens[end]?.text === '{' || tokens[end]?.text === '=>') mark(index + 1, end)
+      }
+    }
+    if (OPEN.has(text) && text !== '<') brackets.push(text)
+    else if (CLOSE.has(text) && text !== '>') brackets.pop()
+  })
+  return inType
+}
+
+function candidates(source: string, tokens: readonly Token[], angles: boolean, types: boolean): Candidate[] {
+  const found: Candidate[] = []
+  const skipped = types ? typeTokens(tokens) : new Set<number>()
+  tokens.forEach((token, index) => {
+    if (skipped.has(index)) return
     const end = token.start + token.text.length
     // A string, template or regex is one token whose text is never an operator, so it is never swapped.
     const swap = SWAPS[token.text] ?? (angles ? PLAIN_ONLY[token.text] : undefined)
@@ -93,9 +160,12 @@ export function flipsAngles(path: string, text: string): boolean {
   return !/\.(?:[cm]?tsx?|jsx)$/.test(path) && !/<\/|\/>/.test(text)
 }
 
-/** `angles`: whether `<` and `>` may be flipped (see `flipsAngles`); `<=` and `>=` always may. */
-export function mutantsOf(source: string, options: { angles: boolean; max?: number }): Mutant[] {
-  const all = candidates(source, tokenize(source), options.angles)
+/**
+ * `angles`: whether `<` and `>` may be flipped (see `flipsAngles`); `<=` and `>=` always may. `types`: a TypeScript
+ * file, whose type positions are left alone.
+ */
+export function mutantsOf(source: string, options: { angles: boolean; types?: boolean; max?: number }): Mutant[] {
+  const all = candidates(source, tokenize(source), options.angles, options.types ?? false)
   const max = Math.min(options.max ?? 4, all.length)
   const picked = Array.from({ length: max }, (_, k) => all[Math.floor((k * all.length) / max)] as Candidate)
   return picked.map(candidate => ({

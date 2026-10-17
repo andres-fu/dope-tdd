@@ -64,3 +64,33 @@ describe('flipsAngles: when a < or > is safely a comparison (review #2)', () => 
     expect(flipsAngles('src/icon.js', 'export const i = <img src={u} />')).toBe(false)
   })
 })
+
+describe('TypeScript types are not mutated: a change there does nothing at run time (review #9)', () => {
+  const changes = (source: string) => mutantsOf(source, { angles: false, types: true, max: 20 }).map(mutant => mutant.text)
+
+  test('a type alias and an interface give no mutants', () => {
+    expect(changes('type Port = 8080 | 8081')).toEqual([])
+    expect(changes('interface Options { ok: true; retries: 3 }')).toEqual([])
+    expect(changes('export type Flag = true\nexport const flag = true')).toEqual(['export type Flag = true\nexport const flag = false'])
+  })
+
+  test('the type after a variable, a parameter or a return is skipped; the values are not', () => {
+    expect(changes('const port: 8080 = 8080')).toEqual(['const port: 8080 = 8081'])
+    expect(changes('function f(flag: true = true): 0 | 1 { return 1 }')).toEqual([
+      'function f(flag: true = false): 0 | 1 { return 1 }',
+      'function f(flag: true = true): 0 | 1 { return 2 }',
+    ])
+    expect(changes('const g = (n: 3): void => n === 3')).toEqual(['const g = (n: 3): void => n !== 3', 'const g = (n: 3): void => n === 4'])
+  })
+
+  test('object literals and ternaries still change, being values', () => {
+    expect(changes('const o = { a: 1 }')).toEqual(['const o = { a: 2 }'])
+    expect(changes('const v = c ? 1 : 2')).toEqual(['const v = c ? 2 : 2', 'const v = c ? 1 : 3'])
+    // `(a) : 2` looks like a return type at first, but nothing after it is a body or an arrow.
+    expect(changes('const v = c ? (a) : 2')).toEqual(['const v = c ? (a) : 3'])
+  })
+
+  test('without types (JavaScript) nothing is skipped', () => {
+    expect(mutantsOf('const o = { ok: true }', { angles: true, types: false }).map(mutant => mutant.text)).toEqual(['const o = { ok: false }'])
+  })
+})

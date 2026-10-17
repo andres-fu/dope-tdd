@@ -1,5 +1,22 @@
-import { mock } from 'claude-code/testing'
-import type { Engine, MockClock } from 'claude-code/testing'
+import { mock, test as kitTest } from 'claude-code/testing'
+import type { Engine, MockClock, TestRest } from 'claude-code/testing'
+
+/**
+ * How long a test that drives the plugin may run. The kit loads the whole hooks module again for each test (about
+ * 120 ms of its time, against 14 ms for an empty module), so on a busy machine or a two-core Windows runner the first
+ * test of a file could pass the kit's 5 s default and fail on time alone (2 of 10 runs on main, 2026-10-16).
+ */
+export const LIVE_TEST_TIMEOUT_MS = 20_000
+
+/** `test` from the kit, with the live-test timeout unless the test names its own. */
+export function test(name: string, ...rest: TestRest): void {
+  if (rest.length === 1) {
+    kitTest(name, { timeoutMs: LIVE_TEST_TIMEOUT_MS }, rest[0])
+    return
+  }
+  const [options, body] = rest
+  kitTest(name, { timeoutMs: LIVE_TEST_TIMEOUT_MS, ...options }, body)
+}
 import type { On } from 'claude-code'
 
 /** Every fixture path lives on this drive, including a runner hoisted above the root. */

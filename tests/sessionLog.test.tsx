@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { FIXTURE_DRIVE, ROOT, editAt, fakeEngine, fixUnderGuard, runTests } from './engine'
+import { FIXTURE_DRIVE, ROOT, editAt, fakeEngine, fixUnderGuard, runTests, test } from './engine'
 import type { FakeWorld } from './engine'
 
 const HOME = `${FIXTURE_DRIVE}Users/tester`

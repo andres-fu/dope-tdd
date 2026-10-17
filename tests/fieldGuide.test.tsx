@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { guideKey, guideSection } from '../hooks/fieldGuide'
-import { FIXTURE_DRIVE, ROOT, fakeEngine, startSession } from './engine'
+import { FIXTURE_DRIVE, ROOT, fakeEngine, startSession, test } from './engine'
 
 const HOME = `${FIXTURE_DRIVE}Users/tester`
 const GUIDE = `${HOME}/.dope-tdd/guides/Atom-Powell__Roadhouse-Game.md`

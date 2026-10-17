@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { SOURCE, editAt, fakeEngine, runBash, runCommand, touchTest } from './engine'
+import { SOURCE, editAt, fakeEngine, runBash, runCommand, test, touchTest } from './engine'
 import type { FakeWorld } from './engine'
 
 /**

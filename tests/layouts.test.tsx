@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, runTests, writeAt } from './engine'
+import { ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 function configure(world: FakeWorld, json: string) {

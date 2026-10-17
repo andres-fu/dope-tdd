@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { FIXTURE_DRIVE, ROOT, fakeEngine, runBash } from './engine'
+import { FIXTURE_DRIVE, ROOT, fakeEngine, runBash, test } from './engine'
 import type { FakeWorld } from './engine'
 
 /** The project reached through a symbolic link, as macOS reaches /private/tmp through /tmp, or a symlinked checkout. */

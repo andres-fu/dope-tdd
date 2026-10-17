@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runCommand, runTests, startSession } from './engine'
+import { MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runCommand, runTests, startSession, test } from './engine'
 import { storeRoot } from '../hooks/unlocks'
 
 const REF = 'refs/worktree/dope-tdd-check'

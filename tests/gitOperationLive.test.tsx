@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { BAND, FIXTURE_DRIVE, ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests } from './engine'
+import { BAND, FIXTURE_DRIVE, ROOT, SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, test } from './engine'
 import type { FakeWorld } from './engine'
 
 /** A checkout whose .git is a folder, as a person's clone has it, with these markers in it. */

@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect } from 'claude-code/testing'
 
-import { editAt, fakeEngine, runBash, startSession } from './engine'
+import { editAt, fakeEngine, runBash, startSession, test } from './engine'
 
 /**
  * The mods docs: a hook that fails is skipped, and its `.catch` handler

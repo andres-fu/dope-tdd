@@ -284,3 +284,36 @@ describe('a command that changes directory', () => {
     expect(status.text).not.toMatch(/phase: RED/)
   })
 })
+
+describe('a module in a folder with a layout of its own is named by its real path (#24)', () => {
+  const VIBE = '{"layout":{"source":"{module}.{ext}","test":"test/{module}.test.{ext}"},"layouts":{"dashboard":"colocated"}}'
+
+  test('the advice, the status, the events and the receipt all say dashboard/src/lib/pkce, as the refusal does', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, VIBE)
+    world.fileContents.set(`${ROOT}/dashboard/src/lib/pkce.ts`, 'export const pkce = 1')
+
+    const blocked = await editAt($, 'dashboard/src/lib/pkce.ts')
+    const touched = await writeAt($, 'dashboard/src/lib/pkce.test.ts', "it('x', () => { expect(pkce).toBe(2) })")
+    const red = await runTests($, world, 'fail')
+    const status = await runCommand($, 'tdd')
+    const receipt = await setup($, 'receipt dashboard/src/lib/pkce')
+
+    expect(blocked.deny).toMatch(/before editing dashboard\/src\/lib\/pkce\./)
+    expect(touched.context?.join(' ')).toMatch(/dope-tdd: dashboard\/src\/lib\/pkce unlocked\./)
+    expect(red.context?.join(' ')).toMatch(/RED on dashboard\/src\/lib\/pkce\./)
+    expect(status.text).toMatch(/module: dashboard\/src\/lib\/pkce\n/)
+    expect(status.text).toMatch(/touched +dashboard\/src\/lib\/pkce/)
+    expect(status.text).not.toMatch(/dashboard\/lib\/pkce/)
+    expect(receipt.text).toMatch(/^dope-tdd receipt for dashboard\/src\/lib\/pkce/)
+  })
+
+  test('a module outside the folder keeps its name', async ($, on) => {
+    const world = fakeEngine(on)
+    configure(world, VIBE)
+
+    const touched = await writeAt($, 'test/queueOps.test.js', "it('x', () => { expect(1).toBe(1) })")
+
+    expect(touched.context?.join(' ')).toMatch(/dope-tdd: queueOps unlocked\./)
+  })
+})

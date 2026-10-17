@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { LAYOUTS } from '../hooks/layout'
-import { classifyPath, isInsideRoot, isTestRun, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from '../hooks/mirror'
+import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
@@ -76,6 +76,12 @@ describe('a folder with a layout of its own: a bot at the root with tests in tes
     expect(testPathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts.test.ts(x)')
     expect(sourcePathFor(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts')
     expect(testFileFor(VIBE, 'dashboard/lib/toasts', 'ts')).toBe('dashboard/src/lib/toasts.test.ts')
+  })
+
+  test('a module placed by a folder is labelled with its source path; any other keeps its id (#24)', () => {
+    expect(moduleLabel(VIBE, 'dashboard/lib/toasts')).toBe('dashboard/src/lib/toasts')
+    expect(moduleLabel(VIBE, 'queueOps')).toBe('queueOps')
+    expect(moduleLabel({ layout: LAYOUTS.mirror, roots: [] }, 'utils/a')).toBe('utils/a')
   })
 
   test('outside the folder the main layout still applies', () => {

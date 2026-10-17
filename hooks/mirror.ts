@@ -145,6 +145,14 @@ function placed(config: LayoutConfig, module: string): { pkg: string; rest: stri
     : { pkg: folder.folder, rest: module.slice(folder.folder.length + 1), layout: folder.layout }
 }
 
+/**
+ * How messages name a module: its source path when a folder with a layout of its own placed it, because its id there
+ * (`dashboard/lib/pkce`) reads like a path and is not one (#24); its id otherwise, as it always was.
+ */
+export function moduleLabel(config: LayoutConfig, module: string): string {
+  return folderFor(config.layouts, module, false) === undefined ? module : sourcePathFor(config, module)
+}
+
 /** `tests/utils/a.test.ts(x)`, or `packages/app/tests/utils/a.test.ts(x)` under roots: what the agent is told to touch. */
 export function testPathFor(config: LayoutConfig, module: string): string {
   const { pkg, rest, layout } = placed(config, module)

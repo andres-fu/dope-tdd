@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { parseConfig } from '../hooks/config'
 import { formatStatus } from '../hooks/summary'
 import { INITIAL_STATS, recordRun, recordTestTouch, seedUnlocks, togglePause } from '../hooks/stats'
 
@@ -34,5 +35,19 @@ describe('unlocks from earlier sessions', () => {
     const text = formatStatus(s, T0)
 
     expect(text).toMatch(/unlocked earlier: utils\/a \(3H AGO\)/)
+  })
+})
+
+describe('a module in a folder with a layout of its own is named by its source path (#24)', () => {
+  test('in the open modules and the unlocks from earlier sessions too', () => {
+    const config = parseConfig('{"layout":{"source":"{module}.{ext}","test":"test/{module}.test.{ext}"},"layouts":{"dashboard":"colocated"}}')
+    let s = seedUnlocks(INITIAL_STATS, { 'dashboard/lib/pkce': { testPath: 'C:/w/dashboard/src/lib/pkce.test.ts', atMs: T0 - 60 * 60_000 } })
+    s = recordTestTouch(s, { module: 'dashboard/lib/toasts', testPath: 'C:/w/dashboard/src/lib/toasts.test.ts' }, T0)
+    s = recordTestTouch(s, { module: 'queueOps', testPath: 'C:/w/test/queueOps.test.js' }, T0)
+    const text = formatStatus(s, T0, config)
+
+    expect(text).toMatch(/also open: dashboard\/src\/lib\/toasts \(writing\)/)
+    expect(text).toMatch(/unlocked earlier: dashboard\/src\/lib\/pkce \(1H AGO\)/)
+    expect(text).toMatch(/module: queueOps/)
   })
 })

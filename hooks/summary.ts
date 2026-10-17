@@ -1,6 +1,7 @@
 import type { TddStats } from '../types'
 import { describeConfig } from './config'
 import type { GuardConfig } from './config'
+import { moduleLabel } from './mirror'
 import { otherOpenModules } from './stats'
 import { formatAgo, formatSpan } from './timeText'
 import { WORKAROUND_KINDS } from './workarounds'
@@ -37,12 +38,12 @@ function phaseLine(s: TddStats, nowMs: number): string {
 }
 
 /** Other modules with a cycle still open: a red or a test waiting somewhere the band is not looking. */
-function openLine(s: TddStats): string[] {
+function openLine(s: TddStats, label: Label): string[] {
   const others = otherOpenModules(s)
-  return others.length === 0 ? [] : [`also open: ${others.map(({ module, phase }) => `${module} (${phase})`).join(', ')}`]
+  return others.length === 0 ? [] : [`also open: ${others.map(({ module, phase }) => `${label(module)} (${phase})`).join(', ')}`]
 }
 
-function eventLines(s: TddStats, nowMs: number): string[] {
+function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
   if (s.events.length === 0) {
     return ['  no events yet']
   }
@@ -50,7 +51,7 @@ function eventLines(s: TddStats, nowMs: number): string[] {
     .slice(-RECENT_EVENTS)
     .reverse()
     .map(e => {
-      const what = [e.module ?? '', e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
+      const what = [e.module === undefined ? '' : label(e.module), e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
       return `  ${formatAgo(nowMs - e.atMs).padEnd(9)} ${e.kind.padEnd(12)} ${what}`.trimEnd()
     })
 }
@@ -73,30 +74,33 @@ function workaroundLine(s: TddStats): string[] {
   return [`workarounds: ${s.workarounds} (${parts.join(', ')})`]
 }
 
-function inheritedLine(s: TddStats, nowMs: number): string[] {
+function inheritedLine(s: TddStats, nowMs: number, label: Label): string[] {
   const entries = Object.entries(s.inherited)
   if (entries.length === 0) {
     return []
   }
-  return [`unlocked earlier: ${entries.map(([module, atMs]) => `${module} (${formatAgo(nowMs - atMs)})`).join(', ')}`]
+  return [`unlocked earlier: ${entries.map(([module, atMs]) => `${label(module)} (${formatAgo(nowMs - atMs)})`).join(', ')}`]
 }
 
+type Label = (module: string) => string
+
 export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): string {
+  const label: Label = module => (config === undefined ? module : moduleLabel(config, module))
   return [
     'dope-tdd',
     `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
-    `module: ${s.current?.module ?? 'none'}`,
-    ...openLine(s),
+    `module: ${s.current === null ? 'none' : label(s.current.module)}`,
+    ...openLine(s, label),
     runsLine(s),
     cycleLine(s),
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
     ...workaroundLine(s),
-    ...inheritedLine(s, nowMs),
+    ...inheritedLine(s, nowMs, label),
     'recent events:',
-    ...eventLines(s, nowMs),
+    ...eventLines(s, nowMs, label),
   ].join('\n')
 }
 

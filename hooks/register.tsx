@@ -90,6 +90,7 @@ import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { OVERRIDES_FILE, coveringOverride, isAttended, formatOverrides, parseRecord, recordEdit, requestNotes, serializeRecord } from './overrides.ts'
 import { planDecision, planEnd, planExpiry, planRequest, planResume, planShellCover, refusal, requestFrom, sendsToModel } from './requestPlan.ts'
+import { gateWrite } from './fileGate.ts'
 import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
@@ -1405,42 +1406,51 @@ async function checkFileWrite(
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)
   const target = classifyPath(root, filePath, config)
-  const isConfig = relativePath(root, filePath) === CONFIG_FILE
-  // The record is evidence of who approved what: only dope-tdd writes it, whatever the mode.
-  if (relativePath(root, filePath) === OVERRIDES_FILE) {
-    return { deny: RECORD_DENY }
+  const relative = relativePath(root, filePath)
+  const isConfig = relative === CONFIG_FILE
+  if (relative !== OVERRIDES_FILE) {
+    await endExpiredPauses($, root, await $.clock.now())
   }
-  await endExpiredPauses($, root, await $.clock.now())
   const current = await readStats($)
   const quiet = config.mode === 'observe'
-  // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
-  if (target.kind === 'other' && !isConfig && isInsideRoot(root, filePath) && countsAsUnwatched(relativePath(root, filePath), config)) {
-    await change($, s => recordUnwatchedEdit(s, relativePath(root, filePath)))
+  const policy = target.kind === 'source' ? policyFor(config, relative) : null
+  const isLocked = target.kind === 'source' && current.unlocked[target.module] === undefined
+  const gateNowMs = await $.clock.now()
+  const record = await read($, overrideRecord)
+  const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
+  // The verdict is fileGate.ts's; this acts on it.
+  const verdict = gateWrite({
+    relativePath: relative,
+    isConfig,
+    kind: target.kind,
+    policy,
+    unlocked: !isLocked,
+    inherited: target.kind === 'source' && current.inherited[target.module] !== undefined,
+    paused: current.paused,
+    covering,
+    unwatchedCode: target.kind === 'other' && isInsideRoot(root, filePath) && countsAsUnwatched(relative, config),
+  })
+  if (verdict.kind === 'deny-record') {
+    return { deny: RECORD_DENY }
   }
-  const policy = target.kind === 'source' ? policyFor(config, relativePath(root, filePath)) : null
-  if (policy === 'exempt') {
+  if (verdict.kind === 'exempt') {
     return proceed()
   }
-  const isLocked = target.kind === 'source' && current.unlocked[target.module] === undefined
-
-  if (isLocked && policy === 'enforce') {
-    // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
-    const nowMs = await $.clock.now()
-    const record = await read($, overrideRecord)
-    const covering = coveringOverride(record, target.module, nowMs, await sessionIdNow($))
-    if (covering !== null) {
-      await writeOverrides($, root, recordEdit(record, covering.id, relativePath(root, filePath)))
-    } else if (!current.paused) {
-      await change($, s => recordBlocked(s, target.module, nowMs))
-      return { deny: lockedFor(config, current, target.module, nowMs, filePath) }
-    }
+  if (verdict.kind === 'blocked' && target.kind === 'source') {
+    await change($, s => recordBlocked(s, target.module, gateNowMs))
+    return { deny: lockedFor(config, current, target.module, gateNowMs, filePath) }
   }
-  // #54: unlocked, but only by a carry-over from an earlier session. Enforce waits for one run of its test this session
-  // (warn lets the edit through and reminds after it, below). Touching the test or running it clears `inherited`.
-  if (target.kind === 'source' && !isLocked && current.inherited[target.module] !== undefined && policy === 'enforce' && !current.paused) {
-    const nowMs = await $.clock.now()
-    await change($, s => recordCarryWait(s, target.module, nowMs))
-    return { deny: await carryWait($, root, config, current, target.module, nowMs) }
+  if (verdict.kind === 'carry-wait' && target.kind === 'source') {
+    await change($, s => recordCarryWait(s, target.module, gateNowMs))
+    return { deny: await carryWait($, root, config, current, target.module, gateNowMs) }
+  }
+  if (verdict.kind === 'go' && verdict.unwatched) {
+    // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
+    await change($, s => recordUnwatchedEdit(s, relative))
+  }
+  if (verdict.kind === 'go' && verdict.spend !== null) {
+    // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
+    await writeOverrides($, root, recordEdit(record, verdict.spend, relative))
   }
 
   const before = target.kind !== 'other' && !current.paused ? await readFile($, filePath) : undefined

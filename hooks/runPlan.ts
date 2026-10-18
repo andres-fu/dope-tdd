@@ -8,6 +8,7 @@ import {
   closeCyclesForTest,
   recordCarriedRun,
   recordImporter,
+  recordOtherPass,
   recordRedFor,
   recordRedUnlock,
   recordRun,
@@ -65,6 +66,8 @@ export type RunPlan = {
   readonly carriedOn: string[]
   /** The run closed the current module's own cycle, before it closed other modules' (#41). */
   readonly ownCycleClosed: boolean
+  /** False for a green that is not about the current module: it must not close its cycle or start its catch check. */
+  readonly countsForCurrent: boolean
 }
 
 /** A read run, red or green, applied to the record. */
@@ -124,7 +127,12 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
     elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? [...failed] : []
   }
-  let afterRun = recordRun(targeted, outcome === 'pass', nowMs, elsewhere)
+  // A green of another module's own test, when the band could not follow it there (that module is not unlocked) and
+  // the test does not import the current module, says nothing about the current module (seen on dope-tdd, 2026-10-18).
+  const otherGreen =
+    outcome === 'pass' && target?.kind === 'test' && !keepsCurrent && targeted.current?.module !== target.module ? target.module : null
+  const countsForCurrent = otherGreen === null
+  let afterRun = otherGreen === null ? recordRun(targeted, outcome === 'pass', nowMs, elsewhere) : recordOtherPass(targeted, otherGreen, nowMs)
   const ownCycleClosed = afterRun.cycles > s.cycles
   const carriedOn: string[] = []
   // #54: a whole-file run of the test behind a carried-over unlock, red or green, is the run its first edit waits for.
@@ -143,5 +151,5 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
     afterRun = closeCyclesForTest(afterRun, named ?? null, afterRun.current?.module, nowMs)
   }
-  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed }
+  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed, countsForCurrent }
 }

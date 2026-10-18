@@ -158,6 +158,22 @@ describe('applyRun', () => {
     expect(run(s, { outcome: 'pass' }).state.modules['utils/c']?.phase).toBe('green')
   })
 
+  test("a green of another module's own test, not unlocked and not importing the current one, is not the current module's run", () => {
+    const s = recordRedFor(workingOn('utils/b', B_TEST), 'utils/b', 0)
+    const plan = run(s, { outcome: 'pass', named: C_TEST })
+    expect(plan.countsForCurrent).toBe(false)
+    expect(plan.state.passes).toBe(1)
+    expect(plan.state.modules['utils/b']?.phase).toBe('red')
+    expect(plan.state.cycles).toBe(0)
+  })
+
+  test("a green of the current module's own test, or of one that imports it, is the current module's run", () => {
+    const s = recordRedFor(workingOn('utils/b', B_TEST), 'utils/b', 0)
+    expect(run(s, { outcome: 'pass', named: B_TEST }).countsForCurrent).toBe(true)
+    expect(run(s, { outcome: 'pass', named: C_TEST, namedImports: ['utils/b'] }).countsForCurrent).toBe(true)
+    expect(run(s, { outcome: 'pass' }).countsForCurrent).toBe(true)
+  })
+
   test('a filtered green that names no file closes nothing', () => {
     const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
     expect(run(s, { outcome: 'pass', filtered: true }).state.modules['utils/c']?.phase).toBe('red')

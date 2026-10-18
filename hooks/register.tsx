@@ -1498,6 +1498,8 @@ async function checkShell(
   let afterRun = updated
   // Whether this run closed the current module's own cycle, before it closes other modules' (#41).
   let ownCycleClosed = false
+  // A green of another module's test is not this module's run: it neither closes its cycle nor starts its check.
+  let countsForCurrent = true
   let elsewhere: string[] = []
   let redUnlocked: string[] = []
   let carriedOn: string[] = []
@@ -1529,10 +1531,10 @@ async function checkShell(
       for (const { module, testPath } of plan.remember) {
         await rememberUnlock($, root, module, testPath, nowMs)
       }
-      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed } = plan)
+      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent } = plan)
     }
   }
-  const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined
+  const passedModule = outcome === 'pass' && countsForCurrent && !afterRun.paused ? afterRun.current?.module : undefined
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
   const checkStartMs = await $.clock.now()
@@ -1697,14 +1699,14 @@ async function importedModules($: EngineInterface, root: string, config: GuardCo
 /** How one test file runs in this project, as a person types it, for a path relative to the root; null when no runner is found. */
 async function runCommandFor($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string | null> {
   const runner = await detectRunner($, root, config, testPath)
-  return runner === null ? null : runnerNamed(runner.kind).describe(relativePath(root, testPath))
+  return runner === null ? null : runnerNamed(runner.kind).describe(relativePath(root, testPath), runner.launcher)
 }
 
 /** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */
 async function briefingCommand($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
   const ext = config.layout.displayExt ?? stackOf(config.stack).exts[0] ?? 'ts'
   const runner = await detectRunner($, root, config, `${root}/example.${ext}`)
-  return runner === null ? null : runnerNamed(runner.kind).describe('<test file>')
+  return runner === null ? null : runnerNamed(runner.kind).describe('<test file>', runner.launcher)
 }
 
 /**
@@ -1731,7 +1733,7 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   }
   const runner = await detectRunner($, root, config, testPath)
   const relativeTest = relativePath(root, testPath)
-  const run = runner === null ? `<run ${relativeTest} with your test runner>` : runnerNamed(runner.kind).describe(relativeTest)
+  const run = runner === null ? `<run ${relativeTest} with your test runner>` : runnerNamed(runner.kind).describe(relativeTest, runner.launcher)
   // The change record is cleared once checked; the last catch keeps the path it reverted.
   const changePath = s.changes[module]?.path ?? (s.lastCatch?.module === module ? s.lastCatch.path : undefined)
   const change = changePath === undefined ? undefined : { path: changePath }

@@ -37,6 +37,18 @@ describe("Node's built-in runner, found through the package's test script", () =
     expect((await findRunner('C:/app', 'node', 'C:/app/test/a.test.js', both.exists, both.read))?.kind).toBe('vitest')
   })
 
+  test("Node's own flags in the test script come with it, so a check can load the tests the same way", async () => {
+    const { exists, read } = disk({
+      'C:/dope-tdd/package.json': JSON.stringify({ scripts: { test: 'node --import ./tests/node/register.mjs --test tests/*.test.ts' } }),
+    })
+    expect(await findRunner('C:/dope-tdd', 'node', 'C:/dope-tdd/tests/runPlan.test.ts', exists, read)).toEqual({
+      kind: 'node-test',
+      root: 'C:/dope-tdd',
+      tool: 'node',
+      launcher: ['node', '--import', './tests/node/register.mjs'],
+    })
+  })
+
   test('without a way to read files, the script cannot be checked and nothing is guessed', async () => {
     const { exists } = disk({ 'C:/vibecast/package.json': NODE_TEST_SCRIPT })
     expect(await findRunner('C:/vibecast', 'node', 'C:/vibecast/test/helpers.test.js', exists)).toBeNull()

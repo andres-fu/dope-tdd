@@ -13,7 +13,7 @@ import type { StackName } from './stacks.ts'
  * replaced the first time a real run is on record.
  */
 
-export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'node-test' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet'
+export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'node-test' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet' | 'plugin-kit'
 
 /** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
 export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
@@ -419,6 +419,39 @@ function noFailedFiles(): string[] {
   return []
 }
 
+// `claude plugin test` (2026-10-18): a Claude Code plugin's own test kit. It runs a whole folder, prints a header per
+// file (`tests\band.test.tsx:`), a (pass) or (fail) line per test, then ` 741 pass`, ` 3 fail`, `Ran 744 tests …`.
+const PLUGIN_KIT_SUMMARY = /^\s*(\d+) pass\r?\n\s*(\d+) fail\r?\nRan (\d+) tests? across \d+ files?\./m
+const PLUGIN_KIT_FILE = /^(\S[^\n]*?\.(?:test|spec)\.[cm]?[jt]sx?):\s*$/
+const PLUGIN_KIT_COMMAND = commandOf(String.raw`${PATHED}claude(?:\.exe)?\s+plugin\s+test(?=\s|$)`)
+
+function readPluginKit(output: string): RunOutcome {
+  const summary = PLUGIN_KIT_SUMMARY.exec(stripAnsi(output))
+  if (summary === null) {
+    return 'unknown'
+  }
+  return Number(summary[2]) > 0 ? 'fail' : Number(summary[3]) > 0 ? 'pass' : 'none'
+}
+
+/** The file header above each (fail) line, a file that did not load among them. */
+function pluginKitFailedFiles(output: string): string[] {
+  const text = stripAnsi(output)
+  if (!PLUGIN_KIT_SUMMARY.test(text)) {
+    return []
+  }
+  const failed: string[] = []
+  let file: string | null = null
+  for (const line of text.split(/\r?\n/)) {
+    const header = PLUGIN_KIT_FILE.exec(line)
+    if (header !== null) {
+      file = forwardSlashes(header[1] ?? '')
+    } else if (line.startsWith('(fail) ') && file !== null) {
+      failed.push(file)
+    }
+  }
+  return unique(failed)
+}
+
 export const RUNNERS: readonly Runner[] = [
   {
     kind: 'vitest',
@@ -580,6 +613,24 @@ export const RUNNERS: readonly Runner[] = [
     read: readDotnet,
     failedFiles: dotnetFailedFiles,
     provisional: false,
+  },
+  {
+    kind: 'plugin-kit',
+    // It runs the whole folder, never one file: the command a reviewer types is the whole kit.
+    describe: () => 'claude plugin test .',
+    alsoFor: [],
+    exts: ['ts', 'tsx'],
+    stack: 'node',
+    // Last of all: node --test wins where it can run the file, so the kit serves the .tsx files it cannot load.
+    markers: ['.claude-plugin/plugin.json'],
+    tools: [],
+    fallback: 'claude',
+    command: PLUGIN_KIT_COMMAND,
+    argv: (_root, _testPath, tool) => [tool, 'plugin', 'test', '.'],
+    read: readPluginKit,
+    failedFiles: pluginKitFailedFiles,
+    // A catch check would re-run the whole kit (about 30 seconds): opt in with "catchCheck": true.
+    provisional: true,
   },
 ]
 

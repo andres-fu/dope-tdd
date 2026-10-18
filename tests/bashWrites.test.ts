@@ -87,9 +87,10 @@ describe('findSourceWrites', () => {
   })
 
   test('a script whose write target is not a literal still counts every source path it names', () => {
+    // Since 2026-10-18 a name assigned once to a plain string is traced to it: src/b.py is only read.
     const viaVariable = "python - <<'PY'\ntarget = 'src/a.py'\nopen(target, 'w').write(open('src/b.py').read())\nPY"
     const unknownStream = "node -e \"stream.write(require('fs').readFileSync('src/a.ts'))\""
-    expect(findSourceWrites(viaVariable)).toEqual(['src/a.py', 'src/b.py'])
+    expect(findSourceWrites(viaVariable)).toEqual(['src/a.py'])
     expect(findSourceWrites(unknownStream)).toEqual(['src/a.ts'])
   })
 
@@ -162,5 +163,32 @@ describe('writesFileNamed: any write to one named file, whatever its extension (
     expect(writesFileNamed(`cp ${RECORD} /tmp/backup.json`, RECORD)).toBe(false)
     expect(writesFileNamed(`echo '{}' > other.json`, RECORD)).toBe(false)
     expect(writesFileNamed(`echo '{}' > my-${RECORD}.bak`, RECORD)).toBe(false)
+  })
+})
+
+describe('the heredoc false positive (2026-10-18)', () => {
+  test("a data heredoc's body is text: code and paths quoted in it are not written", () => {
+    const command = "cd /c/r && cat > /tmp/r.mjs <<'EOF'\nconst a = `python - <<'PY'\\nopen(p,'w').write(x)`\nsee hooks/a.ts\nEOF\nnode /tmp/r.mjs"
+    expect(findSourceWrites(command, 'C:/r')).toEqual(['/tmp/r.mjs'])
+  })
+
+  test('a script that writes through a variable assigned a string writes that string, not every path it mentions', () => {
+    const command = "python - <<'PY'\np='src/x.ts'\ns=open(p).read()\nopen(p,'w').write(s + 'see hooks/a.ts')\nPY"
+    expect(findSourceWrites(command)).toEqual(['src/x.ts'])
+  })
+
+  test('a const or let assignment counts the same way', () => {
+    const command = "node <<'EOF'\nconst target = 'src/x.ts'\nrequire('fs').writeFileSync(target, 'see hooks/a.ts')\nEOF"
+    expect(findSourceWrites(command)).toEqual(['src/x.ts'])
+  })
+
+  test('a variable that is not a plain string still counts every path the script mentions', () => {
+    const command = "python - <<'PY'\nimport sys\np=sys.argv[1]\nopen(p,'w').write('see hooks/a.ts')\nPY"
+    expect(findSourceWrites(command)).toContain('hooks/a.ts')
+  })
+
+  test('a variable assigned twice, once to something else, still counts every path', () => {
+    const command = "python - <<'PY'\np='src/x.ts'\np=p.replace('x','y')\nopen(p,'w').write('see hooks/a.ts')\nPY"
+    expect(findSourceWrites(command)).toContain('hooks/a.ts')
   })
 })

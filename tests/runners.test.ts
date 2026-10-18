@@ -21,6 +21,8 @@ import {
   MAVEN_COMPILE_ERROR,
   MAVEN_FAIL,
   MAVEN_PASS,
+  PLUGIN_KIT_FAIL,
+  PLUGIN_KIT_PASS,
   NODE_TEST_REAL_EMPTY,
   NODE_TEST_REAL_FAIL,
   NODE_TEST_REAL_IPC_CRASH,
@@ -503,5 +505,29 @@ describe('which loaders let node --test run .tsx and .jsx (2026-10-18)', () => {
     expect(jsx?.test('@swc-node/register')).toBe(true)
     expect(jsx?.test('./tests/node/register.mjs')).toBe(false)
     expect(runnerNamed('vitest').jsxLoader).toBeUndefined()
+  })
+})
+
+// Kit runs (2026-10-18): until now `claude plugin test` output was unread, so a plugin's kit tests never saw red.
+describe('claude plugin test, read from real output', () => {
+  test('a run with failures is a fail; an all-pass run is a pass', () => {
+    expect(readRun(PLUGIN_KIT_FAIL)).toBe('fail')
+    expect(readRun(PLUGIN_KIT_PASS)).toBe('pass')
+  })
+
+  test('the failed files are the headers above each (fail), a file that did not load among them', () => {
+    expect(failedFilesIn(PLUGIN_KIT_FAIL)).toEqual(['tests/band.test.tsx', 'tests/overrideFlow.test.tsx'])
+    expect(failedFilesIn(PLUGIN_KIT_PASS)).toEqual([])
+  })
+
+  test('it is a test run, and its command runs the whole folder', () => {
+    expect(isTestRun('claude plugin test .')).toBe(true)
+    expect(isTestRun('cd /c/r && claude plugin test . 2>&1')).toBe(true)
+    expect(isTestRun('claude plugin validate .')).toBe(false)
+    expect(runnerNamed('plugin-kit').describe('tests/band.test.tsx')).toBe('claude plugin test .')
+  })
+
+  test('it is provisional: the catch check does not re-run the whole kit by itself', () => {
+    expect(runnerNamed('plugin-kit').provisional).toBe(true)
   })
 })

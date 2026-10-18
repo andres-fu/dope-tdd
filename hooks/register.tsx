@@ -81,7 +81,7 @@ import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringL
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { succeeded, tell, withContext } from './toolResult.ts'
-import { isExpired, pruneArgv } from './retention.ts'
+import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
 import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey, staleJournal } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
@@ -1679,8 +1679,9 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
 }
 
 /**
- * Removes what dope-tdd left under ~/.dope-tdd (session logs, changes kept aside) more than 30 days ago. $.fs cannot
- * delete, so node does; a machine without node keeps the files, which is the safe failure. Never fails the start.
+ * At a session start: removes session logs written more than 30 days ago, and names the changes kept aside, which are
+ * never removed (retention.ts says why). $.fs cannot delete, so node does; a machine without node keeps the files,
+ * which is the safe failure. Never fails the start.
  */
 async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
   try {
@@ -1689,23 +1690,36 @@ async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
       return
     }
     const base = `${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd`
-    const walk = async (dir: string, depth: number): Promise<void> => {
+    const filesUnder = async (dir: string, depth = 0): Promise<{ path: string; mtimeMs: number }[]> => {
       let entries: Awaited<ReturnType<typeof $.fs.list>> = []
       try {
         entries = await $.fs.list(dir)
       } catch {
-        return
+        return []
       }
+      const found: { path: string; mtimeMs: number }[] = []
       for (const entry of entries) {
         if (entry.kind === 'dir' && !entry.isLink && depth < 8) {
-          await walk(`${dir}/${entry.name}`, depth + 1)
-        } else if (entry.kind === 'file' && isExpired(entry.mtimeMs, nowMs)) {
-          await $.process.run(pruneArgv(`${dir}/${entry.name}`), { timeoutMs: 10_000 }).catch(() => undefined)
+          found.push(...(await filesUnder(`${dir}/${entry.name}`, depth + 1)))
+        } else if (entry.kind === 'file') {
+          found.push({ path: `${dir}/${entry.name}`, mtimeMs: entry.mtimeMs })
+        }
+      }
+      return found
+    }
+    for (const folder of PRUNED_FOLDERS) {
+      for (const file of await filesUnder(`${base}/${folder}`)) {
+        if (isExpired(file.mtimeMs, nowMs)) {
+          await $.process.run(pruneArgv(file.path), { timeoutMs: 10_000 }).catch(() => undefined)
         }
       }
     }
-    await walk(`${base}/sessions`, 0)
-    await walk(`${base}/kept`, 0)
+    const kept = await filesUnder(`${base}/kept`)
+    const notice = keptNotice(kept.map(file => file.path.slice(`${base}/kept/`.length)))
+    if (notice !== null) {
+      $.ui.toast(notice)
+      $.ui.log(notice)
+    }
   } catch (error) {
     $.ui.log(`dope-tdd: could not prune old files: ${String(error)}`)
   }

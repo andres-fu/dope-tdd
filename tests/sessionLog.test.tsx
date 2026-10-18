@@ -18,7 +18,7 @@ function logged(world: FakeWorld): [string, string][] {
 describe('what a session leaves behind does not pile up', () => {
   const RUN_DAYS = 40 * 24 * 60 * 60_000
 
-  test('session logs and kept changes older than 30 days are removed when a session starts', async ($, on) => {
+  test('session logs older than 30 days are removed when a session starts; kept changes never are', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME } })
     world.fileContents.set(`${SESSIONS}2026-08-01-old.json`, '{}')
     world.fileContents.set(`${HOME}/.dope-tdd/kept/throughline/src/a.ts`, 'export const kept = 1')
@@ -28,7 +28,24 @@ describe('what a session leaves behind does not pile up', () => {
 
     const removed = world.gitCalls.filter(argv => argv[0] === 'node').map(argv => argv.at(-1))
     expect(removed).toContain(`${SESSIONS}2026-08-01-old.json`)
-    expect(removed).toContain(`${HOME}/.dope-tdd/kept/throughline/src/a.ts`)
+    expect(removed).not.toContain(`${HOME}/.dope-tdd/kept/throughline/src/a.ts`)
+  })
+
+  test('kept changes are named when a session starts, so their owner finds them', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    world.fileContents.set(`${HOME}/.dope-tdd/kept/throughline/src/a.ts`, 'export const kept = 1')
+
+    await startSession($)
+
+    expect(world.toasts.some(t => t.includes('kept in ~/.dope-tdd/kept: throughline/src/a.ts'))).toBe(true)
+  })
+
+  test('no kept changes: nothing is said', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+
+    await startSession($)
+
+    expect(world.toasts.some(t => t.includes('~/.dope-tdd/kept'))).toBe(false)
   })
 
   test('files younger than 30 days stay', async ($, on) => {

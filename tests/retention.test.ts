@@ -1,12 +1,33 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isExpired, pruneArgv, RETENTION_MS } from '../hooks/retention'
+import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS, RETENTION_MS } from '../hooks/retention'
 import { JOURNAL_TTL_MS, journalEntry, journalFiles, staleJournal } from '../hooks/checkJournal'
 
 const DAY = 24 * 60 * 60_000
 
 describe('what dope-tdd keeps on this machine, and for how long', () => {
-  test('session logs and kept changes are dropped after 30 days, not before', () => {
+  test('only session logs are pruned: a kept change may be the only copy of someone\'s work', () => {
+    expect(PRUNED_FOLDERS).toContain('sessions')
+    expect(PRUNED_FOLDERS).not.toContain('kept')
+  })
+
+  test('no kept changes: nothing to say', () => {
+    expect(keptNotice([])).toBeNull()
+  })
+
+  test('kept changes are named at the start, with where they are and that dope-tdd never deletes them', () => {
+    expect(keptNotice(['throughline/src/a.ts'])).toBe(
+      'dope-tdd: 1 change it could not put back is kept in ~/.dope-tdd/kept: throughline/src/a.ts. Look at it, then delete it yourself; dope-tdd never deletes these.',
+    )
+  })
+
+  test('many kept changes: the first three are named, and how many more there are', () => {
+    expect(keptNotice(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'])).toBe(
+      'dope-tdd: 5 changes it could not put back are kept in ~/.dope-tdd/kept: a.ts, b.ts, c.ts and 2 more. Look at them, then delete them yourself; dope-tdd never deletes these.',
+    )
+  })
+
+  test('session logs are dropped after 30 days, not before', () => {
     expect(RETENTION_MS).toBe(30 * DAY)
     expect(isExpired(1_000, 1_000 + 30 * DAY)).toBe(false)
     expect(isExpired(1_000, 1_001 + 30 * DAY)).toBe(true)

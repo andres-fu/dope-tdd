@@ -101,11 +101,14 @@ export function requestNotes(record: readonly Override[], request: OverrideReque
   ]
 }
 
-/** The override that lets a locked edit to this module through now, or null. */
-export function coveringOverride(record: readonly Override[], module: string, nowMs: number): Override | null {
+/**
+ * The override that lets a locked edit to this module through now, or null. Only the session that asked may use it:
+ * another agent in the same folder sees it on the band but cannot spend it (own your space, 2026-10-18).
+ */
+export function coveringOverride(record: readonly Override[], module: string, nowMs: number, session?: string): Override | null {
   return (
     record.find(o => {
-      if (!isOpen(o)) {
+      if (!isOpen(o) || (o.session !== undefined && session !== undefined && o.session !== session)) {
         return false
       }
       if (o.scope === 'pause') {
@@ -235,30 +238,35 @@ export function deciderLabel(o: Override): string {
   return o.decidedBy ?? 'unknown'
 }
 
+// One "key: value" row per override, so the app can show /tdd as a table (2026-10-18).
 function lineFor(o: Override): string {
-  const head = `  ${o.module ?? 'pause'}  ${o.scope} · ${o.kind}`
+  const head = `override ${o.module ?? 'pause'}: ${o.scope} · ${o.kind}`
   if (o.status === 'pending') {
-    return `${head}  waiting for a person`
+    return `${head} · waiting for a person`
   }
   if (o.status === 'denied') {
-    return `${head}  denied by ${deciderLabel(o)}${o.note === null ? '' : `: ${o.note}`}`
+    return `${head} · denied by ${deciderLabel(o)}${o.note === null ? '' : `: ${o.note}`}`
   }
-  const until = o.until === null ? '' : `  until ${o.until}`
-  const minutes = o.scope === 'pause' ? `  ${o.minutes ?? 0}m` : ''
+  const why = o.decidedBy === 'model' && o.review !== undefined && o.review.reason !== '' ? `: ${o.review.reason}` : ''
   const state =
     o.scope === 'pause'
       ? o.edits.length > 0 && o.settledAtMs === null
-        ? `  DEBT: ${o.edits.length} edit${o.edits.length === 1 ? '' : 's'} untested`
-        : ''
+        ? `DEBT: ${o.edits.length} edit${o.edits.length === 1 ? '' : 's'} untested`
+        : null
       : o.endedAtMs !== null
-        ? '  ENDED'
+        ? 'ENDED'
         : o.kind === 'hotfix'
-          ? '  DEBT: no test yet'
+          ? 'DEBT: no test yet'
           : o.scope === 'module'
-            ? '  OPEN'
-            : ''
-  const why = o.decidedBy === 'model' && o.review !== undefined && o.review.reason !== '' ? `: ${o.review.reason}` : ''
-  return `${head}  approved by ${deciderLabel(o)}${why}${until}${minutes}${state}`
+            ? 'OPEN'
+            : null
+  const parts = [
+    `approved by ${deciderLabel(o)}${why}`,
+    ...(o.until === null ? [] : [`until ${o.until}`]),
+    ...(o.scope === 'pause' ? [`${o.minutes ?? 0}m`] : []),
+    ...(state === null ? [] : [state]),
+  ]
+  return `${head} · ${parts.join(' · ')}`
 }
 
 /** For /tdd and the receipt: the rate per cycle first, so 2 in 40 reads differently from 2 in 3. */
@@ -270,7 +278,7 @@ export function formatOverrides(record: readonly Override[], cycles: number): st
   const denied = record.filter(o => o.status === 'denied').length
   const waiting = record.filter(o => o.status === 'pending').length
   const header = [
-    `OVERRIDES  ${approved} approved in ${cycles} cycles`,
+    `overrides: ${approved} approved in ${cycles} cycles`,
     ...(denied > 0 ? [`${denied} denied`] : []),
     ...(waiting > 0 ? [`${waiting} waiting`] : []),
   ].join(' · ')

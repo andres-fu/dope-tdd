@@ -256,3 +256,36 @@ describe('live-trial fixes (2026-10-18)', () => {
     expect(await ui.find({ type: 'Text', text: 'FLOW' })).toBeUndefined()
   })
 })
+
+describe('session-owned overrides, the build, and plain toasts (2026-10-18)', () => {
+  test("an override is the asking session's: another session in the same folder cannot spend it", async ($, on) => {
+    const world = fakeEngine(on)
+    world.sessionId = 'session-A'
+    await ask($, {})
+    await tdd($, 'approve')
+    world.sessionId = 'session-B'
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
+    world.sessionId = 'session-A'
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeUndefined()
+  })
+
+  // Another session's pause is covered in overrides.test.ts (coveringOverride): one fake engine shares one $.state,
+  // so it cannot hold two sessions' paused flags apart.
+
+  test('/tdd starts with the build that is running', async ($, on) => {
+    const world = fakeEngine(on)
+    world.pluginGit = 'a6b93d4|2026-10-18|Merge pull request #99 from andres-fu/live-trial-fixes'
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    expect((await runCommand($, 'tdd')).text.split('\n')[0]).toBe('#99 · a6b93d4 · 2026-10-18')
+  })
+
+  test('toasts never start with the plugin name: the app adds it', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await ask($, {})
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    await ui.press({ key: 'approve' })
+    expect(world.toasts.length).toBeGreaterThan(1)
+    expect(world.toasts.filter(toast => /^(?:⚑ )?dope-tdd: /.test(toast))).toEqual([])
+  })
+})

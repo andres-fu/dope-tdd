@@ -187,6 +187,8 @@ export type Override = OverrideRequest & {
   edits: string[]
   /** The reviewer model's answer, when the repo's approver is a model. */
   review?: Review
+  /** The session that asked: only it may use the override (own your space). Absent on records from before. */
+  session?: string
 }
 
 declare module 'claude-code' {
@@ -198,6 +200,8 @@ declare module 'claude-code' {
       'powershell-cwd': string
       'git-operation': string
       'unread-runners': readonly string[]
+      /** Which dope-tdd is running (build.ts), read once at session start. */
+      build: string
       /** The repo's override record, as last read from or written to dope-tdd.overrides.json. */
       overrides: readonly Override[]
       /** Whether a person is there to approve a request: from session.start. */

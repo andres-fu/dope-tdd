@@ -208,13 +208,13 @@ describe('a model decision on the record (2026-10-18)', () => {
 
   test('names the model and effort and its reason, so it never reads as a person', () => {
     expect(formatOverrides([entry({ decidedBy: 'model', review })], 10)[1]).toBe(
-      '  runPlan  module · spike  approved by model claude-sonnet-5-5 (high): low risk: the module keeps its proven test  until the spike PR closes  OPEN',
+      'override runPlan: module · spike · approved by model claude-sonnet-5-5 (high): low risk: the module keeps its proven test · until the spike PR closes · OPEN',
     )
   })
 
   test('a model denial reads the same way', () => {
     const denied = entry({ status: 'denied', decidedBy: 'model', note: 'write the test; it is one cycle', review: { ...review, verdict: 'deny', reason: 'write the test; it is one cycle' } })
-    expect(formatOverrides([denied], 10)[1]).toBe('  runPlan  module · spike  denied by model claude-sonnet-5-5 (high): write the test; it is one cycle')
+    expect(formatOverrides([denied], 10)[1]).toBe('override runPlan: module · spike · denied by model claude-sonnet-5-5 (high): write the test; it is one cycle')
   })
 
   test('the review survives the file', () => {
@@ -253,10 +253,10 @@ describe('formatOverrides: for /tdd and the receipt', () => {
       entry({ id: 'o3', scope: 'change', module: 'stats', status: 'denied', until: null, note: 'write the test; it is one cycle' }),
     ]
     expect(formatOverrides(record, 40)).toEqual([
-      'OVERRIDES  2 approved in 40 cycles · 1 denied',
-      '  runPlan  module · spike  approved by human  until the spike PR closes  OPEN',
-      '  mirror  change · hotfix  approved by hotfix rule  DEBT: no test yet',
-      '  stats  change · spike  denied by human: write the test; it is one cycle',
+      'overrides: 2 approved in 40 cycles · 1 denied',
+      'override runPlan: module · spike · approved by human · until the spike PR closes · OPEN',
+      'override mirror: change · hotfix · approved by hotfix rule · DEBT: no test yet',
+      'override stats: change · spike · denied by human: write the test; it is one cycle',
     ])
   })
 })
@@ -291,5 +291,22 @@ describe('live-trial fixes (2026-10-18)', () => {
   test('the decider reads the same everywhere', () => {
     expect(deciderLabel(entry({ decidedBy: 'model', review: { model: 'claude-sonnet-5-5', effort: 'high', verdict: 'approve', reason: 'ok' } }))).toBe('model claude-sonnet-5-5 (high)')
     expect(deciderLabel(entry())).toBe('human')
+  })
+})
+
+describe('an override belongs to the session that asked (2026-10-18)', () => {
+  test('it covers edits in its own session only', () => {
+    const mine = entry({ scope: 'change', session: 'A' })
+    expect(coveringOverride([mine], 'runPlan', T0, 'A')?.id).toBe('o1')
+    expect(coveringOverride([mine], 'runPlan', T0, 'B')).toBeNull()
+  })
+
+  test("another session's pause does not open this session's door", () => {
+    const pause = entry({ scope: 'pause', module: null, minutes: 30, session: 'A' })
+    expect(coveringOverride([pause], 'stats', T0, 'B')).toBeNull()
+  })
+
+  test('a record from before sessions were kept covers any session', () => {
+    expect(coveringOverride([entry({ scope: 'change' })], 'runPlan', T0, 'B')?.id).toBe('o1')
   })
 })

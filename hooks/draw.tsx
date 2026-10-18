@@ -27,6 +27,8 @@ export type BandModel = {
   onResume: () => unknown
   /** Ends the open override on a module, or `pause`. */
   onEnd: (target: string) => unknown
+  /** This session's id, so another session's override is marked as theirs. */
+  session?: string
   onReset: () => unknown
 }
 
@@ -132,7 +134,7 @@ function drawProblems(el: AnyElements, problems: readonly Problem[]) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config, model.overrides, nowMs)
+  const view = bandView(s, config, model.overrides, nowMs, model.session)
   const watching = view.watch.kind === 'watching'
   const progress = view.showProgress
 

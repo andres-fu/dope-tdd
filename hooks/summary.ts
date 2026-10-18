@@ -44,17 +44,19 @@ function openLine(s: TddStats, label: Label): string[] {
   return others.length === 0 ? [] : [`also open: ${others.map(({ module, phase }) => `${label(module)} (${phase})`).join(', ')}`]
 }
 
+// "when: what" rows under a header row: the app shows /tdd as a table of "key: value" rows (2026-10-18).
 function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
   if (s.events.length === 0) {
-    return ['  no events yet']
+    return ['recent events: none yet']
   }
-  return s.events
+  const rows = s.events
     .slice(-RECENT_EVENTS)
     .reverse()
     .map(e => {
       const what = [e.module === undefined ? '' : label(e.module), e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
-      return `  ${formatAgo(nowMs - e.atMs).padEnd(9)} ${e.kind.padEnd(12)} ${what}`.trimEnd()
+      return `${formatAgo(nowMs - e.atMs)}: ${e.kind} ${what}`.trimEnd()
     })
+  return ['recent events: newest first', ...rows]
 }
 
 function catchLine(s: TddStats): string[] {
@@ -85,10 +87,11 @@ function inheritedLine(s: TddStats, nowMs: number, label: Label): string[] {
 
 type Label = (module: string) => string
 
-export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): string {
+/** `build`: which dope-tdd is running (build.ts), the first row; the app already names the plugin. */
+export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, build?: string): string {
   const label: Label = module => (config === undefined ? module : moduleLabel(config, module))
   return [
-    'dope-tdd',
+    build ?? 'dope-tdd',
     `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
@@ -100,7 +103,6 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
     ...catchLine(s),
     ...workaroundLine(s),
     ...inheritedLine(s, nowMs, label),
-    'recent events:',
     ...eventLines(s, nowMs, label),
   ].join('\n')
 }

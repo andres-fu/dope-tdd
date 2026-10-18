@@ -12,6 +12,7 @@ import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck
 import type { RunnerKind } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
+import { buildLabel } from './build.ts'
 import { applyBar, decideAfterReview, failureVerdict, moduleHunks, parseVerdict, reviewPrompt, reviewerFor } from './reviewer.ts'
 import type { ReviewResult } from './reviewer.ts'
 import type { GuardConfig } from './config.ts'
@@ -121,6 +122,8 @@ const OVERRIDE_TOOL = /^mcp__dope-tdd__override_request$/
 const RECORD_DENY = `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an override with mcp__dope-tdd__override_request; a person decides it with /tdd approve or /tdd deny.`
 // Git may change the record: a pull, a checkout or a merge brings in other people's overrides.
 const RUNS_GIT = /(?:^|[;&|(]\s*)git\s/
+/** Which dope-tdd is running (build.ts): read once at session start, shown first in /tdd and kept in the session log. */
+const buildAtom = atom({ plugin: 'dope-tdd', key: 'build' } as const, '')
 type ShellName = 'bash' | 'powershell'
 
 function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
@@ -236,9 +239,32 @@ async function endExpiredPauses($: EngineInterface, root: string, nowMs: number)
   await resumeGuard($, nowMs)
   for (const pause of expired) {
     const line = pauseSummary(pause)
-    $.ui.toast(line)
+    toast($, line)
     $.ui.log(line)
   }
+}
+
+/**
+ * Every toast goes through here: the app already puts the plugin's name in front of a toast (live trial: "dope-tdd:
+ * dope-tdd: ended the override"), so ours drop it, keeping a leading ⚑.
+ */
+function toast($: EngineInterface, text: string): void {
+  $.ui.toast(text.replace(/^(⚑ )?dope-tdd: /, '$1'))
+}
+
+/** This session's id, the owner of the overrides it asks for; undefined when the engine cannot say. */
+async function sessionIdNow($: EngineInterface): Promise<string | undefined> {
+  try {
+    return await $.session.id()
+  } catch {
+    return undefined
+  }
+}
+
+/** The plugin's own folder is a git checkout while it is developed: its last commit names the build. */
+async function readBuild($: EngineInterface): Promise<string> {
+  const log = await gitQuiet($, $.plugin.root, ['log', '-1', '--format=%h|%cs|%s'])
+  return buildLabel(log === null || log.exitCode !== 0 ? null : log.stdout, null)
 }
 
 async function surfacesNow($: EngineInterface): Promise<readonly string[]> {
@@ -293,8 +319,10 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   const review =
     approver.approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix' ? await reviewRequest($, root, request, notes, approver) : undefined
   const decision = review === undefined ? decideAtRequest(request, present) : decideAfterReview(review.verdict, present)
+  const session = await sessionIdNow($)
   const entry: Override = {
     ...request,
+    ...(session === undefined ? {} : { session }),
     id: `o${nowMs.toString(36)}-${record.length + 1}`,
     atMs: nowMs,
     status: decision.status,
@@ -313,7 +341,7 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   if (entry.decidedBy === 'model' && review !== undefined) {
     const approved = entry.status === 'approved'
     const line = `⚑ dope-tdd: override ${approved ? 'approved' : 'denied'} by ${byModel} for ${request.kind} on ${label}: "${reason}". ${review.reason}`
-    $.ui.toast(line)
+    toast($, line)
     $.ui.log(line)
     return approved
       ? `dope-tdd: override approved by ${byModel}: ${review.reason} ${request.scope} on ${label}, recorded in ${OVERRIDES_FILE}.`
@@ -323,7 +351,7 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
     const history = notes.length === 0 ? '' : ` (${notes.join('; ')})`
     const escalated = review === undefined ? '' : ` (the reviewer model escalated: ${review.reason})`
     const line = `⚑ dope-tdd: override needs you. ${request.kind} on ${label}: "${reason}"${history}${escalated}. /tdd approve, or /tdd deny <why>`
-    $.ui.toast(line)
+    toast($, line)
     $.ui.log(line)
     return 'dope-tdd: override requested; waiting for a person to approve it. Stop here: tell the user what you asked for and why, and wait for their answer. Do not retry or work around the guard.'
   }
@@ -333,11 +361,11 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   }
   if (entry.scope === 'pause') {
     await pauseGuard($, nowMs)
-    $.ui.toast(`TDD guard paused for ${request.minutes ?? 0}m`)
+    toast($, `TDD guard paused for ${request.minutes ?? 0}m`)
   }
   if (entry.decidedBy === 'hotfix rule') {
     const line = `⚑ dope-tdd: hotfix override on ${label}: "${reason}". Recorded as debt until a test is written.`
-    $.ui.toast(line)
+    toast($, line)
     $.ui.log(line)
     return `dope-tdd: override approved (hotfix rule): ${request.scope} on ${label}. It is debt in ${OVERRIDES_FILE} until a test is written; end it with /tdd override end ${request.module ?? 'pause'} once one is.`
   }
@@ -408,7 +436,7 @@ async function resumeNow($: EngineInterface): Promise<string> {
     await writeOverrides($, root, closePauses(record, nowMs))
   }
   await resumeGuard($, nowMs)
-  $.ui.toast('TDD guard resumed')
+  toast($, 'TDD guard resumed')
   const summaries = open.map(pause => pauseSummary({ ...pause, minutes: Math.max(1, Math.round((nowMs - pause.atMs) / MINUTE)) }))
   summaries.forEach(line => $.ui.log(line))
   return ['dope-tdd is on: an edit to untested source is refused until its test is written.', ...summaries].join('\n')
@@ -648,7 +676,7 @@ async function reportJournalsElsewhere($: EngineInterface, root: string, nowMs: 
     }
     const notice = elsewhereNotice(found, nowMs)
     if (notice !== null) {
-      $.ui.toast(notice)
+      toast($, notice)
       $.ui.log(notice)
       await change($, s => recordReportedElsewhere(s, notice.replace(/^dope-tdd: /, ''), nowMs))
     }
@@ -714,10 +742,10 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
     await forget($, key)
   }
   if (restored.length > 0) {
-    $.ui.toast(`dope-tdd restored ${restored.length} file(s) after an interrupted check`)
+    toast($, `dope-tdd restored ${restored.length} file(s) after an interrupted check`)
   }
   if (left.length > 0) {
-    $.ui.toast(`dope-tdd left ${left.length} file(s) alone after an interrupted check; each change is kept, see the log`)
+    toast($, `dope-tdd left ${left.length} file(s) alone after an interrupted check; each change is kept, see the log`)
     $.ui.log(`dope-tdd: not restored, they no longer match the interrupted check; kept as: ${left.join(', ')}`)
   }
 }
@@ -746,7 +774,7 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
     $.ui.log(`dope-tdd: the ${name} guard failed (${why}) and let the call through`)
     if (!guardFailureToasted) {
       guardFailureToasted = true
-      $.ui.toast('dope-tdd hit an internal error and let a call through; see the log')
+      toast($, 'dope-tdd hit an internal error and let a call through; see the log')
     }
   } catch {
     // Re-entry: nothing to report with, and nothing to hold.
@@ -1194,7 +1222,7 @@ async function checkAgainst(
   if (movedWhileReverted) {
     const kept = await keepAside($, root, path, after)
     const where = kept === null ? 'see the log' : `your change is in ${kept.startsWith(root) ? relativePath(root, kept) : kept}`
-    $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
+    toast($, `dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
     // Never the text itself: a log outlives the session and is read by tools this plugin does not control, and the
     // text may hold secrets. When keepAside failed, the file on disk was changed by someone else and `after` is lost
     // with this session; say so by size so the loss is visible without copying the source anywhere.
@@ -1203,7 +1231,7 @@ async function checkAgainst(
     return { kind: 'unverified', reason: 'changed during check' }
   }
   if ((await readWhole($, path)) !== after) {
-    $.ui.toast('dope-tdd could not restore a source file after the catch check; see /tdd')
+    toast($, 'dope-tdd could not restore a source file after the catch check; see /tdd')
     $.ui.log(`dope-tdd: restore failed for ${path}; journal kept under ${journalKey}`)
     return { kind: 'unverified', reason: 'restore failed' }
   }
@@ -1290,7 +1318,7 @@ async function setupText($: EngineInterface, root: string, write: boolean, nowMs
   const after = await loadConfig($, root)
   const detail = describeConfigChange(current, after) ?? 'no change'
   await change($, s => recordConfigChange(s, `setup: ${detail}`, false, nowMs))
-  $.ui.toast(`dope-tdd: ${CONFIG_FILE} written (${detail})`)
+  toast($, `dope-tdd: ${CONFIG_FILE} written (${detail})`)
   return `${text}\nwritten: ${CONFIG_FILE} (${detail})`
 }
 
@@ -1377,7 +1405,7 @@ async function noteGitOperation($: EngineInterface, root: string): Promise<{ ope
   }
   await update($, gitOperation, () => operation ?? '')
   if (operation !== null) {
-    $.ui.toast(`dope-tdd stands down during the git ${operation}`)
+    toast($, `dope-tdd stands down during the git ${operation}`)
     $.ui.log(`dope-tdd: ${standingDownLine(operation)}`)
     return {
       operation,
@@ -1458,7 +1486,7 @@ async function checkFileWrite(
     // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
     const nowMs = await $.clock.now()
     const record = await read($, overrideRecord)
-    const covering = coveringOverride(record, target.module, nowMs)
+    const covering = coveringOverride(record, target.module, nowMs, await sessionIdNow($))
     if (covering !== null) {
       await writeOverrides($, root, recordEdit(record, covering.id, relativePath(root, filePath)))
     } else if (!current.paused) {
@@ -1500,7 +1528,7 @@ async function checkFileWrite(
       return result
     }
     await change($, s => recordConfigChange(s, detail, isLoosening(config, after), nowMs))
-    $.ui.toast(`dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
+    toast($, `dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
     return withContext(result, [configChangedAdvice(detail)])
   }
   if (target.kind === 'source') {
@@ -2010,7 +2038,7 @@ async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
     const kept = await filesUnder(`${base}/kept`)
     const notice = keptNotice(kept.map(file => file.path.slice(`${base}/kept/`.length)))
     if (notice !== null) {
-      $.ui.toast(notice)
+      toast($, notice)
       $.ui.log(notice)
     }
   } catch (error) {
@@ -2216,7 +2244,7 @@ async function coverShellWrites($: EngineInterface, root: string, locked: readon
   let record = await readOverrides($, root)
   const stillLocked: string[] = []
   for (const module of locked) {
-    const covering = coveringOverride(record, module, nowMs)
+    const covering = coveringOverride(record, module, nowMs, await sessionIdNow($))
     const path = writes.find(write => write.module === module)?.path
     if (covering === null || path === undefined) {
       stillLocked.push(module)
@@ -2278,7 +2306,8 @@ async function writeSessionLog($: EngineInterface, sessionId: string, reason: st
   const root = await $.session.root()
   const config = await loadConfig($, root)
   const nowMs = await $.clock.now()
-  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs }, formatStatus(s, nowMs, config))
+  const build = (await read($, buildAtom)) || undefined
+  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs, ...(build === undefined ? {} : { build }) }, formatStatus(s, nowMs, config, build))
   await $.fs.write(sessionLogPath(home, nowMs, sessionId), `${JSON.stringify(record, null, 2)}
 `)
 }
@@ -2288,7 +2317,7 @@ async function currentStatus($: EngineInterface): Promise<string> {
   const config = await loadConfig($, root)
   await endExpiredPauses($, root, await $.clock.now())
   const s = await readStats($)
-  const status = formatStatus(s, await $.clock.now(), config)
+  const status = formatStatus(s, await $.clock.now(), config, (await read($, buildAtom)) || undefined)
   const overrides = formatOverrides(await readOverrides($, root), s.cycles)
   const operation = await detectGitOperation($, root)
   const unread = await read($, unreadRunners)
@@ -2346,6 +2375,8 @@ export const register: Register = on => {
     })
     const started = await next(e)
     await update($, attended, () => e.isInteractive)
+    const build = await readBuild($)
+    await update($, buildAtom, () => build)
     await seedFromStore($)
     await $.command.register({
       name: 'tdd',
@@ -2481,15 +2512,16 @@ export const register: Register = on => {
       standingDown,
       onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current === null ? '' : moduleLabel(config, current.current.module)}` }),
       overrides: record,
-      onApprove: async () => $.ui.toast(await decidePending($, true, null)),
-      onDeny: async () => $.ui.toast(await decidePending($, false, null)),
+      session: await sessionIdNow($),
+      onApprove: async () => toast($, await decidePending($, true, null)),
+      onDeny: async () => toast($, await decidePending($, false, null)),
       onResume: async () => {
         await resumeNow($)
       },
-      onEnd: async (target: string) => $.ui.toast(await endNamed($, target)),
+      onEnd: async (target: string) => toast($, await endNamed($, target)),
       onReset: async () => {
         await change($, resetStats)
-        $.ui.toast('TDD stats reset')
+        toast($, 'TDD stats reset')
       },
     })
   })

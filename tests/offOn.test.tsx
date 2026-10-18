@@ -33,7 +33,7 @@ describe('/tdd off, /tdd pause and /tdd on', () => {
     expect(status.text).toMatch(/guard: PAUSED/)
     expect(status.text).toMatch(/unguarded 0 · blocked 0/)
     expect(status.text).toMatch(/workarounds: 1 \(paused 1\)/)
-    expect(status.text).toMatch(/pause {2}pause · other {2}approved by human/)
+    expect(status.text).toMatch(/^override pause: pause · other · approved by human/m)
   })
 
   test('on ends the pause early, and the next untested edit is refused', async ($, on) => {

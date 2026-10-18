@@ -112,6 +112,19 @@ describe('every session leaves its receipt on this machine', () => {
     expect(record.checkMs).toBe(3000)
   })
 
+  test('the record names the build of dope-tdd that guarded the session (2026-10-18)', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    world.pluginGit = 'a6b93d4|2026-10-18|Merge pull request #99 from andres-fu/live-trial-fixes'
+    await startSession($)
+    await fixUnderGuard($, world)
+    await runTests($, world, 'pass')
+
+    await end($)
+    const record = JSON.parse(logged(world)[0]?.[1] ?? '{}') as Record<string, unknown>
+
+    expect(record.build).toBe('#99 · a6b93d4 · 2026-10-18')
+  })
+
   test('a session that did nothing leaves nothing', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME } })
 

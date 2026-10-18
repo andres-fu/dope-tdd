@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS, RETENTION_MS } from '../hooks/retention'
-import { JOURNAL_TTL_MS, journalEntry, journalFiles, staleJournal } from '../hooks/checkJournal'
+import { journalEntry, journalFiles } from '../hooks/checkJournal'
 
 const DAY = 24 * 60 * 60_000
 
@@ -48,13 +48,5 @@ describe('what dope-tdd keeps on this machine, and for how long', () => {
     const entry = journalEntry([{ path: 'a.ts', before: 'a', after: 'b' }], 123)
     expect(entry).toEqual({ files: [{ path: 'a.ts', before: 'a', after: 'b' }], atMs: 123 })
     expect(journalFiles(entry)).toHaveLength(1)
-  })
-
-  test('a journal is stale after 7 days; one with no time (an earlier build) is never judged stale', () => {
-    expect(JOURNAL_TTL_MS).toBe(7 * DAY)
-    expect(staleJournal({ files: [], atMs: 0 }, 7 * DAY)).toBe(false)
-    expect(staleJournal({ files: [], atMs: 0 }, 7 * DAY + 1)).toBe(true)
-    expect(staleJournal({ files: [] }, 100 * DAY)).toBe(false)
-    expect(staleJournal(undefined, 100 * DAY)).toBe(false)
   })
 })

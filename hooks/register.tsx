@@ -82,7 +82,7 @@ import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey, staleJournal } from './checkJournal.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -381,28 +381,6 @@ async function journalKeys($: EngineInterface, root: string): Promise<string[]> 
   }
 }
 
-/**
- * This root's journals, plus any journal of another root older than a week: a project that is never reopened would
- * keep its source text in the store for ever. Settled the same way (put back, or kept aside, then forgotten), so a
- * stale journal never costs the user a change. A recent journal of another root may be a check running right now.
- */
-async function journalKeysToSettle($: EngineInterface, root: string): Promise<string[]> {
-  const own = await journalKeys($, root)
-  try {
-    const nowMs = await $.clock.now()
-    const stale: string[] = []
-    for (const key of await $.store.keys()) {
-      if (key.startsWith(JOURNAL_PREFIX) && !own.includes(key) && staleJournal(await $.store.get(key), nowMs)) {
-        stale.push(key)
-      }
-    }
-    return [...own, ...stale]
-  } catch (error) {
-    $.ui.log(`dope-tdd: could not look for old journals: ${String(error)}`)
-    return own
-  }
-}
-
 async function forget($: EngineInterface, key: string): Promise<void> {
   try {
     await $.store.delete(key)
@@ -438,7 +416,8 @@ async function keepAside($: EngineInterface, root: string, path: string, text: s
 async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
-  for (const key of await journalKeysToSettle($, root)) {
+  // Only this root's journals: a session writes only in its own repository, never in another project (#89).
+  for (const key of await journalKeys($, root)) {
     const files = journalFiles(await $.store.get(key)) ?? []
     for (const file of files) {
       const onDisk = await readWhole($, file.path)

@@ -9,17 +9,9 @@ export function isJournalFile(value: unknown): value is JournalFile {
   return typeof file === 'object' && file !== null && typeof file.path === 'string' && typeof file.before === 'string' && typeof file.after === 'string'
 }
 
-export const JOURNAL_TTL_MS = 7 * 24 * 60 * 60_000
-
-/** The journal as stored: the files, and when it was written, so a journal nobody came back for can be told from a live one. */
+/** The journal as stored: the files, and when it was written, so its age is on record. */
 export function journalEntry(files: JournalFile[], atMs: number): { files: JournalFile[]; atMs: number } {
   return { files, atMs }
-}
-
-/** Older than a week. An entry from an earlier build has no time and is never judged stale: it may still hold the only copy. */
-export function staleJournal(value: unknown, nowMs: number): boolean {
-  const atMs = (value as { atMs?: unknown } | null | undefined)?.atMs
-  return typeof atMs === 'number' && nowMs - atMs > JOURNAL_TTL_MS
 }
 
 export function journalFiles(value: unknown): JournalFile[] | null {

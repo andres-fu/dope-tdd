@@ -346,18 +346,18 @@ describe('the revert is safe', () => {
     expect((seen as { atMs?: number }).atMs).toBe(T0)
   })
 
-  test('a journal nobody came back for in a week, from a project never reopened, is settled and removed at session start', async ($, on) => {
+  test("another project's journal is never settled here, however old: a session writes only in its own repository (#89)", async ($, on) => {
     const OTHER = 'C:/elsewhere/proj'
     const world = fakeEngine(on, {
       env: { HOME: HOME_DIR },
-      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 8 * 24 * 60 * 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
+      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 30 * 24 * 60 * 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
     })
     world.fileContents.set(`${OTHER}/m.ts`, 'a')
 
     await startSession($)
 
-    expect(world.store.has(`catch-journal:${OTHER}:m`)).toBe(false)
-    expect(world.fileContents.get(`${OTHER}/m.ts`)).toBe('b')
+    expect(world.store.has(`catch-journal:${OTHER}:m`)).toBe(true)
+    expect(world.fileContents.get(`${OTHER}/m.ts`)).toBe('a')
   })
 
   test('a recent journal of another project is left alone: its check may be running', async ($, on) => {

@@ -271,12 +271,12 @@ change back, so it holds a copy of the source file it is checking:
 | What | Where | Holds | Kept |
 |---|---|---|---|
 | Session state | Claude Code's plugin state, in memory | Before and after text of each file with an open change, counters, module and test names | Until the change is judged or the session ends |
-| Catch-check journal | Claude Code's plugin store | Before and after text of the file being checked, so an interrupted check can put it back | Removed when the check ends; one left behind is settled and removed at the next session start, or after 7 days |
+| Catch-check journal | Claude Code's plugin store | Before and after text of the file being checked, so an interrupted check can put it back | Removed when the check ends; one left behind is settled and removed at the next session start in that project, never from another |
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
 | Session log | `~/.dope-tdd/sessions/` | Counts and the status receipt (module and test names), the repository folder name, no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
-| Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | 30 days |
+| Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Field guide | `~/.dope-tdd/guides/` | Rules you write; Dope TDD only reads it | You own it |
 
 Files matched by `exempt` in `dope-tdd.json` are not captured. The 30-day

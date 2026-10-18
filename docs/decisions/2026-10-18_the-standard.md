@@ -145,6 +145,13 @@ Blocking teaches the agent to game more cleverly; showing makes it pointless.
   hard to test is telling you its design is wrong.
 - **No hard-coding** of what will change: paths, names, limits.
 - **Shared code becomes a library** when two places need it, not before.
+- **Privacy by design.** The core privacy principles are followed strictly, always, whether or not a
+  law requires it yet: collect only what is needed, keep it only as long as needed, know where it
+  lives, never log personal data, be able to delete it on request. These are GDPR's principles, and
+  they are cheap from the start and painful to retrofit; building to them makes going global a
+  non-event. The heavy machinery (consent management, impact assessments, data residency) comes only
+  when the code really processes personal data at that scale, and domain rules (PCI, HIPAA, WCAG) only
+  where their domain applies. Strict principles always; ceremony only when it applies.
 - **[decide]** naming, function size, comments.
 
 dope-tdd does not lint style. It makes refactoring safe, nudges at the right moment, and leaves taste
@@ -182,6 +189,10 @@ recorded, labels present), and an agent applies them only when it knows they app
   checkers.
 
 dope-tdd does not judge compliance. It keeps compliance requirements from silently regressing.
+
+dope-tdd holds itself to the same principles. It sends nothing off the machine. What it stores
+locally (session state, the catch-check journal, session logs) is to be minimised (hashes rather than
+file texts), given a retention limit, and listed in the README. **[proposed: a data audit of dope-tdd]**
 
 ## Measuring it
 Only what dope-tdd can see, on the engineer's machine:

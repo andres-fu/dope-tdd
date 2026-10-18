@@ -81,7 +81,8 @@ import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringL
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { succeeded, tell, withContext } from './toolResult.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
+import { isExpired, pruneArgv } from './retention.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey, staleJournal } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -380,6 +381,28 @@ async function journalKeys($: EngineInterface, root: string): Promise<string[]> 
   }
 }
 
+/**
+ * This root's journals, plus any journal of another root older than a week: a project that is never reopened would
+ * keep its source text in the store for ever. Settled the same way (put back, or kept aside, then forgotten), so a
+ * stale journal never costs the user a change. A recent journal of another root may be a check running right now.
+ */
+async function journalKeysToSettle($: EngineInterface, root: string): Promise<string[]> {
+  const own = await journalKeys($, root)
+  try {
+    const nowMs = await $.clock.now()
+    const stale: string[] = []
+    for (const key of await $.store.keys()) {
+      if (key.startsWith(JOURNAL_PREFIX) && !own.includes(key) && staleJournal(await $.store.get(key), nowMs)) {
+        stale.push(key)
+      }
+    }
+    return [...own, ...stale]
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not look for old journals: ${String(error)}`)
+    return own
+  }
+}
+
 async function forget($: EngineInterface, key: string): Promise<void> {
   try {
     await $.store.delete(key)
@@ -415,7 +438,7 @@ async function keepAside($: EngineInterface, root: string, path: string, text: s
 async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
-  for (const key of await journalKeys($, root)) {
+  for (const key of await journalKeysToSettle($, root)) {
     const files = journalFiles(await $.store.get(key)) ?? []
     for (const file of files) {
       const onDisk = await readWhole($, file.path)
@@ -868,7 +891,7 @@ async function checkAgainst(
   }
   const journalKey = journalKeyFor(root, module)
   try {
-    await $.store.set(journalKey, { files: [{ path, before, after }] })
+    await $.store.set(journalKey, journalEntry([{ path, before, after }], lockedAt))
   } catch (error) {
     await releaseAll()
     $.ui.log(`dope-tdd: could not journal the catch check for ${path}: ${String(error)}`)
@@ -917,7 +940,10 @@ async function checkAgainst(
     const kept = await keepAside($, root, path, after)
     const where = kept === null ? 'see the log' : `your change is in ${kept.startsWith(root) ? relativePath(root, kept) : kept}`
     $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
-    $.ui.log(`dope-tdd: ${path} changed while reverted; the text after your change: ${kept ?? `(could not be written) ${after}`}`)
+    // Never the text itself: a log outlives the session and is read by tools this plugin does not control, and the
+    // text may hold secrets. When keepAside failed, the file on disk was changed by someone else and `after` is lost
+    // with this session; say so by size so the loss is visible without copying the source anywhere.
+    $.ui.log(`dope-tdd: ${path} changed while reverted; your change is ${kept ?? `not saved (could not write it aside; ${after.length} characters lost)`}`)
     await forget($, journalKey)
     return { kind: 'unverified', reason: 'changed during check' }
   }
@@ -1652,10 +1678,45 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   }
 }
 
+/**
+ * Removes what dope-tdd left under ~/.dope-tdd (session logs, changes kept aside) more than 30 days ago. $.fs cannot
+ * delete, so node does; a machine without node keeps the files, which is the safe failure. Never fails the start.
+ */
+async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
+  try {
+    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+    if (home === undefined || home === '') {
+      return
+    }
+    const base = `${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd`
+    const walk = async (dir: string, depth: number): Promise<void> => {
+      let entries: Awaited<ReturnType<typeof $.fs.list>> = []
+      try {
+        entries = await $.fs.list(dir)
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (entry.kind === 'dir' && !entry.isLink && depth < 8) {
+          await walk(`${dir}/${entry.name}`, depth + 1)
+        } else if (entry.kind === 'file' && isExpired(entry.mtimeMs, nowMs)) {
+          await $.process.run(pruneArgv(`${dir}/${entry.name}`), { timeoutMs: 10_000 }).catch(() => undefined)
+        }
+      }
+    }
+    await walk(`${base}/sessions`, 0)
+    await walk(`${base}/kept`, 0)
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not prune old files: ${String(error)}`)
+  }
+}
+
 /** What a session starts from: an interrupted check repaired, the unlocks remembered in the store, the config read. */
 async function seedFromStore($: EngineInterface): Promise<void> {
   const root = await $.session.root()
-  await ensureRepaired($, root, await $.clock.now())
+  const nowMs = await $.clock.now()
+  await ensureRepaired($, root, nowMs)
+  await pruneOldFiles($, nowMs)
   await seedRememberedUnlocks($)
   await loadConfig($, root)
 }

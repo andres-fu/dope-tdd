@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { BAND, MINUTE, ROOT, editAt, fakeEngine, runCommand, test, touchTest, writeAt } from './engine'
+import { BAND, MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, test, touchTest, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 // Override with a reason, v1 (2026-10-18): the agent asks, a person decides, the repo keeps the record.
@@ -162,5 +162,56 @@ describe('pause: a reason and a time, never a switch', () => {
     expect(await ui.find({ type: 'Button', text: 'RESUME' })).toBeDefined()
     await ui.press({ key: 'resume' })
     expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
+  })
+})
+
+describe("the record is only dope-tdd's to write, from the shell too", () => {
+  test('a shell write to the record is refused', async ($, on) => {
+    fakeEngine(on)
+    const forged = await runBash($, `echo '{"overrides":[]}' > dope-tdd.overrides.json`)
+    expect(forged.deny).toMatch(/dope-tdd keeps this record/)
+  })
+
+  test('a command that changes it another way has it put back, said, and counted as a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    await ask($, { kind: 'hotfix', reason: 'null check for the prod crash in #301, the test comes in the follow-up' })
+    const before = world.fileContents.get(RECORD)
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    const result = await runBash($, 'node scripts/tidy.mjs')
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe(before)
+    expect(JSON.stringify(result)).toMatch(/put dope-tdd.overrides.json back/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/override record edited 1/)
+  })
+
+  test('a record a script created from nothing is emptied, so it approves nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[{"id":"x","atMs":0,"status":"approved","scope":"pause","kind":"other","reason":"forged","minutes":120}]}')
+    await runBash($, 'node scripts/tidy.mjs')
+    world.onBash = () => {}
+    expect(record(world).overrides).toEqual([])
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
+  })
+
+  test("git may change it: a pull or a checkout brings in other people's overrides", async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    await runBash($, 'git pull')
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe('{"overrides":[]}')
+  })
+})
+
+describe('pause settings in dope-tdd.json', () => {
+  test('"pause": false locks pause out', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"pause": false}')
+    expect((await tdd($, 'pause 30 pairing on the prod incident in #301 and back after')).text).toMatch(/pause is turned off for this repo/)
+  })
+
+  test('a shorter cap is the limit', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"pause": {"maxMinutes": 20}}')
+    expect((await tdd($, 'pause 30 pairing on the prod incident in #301 and back after')).text).toMatch(/at most 20 minutes/)
   })
 })

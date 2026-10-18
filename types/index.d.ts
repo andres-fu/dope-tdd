@@ -22,6 +22,8 @@ export type EventKind =
   | 'assertion-removed'
   | 'commented-out'
   | 'hollow-touch'
+  /** The override record changed outside dope-tdd and was put back (override v1, 2026-10-18). */
+  | 'record-edited'
   /** #54: an edit refused because a carried-over unlock waits for one run of its test this session. */
   | 'needs-run'
   /** #54: that run happened; the carried-over unlock is active. */

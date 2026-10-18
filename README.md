@@ -240,6 +240,9 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   green then stops at GREEN; turning it off is recorded as a loosening.
   `true` also lets an experimental runner (pytest, gdUnit4, Maven, Gradle,
   `dotnet test`) check in place, as described next.
+- `pause`: `false` locks `/tdd pause` out for the repo; `{ "maxMinutes": 30 }`
+  sets a shorter limit. The limit can only be tightened below two hours,
+  and allowing longer pauses is recorded as a loosening.
 
 With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
 your change in a throwaway copy inside `.git` and never writes your files.

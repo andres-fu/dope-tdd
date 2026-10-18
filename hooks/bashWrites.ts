@@ -71,6 +71,24 @@ function writesIn(segment: string): string[] {
 }
 
 /**
+ * Whether the command writes one named file, whatever its extension: the patterns above match code files only, and the
+ * override record is JSON (override v1, 2026-10-18). A redirect, tee, cp or mv onto it, rm or truncate of it, or an
+ * in-place sed, PowerShell or script write that mentions it. The name must stand alone: `my-x.json.bak` is not `x.json`.
+ */
+export function writesFileNamed(command: string, name: string): boolean {
+  const text = command.replace(/\\/g, '/')
+  const exact = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?=$|[\s'"),;&|])`
+  const file = String.raw`(?:^|[\s'"=(/])` + exact
+  const onto = [
+    new RegExp(String.raw`(?:>>?|\btee\s+(?:-a\s+)?)\s*['"]?(?:[\w.~@-]*\/)*` + exact),
+    new RegExp(String.raw`\b(?:cp|mv)\b[^|;&\n]*` + file + String.raw`['"]?\s*(?:$|[;&|\n])`),
+    new RegExp(String.raw`\b(?:rm|truncate)\b[^|;&\n]*` + file),
+  ]
+  const mentioned = new RegExp(file).test(text)
+  return onto.some(pattern => pattern.test(text)) || (mentioned && (IN_PLACE_SED.test(text) || POWERSHELL_WRITE.test(text) || SCRIPT_WRITE.test(text)))
+}
+
+/**
  * Source files the command writes. With a `root`, each path is resolved
  * against the directory its segment runs in (a `cd` earlier in the command
  * moves it), so the result is absolute and a write in another repository

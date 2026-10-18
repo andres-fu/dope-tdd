@@ -133,7 +133,7 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null): string {
 
 // Events that close a cycle rather than belong to the next one: a pass and the verdicts that follow it.
 const CLOSING: ReadonlySet<string> = new Set(['pass', 'caught', 'proven', 'missed', 'unverified', 'refactor', 'carried-on'])
-const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch'])
+const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch', 'record-edited'])
 
 /**
  * Every event during the current module's current cycle, whichever module it touched: from the module's previous pass

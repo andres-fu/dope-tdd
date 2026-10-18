@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { BeforeState, CatchOutcome, TddStats } from '../types'
-import { findSourceWrites } from './bashWrites.ts'
+import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
 import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
@@ -10,7 +10,7 @@ import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck.ts'
 import type { RunnerKind } from './catchCheck.ts'
-import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor } from './config.ts'
+import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
 import {
   assertionsRemovedAdvice,
@@ -115,7 +115,9 @@ const overrideRecord = atom({ plugin: 'dope-tdd', key: 'overrides' } as const, [
 /** Whether a person is there to approve an override; unknown counts as there, as in a session the tests start bare. */
 const attended = atom({ plugin: 'dope-tdd', key: 'attended' } as const, true)
 const OVERRIDE_TOOL = /^mcp__dope-tdd__override_request$/
-const PAUSE_MAX_MINUTES = 120
+const RECORD_DENY = `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an override with mcp__dope-tdd__override_request; a person decides it with /tdd approve or /tdd deny.`
+// Git may change the record: a pull, a checkout or a merge brings in other people's overrides.
+const RUNS_GIT = /(?:^|[;&|(]\s*)git\s/
 type ShellName = 'bash' | 'powershell'
 
 function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
@@ -264,7 +266,7 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
     until: inputText(input, 'until'),
     minutes: typeof input.minutes === 'number' ? input.minutes : null,
   }
-  const malformed = checkRequest(request, { pauseMaxMinutes: PAUSE_MAX_MINUTES })
+  const malformed = checkRequest(request, { pauseMaxMinutes: pauseLimit(config) })
   if (malformed !== null) {
     return `dope-tdd: override refused: ${malformed}.`
   }
@@ -1382,7 +1384,7 @@ async function checkFileWrite(
   const isConfig = relativePath(root, filePath) === CONFIG_FILE
   // The record is evidence of who approved what: only dope-tdd writes it, whatever the mode.
   if (relativePath(root, filePath) === OVERRIDES_FILE) {
-    return { deny: `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an override with mcp__dope-tdd__override_request; a person decides it with /tdd approve or /tdd deny.` }
+    return { deny: RECORD_DENY }
   }
   await endExpiredPauses($, root, await $.clock.now())
   const current = await readStats($)
@@ -1611,6 +1613,9 @@ async function checkShell(
       return { path, module: sourceModuleOf(root, path, config), policy: policyFor(config, relativePath(root, path)) }
     }),
   )
+  if (writesFileNamed(command, OVERRIDES_FILE)) {
+    return { deny: RECORD_DENY }
+  }
   const gated = gateShellWrites(writes, current.unlocked, current.inherited)
   const waiting = gated.waiting
   const locked = gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
@@ -2093,6 +2098,33 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   return lines.join('\n')
 }
 
+/**
+ * The backstop for writes no command parser can see (a script, an interpreter): a non-git command that changed the
+ * record has it put back, and it is a workaround on the record. One that created it from nothing leaves it empty, so a
+ * forged record approves nothing.
+ */
+async function keepRecord($: EngineInterface, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+  if (RUNS_GIT.test(command)) {
+    return run()
+  }
+  const root = await $.session.root()
+  const path = `${root}/${OVERRIDES_FILE}`
+  const before = await readWhole($, path)
+  const result = await run()
+  const after = await readWhole($, path)
+  if (after === before) {
+    return result
+  }
+  const restored = before ?? serializeRecord([])
+  await $.fs.write(path, restored)
+  await update($, overrideRecord, () => parseRecord(restored))
+  const nowMs = await $.clock.now()
+  await change($, s => recordWorkaround(s, 'record-edited', '', OVERRIDES_FILE, nowMs))
+  const line = `dope-tdd: that command changed ${OVERRIDES_FILE}; only dope-tdd writes it, so dope-tdd put ${OVERRIDES_FILE} back. Recorded as a workaround; say why.`
+  $.ui.log(line)
+  return tell(false, result, [line])
+}
+
 /** Locked modules a shell command writes that an approved override covers are let through and counted on it; the rest stay locked. */
 async function coverShellWrites($: EngineInterface, root: string, locked: readonly string[], writes: readonly { path: string; module: string | null }[]): Promise<string[]> {
   const nowMs = await $.clock.now()
@@ -2328,13 +2360,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardShell($, e.command, () => next(e), 'bash')).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash'))).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardShell($, e.command, () => next(e), 'powershell')).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell'))).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { assertionCalls, commentedOutLines, skipMarkers, testEditSignals } from '../hooks/workarounds'
+import { assertionCalls, commentedOutLines, skipMarkers, testEditSignals, WORKAROUND_KINDS } from '../hooks/workarounds'
 
 const HONEST = "import { expect, test } from 'vitest'\n\ntest('formats', () => {\n  expect(formatCents(-1250)).toBe('-$12.50')\n  expect(formatCents(-50)).toBe('-$0.50')\n})\n"
 
@@ -55,5 +55,11 @@ describe('commentedOutLines', () => {
 
   test('deleting code outright is not commenting it out', () => {
     expect(commentedOutLines(before, 'export function f(a: number) {\n  return a * 2\n}\n')).toBe(0)
+  })
+})
+
+describe('WORKAROUND_KINDS (2026-10-18)', () => {
+  test('includes an override record changed outside dope-tdd', () => {
+    expect(WORKAROUND_KINDS).toContain('record-edited')
   })
 })

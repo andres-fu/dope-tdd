@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { findSourceWrites } from '../hooks/bashWrites'
+import { findSourceWrites, writesFileNamed } from '../hooks/bashWrites'
 import { ELSEWHERE } from '../hooks/shell'
 
 describe('findSourceWrites', () => {
@@ -131,5 +131,36 @@ describe('findSourceWrites with a root', () => {
     expect(findSourceWrites('D=src; echo x > $D/a.ts', 'C:/work')).toEqual(['C:/work/src/a.ts'])
     expect(findSourceWrites('R=/tmp/x; echo x > ${R}/a.ts', 'C:/work')).toEqual(['/tmp/x/a.ts'])
     expect(findSourceWrites('echo x > $OUT/a.ts', 'C:/work')).toEqual([`${ELSEWHERE}/a.ts`])
+  })
+})
+
+describe('writesFileNamed: any write to one named file, whatever its extension (2026-10-18)', () => {
+  const RECORD = 'dope-tdd.overrides.json'
+
+  test('a redirect, tee, cp, mv, rm or truncate onto it', () => {
+    for (const command of [
+      `echo '{}' > ${RECORD}`,
+      `echo '{}' >> ./${RECORD}`,
+      `cat x | tee ${RECORD}`,
+      `cp /tmp/forged.json ${RECORD}`,
+      `mv "/tmp/forged.json" "${RECORD}"`,
+      `rm -f ${RECORD}`,
+      `truncate -s 0 ${RECORD}`,
+    ]) {
+      expect(writesFileNamed(command, RECORD)).toBe(true)
+    }
+  })
+
+  test('an in-place sed, a PowerShell write or a script write that names it', () => {
+    expect(writesFileNamed(`sed -i 's/denied/approved/' ${RECORD}`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path ${RECORD} -Value '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`node -e "require('fs').writeFileSync('${RECORD}', '{}')"`, RECORD)).toBe(true)
+  })
+
+  test('reading it, or writing another file, is not a write to it', () => {
+    expect(writesFileNamed(`cat ${RECORD}`, RECORD)).toBe(false)
+    expect(writesFileNamed(`cp ${RECORD} /tmp/backup.json`, RECORD)).toBe(false)
+    expect(writesFileNamed(`echo '{}' > other.json`, RECORD)).toBe(false)
+    expect(writesFileNamed(`echo '{}' > my-${RECORD}.bak`, RECORD)).toBe(false)
   })
 })

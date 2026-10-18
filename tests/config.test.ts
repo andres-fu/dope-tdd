@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_CONFIG, describeConfig, globMatches, parseConfig, policyFor } from '../hooks/config'
+import { DEFAULT_CONFIG, describeConfig, describeConfigChange, globMatches, isLoosening, parseConfig, pauseLimit, policyFor } from '../hooks/config'
 
 describe('parseConfig', () => {
   test('no file means enforce everywhere', () => {
@@ -93,5 +93,33 @@ describe('describeConfig', () => {
     const broken = describeConfig(parseConfig('nope'))
     expect(broken[0]).toBe('mode: enforce')
     expect(broken.at(-1)).toMatch(/^config: dope-tdd\.json: .*\(using defaults\)$/)
+  })
+})
+
+describe('pause in dope-tdd.json (override v1, 2026-10-18)', () => {
+  test('absent: the two-hour cap', () => {
+    expect(pauseLimit(parseConfig('{}'))).toBe(120)
+    expect(pauseLimit(parseConfig(null))).toBe(120)
+  })
+
+  test('false locks pause out', () => {
+    expect(pauseLimit(parseConfig('{"pause": false}'))).toBe(0)
+  })
+
+  test('a team may set a shorter cap', () => {
+    expect(pauseLimit(parseConfig('{"pause": {"maxMinutes": 30}}'))).toBe(30)
+  })
+
+  test('the cap can only be tightened, never raised past two hours', () => {
+    expect(parseConfig('{"pause": {"maxMinutes": 240}}').error).toMatch(/pause\.maxMinutes must be a whole number from 1 to 120/)
+    expect(parseConfig('{"pause": "sometimes"}').error).toMatch(/pause must be false or \{ "maxMinutes": n \}/)
+  })
+
+  test('allowing longer pauses is a loosening, and the change is said', () => {
+    const strict = parseConfig('{"pause": false}')
+    const loose = parseConfig('{"pause": {"maxMinutes": 60}}')
+    expect(isLoosening(strict, loose)).toBe(true)
+    expect(isLoosening(loose, strict)).toBe(false)
+    expect(describeConfigChange(strict, loose)).toBe('pause off → 60m')
   })
 })

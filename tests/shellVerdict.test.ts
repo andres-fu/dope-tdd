@@ -81,11 +81,30 @@ describe('shellReminders', () => {
     advice: null,
   }
 
-  test('nothing to say says nothing', () => {
+  test('a run with nothing to report adds no reminder lines', () => {
     expect(shellReminders(none, DEFAULT_CONFIG, 'C:/r')).toEqual([])
   })
 
-  test('every kind of line, in its fixed order', () => {
+  // One fact at a time, so a failure names the line that broke. Wording is asserted only where the user reads it.
+  test('a source file changed through the shell with no test touched is named', () => {
+    expect(shellReminders({ ...none, unguardedPaths: ['src/utils/a.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
+      'dope-tdd: src/utils/a.ts changed through a shell command without a test touched first.',
+    ])
+  })
+
+  test('a runner that did not start says nothing was counted', () => {
+    expect(shellReminders({ ...none, notStarted: 'command not found' }, DEFAULT_CONFIG, 'C:/r')).toEqual([
+      'dope-tdd: the test runner did not start (command not found); nothing was counted. Run it the way this project runs its tests.',
+    ])
+  })
+
+  test('a file that changed while the command ran, which the command cannot have changed, is not counted', () => {
+    expect(shellReminders({ ...none, bystanders: ['src/utils/b.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
+      'dope-tdd: src/utils/b.ts changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.',
+    ])
+  })
+
+  test('all the lines together keep their fixed order', () => {
     const facts: ShellReminderFacts = {
       paused: false,
       unguardedPaths: ['src/utils/a.ts'],

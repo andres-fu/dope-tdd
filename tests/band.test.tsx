@@ -40,6 +40,18 @@ describe('band content', () => {
     expect(await ui.find({ type: 'Text', text: 'BAND' })).toBeUndefined()
   })
 
+  test('a test named after no module that was on the band before an upgrade is let go when dope-tdd loads (2026-10-18)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'band')
+    world.fileContents.set(`${ROOT}/tests/band.test.ts`, "import { a } from '../src/utils/formatDuration'\nexpect(a).toBe(1)\n")
+
+    await startSession($)
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: 'BAND' })).toBeUndefined()
+  })
+
   test('a new module written test-first, whose source does not exist yet, does take over the band', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(SOURCE, 'export const a = 1')

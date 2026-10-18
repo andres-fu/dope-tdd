@@ -72,6 +72,7 @@ import {
   recordStaleUnlocks,
   recordTestChanged,
   recordTestTouch,
+  releaseCurrent,
   recordUnreadRun,
   recordWorkaround,
   releaseCheck,
@@ -1753,7 +1754,22 @@ async function seedFromStore($: EngineInterface): Promise<void> {
   await reportJournalsElsewhere($, root, nowMs)
   await pruneOldFiles($, nowMs)
   await seedRememberedUnlocks($)
-  await loadConfig($, root)
+  await releaseStaleCurrent($, root, await loadConfig($, root))
+}
+
+/**
+ * A module on the band whose test now fails testsItsOwnModule (imports.ts) is let go. $.state outlives a reload, so a
+ * test named after no module that took the band before that rule existed would otherwise stay there after an upgrade.
+ */
+async function releaseStaleCurrent($: EngineInterface, root: string, config: GuardConfig): Promise<void> {
+  const current = (await readStats($)).current
+  if (current === null) {
+    return
+  }
+  const text = await readWhole($, current.testPath)
+  if (!testsItsOwnModule(current.module, importTargets(root, config, current.testPath, text), await hasOwnSource($, root, config, current.module))) {
+    await change($, releaseCurrent)
+  }
 }
 
 // -t / --testNamePattern / -k / --filter / --grep: a run of some tests by name, not the whole suite.

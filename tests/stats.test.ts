@@ -6,6 +6,7 @@ import {
   closeCyclesForTest,
   acquireCheck,
   expireCurrent,
+  releaseCurrent,
   isChecking,
   markReminded,
   normalizeStats,
@@ -585,5 +586,14 @@ describe('code edited outside the layout is remembered, so the band can say it i
     const many = Array.from({ length: 25 }, (_, i) => `scripts/f${i}.ts`).reduce(recordUnwatchedEdit, INITIAL_STATS)
     expect(many.unwatched).toHaveLength(20)
     expect(many.unwatched[0]).toBe('scripts/f5.ts')
+  })
+})
+
+describe('releaseCurrent (2026-10-18)', () => {
+  test('the band lets go of the module, and nothing it unlocked or counted is lost', () => {
+    const s = releaseCurrent({ ...touch(), passes: 2 })
+    expect(s.current).toBeNull()
+    expect(s.unlocked).toEqual({ [MODULE]: TEST_PATH })
+    expect(s.passes).toBe(2)
   })
 })

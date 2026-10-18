@@ -541,6 +541,11 @@ export function expireCurrent(s: TddStats, nowMs: number): TddStats {
   return isIdleGreen && s.current !== null ? { ...s, current: null } : s
 }
 
+/** The band lets go of the current module; what it unlocked and counted stays. */
+export function releaseCurrent(s: TddStats): TddStats {
+  return { ...s, current: null }
+}
+
 /** Modules with an open cycle other than the current one: red or writing somewhere else. */
 export function otherOpenModules(s: TddStats): { module: string; phase: ModuleState['phase'] }[] {
   return Object.entries(s.modules)

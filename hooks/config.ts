@@ -25,6 +25,8 @@ export type GuardConfig = {
   layoutGuessed?: boolean
   /** `false` turns the catch check off (a repo whose watchers or dev server see every revert). Absent means on. */
   catchCheck?: boolean
+  /** The longest pause a person may take, in minutes; 0 when `"pause": false` locks pause out. Absent: PAUSE_CAP. */
+  pauseMaxMinutes?: number
 }
 
 export const CONFIG_FILE = 'dope-tdd.json'
@@ -145,6 +147,30 @@ function parseCatchCheck(value: unknown): { catchCheck?: boolean } {
   return { catchCheck: value }
 }
 
+// The standard's cap on a pause: a team may tighten it in dope-tdd.json, never raise it.
+export const PAUSE_CAP = 120
+
+export function pauseLimit(config: Pick<GuardConfig, 'pauseMaxMinutes'>): number {
+  return config.pauseMaxMinutes ?? PAUSE_CAP
+}
+
+function parsePause(value: unknown): { pauseMaxMinutes?: number } {
+  if (value === undefined || value === true) {
+    return {}
+  }
+  if (value === false) {
+    return { pauseMaxMinutes: 0 }
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('pause must be false or { "maxMinutes": n }')
+  }
+  const max = (value as { maxMinutes?: unknown }).maxMinutes
+  if (typeof max !== 'number' || !Number.isInteger(max) || max < 1 || max > PAUSE_CAP) {
+    throw new Error(`pause.maxMinutes must be a whole number from 1 to ${PAUSE_CAP}`)
+  }
+  return { pauseMaxMinutes: max }
+}
+
 /** The defaults for a stack that was detected rather than configured, with the stack's own exemptions. */
 function defaultsFor(detected: StackName | undefined): GuardConfig {
   if (detected === undefined) {
@@ -188,6 +214,7 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       error: null,
       layoutGuessed: fields.layout === undefined,
       ...parseCatchCheck(fields.catchCheck),
+      ...parsePause(fields.pause),
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -265,7 +292,8 @@ export function isLoosening(before: GuardConfig, after: GuardConfig): boolean {
   const moreExempt = after.exempt.some(glob => !before.exempt.includes(glob))
   const narrowerScope = (before.scope.length === 0 && after.scope.length > 0) || (before.scope.length > 0 && after.scope.length > 0 && before.scope.some(glob => !after.scope.includes(glob)))
   const checkOff = before.catchCheck !== false && after.catchCheck === false
-  return weakerMode || moreExempt || narrowerScope || checkOff
+  const longerPause = pauseLimit(after) > pauseLimit(before)
+  return weakerMode || moreExempt || narrowerScope || checkOff || longerPause
 }
 
 function listChange(name: string, before: readonly string[], after: readonly string[]): string[] {
@@ -297,6 +325,10 @@ function folderLayoutChanges(before: readonly FolderLayout[] = [], after: readon
 }
 
 /** What an edit to the config file changed, in words, or null when nothing the guard reads moved. */
+function pauseWords(minutes: number): string {
+  return minutes === 0 ? 'off' : `${minutes}m`
+}
+
 export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
   const parts = [
     ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
@@ -309,6 +341,7 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
     ...folderLayoutChanges(before.layouts, after.layouts),
     ...listChange('roots', before.roots, after.roots),
     ...(before.godot === after.godot ? [] : [`godot ${before.godot ?? 'PATH'} → ${after.godot ?? 'PATH'}`]),
+    ...(pauseLimit(before) === pauseLimit(after) ? [] : [`pause ${pauseWords(pauseLimit(before))} → ${pauseWords(pauseLimit(after))}`]),
     ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),
   ]
   return parts.length === 0 ? null : parts.join('; ')

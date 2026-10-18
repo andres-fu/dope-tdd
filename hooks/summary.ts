@@ -14,6 +14,7 @@ const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
   'assertion-removed': 'assertions removed',
   'commented-out': 'commented out',
   'hollow-touch': 'touched unchanged',
+  'record-edited': 'override record edited',
 }
 
 const RECENT_EVENTS = 10
@@ -127,7 +128,10 @@ export function formatGlossary(): string {
     '  UNGUARDED      a source file changed with no test touched first',
     '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged',
     '  BLOCKED        an edit was refused until the test is written',
-    '  PAUSED         the guard is off (/tdd off, or the band); edits are not counted; /tdd on turns it back on',
+    '  PAUSED         /tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or /tdd resume; they stay debt',
+    '  OVERRIDE REQUESTED the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>',
+    '  OVERRIDDEN     a person let this module\'s edits through until what "until" names; /tdd override end <module>',
+    '  OVERRIDES OPEN overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt',
     '  GIT REBASE     a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard stands down until it ends',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
     "  DOPE           Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar",

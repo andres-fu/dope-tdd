@@ -1,9 +1,10 @@
 // What the band says, as plain data (#59; redesigned 2026-10-18). draw.tsx only paints it. The band answers, in order:
 // is dope-tdd watching at all, what has the current module proven, and what is the one next step. Totals are not
 // here: zeros read as "all good" when dope-tdd could see nothing, so only problems above zero are shown.
-import type { TddStats } from '../types'
+import type { Override, TddStats } from '../types'
 import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
+import { openDebt } from './overrides.ts'
 import { isCodeFile } from './setup.ts'
 import { stackOf } from './stacks.ts'
 
@@ -31,7 +32,16 @@ export type StepName = 'test' | 'red' | 'green' | 'proven'
 export type Step = { name: StepName; state: 'done' | 'open' | 'failed'; word?: string }
 export type Problem = { label: string; tone: 'alarm' | 'warn' }
 /** `showProgress`: the phase and the run trail belong to a module; with none current, or nothing watched, they mislead. */
-export type BandView = { watch: Watch; showProgress: boolean; chain: Step[] | null; next: string; problems: Problem[] }
+/** `pending`: an override waiting for a person. `overridden`: the current module's open module override. */
+export type BandView = {
+  watch: Watch
+  showProgress: boolean
+  chain: Step[] | null
+  next: string
+  problems: Problem[]
+  pending: Override | null
+  overridden: Override | null
+}
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
 function watchedPlace(config: Pick<GuardConfig, 'layout' | 'stack'>): string {
@@ -82,12 +92,16 @@ function chainOf(s: TddStats): Step[] | null {
   return [{ name: 'test', state: 'done' }, red, { name: 'green', state: green ? 'done' : 'open' }, proven]
 }
 
-function nextOf(s: TddStats, watch: Watch): string {
+function nextOf(s: TddStats, watch: Watch, pending: Override | null): string {
   if (watch.kind === 'not-watching') {
     return 'run /tdd setup, or add a layout to dope-tdd.json'
   }
   if (watch.kind === 'cannot-read') {
     return 'run one test file, so its summary line reaches the output'
+  }
+  // The agent stopped for this: nothing moves until a person decides.
+  if (pending !== null) {
+    return 'approve or deny the override request: /tdd approve, or /tdd deny <why>'
   }
   if (s.paused) {
     return 'resume the guard when you are done'
@@ -119,7 +133,7 @@ function nextOf(s: TddStats, watch: Watch): string {
 
 // Events that close a cycle rather than belong to the next one: a pass and the verdicts that follow it.
 const CLOSING: ReadonlySet<string> = new Set(['pass', 'caught', 'proven', 'missed', 'unverified', 'refactor', 'carried-on'])
-const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch'])
+const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch', 'record-edited'])
 
 /**
  * Every event during the current module's current cycle, whichever module it touched: from the module's previous pass
@@ -144,7 +158,7 @@ function cycleEvents(s: TddStats): TddStats['events'] {
   return s.events.slice(from)
 }
 
-function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, watch: Watch): Problem[] {
+function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, watch: Watch, record: readonly Override[]): Problem[] {
   // The current cycle's problems only: session totals never clear, and a warning that never clears stops being read.
   // MISSED and NEVER SAW RED are already in the chain; the session's totals are in /tdd and on the receipt.
   const events = cycleEvents(s)
@@ -158,14 +172,22 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
     [watch.kind === 'not-watching' ? 0 : s.unwatched.length, 'UNWATCHED', 'warn'],
   ]
   const problems = counted.filter(([count]) => count > 0).map(([count, label, tone]) => ({ label: `${count} ${label}`, tone }))
+  // Overrides are not per cycle: an open one, or its debt, stays on the band until a person ends it.
+  const open = openDebt(record).length
+  if (open > 0) {
+    problems.push({ label: `${open} ${open === 1 ? 'OVERRIDE' : 'OVERRIDES'} OPEN`, tone: 'warn' })
+  }
   const scoped = config.scope.length > 0
   return config.mode !== 'enforce' || scoped
     ? [...problems, { label: `MODE ${config.mode.toUpperCase()}${scoped ? ' (SCOPED)' : ''}`, tone: 'warn' }]
     : problems
 }
 
-export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>): BandView {
+export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = []): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
-  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch), problems: problemsOf(s, config, watch) }
+  const pending = record.find(o => o.status === 'pending') ?? null
+  const module = s.current?.module
+  const overridden = record.find(o => o.status === 'approved' && o.endedAtMs === null && o.scope === 'module' && o.module === module) ?? null
+  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch, pending), problems: problemsOf(s, config, watch, record), pending, overridden }
 }

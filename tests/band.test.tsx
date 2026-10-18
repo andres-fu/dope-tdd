@@ -294,20 +294,20 @@ describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', 
 })
 
 describe('band buttons', () => {
-  test('pause lets an untested source edit through, uncounted, and resume re-arms the guard', async ($, on) => {
+  test('a pause lets an untested source edit through, uncounted, and RESUME re-arms the guard', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
-      await ui.press({ key: 'pause' })
+      await $.command.run({ command: 'tdd', args: 'pause 30 pairing on the prod incident in #301 and back after' } as never)
       expect(await ui.find({ type: 'Text', text: /PAUSED/ })).toBeDefined()
 
       const paused = await editAt($, 'src/utils/calculateDuration.ts')
       expect(paused.deny).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /UNGUARDED/ })).toBeUndefined()
 
-      await ui.press({ key: 'pause' })
+      await ui.press({ key: 'resume' })
       const guarded = await editAt($, 'src/utils/calculateDuration.ts')
       expect(guarded.deny).toBeDefined()
       await ui.press({ key: 'reset' })

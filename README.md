@@ -51,8 +51,18 @@ CRLF as LF) still counts as the code being back.
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request. `/tdd off` pauses the guard for the conversation
-(on the record, as a workaround) and `/tdd on` resumes it.
+paste into a pull request.
+
+There is no off switch. When test-first does not fit, the agent asks for an
+override with a reason (`mcp__dope-tdd__override_request`) and stops; you
+decide with `/tdd approve` or `/tdd deny <why>`, or the band's buttons. A
+hotfix always passes and stays debt until a test is written. With nobody
+there to approve, the agent is denied and reports instead. You can pause
+the guard yourself with `/tdd pause <minutes> <reason>` (at most two hours);
+it comes back on by itself, or with `/tdd resume`, and tells you what was
+edited meanwhile. `/tdd override end <module|pause>` ends an override.
+Every override is recorded in `dope-tdd.overrides.json` in the repo, so the
+pull request shows who approved what, and the receipt lists them.
 
 Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
 and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
@@ -219,8 +229,8 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   else is observed. This is how to bring the guard into one area of an old
   codebase at a time.
 - `exempt`: paths the guard never touches or counts, such as an entry file
-  or generated code. Prefer this to pausing; a pause hides edits, an
-  exemption is on the record. An entry file no test can load (one that
+  or generated code. Prefer this to pausing; a pause is temporary debt, an
+  exemption is a standing decision on the record. An entry file no test can load (one that
   connects to a service or exits at load time) belongs here, committed:
   an exemption already in the file when a session starts is not counted,
   only one added during a session is, as a loosening the agent explains.
@@ -230,6 +240,9 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   green then stops at GREEN; turning it off is recorded as a loosening.
   `true` also lets an experimental runner (pytest, gdUnit4, Maven, Gradle,
   `dotnet test`) check in place, as described next.
+- `pause`: `false` locks `/tdd pause` out for the repo; `{ "maxMinutes": 30 }`
+  sets a shorter limit. The limit can only be tightened below two hours,
+  and allowing longer pauses is recorded as a loosening.
 
 With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
 your change in a throwaway copy inside `.git` and never writes your files.
@@ -278,6 +291,7 @@ change back, so it holds a copy of the source file it is checking:
 | Session log | `~/.dope-tdd/sessions/` | Counts and the status receipt (module and test names), the repository folder name, no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Field guide | `~/.dope-tdd/guides/` | Rules you write; Dope TDD only reads it | You own it |
+| Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 
 Files matched by `exempt` in `dope-tdd.json` are not captured. The 30-day
 cleanup uses `node`; where it is missing, the files stay until you delete

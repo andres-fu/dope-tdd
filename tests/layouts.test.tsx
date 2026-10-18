@@ -1,5 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 
+import { OVERRIDE_HINT } from '../hooks/refusals'
+
 import { ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
@@ -20,7 +22,7 @@ describe('colocated tests', () => {
     const touched = await writeAt($, 'src/utils/a.test.ts', "it('x', () => { expect(1).toBe(1) })")
     const allowed = await editAt($, 'src/utils/a.ts')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts, or run it and see it fail, before editing src/utils/a.')
+    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts, or run it and see it fail, before editing src/utils/a.' + OVERRIDE_HINT)
     expect(touched.context?.join(' ')).toMatch(/utils\/a unlocked\. Run its test and see it fail before editing src\/utils\/a\./)
     expect(allowed.deny).toBeUndefined()
   })

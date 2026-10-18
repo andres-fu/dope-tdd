@@ -22,6 +22,8 @@ export type EventKind =
   | 'assertion-removed'
   | 'commented-out'
   | 'hollow-touch'
+  /** The override record changed outside dope-tdd and was put back (override v1, 2026-10-18). */
+  | 'record-edited'
   /** #54: an edit refused because a carried-over unlock waits for one run of its test this session. */
   | 'needs-run'
   /** #54: that run happened; the carried-over unlock is active. */
@@ -146,8 +148,54 @@ export type TddStats = {
   lastEventMs: number | null
 }
 
+export type OverrideKind = 'spike' | 'hotfix' | 'generated' | 'legacy' | 'other'
+/** `change`: one edit. `module`: until a condition the request names. `pause`: every module, for some minutes. */
+export type OverrideScope = 'change' | 'module' | 'pause'
+export type OverrideStatus = 'pending' | 'approved' | 'denied'
+/** A role, never a name: the record goes into the repo. */
+export type Decider = 'human' | 'hotfix rule' | 'unattended'
+
+export type OverrideRequest = {
+  by: 'agent' | 'human'
+  scope: OverrideScope
+  kind: OverrideKind
+  /** The module id, for change and module scope; null for a pause. */
+  module: string | null
+  path: string | null
+  reason: string
+  until: string | null
+  minutes: number | null
+}
+
+export type Override = OverrideRequest & {
+  id: string
+  atMs: number
+  status: OverrideStatus
+  decidedBy: Decider | null
+  decidedAtMs: number | null
+  /** When it stopped letting edits through: ended by a person, or a pause whose minutes ran out. */
+  endedAtMs: number | null
+  /** A pause's untested edits stay debt after the pause is over, until a person settles them. */
+  settledAtMs: number | null
+  /** Why it was denied, when it was. */
+  note: string | null
+  /** Files edited under it, relative to the root. */
+  edits: string[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'dope-tdd': { stats: TddStats; tick: number; 'bash-cwd': string; 'powershell-cwd': string; 'git-operation': string; 'unread-runners': readonly string[] }
+    'dope-tdd': {
+      stats: TddStats
+      tick: number
+      'bash-cwd': string
+      'powershell-cwd': string
+      'git-operation': string
+      'unread-runners': readonly string[]
+      /** The repo's override record, as last read from or written to dope-tdd.overrides.json. */
+      overrides: readonly Override[]
+      /** Whether a person is there to approve a request: from session.start. */
+      attended: boolean
+    }
   }
 }

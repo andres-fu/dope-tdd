@@ -597,3 +597,12 @@ describe('releaseCurrent (2026-10-18)', () => {
     expect(s.passes).toBe(2)
   })
 })
+
+describe('the override record changed outside dope-tdd (2026-10-18)', () => {
+  test('is a workaround, logged with the file', () => {
+    const s = recordWorkaround(INITIAL_STATS, 'record-edited', '', 'dope-tdd.overrides.json', T0)
+    expect(s.workarounds).toBe(1)
+    expect(s.workaroundsBy['record-edited']).toBe(1)
+    expect(s.events.at(-1)?.kind).toBe('record-edited')
+  })
+})

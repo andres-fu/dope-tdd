@@ -92,6 +92,13 @@ export type FakeWorld = {
   deleted: string
   hasVitest: boolean
   onBash: (command: string) => void
+  /** What $.model.complete answers (the reviewer model), and every call it got. */
+  modelReply: unknown
+  modelCalls: { model: string; effort?: string; system?: string; prompt: string }[]
+  /** The session's own model, as $.session.model() says. */
+  sessionModel: string
+  /** What `git diff --no-ext-diff -- <paths>` prints: the module's hunks for the reviewer. */
+  diffText: string
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
   readOnly: boolean
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
@@ -145,6 +152,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     deleted: '',
     hasVitest: true,
     onBash: () => {},
+    modelReply: { isAnswered: true, text: 'DENY\nwrite the test first', usage: { input_tokens: 1, output_tokens: 1 } },
+    modelCalls: [],
+    sessionModel: 'claude-opus-5-5',
+    diffText: '',
     readOnly: false,
     onCatchRun: () => {},
     writeFails: () => false,
@@ -167,6 +178,11 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
+  on('session.model', () => ({ value: world.sessionModel }) as never)
+  on('model.complete', (_$, e) => {
+    world.modelCalls.push(e as never)
+    return { value: world.modelReply } as never
+  })
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('ui.log', (_$, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
@@ -233,6 +249,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     if (verb === 'config') {
       const url = world.remotes.get((rest[rest.length - 1] ?? '').replace(/^remote\.|\.url$/g, ''))
       return url === undefined ? answer(1) : answer(0, `${url}\n`)
+    }
+    if (verb === 'diff' && e.argv.includes('--no-ext-diff')) {
+      return answer(0, world.diffText)
     }
     if (verb === 'diff' && e.argv.includes('--name-only')) {
       return answer(0, e.argv.includes('--diff-filter=D') ? world.deleted : world.dirty)

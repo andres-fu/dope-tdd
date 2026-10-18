@@ -240,9 +240,11 @@ recorded, labels present), and an agent applies them only when it knows they app
 
 dope-tdd does not judge compliance. It keeps compliance requirements from silently regressing.
 
-dope-tdd holds itself to the same principles. It sends nothing off the machine today. A reviewer
-model for overrides would send the request and the module's diff to the model API through the
-session's own client; it will be opt-in, stated in the README and listed here before it ships. The
+dope-tdd holds itself to the same principles. By default it sends nothing off the machine. A repo
+that opts into a reviewer model for overrides (`"overrides": { "approver": "model" }`) sends, per
+request, the request itself and the uncommitted hunks of that one module and its test, comments
+removed, to the model API through the session's own client, the same API the session already uses.
+Nothing else is sent, and turning it on is recorded as a loosening. The
 override record is kept in the repo on purpose, since it is part of the change, and holds roles,
 never names. What it stores
 locally (session state, the catch-check journal, session logs) is to be minimised (hashes rather than

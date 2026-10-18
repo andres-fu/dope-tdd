@@ -243,6 +243,15 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `pause`: `false` locks `/tdd pause` out for the repo; `{ "maxMinutes": 30 }`
   sets a shorter limit. The limit can only be tightened below two hours,
   and allowing longer pauses is recorded as a loosening.
+- `overrides`: `{ "approver": "model" }` gives the approver's role to a
+  reviewer model instead of you, for agents running on their own. It has
+  no tools, sees the request as data and the module's hunks only, answers
+  APPROVE, DENY or ESCALATE, and anything else, a failed call, or a repeat
+  on the same module goes to you (or is denied when nobody is there).
+  Hotfixes and your own pauses never go to it. It is a different model
+  from the session's unless you name one: `"model": "claude-opus-5-5"`,
+  `"effort": "high"`. Its decisions are recorded as the model's, with its
+  reason, and turning it on is recorded as a loosening.
 
 With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
 your change in a throwaway copy inside `.git` and never writes your files.
@@ -275,6 +284,10 @@ It never goes in the repository and never leaves your computer. Set
 ## What Dope TDD stores
 
 Dope TDD sends nothing off your machine: no network requests, no telemetry.
+The one exception is opt-in: with `"overrides": { "approver": "model" }`, each
+override request the agent makes, and the uncommitted hunks of that one
+module and its test (comments removed), go to the model API through the
+session's own client, the same API Claude Code already talks to.
 It runs `git` and your own test command locally. Everything below lives under
 your user account.
 

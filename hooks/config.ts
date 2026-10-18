@@ -27,7 +27,11 @@ export type GuardConfig = {
   catchCheck?: boolean
   /** The longest pause a person may take, in minutes; 0 when `"pause": false` locks pause out. Absent: PAUSE_CAP. */
   pauseMaxMinutes?: number
+  /** Who decides an agent's override request: a person (absent), or a reviewer model the repo opts into. */
+  overrides?: Approver
 }
+
+export type Approver = { approver: 'human' } | { approver: 'model'; model?: string; effort?: string }
 
 export const CONFIG_FILE = 'dope-tdd.json'
 export const DEFAULT_CONFIG: GuardConfig = {
@@ -154,6 +158,38 @@ export function pauseLimit(config: Pick<GuardConfig, 'pauseMaxMinutes'>): number
   return config.pauseMaxMinutes ?? PAUSE_CAP
 }
 
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+export function approverOf(config: Pick<GuardConfig, 'overrides'>): Approver {
+  return config.overrides ?? { approver: 'human' }
+}
+
+function parseOverrides(value: unknown): { overrides?: Approver } {
+  if (value === undefined) {
+    return {}
+  }
+  const fields = (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {}) as Record<string, unknown>
+  if (fields.approver === 'human') {
+    return { overrides: { approver: 'human' } }
+  }
+  if (fields.approver !== 'model') {
+    throw new Error('overrides.approver must be "human" or "model"')
+  }
+  if (fields.model !== undefined && (typeof fields.model !== 'string' || fields.model.trim() === '')) {
+    throw new Error('overrides.model must be a model id, such as claude-opus-5-5')
+  }
+  if (fields.effort !== undefined && (typeof fields.effort !== 'string' || !EFFORTS.includes(fields.effort))) {
+    throw new Error(`overrides.effort must be one of ${EFFORTS.join(', ')}`)
+  }
+  return {
+    overrides: {
+      approver: 'model',
+      ...(fields.model === undefined ? {} : { model: fields.model as string }),
+      ...(fields.effort === undefined ? {} : { effort: fields.effort as string }),
+    },
+  }
+}
+
 function parsePause(value: unknown): { pauseMaxMinutes?: number } {
   if (value === undefined || value === true) {
     return {}
@@ -215,6 +251,7 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       layoutGuessed: fields.layout === undefined,
       ...parseCatchCheck(fields.catchCheck),
       ...parsePause(fields.pause),
+      ...parseOverrides(fields.overrides),
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -293,7 +330,9 @@ export function isLoosening(before: GuardConfig, after: GuardConfig): boolean {
   const narrowerScope = (before.scope.length === 0 && after.scope.length > 0) || (before.scope.length > 0 && after.scope.length > 0 && before.scope.some(glob => !after.scope.includes(glob)))
   const checkOff = before.catchCheck !== false && after.catchCheck === false
   const longerPause = pauseLimit(after) > pauseLimit(before)
-  return weakerMode || moreExempt || narrowerScope || checkOff || longerPause
+  // A model approving in a person's place is a step away from a person: the record says so.
+  const modelApproves = approverOf(before).approver === 'human' && approverOf(after).approver === 'model'
+  return weakerMode || moreExempt || narrowerScope || checkOff || longerPause || modelApproves
 }
 
 function listChange(name: string, before: readonly string[], after: readonly string[]): string[] {
@@ -342,6 +381,7 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
     ...listChange('roots', before.roots, after.roots),
     ...(before.godot === after.godot ? [] : [`godot ${before.godot ?? 'PATH'} → ${after.godot ?? 'PATH'}`]),
     ...(pauseLimit(before) === pauseLimit(after) ? [] : [`pause ${pauseWords(pauseLimit(before))} → ${pauseWords(pauseLimit(after))}`]),
+    ...(approverOf(before).approver === approverOf(after).approver ? [] : [`approver ${approverOf(before).approver} → ${approverOf(after).approver}`]),
     ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),
   ]
   return parts.length === 0 ? null : parts.join('; ')

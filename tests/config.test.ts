@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_CONFIG, describeConfig, describeConfigChange, globMatches, isLoosening, parseConfig, pauseLimit, policyFor } from '../hooks/config'
+import { DEFAULT_CONFIG, approverOf, describeConfig, describeConfigChange, globMatches, isLoosening, parseConfig, pauseLimit, policyFor } from '../hooks/config'
 
 describe('parseConfig', () => {
   test('no file means enforce everywhere', () => {
@@ -121,5 +121,34 @@ describe('pause in dope-tdd.json (override v1, 2026-10-18)', () => {
     expect(isLoosening(strict, loose)).toBe(true)
     expect(isLoosening(loose, strict)).toBe(false)
     expect(describeConfigChange(strict, loose)).toBe('pause off → 60m')
+  })
+})
+
+describe('overrides in dope-tdd.json: who approves (2026-10-18)', () => {
+  test('absent: a person', () => {
+    expect(approverOf(parseConfig('{}'))).toEqual({ approver: 'human' })
+  })
+
+  test('a model, with an optional model id and effort', () => {
+    expect(approverOf(parseConfig('{"overrides": {"approver": "model"}}'))).toEqual({ approver: 'model' })
+    expect(approverOf(parseConfig('{"overrides": {"approver": "model", "model": "claude-fable-5-1", "effort": "max"}}'))).toEqual({
+      approver: 'model',
+      model: 'claude-fable-5-1',
+      effort: 'max',
+    })
+  })
+
+  test('anything else is an error', () => {
+    expect(parseConfig('{"overrides": {"approver": "agent"}}').error).toMatch(/overrides\.approver must be "human" or "model"/)
+    expect(parseConfig('{"overrides": {"approver": "model", "effort": "huge"}}').error).toMatch(/overrides\.effort must be one of low, medium, high, xhigh, max/)
+    expect(parseConfig('{"overrides": {"approver": "model", "model": 3}}').error).toMatch(/overrides\.model must be a model id/)
+  })
+
+  test('handing approval from a person to a model is a loosening, and the change is said', () => {
+    const human = parseConfig('{}')
+    const model = parseConfig('{"overrides": {"approver": "model"}}')
+    expect(isLoosening(human, model)).toBe(true)
+    expect(isLoosening(model, human)).toBe(false)
+    expect(describeConfigChange(human, model)).toBe('approver human → model')
   })
 })

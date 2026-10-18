@@ -1,0 +1,165 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { DEFAULT_CONFIG } from '../hooks/config'
+import { applyRun, failedTestPaths, failingTestFiles } from '../hooks/runPlan'
+import type { RunFacts } from '../hooks/runPlan'
+import { INITIAL_STATS, recordRedFor } from '../hooks/stats'
+import type { TddStats } from '../types'
+
+const ROOT = 'C:/r'
+const A_TEST = `${ROOT}/tests/utils/a.test.ts`
+const B_TEST = `${ROOT}/tests/utils/b.test.ts`
+const C_TEST = `${ROOT}/tests/utils/c.test.ts`
+
+const facts = (over: Partial<RunFacts>): RunFacts => ({
+  outcome: 'fail',
+  named: undefined,
+  filtered: false,
+  namedImports: [],
+  failed: [],
+  importsOf: {},
+  ownTest: {},
+  ...over,
+})
+const run = (s: TddStats, over: Partial<RunFacts>) => applyRun(s, facts(over), ROOT, DEFAULT_CONFIG, 1000)
+const workingOn = (module: string, testPath: string): TddStats => ({
+  ...INITIAL_STATS,
+  unlocked: { [module]: testPath },
+  current: { module, testPath },
+})
+
+describe('failedTestPaths', () => {
+  test('a relative path is resolved where the runner ran, then named from the root; an absolute one is kept', () => {
+    expect(failedTestPaths(ROOT, `${ROOT}/packages/app`, ['tests/x.test.ts', 'C:/r/tests/y.test.ts'])).toEqual([
+      'packages/app/tests/x.test.ts',
+      'tests/y.test.ts',
+    ])
+  })
+})
+
+describe('failingTestFiles', () => {
+  test('the failed files, absolute, and the named test, once each', () => {
+    expect(failingTestFiles(ROOT, DEFAULT_CONFIG, ['tests/utils/a.test.ts', 'tests/utils/b.test.ts'], A_TEST)).toEqual([A_TEST, B_TEST])
+  })
+
+  test('a named file that is not a test is left out', () => {
+    expect(failingTestFiles(ROOT, DEFAULT_CONFIG, [], `${ROOT}/src/utils/a.ts`)).toEqual([])
+  })
+})
+
+describe('applyRun', () => {
+  test("a red of a module's own test unlocks it, makes it current, and is remembered", () => {
+    const plan = run(INITIAL_STATS, { named: A_TEST })
+    expect(plan.redUnlocked).toEqual(['utils/a'])
+    expect(plan.remember).toEqual([{ module: 'utils/a', testPath: A_TEST }])
+    expect(plan.state.unlocked['utils/a']).toBe(A_TEST)
+    expect(plan.state.current?.module).toBe('utils/a')
+  })
+
+  test('a green of an unlocked module that is not current makes it current, and unlocks nothing', () => {
+    const s = { ...workingOn('utils/b', B_TEST), unlocked: { 'utils/a': A_TEST, 'utils/b': B_TEST } }
+    const plan = run(s, { outcome: 'pass', named: A_TEST })
+    expect(plan.state.current?.module).toBe('utils/a')
+    expect(plan.redUnlocked).toEqual([])
+    expect(plan.remember).toEqual([])
+  })
+
+  test('a test that imports the current module keeps the band where it is', () => {
+    const plan = run(workingOn('utils/b', B_TEST), { named: A_TEST, namedImports: ['utils/b'] })
+    expect(plan.state.current?.module).toBe('utils/b')
+    expect(plan.redUnlocked).toEqual([])
+  })
+
+  test('another failed test file unlocks its module without making it current; a red there is elsewhere', () => {
+    const plan = run(workingOn('utils/b', B_TEST), { failed: ['tests/utils/c.test.ts'] })
+    expect(plan.redUnlocked).toEqual(['utils/c'])
+    expect(plan.remember).toEqual([{ module: 'utils/c', testPath: C_TEST }])
+    expect(plan.state.current?.module).toBe('utils/b')
+    expect(plan.elsewhere).toEqual(['tests/utils/c.test.ts'])
+  })
+
+  test("the current module's own test among the failures is not elsewhere", () => {
+    const plan = run(workingOn('utils/b', B_TEST), { failed: ['tests/utils/b.test.ts', 'tests/utils/c.test.ts'] })
+    expect(plan.elsewhere).toEqual([])
+  })
+
+  test('a failing test that imports the current module is not elsewhere either', () => {
+    const plan = run(workingOn('utils/b', B_TEST), { failed: ['tests/utils/c.test.ts'], importsOf: { [C_TEST]: ['utils/b'] } })
+    expect(plan.elsewhere).toEqual([])
+  })
+
+  test('a failing test unlocks a module it imports that has no test of its own, and that module saw red', () => {
+    const plan = run(workingOn('utils/b', B_TEST), {
+      failed: ['tests/utils/c.test.ts'],
+      importsOf: { [C_TEST]: ['utils/d', 'utils/e'] },
+      ownTest: { 'utils/d': false, 'utils/e': true },
+    })
+    expect(plan.redUnlocked).toEqual(['utils/c', 'utils/d'])
+    expect(plan.remember).toEqual([
+      { module: 'utils/c', testPath: C_TEST },
+      { module: 'utils/d', testPath: C_TEST },
+    ])
+    expect(plan.state.unlocked['utils/e']).toBeUndefined()
+    expect(plan.state.importers['utils/d']).toEqual([C_TEST])
+    expect(plan.state.importers['utils/e']).toEqual([C_TEST])
+    expect(plan.state.modules['utils/d']?.sawRed).toBe(true)
+    expect(plan.state.modules['utils/e']).toBeUndefined()
+  })
+
+  test('a green records no unlocks, importers or elsewhere', () => {
+    const plan = run(workingOn('utils/b', B_TEST), { outcome: 'pass', failed: ['tests/utils/c.test.ts'], importsOf: { [C_TEST]: ['utils/d'] } })
+    expect(plan.redUnlocked).toEqual([])
+    expect(plan.elsewhere).toEqual([])
+    expect(plan.state.importers).toEqual({})
+  })
+
+  test('the run is recorded: a red elsewhere goes on the record as one', () => {
+    const plan = run(workingOn('utils/b', B_TEST), { failed: ['tests/utils/c.test.ts'] })
+    expect(plan.state.fails).toBe(1)
+    expect(plan.state.redElsewhere).toEqual(['tests/utils/c.test.ts'])
+  })
+
+  test('a whole-file run of the test behind a carried-over unlock makes it active again (#54)', () => {
+    const s = { ...INITIAL_STATS, unlocked: { 'utils/a': A_TEST }, inherited: { 'utils/a': 5 } }
+    const plan = run(s, { outcome: 'pass', named: A_TEST })
+    expect(plan.carriedOn).toEqual(['utils/a'])
+    expect(plan.state.inherited).toEqual({})
+  })
+
+  test('a filtered run, or a suite run that names no file, does not', () => {
+    const s = { ...INITIAL_STATS, unlocked: { 'utils/a': A_TEST }, inherited: { 'utils/a': 5 } }
+    expect(run(s, { outcome: 'pass', named: A_TEST, filtered: true }).carriedOn).toEqual([])
+    expect(run(s, { outcome: 'pass' }).carriedOn).toEqual([])
+  })
+
+  test("a green of a test file closes the open cycle of another module it is the test for", () => {
+    const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
+    const plan = run(s, { outcome: 'pass', named: C_TEST, namedImports: ['utils/b'] })
+    expect(plan.state.modules['utils/c']?.phase).toBe('green')
+    expect(plan.state.cycles).toBe(1)
+  })
+
+  test("ownCycleClosed: the current module's own cycle closed, not another's (#41)", () => {
+    const own = recordRedFor(workingOn('utils/b', B_TEST), 'utils/b', 0)
+    expect(run(own, { outcome: 'pass', named: B_TEST }).ownCycleClosed).toBe(true)
+    const other = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
+    const plan = run(other, { outcome: 'pass', named: C_TEST, namedImports: ['utils/b'] })
+    expect(plan.state.cycles).toBe(1)
+    expect(plan.ownCycleClosed).toBe(false)
+  })
+
+  test('a filtered green that names the file still closes its cycles', () => {
+    const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
+    expect(run(s, { outcome: 'pass', named: C_TEST, filtered: true, namedImports: ['utils/b'] }).state.modules['utils/c']?.phase).toBe('green')
+  })
+
+  test('a whole-suite green, naming no file, closes every open cycle', () => {
+    const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
+    expect(run(s, { outcome: 'pass' }).state.modules['utils/c']?.phase).toBe('green')
+  })
+
+  test('a filtered green that names no file closes nothing', () => {
+    const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
+    expect(run(s, { outcome: 'pass', filtered: true }).state.modules['utils/c']?.phase).toBe('red')
+  })
+})

@@ -41,6 +41,8 @@ import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
 import { gateShellWrites, judgeFailures, shellReminders } from './shellVerdict.ts'
+import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
+import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
@@ -55,20 +57,14 @@ import {
   moduleState,
   normalizeStats,
   recordBlocked,
-  recordCarriedRun,
   recordCarryWait,
   recordCatch,
   recordChange,
   recordConfigChange,
-  recordRun,
-  closeCyclesForTest,
   recordImportUnlock,
   recordImporter,
-  recordRedFor,
   recordKnownFailures,
   recordRedNames,
-  recordRedUnlock,
-  recordRunTarget,
   recordSourceEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -184,10 +180,6 @@ async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig
 
 async function configForRender($: EngineInterface, root: string): Promise<GuardConfig> {
   return cachedConfig?.root === root ? cachedConfig.config : loadConfig($, root)
-}
-
-function absolutePath(root: string, path: string): string {
-  return /^([A-Za-z]:|[\\/])/.test(path) ? path : `${root}/${path}`
 }
 
 async function readWhole($: EngineInterface, path: string): Promise<string | null> {
@@ -1331,14 +1323,6 @@ async function snapshotWatched($: EngineInterface, root: string, config: GuardCo
   return Object.fromEntries([...tracked, ...untrackedEntries])
 }
 
-/** The test files the runner named as failed, as modules; empty when the output names none. */
-function failedModules(root: string, files: string[], config: GuardConfig): string[] {
-  return files.flatMap(file => {
-    const target = classifyPath(root, absolutePath(root, file), config)
-    return target.kind === 'test' ? [target.module] : []
-  })
-}
-
 async function guardShell(
   $: EngineInterface,
   command: string,
@@ -1515,82 +1499,37 @@ async function checkShell(
   // Whether this run closed the current module's own cycle, before it closes other modules' (#41).
   let ownCycleClosed = false
   let elsewhere: string[] = []
-  const redUnlocked: string[] = []
-  const carriedOn: string[] = []
+  let redUnlocked: string[] = []
+  let carriedOn: string[] = []
   if (outcome === 'unknown') {
     afterRun = await change($, s => recordUnreadRun(s, nowMs))
   } else if (outcome !== 'none') {
+    // What the plan needs from disk, gathered first: the imports of the named test and of each failing one, and
+    // whether each module those import has a test of its own (asked only for one not unlocked, as before #59).
     const named = namedTestFile(command, config.stack, start) ?? undefined
-    const target = named === undefined ? null : classifyPath(root, named, config)
-    let targeted = updated
     const namedImports = named === undefined ? [] : await importedModules($, root, config, named)
-    const current = updated.current
-    // The run is the current module's test, or a test that imports it: the band stays on the module being worked on.
-    const keepsCurrent =
-      current !== null && named !== undefined && (pathKey(current.testPath) === pathKey(named) || namedImports.includes(current.module))
-    if (target?.kind === 'test' && named !== undefined && !keepsCurrent) {
-      // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
-      const testPath = named
-      if (outcome === 'fail' && updated.unlocked[target.module] === undefined) {
-        targeted = await change($, s => recordRedUnlock(s, target.module, testPath, true))
-        await rememberUnlock($, root, target.module, testPath, nowMs)
-        redUnlocked.push(target.module)
-      } else {
-        targeted = await change($, s => recordRunTarget(s, target.module))
-      }
-    }
-    if (outcome === 'fail') {
-      // The runner prints paths relative to where it ran; resolve them there, then name them from the root.
-      const failed = failedFilesIn(output).map(path => relativePath(root, /^(?:[A-Za-z]:|\/)/.test(path) ? path : `${runLocation}/${path}`))
-      // Every test file the runner named as failed unlocks its module the same way, without becoming current.
-      for (const path of failed) {
-        const seen = classifyPath(root, absolutePath(root, path), config)
-        if (seen.kind === 'test' && targeted.unlocked[seen.module] === undefined) {
-          targeted = await change($, s => recordRedUnlock(s, seen.module, absolutePath(root, path), false))
-          await rememberUnlock($, root, seen.module, absolutePath(root, path), nowMs)
-          redUnlocked.push(seen.module)
+    const failed = outcome === 'fail' ? failedTestPaths(root, runLocation, failedFilesIn(output)) : []
+    const importsOf: Record<string, string[]> = {}
+    const ownTest: Record<string, boolean> = {}
+    for (const testFile of outcome === 'fail' ? failingTestFiles(root, config, failed, named) : []) {
+      importsOf[testFile] = await importedModules($, root, config, testFile)
+      for (const module of importsOf[testFile]) {
+        if (updated.unlocked[module] === undefined && ownTest[module] === undefined) {
+          ownTest[module] = await hasOwnTest($, root, config, module)
         }
       }
-      // A failing test is a red for every module it imports: unlocked if they were not, and their cycle saw red.
-      const failingTests = [...new Set([...failed.map(path => absolutePath(root, path)), ...(named !== undefined && target?.kind === 'test' ? [named] : [])])]
-      const coveredByFailure: string[] = []
-      for (const testFile of failingTests) {
-        for (const module of await importedModules($, root, config, testFile)) {
-          coveredByFailure.push(module)
-          targeted = await change($, s => recordImporter(s, module, testFile))
-          if (targeted.unlocked[module] === undefined && !(await hasOwnTest($, root, config, module))) {
-            targeted = await change($, s => recordRedUnlock(s, module, testFile, false))
-            await rememberUnlock($, root, module, testFile, nowMs)
-            redUnlocked.push(module)
-          }
-        }
-      }
-      const own = targeted.current?.module
-      // Only a module this test now unlocks: one with a test of its own (#37) would be left red with nothing to close it.
-      for (const module of [...new Set(coveredByFailure)].filter(module => module !== own && targeted.unlocked[module] !== undefined)) {
-        targeted = await change($, s => recordRedFor(s, module, nowMs))
-      }
-      // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.
-      const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
-      elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? failed : []
     }
-    afterRun = await change($, s => recordRun(s, outcome === 'pass', nowMs, elsewhere))
-    ownCycleClosed = afterRun.cycles > updated.cycles
-    // #54: a whole-file run of the test behind a carried-over unlock, red or green, is the run its first edit waits for.
-    // Only a run that names the file: a suite run need not have run it, and a filtered one ran only some of it.
-    if (named !== undefined && !filtersTests(command)) {
-      const carried = Object.keys(afterRun.inherited).filter(module => {
-        const testPath = afterRun.unlocked[module]
-        return testPath !== undefined && pathKey(testPath) === pathKey(named)
-      })
-      if (carried.length > 0) {
-        afterRun = await change($, s => recordCarriedRun(s, carried, nowMs))
-        carriedOn.push(...carried)
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest }
+    let plan = null as RunPlan | null
+    afterRun = await change($, s => {
+      plan = applyRun(s, facts, root, config, nowMs)
+      return plan.state
+    })
+    if (plan !== null) {
+      for (const { module, testPath } of plan.remember) {
+        await rememberUnlock($, root, module, testPath, nowMs)
       }
-    }
-    if (outcome === 'pass' && (named !== undefined || !filtersTests(command))) {
-      // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
-      afterRun = await change($, s => closeCyclesForTest(s, named ?? null, s.current?.module, nowMs))
+      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed } = plan)
     }
   }
   const passedModule = outcome === 'pass' && !afterRun.paused ? afterRun.current?.module : undefined

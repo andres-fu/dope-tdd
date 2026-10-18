@@ -22,6 +22,26 @@ export function executedText(segment: string): string {
   return opener
 }
 
+// A command that runs what it reads on stdin: a heredoc fed to it is code, and the writes in it are real.
+const INTERPRETER = /^\s*(?:\w+=\S*\s+)*(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh|python[\d.]*|py|node|deno|bun|ruby|perl|php|pwsh|powershell)(?:\.exe)?(?=\s|<|$)/i
+
+/**
+ * The part of a segment that can write files (the heredoc false positive, 2026-10-18). A heredoc fed to `cat`, `tee`
+ * or `gh` is data: code and paths quoted in it write nothing, so only the opener line counts. One fed to an
+ * interpreter or a shell is code: the whole segment counts, so a script's writes are still seen.
+ */
+export function writableText(segment: string): string {
+  const newline = segment.indexOf('\n')
+  if (newline === -1) {
+    return segment
+  }
+  const opener = segment.slice(0, newline)
+  if (!/<<-?\s*(['"]?)\w+\1/.test(opener) || INTERPRETER.test(opener)) {
+    return segment
+  }
+  return opener
+}
+
 /**
  * Splits a command on `&&`, `||`, `;` and `|` outside quotes. A heredoc's body
  * stays with the command that opened it, verbatim, and what follows its

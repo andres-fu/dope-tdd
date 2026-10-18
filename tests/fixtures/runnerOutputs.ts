@@ -7,6 +7,33 @@
  * bug waiting to happen.
  */
 
+// --- claude plugin test (Claude Code 2.1.292), Windows, 2026-10-18 (real, trimmed). `claude plugin test .` runs the
+// whole folder: a file header, then one (pass) or (fail) line per test, then the totals.
+export const PLUGIN_KIT_PASS = String.raw`tests\advice.test.ts:
+(pass) touchAdvice > tells the agent the module is unlocked and what to do before editing [7.27ms]
+(pass) runAdvice > after a failing run, says RED and what comes next [0.99ms]
+
+ 895 pass
+ 0 fail
+Ran 895 tests across 57 files. [27.39s]`
+
+// The same runner, red, from a run earlier the same day (real, trimmed): a failing test, and a file that did not load.
+export const PLUGIN_KIT_FAIL = String.raw`tests\band.test.tsx:
+(pass) band content > stays hidden before any TDD activity [176.58ms]
+(fail) band verdict > green without red that the catch check caught shows red done by catch, and no hand proof to do (2026-10-18) [677.99ms]
+  AssertionError: expect(received).toBeDefined()
+
+tests\overrideFlow.test.tsx:
+(fail) the file did not load
+  Unterminated string literal (line 168, column 39)
+
+tests\bandModel.test.ts:
+(pass) the current module's evidence chain > red: test and red done [0.15ms]
+
+ 741 pass
+ 3 fail
+Ran 744 tests across 54 files. [24.33s]`
+
 // --- pytest 9.1.1 on Python 3.14.2, Windows, 2026-10-08 (real). `python -m pytest tests/test_calc.py`.
 export const PYTEST_PASS = String.raw`============================= test session starts =============================
 platform win32 -- Python 3.14.2, pytest-9.1.1, pluggy-1.6.0

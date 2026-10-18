@@ -1,4 +1,4 @@
-import { ELSEWHERE, commandSegments, expandKnown, locatedSegments } from './shell.ts'
+import { ELSEWHERE, commandSegments, expandKnown, locatedSegments, writableText } from './shell.ts'
 import { STACKS } from './stacks.ts'
 
 // A code file of any stack, anywhere: the caller's layout decides which are source. Test files are dropped below.
@@ -32,6 +32,21 @@ function captures(pattern: RegExp, text: string): string[] {
   return [...text.matchAll(pattern)].flatMap(match => (match[1] === undefined ? [] : [match[1]]))
 }
 
+const IDENTIFIER = /^[A-Za-z_]\w*$/
+// `p = 'src/x.ts'`, `const target = "src/x.ts"`: a name and the value it is given.
+const ASSIGNMENT = /(?:^|[\s;(])(?:(?:const|let|var)\s+)?([A-Za-z_]\w*)\s*=(?!=)\s*([^\n;]+)/g
+
+/** Each assigned name and its plain string value; null when it is assigned anything else, or more than once. */
+function plainAssignments(segment: string): Map<string, string | null> {
+  const names = new Map<string, string | null>()
+  for (const match of segment.matchAll(ASSIGNMENT)) {
+    const name = match[1] ?? ''
+    const value = STRING_LITERAL.exec((match[2] ?? '').trim())?.[2] ?? null
+    names.set(name, names.has(name) ? null : value)
+  }
+  return names
+}
+
 /**
  * The code files a script writes, when every write call in it names its target as a string literal: a source path
  * elsewhere in the script (a string it replaces, a file it only reads) is data. Null when any target is an expression
@@ -47,9 +62,12 @@ export function literalWriteTargets(segment: string): string[] | null {
   if (calls.length === 0 || untracedPathlib || untracedStream) {
     return null
   }
+  const assigned = plainAssignments(segment)
   const targets: string[] = []
   for (const call of calls) {
-    const literal = STRING_LITERAL.exec((call[1] ?? '').trim())?.[2]
+    const argument = (call[1] ?? '').trim()
+    // A name assigned once, to a plain string, is that string: `p='src/x.ts'` ... `open(p,'w')` (2026-10-18).
+    const literal = STRING_LITERAL.exec(argument)?.[2] ?? (IDENTIFIER.test(argument) ? (assigned.get(argument) ?? undefined) : undefined)
     if (literal === undefined) {
       return null
     }
@@ -60,7 +78,9 @@ export function literalWriteTargets(segment: string): string[] | null {
   return targets
 }
 
-function writesIn(segment: string): string[] {
+function writesIn(whole: string): string[] {
+  // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
+  const segment = writableText(whole)
   const scriptTargets = SCRIPT_WRITE.test(segment) ? literalWriteTargets(segment) : null
   const writesEveryMention = IN_PLACE_SED.test(segment) || POWERSHELL_WRITE.test(segment) || (SCRIPT_WRITE.test(segment) && scriptTargets === null)
   return [

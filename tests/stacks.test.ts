@@ -204,6 +204,7 @@ describe('runners by extension', () => {
   test('a C# test in a Godot project runs through dotnet, a GDScript one through gdUnit4', () => {
     expect(runnersFor('godot', 'test/BeatDeckTest.cs').map(runner => runner.kind)).toEqual(['dotnet'])
     expect(runnersFor('godot', 'test/player_test.gd').map(runner => runner.kind)).toEqual(['gdunit4'])
-    expect(runnersFor('node', 'tests/a.test.ts').map(runner => runner.kind)).toEqual(['vitest', 'jest', 'ava', 'node-test'])
+    // plugin-kit last (2026-10-18): only a plugin folder's marker picks it, and only where the others cannot run the file.
+    expect(runnersFor('node', 'tests/a.test.ts').map(runner => runner.kind)).toEqual(['vitest', 'jest', 'ava', 'node-test', 'plugin-kit'])
   })
 })

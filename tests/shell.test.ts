@@ -1,6 +1,27 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, locatedSegments } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, locatedSegments, writableText } from '../hooks/shell'
+
+// The heredoc false positive (2026-10-18): a data heredoc's body is text and writes nothing; a body fed to an
+// interpreter or a shell is code, and its writes are real.
+describe('writableText: the part of a segment that can write', () => {
+  const body = "open(p,'w').write(x)\nsee hooks/a.ts\nEOF"
+
+  test('a heredoc fed to cat, tee or gh: only the opener line', () => {
+    expect(writableText(`cat > /tmp/r.mjs <<'EOF'\n${body}`)).toBe("cat > /tmp/r.mjs <<'EOF'")
+    expect(writableText(`tee -a notes.md <<EOF\n${body}`)).toBe('tee -a notes.md <<EOF')
+  })
+
+  test('a heredoc fed to an interpreter or a shell: the whole segment, body and all', () => {
+    for (const opener of ["python - <<'PY'", "python3 <<'PY'", "node --input-type=module <<'EOF'", 'bash <<EOF', 'C:/Python/python.exe - <<PY']) {
+      expect(writableText(`${opener}\n${body}`)).toBe(`${opener}\n${body}`)
+    }
+  })
+
+  test('no heredoc: the segment as it is', () => {
+    expect(writableText('echo x > src/a.ts')).toBe('echo x > src/a.ts')
+  })
+})
 
 describe('commandSegments', () => {
   test('splits on the shell operators', () => {

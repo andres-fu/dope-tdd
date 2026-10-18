@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ./tests/node/register.mjs --test tests/*.test.ts tests/node/*.test.mjs"
+  }
+}

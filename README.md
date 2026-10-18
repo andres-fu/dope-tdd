@@ -369,6 +369,23 @@ node tools/replay/replay.ts   # your own sessions through the detectors: what th
 Tests live in `tests/`; the hooks module is `hooks/register.tsx`, with the
 logic in small pure modules beside it.
 
+dope-tdd guards its own development (`dope-tdd.json`). A pure module
+`hooks/{module}.ts` pairs with `tests/{module}.test.ts`, and that one file runs
+on Node in well under a second:
+
+```bash
+node --import ./tests/node/register.mjs --test tests/runPlan.test.ts
+npm test   # every unit test on Node, about a second
+```
+
+`tests/node/register.mjs` points the kit's `claude-code/testing` import at a
+small stand-in on `node:test` (`tests/node/kit.mjs`, held to the kit's behaviour
+by `tests/node/kit.test.mjs`), so the same files also run in
+`claude plugin test`. The live engine tests (`*.test.tsx`) run only there.
+`hooks/register.tsx` and `hooks/draw.tsx` are exempt: the engine reaches them
+only through the live tests, which no one file pairs with. #59 keeps moving
+their decisions into pure modules that are guarded.
+
 ## Try it, and tell us
 
 Testers start at `docs/testers.md`. Report with the **Tester report** issue

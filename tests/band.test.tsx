@@ -126,6 +126,20 @@ describe('band verdict', () => {
     expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeUndefined()
   })
 
+  test('green without red that the catch check caught shows red done by catch, and no hand proof to do (2026-10-18)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await editAt($, 'src/utils/formatDuration.ts')
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect((await ui.find({ type: 'Text', text: 'red ✓ by catch' }))?.props.color).toBe(ACCENT.pass)
+    expect(await ui.find({ type: 'Text', text: 'NEVER SAW RED' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /refactor while the test guards it, then commit/ })).toBeDefined()
+  })
+
   test('a green module that went quiet stops being current: no GREEN and no trail without a module (2026-10-18)', async ($, on) => {
     const world = fakeEngine(on)
     await startSession($)

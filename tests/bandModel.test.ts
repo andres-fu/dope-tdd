@@ -81,6 +81,16 @@ describe("the current module's evidence chain", () => {
     expect(states(on({ phase: 'green', unproven: ['runPlan'] }))?.[1]).toBe('red:failed:NEVER SAW RED')
   })
 
+  test('green without red, then caught: the catch check saw the red, so the red step is done', () => {
+    const s = on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'caught' }) })
+    expect(states(s)).toEqual(['test:done', 'red:done:BY CATCH', 'green:done', 'proven:done:CAUGHT'])
+  })
+
+  test('green without red, then missed: still never saw red', () => {
+    const s = on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'missed' }) })
+    expect(states(s)?.[1]).toBe('red:failed:NEVER SAW RED')
+  })
+
   test('no current module: no chain', () => {
     expect(bandView(INITIAL_STATS, CONFIG).chain).toBeNull()
   })
@@ -114,6 +124,11 @@ describe('one next step, always', () => {
   test('unverified, or green without red: prove it by hand', () => {
     expect(next(on({ phase: 'green', ...catchOf({ kind: 'unverified', reason: 'no runner' }) }))).toBe('prove it by hand: break the code, see red, put it back')
     expect(next(on({ phase: 'green', unproven: ['runPlan'] }))).toBe('prove it by hand: break the code, see red, put it back')
+  })
+
+  test('green without red but caught or proven: nothing left to prove by hand', () => {
+    expect(next(on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'caught' }) }))).toBe('refactor while the test guards it, then commit')
+    expect(next(on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'proven' }) }))).toBe('refactor while the test guards it, then commit')
   })
 
   test('paused: resume the guard when you are done', () => {

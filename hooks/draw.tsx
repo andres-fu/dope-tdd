@@ -76,6 +76,10 @@ function drawStep(el: AnyElements, step: Step) {
     return <Text bold color={step.word === 'MISSED' ? ACCENT.ember : ACCENT.paused}>{step.word ?? `${step.name} ✗`}</Text>
   }
   if (step.state === 'done') {
+    // Red seen by the catch check, not by hand: done, but said quietly, so it reads as evidence and not as credit.
+    if (step.name === 'red' && step.word !== undefined) {
+      return <Text color={ACCENT.pass}>{`red ✓ ${step.word.toLowerCase()}`}</Text>
+    }
     return step.word === undefined ? <Text color={ACCENT.pass}>{`${step.name} ✓`}</Text> : <Text bold color={ACCENT.pass}>{step.word}</Text>
   }
   // REFACTOR and UNVERIFIED are facts about the change, not credit: plain, never the pass colour.

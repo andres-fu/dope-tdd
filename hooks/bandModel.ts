@@ -59,9 +59,18 @@ function chainOf(s: TddStats): Step[] | null {
   const green = s.phase === 'green'
   const closedCycle = green && s.lastCycle?.module === current.module ? s.lastCycle : null
   const sawRed = (!green && s.sawRed) || closedCycle?.sawRed === true
-  const neverSawRed = green && s.unproven.includes(current.module)
   const outcome = green && s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
-  const red: Step = sawRed ? { name: 'red', state: 'done' } : neverSawRed ? { name: 'red', state: 'failed', word: 'NEVER SAW RED' } : { name: 'red', state: 'open' }
+  // A CAUGHT or PROVEN catch check ran the test without the change and saw it fail: that is the red, seen by dope-tdd
+  // instead of by hand. Skipping red still counts in /tdd and on the receipt; the band just stops asking for it.
+  const caught = outcome?.kind === 'caught' || outcome?.kind === 'proven'
+  const neverSawRed = green && s.unproven.includes(current.module)
+  const red: Step = sawRed
+    ? { name: 'red', state: 'done' }
+    : neverSawRed && caught
+      ? { name: 'red', state: 'done', word: 'BY CATCH' }
+      : neverSawRed
+        ? { name: 'red', state: 'failed', word: 'NEVER SAW RED' }
+        : { name: 'red', state: 'open' }
   const proven: Step =
     outcome === null
       ? { name: 'proven', state: 'open' }
@@ -101,7 +110,8 @@ function nextOf(s: TddStats, watch: Watch): string {
     const line = outcome.slipped?.[0]
     return line === undefined ? 'add an assertion that fails without your change' : `add an assertion that fails without:  ${line}`
   }
-  if (outcome?.kind === 'unverified' || s.unproven.includes(current.module)) {
+  const caught = outcome?.kind === 'caught' || outcome?.kind === 'proven'
+  if (outcome?.kind === 'unverified' || (!caught && s.unproven.includes(current.module))) {
     return 'prove it by hand: break the code, see red, put it back'
   }
   return 'refactor while the test guards it, then commit'

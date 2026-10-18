@@ -49,6 +49,19 @@ describe("Node's built-in runner, found through the package's test script", () =
     })
   })
 
+  test('a .tsx or .jsx test needs a loader that understands JSX: without one, node --test is not its runner (2026-10-18)', async () => {
+    const ts = disk({ 'C:/dope-tdd/package.json': JSON.stringify({ scripts: { test: 'node --import ./tests/node/register.mjs --test tests/' } }) })
+    expect(await findRunner('C:/dope-tdd', 'node', 'C:/dope-tdd/tests/band.test.tsx', ts.exists, ts.read)).toBeNull()
+    expect((await findRunner('C:/dope-tdd', 'node', 'C:/dope-tdd/tests/runPlan.test.ts', ts.exists, ts.read))?.kind).toBe('node-test')
+    const plain = disk({ 'C:/app/package.json': NODE_TEST_SCRIPT })
+    expect(await findRunner('C:/app', 'node', 'C:/app/test/view.test.jsx', plain.exists, plain.read)).toBeNull()
+  })
+
+  test('with a JSX-capable loader in the script, node --test runs .tsx too', async () => {
+    const tsx = disk({ 'C:/app/package.json': JSON.stringify({ scripts: { test: 'node --import tsx --test test/' } }) })
+    expect((await findRunner('C:/app', 'node', 'C:/app/test/view.test.tsx', tsx.exists, tsx.read))?.kind).toBe('node-test')
+  })
+
   test('without a way to read files, the script cannot be checked and nothing is guessed', async () => {
     const { exists } = disk({ 'C:/vibecast/package.json': NODE_TEST_SCRIPT })
     expect(await findRunner('C:/vibecast', 'node', 'C:/vibecast/test/helpers.test.js', exists)).toBeNull()

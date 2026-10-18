@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
-import { formatStatus } from '../hooks/summary'
+import { formatGlossary, formatStatus } from '../hooks/summary'
 import { INITIAL_STATS, recordRun, recordTestTouch, seedUnlocks, togglePause } from '../hooks/stats'
 
 const T0 = 1_000_000
@@ -49,5 +49,16 @@ describe('a module in a folder with a layout of its own is named by its source p
     expect(text).toMatch(/also open: dashboard\/src\/lib\/toasts \(writing\)/)
     expect(text).toMatch(/unlocked earlier: dashboard\/src\/lib\/pkce \(1H AGO\)/)
     expect(text).toMatch(/module: queueOps/)
+  })
+})
+
+describe('/tdd why explains the band words of the 2026-10-18 redesign', () => {
+  test('watching, not watching, runs it cannot read, unwatched edits and the next step', () => {
+    const text = formatGlossary()
+    expect(text).toMatch(/^ {2}WATCHING {7}the edited code matches the layout/m)
+    expect(text).toMatch(/^ {2}NOT WATCHING {3}code was edited that no test layout pairs/m)
+    expect(text).toMatch(/^ {2}CAN'T READ RUNS test runs happened and none could be read/m)
+    expect(text).toMatch(/^ {2}UNWATCHED {6}code files edited outside the layout/m)
+    expect(text).toMatch(/^ {2}NEXT {11}the one step to take now/m)
   })
 })

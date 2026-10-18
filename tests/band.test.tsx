@@ -51,7 +51,7 @@ describe('band content', () => {
     expect(await ui.find({ type: 'Text', text: 'WRITING 3M' })).toBeDefined()
   })
 
-  test('shows the run trail and the cycle count', async ($, on) => {
+  test('shows the run trail; session totals live in /tdd, never as calm zeros on the band', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
@@ -59,7 +59,7 @@ describe('band content', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'CYCLES 1' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /CYCLES|0 CAUGHT|0 BLOCKED/ })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: '✗' }))?.props.color).toBe(ACCENT.ember)
     expect((await ui.find({ type: 'Text', text: '●' }))?.props.color).toBe(ACCENT.pass)
   })
@@ -91,16 +91,18 @@ describe('band content', () => {
 })
 
 describe('band verdict', () => {
-  test('a fix that saw red and is caught says SAW RED and CAUGHT', async ($, on) => {
+  test('a fix that saw red and is caught shows the whole chain done, CAUGHT, and the next step', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'SAW RED' })).toBeDefined()
+    for (const step of ['test ✓', 'red ✓', 'green ✓']) {
+      expect((await ui.find({ type: 'Text', text: step }))?.props.color).toBe(ACCENT.pass)
+    }
     expect((await ui.find({ type: 'Text', text: 'CAUGHT' }))?.props.color).toBe(ACCENT.pass)
-    expect(await ui.find({ type: 'Text', text: '1 CAUGHT' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /refactor while the test guards it, then commit/ })).toBeDefined()
   })
 
   test('a test that misses the change is called out in ember', async ($, on) => {
@@ -134,7 +136,6 @@ describe('band verdict', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'REFACTOR' }))?.props.color).not.toBe(ACCENT.pass)
-    expect(await ui.find({ type: 'Text', text: '1 REFACTOR' })).toBeDefined()
   })
 
   test('shows the mode only when it is not plain enforce', async ($, on) => {
@@ -170,10 +171,46 @@ describe('band theming', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
     const module = await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })
-    const cycles = await ui.find({ type: 'Text', text: 'CYCLES 0' })
+    const next = await ui.find({ type: 'Text', text: 'NEXT' })
     expect(module?.props.color).toBeUndefined()
-    expect(cycles?.props.color).toBeUndefined()
-    expect(cycles?.props.dimColor).toBe(true)
+    expect(next?.props.color).toBeUndefined()
+    expect(next?.props.dimColor).toBe(true)
+  })
+})
+
+describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', () => {
+  test('watching names where it looks', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect((await ui.find({ type: 'Text', text: '● WATCHING src/ · node' }))?.props.color).toBe(ACCENT.pass)
+  })
+
+  test('code edited outside every layout, with nothing guarded, says NOT WATCHING and how to fix it', async ($, on) => {
+    fakeEngine(on)
+    await writeAt($, 'scripts/build.ts', 'export const x = 1')
+
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
+      expect((await ui.find({ type: 'Text', text: '⚠ NOT WATCHING' }))?.props.color).toBe(ACCENT.paused)
+      expect(await ui.find({ type: 'Text', text: /1 edited code file matches no test layout: scripts\/build\.ts/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /run \/tdd setup, or add a layout to dope-tdd\.json/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /GREEN|IDLE/ })).toBeUndefined()
+      await ui.unmount()
+    }
+  })
+
+  test('test runs that cannot be read say so, instead of looking like a calm start', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    world.bashText = 'Error: Cannot find module vitest\n'
+    await runTests($, world, 'fail')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect((await ui.find({ type: 'Text', text: "⚠ CAN'T READ RUNS" }))?.props.color).toBe(ACCENT.paused)
+    expect(await ui.find({ type: 'Text', text: /run one test file, so its summary line reaches the output/ })).toBeDefined()
   })
 })
 
@@ -189,7 +226,7 @@ describe('band buttons', () => {
 
       const paused = await editAt($, 'src/utils/calculateDuration.ts')
       expect(paused.deny).toBeUndefined()
-      expect(await ui.find({ type: 'Text', text: '0 UNGUARDED' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /UNGUARDED/ })).toBeUndefined()
 
       await ui.press({ key: 'pause' })
       const guarded = await editAt($, 'src/utils/calculateDuration.ts')
@@ -209,7 +246,7 @@ describe('band buttons', () => {
     await ui.press({ key: 'reset' })
 
     expect(await ui.find({ type: 'Text', text: '1 BLOCKED' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: 'CYCLES 0' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /BLOCKED|MISSED|WORKAROUNDS/ })).toBeUndefined()
     const stillUnlocked = await editAt($, 'src/utils/formatDuration.ts')
     expect(stillUnlocked.deny).toBeUndefined()
   })
@@ -276,6 +313,11 @@ describe('/tdd why', () => {
       'BLOCKED',
       'PAUSED',
       'MODE',
+      'WATCHING',
+      'NOT WATCHING',
+      "CAN'T READ RUNS",
+      'UNWATCHED',
+      'NEXT',
     ]) {
       expect(result.text).toMatch(new RegExp(`^  ${word} `, 'm'))
     }

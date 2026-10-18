@@ -25,6 +25,7 @@ import {
   recordUnreadRun,
   recordOtherPass,
   recordReportedElsewhere,
+  recordUnwatchedEdit,
   recordWorkaround,
   releaseCheck,
   resetStats,
@@ -561,5 +562,20 @@ describe('a problem reported in another project is on the record (#89)', () => {
     const after = recordReportedElsewhere(INITIAL_STATS, 'C:/elsewhere/proj/m.ts', 700)
     expect(after.events.at(-1)).toEqual({ atMs: 700, kind: 'reported-elsewhere', detail: 'C:/elsewhere/proj/m.ts' })
     expect({ ...after, events: [], lastEventMs: null }).toEqual(INITIAL_STATS)
+  })
+})
+
+describe('code edited outside the layout is remembered, so the band can say it is not watching (2026-10-18)', () => {
+  test('starts empty, and an old stored record without the field reads as empty', () => {
+    expect(INITIAL_STATS.unwatched).toEqual([])
+    expect(normalizeStats({ ...INITIAL_STATS, unwatched: undefined }).unwatched).toEqual([])
+  })
+
+  test('each file once, newest kept, at most twenty', () => {
+    const once = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'scripts/a.ts'), 'scripts/a.ts')
+    expect(once.unwatched).toEqual(['scripts/a.ts'])
+    const many = Array.from({ length: 25 }, (_, i) => `scripts/f${i}.ts`).reduce(recordUnwatchedEdit, INITIAL_STATS)
+    expect(many.unwatched).toHaveLength(20)
+    expect(many.unwatched[0]).toBe('scripts/f5.ts')
   })
 })

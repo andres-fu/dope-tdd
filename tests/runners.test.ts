@@ -494,3 +494,14 @@ describe("node --test with Node's own flags in the test script (seen on dope-tdd
     expect(runnerNamed('node-test').describe('tests/runPlan.test.ts', launcher)).toBe('node --import ./tests/node/register.mjs --test tests/runPlan.test.ts')
   })
 })
+
+describe('which loaders let node --test run .tsx and .jsx (2026-10-18)', () => {
+  test('a JSX-capable loader is recognised, a plain TypeScript loader is not', () => {
+    const jsx = runnerNamed('node-test').jsxLoader
+    expect(jsx?.test('tsx')).toBe(true)
+    expect(jsx?.test('--import=tsx')).toBe(true)
+    expect(jsx?.test('@swc-node/register')).toBe(true)
+    expect(jsx?.test('./tests/node/register.mjs')).toBe(false)
+    expect(runnerNamed('vitest').jsxLoader).toBeUndefined()
+  })
+})

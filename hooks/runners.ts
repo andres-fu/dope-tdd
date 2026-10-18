@@ -49,6 +49,11 @@ export type Runner = {
   describe: (testPath: string, launcher?: readonly string[]) => string
   /** The launcher a marker's text names, when the runner is found through it: Node's own flags in a test script. */
   launcherFrom?: (markerText: string) => readonly string[] | undefined
+  /**
+   * A launcher argument that lets this runner load .tsx and .jsx files. Node strips TypeScript types on its own but
+   * cannot load JSX, so without such a loader node --test is not the runner for those files (2026-10-18).
+   */
+  jsxLoader?: RegExp
   provisional: boolean
 }
 
@@ -474,6 +479,7 @@ export const RUNNERS: readonly Runner[] = [
     command: NODE_COMMAND,
     argv: (_root, testPath, tool, options) => [...(options.launcher ?? [tool]), '--test', testPath],
     launcherFrom: nodeTestLauncher,
+    jsxLoader: /(?:^|[=/\s])(?:tsx|@swc-node\/register|esbuild-register|ts-node(?:\/esm)?)(?:$|[/\s])/,
     read: readNodeTest,
     failedFiles: nodeTestFailedFiles,
     provisional: false,

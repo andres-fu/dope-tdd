@@ -99,6 +99,10 @@ export type FakeWorld = {
   sessionModel: string
   /** The surfaces drawing the session, as $.session.surfaces() says: the desktop app is one. */
   surfaces: string[]
+  /** This session's id, as $.session.id() says. */
+  sessionId: string
+  /** What `git log -1 --format=%h|%cs|%s` prints in the plugin's own folder: which build is running. */
+  pluginGit: string
   /** What `git diff --no-ext-diff -- <paths>` prints: the module's hunks for the reviewer. */
   diffText: string
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
@@ -158,6 +162,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     modelCalls: [],
     sessionModel: 'claude-opus-5-5',
     surfaces: [],
+    sessionId: 'session-1',
+    pluginGit: '',
     diffText: '',
     readOnly: false,
     onCatchRun: () => {},
@@ -183,6 +189,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('session.start', () => ({ cwd: ROOT }))
   on('session.model', () => ({ value: world.sessionModel }) as never)
   on('session.surfaces', () => ({ value: world.surfaces }) as never)
+  on('session.id', () => ({ value: world.sessionId }) as never)
   on('model.complete', (_$, e) => {
     world.modelCalls.push(e as never)
     return { value: world.modelReply } as never
@@ -253,6 +260,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     if (verb === 'config') {
       const url = world.remotes.get((rest[rest.length - 1] ?? '').replace(/^remote\.|\.url$/g, ''))
       return url === undefined ? answer(1) : answer(0, `${url}\n`)
+    }
+    if (verb === 'log' && e.argv.includes('--format=%h|%cs|%s')) {
+      return answer(world.pluginGit === '' ? 128 : 0, world.pluginGit === '' ? '' : `${world.pluginGit}\n`)
     }
     if (verb === 'diff' && e.argv.includes('--no-ext-diff')) {
       return answer(0, world.diffText)

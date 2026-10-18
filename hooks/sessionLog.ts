@@ -8,6 +8,7 @@ import type { GuardConfig } from './config.ts'
  * sessions ever write the same file.
  */
 export type SessionRecord = {
+  build?: string
   sessionId: string
   endedAt: string
   reason: string
@@ -34,11 +35,13 @@ export type SessionRecord = {
   receipt: string
 }
 
-export type SessionMeta = { sessionId: string; reason: string; root: string; endedAtMs: number }
+/** `build`: which dope-tdd guarded the session (build.ts), so a receipt says which rules applied. */
+export type SessionMeta = { sessionId: string; reason: string; root: string; endedAtMs: number; build?: string }
 
 export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMeta, receipt: string): SessionRecord {
   const root = meta.root.replace(/\\/g, '/').replace(/\/$/, '')
   return {
+    ...(meta.build === undefined ? {} : { build: meta.build }),
     sessionId: meta.sessionId,
     endedAt: new Date(meta.endedAtMs).toISOString(),
     reason: meta.reason,

@@ -11,7 +11,7 @@ describe('formatStatus', () => {
     const text = formatStatus(INITIAL_STATS, T0)
     expect(text).toMatch(/guard: ON/)
     expect(text).toMatch(/phase: IDLE/)
-    expect(text).toMatch(/no events yet/)
+    expect(text).toMatch(/^recent events: none yet$/m)
   })
 
   test('reports pause, phase, counts and recent events with relative times', () => {
@@ -24,8 +24,8 @@ describe('formatStatus', () => {
     expect(text).toMatch(/phase: RED/)
     expect(text).toMatch(/module: utils\/a/)
     expect(text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
-    expect(text).toMatch(/1M AGO\s+touched\s+utils\/a/)
-    expect(text).toMatch(/JUST NOW\s+paused/)
+    expect(text).toMatch(/^1M AGO: touched utils\/a$/m)
+    expect(text).toMatch(/^JUST NOW: paused$/m)
   })
 })
 
@@ -75,5 +75,22 @@ describe('formatStatus names an edited override record (2026-10-18)', () => {
   test('as its own workaround word', () => {
     const s = recordWorkaround(INITIAL_STATS, 'record-edited', '', 'dope-tdd.overrides.json', T0)
     expect(formatStatus(s, T0)).toMatch(/workarounds: 1 \(override record edited 1\)/)
+  })
+})
+
+describe('formatStatus as rows the app can show as a table (2026-10-18)', () => {
+  test('the first row is the build, not the plugin name twice', () => {
+    expect(formatStatus(INITIAL_STATS, T0, undefined, '#99 · a6b93d4 · 2026-10-18').split('\n')[0]).toBe('#99 · a6b93d4 · 2026-10-18')
+  })
+
+  test('each recent event is a "when: what" row under a header row', () => {
+    const s = recordTestTouch(INITIAL_STATS, { module: 'utils/a', testPath: 'C:/m/tests/utils/a.test.ts' }, T0)
+    const text = formatStatus(s, T0 + 60_000)
+    expect(text).toMatch(/^recent events: newest first$/m)
+    expect(text).not.toMatch(/^ {2}\S/m)
+  })
+
+  test('no events is one row', () => {
+    expect(formatStatus(INITIAL_STATS, T0)).toMatch(/^recent events: none yet$/m)
   })
 })

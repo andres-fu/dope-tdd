@@ -189,7 +189,8 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
     : problems
 }
 
-export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = [], nowMs = 0): BandView {
+/** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
+export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = [], nowMs = 0, session?: string): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
   const pending = record.find(o => o.status === 'pending') ?? null
@@ -197,7 +198,8 @@ export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stac
   const overridden = record.find(o => o.status === 'approved' && o.endedAtMs === null && o.scope === 'module' && o.module === module) ?? null
   const open = record.flatMap(o => {
     const left = overrideLeft(o, nowMs)
-    return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}` }]
+    const theirs = o.session !== undefined && session !== undefined && o.session !== session ? " · another session's" : ''
+    return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}${theirs}` }]
   })
   return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch, pending, open), problems: problemsOf(s, config, watch, record), pending, overridden, open }
 }

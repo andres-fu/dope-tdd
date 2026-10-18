@@ -237,3 +237,22 @@ describe('open overrides on the band, whichever module is current (live trial, 2
     expect(bandView(INITIAL_STATS, CONFIG, [approved()], 0).next).toBe('use it or end it: /tdd override end timeText')
   })
 })
+
+describe("another session's override on the band (2026-10-18)", () => {
+  const theirs: Override = {
+    by: 'agent', scope: 'change', kind: 'spike', module: 'timeText', path: 'hooks/timeText.ts',
+    reason: 'try seconds under a minute; a test follows', until: null, minutes: null,
+    id: 'o1', atMs: 0, status: 'approved', decidedBy: 'human', decidedAtMs: 0, endedAtMs: null, settledAtMs: null, note: null, edits: [],
+    session: 'A',
+  }
+
+  test("is shown, said to be another session's, and still has END", () => {
+    expect(bandView(INITIAL_STATS, CONFIG, [theirs], 0, 'B').open).toEqual([
+      { target: 'timeText', text: "timeText · spike · 1 edit left · approved by human · another session's" },
+    ])
+  })
+
+  test('its own is not marked', () => {
+    expect(bandView(INITIAL_STATS, CONFIG, [theirs], 0, 'A').open[0]?.text).toBe('timeText · spike · 1 edit left · approved by human')
+  })
+})

@@ -1,9 +1,10 @@
-# 2026-10-18 — The standard: what good looks like (DRAFT v0.3)
+# 2026-10-18 — The standard: what good looks like (DRAFT v0.4)
 
 > Drafted by Claude from the 2026-10-18 conversation, for Andres to edit until it sounds like him.
 > Lines marked **[today]** describe what dope-tdd already does; **[proposed]** is not built yet;
 > **[decide]** is an open question for Andres. v0.2 folded in the industry review of the same day and
-> Andres's answers to the v0.1 questions; v0.3, his answers to v0.2's.
+> Andres's answers to the v0.1 questions; v0.3, his answers to v0.2's; v0.4, a review of example
+> tests and of dope-tdd's own data.
 
 ## Why this exists
 Code changes. A product owner changes their mind, a bug turns up at 3 a.m., a feature grows. What
@@ -33,7 +34,7 @@ The standard has two layers, and both are ours:
 2. **Principles dope-tdd teaches.** In the advice it gives, the skills and the docs. Judgement lives here.
 3. **Examples dope-tdd shows.** A handful of tests and code we consider excellent, each beside a bad
    version and one line on why. Agents follow examples far more reliably than abstract principles, so
-   this is how taste is passed on. **[proposed]**
+   this is how taste is passed on. The first pairs: [the examples](2026-10-18_the-standard-examples.md).
 
 The layers stack. Ours is the base, opinionated and shipped with dope-tdd. A company or project adds
 its own on top (its CLAUDE.md, its own examples), because every company is different. Whenever a
@@ -112,7 +113,9 @@ A test that breaks any of these is not good, whatever the coverage report says.
 
 1. **It can fail.** Undoing the change makes it fail. **[today: the catch check]**
 2. **It asserts something real.** A test whose only checks are "is defined", "is truthy", "does not
-   throw" or `expect(true)` is an assertion-free test (the Liar). **[proposed]**
+   throw" or `expect(true)` is an assertion-free test (the Liar). An assertion of absence ("never
+   contains", "was not called") also proves something was there to check, or it passes when nothing
+   happened at all. **[proposed]**
 3. **It does not mock the thing it tests.** That is gaming, and is flagged. **[proposed]**
    Other mocks are a tool, used within reason: sometimes you must stub something until a change
    elsewhere lands. A change's new mocks are counted on the receipt, and a temporary one carries a
@@ -124,6 +127,9 @@ A test that breaks any of these is not good, whatever the coverage report says.
 6. **It is fast.** One unit test file runs in well under a second. **[proposed: measured and shown
    first; a hard number once we have real data]**
 7. **It gives the same answer twice.** **[proposed: compare with the catch check's baseline run]**
+8. **It tests behaviour, not internals.** A test that reaches into private state (`as any`, an
+   `_underscored` field, a function the module does not export) breaks on a harmless refactor and
+   proves nothing a user would notice. **[proposed]**
 
 Gaming is not blocked, it is shown. Every workaround goes on the receipt, where the human sees it.
 Blocking teaches the agent to game more cleverly; showing makes it pointless.
@@ -133,7 +139,12 @@ Blocking teaches the agent to game more cleverly; showing makes it pointless.
 - Its name reads as a line of the spec.
 - It covers the edges that matter: empty, boundary, error.
 - Someone who has never seen the code can read it and know what the code does.
-- Mocks are a tool, used within reason (see rule 3). **[decide]** fixtures, and how much testing is enough.
+- **Mock only at the process boundary:** the network, the mail provider, the clock, the disk. Never
+  inside the unit. A temporary mock elsewhere carries a recorded reason (see rule 3).
+- **Avoid the named smells:** assertion roulette (many assertions, no telling which one failed), the
+  mystery guest (setup hidden in helpers, so the reader cannot see what a case depends on), and the
+  eager test (one test checking several behaviours). One behaviour per test, its setup in plain sight.
+- **[decide]** fixtures, and how much testing is enough.
 
 ## Good code (the principles)
 - **Easy to change** is the measure of good. Everything below serves it.
@@ -184,7 +195,9 @@ recorded, labels present), and an agent applies them only when it knows they app
 - **The project says which apply,** in its own layer (its CLAUDE.md or a requirements document): "this
   service handles card data; PCI applies."
 - **Each requirement becomes a test:** "card numbers never appear in logs", "every form input has a
-  label". dope-tdd then proves that test can fail, and records anyone who weakens or skips it.
+  label". dope-tdd then proves that test can fail, and records anyone who weakens or skips it. A
+  "never appears" test also proves something was logged, or it passes when the logger is silent
+  (example 6).
 - **Specialised tools cover the rest:** secret scanning, static security analysis, accessibility
   checkers.
 
@@ -192,7 +205,10 @@ dope-tdd does not judge compliance. It keeps compliance requirements from silent
 
 dope-tdd holds itself to the same principles. It sends nothing off the machine. What it stores
 locally (session state, the catch-check journal, session logs) is to be minimised (hashes rather than
-file texts), given a retention limit, and listed in the README. **[proposed: a data audit of dope-tdd]**
+file texts), given a retention limit, and listed in the README. The audit of 2026-10-18 confirmed that
+the shipped plugin sends nothing off the machine, and found where it falls short: one log line can
+carry source text, and session logs, kept copies and orphaned journals are never pruned. **[proposed:
+those fixes, then hashes in place of file texts]**
 
 ## Measuring it
 Only what dope-tdd can see, on the engineer's machine:
@@ -213,7 +229,28 @@ measure it before we claim it.
 - **One plugin, many stacks:** the core is language-neutral; each stack is an adapter (how to run one
   test file, how to read its result, where tests live).
 
+## Sources
+The standard draws on, and cites rather than copies:
+- Kent Beck, *Test-Driven Development: By Example*, and his *Test Desiderata*: twelve properties of a
+  good test (isolated, composable, fast, deterministic, behavioural, structure-insensitive, specific,
+  predictive, inspiring, readable, writable, automated). Our rules and principles map onto them.
+- Kent Beck, "Augmented Coding: Beyond the Vibes" (2025): strict TDD with agents, and watching for
+  agents that disable or delete tests.
+- Vladimir Khorikov, *Unit Testing: Principles, Practices, and Patterns*: mocks only at the boundary
+  with dependencies outside the process; test observable behaviour.
+- Gerard Meszaros, *xUnit Test Patterns* (xunitpatterns.com): the names of the test smells.
+- Martin Fowler, "Mocks Aren't Stubs": classical and mockist testing.
+- Kent C. Dodds, "Testing Implementation Details".
+- Birgitta Böckeler, "TDD in the agent loop" (martinfowler.com): the evidence that enforced
+  red-green alone did not improve agent output, which is why we enforce the outcome.
+- Hora and Robbes, MSR 2026: agents add mocks in 36% of commits, against 26% for others.
+- Robert C. Martin, *Clean Code* and *Clean Architecture*; and John Ousterhout, *A Philosophy of
+  Software Design*, the strongest case against TDD as a design method, which we answer: code is rarely
+  a one-person show, and tests are how the next person changes it safely.
+
+**[decide]** Check each source and its licence before the standard is published; the example code is
+original.
+
 ## Open questions for Andres
 1. The standard's name, and whether it is published on its own, apart from the plugin.
-2. The first examples: which tests and code (from this repo, VibeCast or elsewhere) show what
-   excellent looks like?
+2. The first examples: approve, edit or replace each pair in the examples file.

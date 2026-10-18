@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { planDecision, planRequest, refusal, requestFrom, sendsToModel } from '../hooks/requestPlan'
+import { planDecision, planEnd, planExpiry, planRequest, planResume, planShellCover, refusal, requestFrom, sendsToModel } from '../hooks/requestPlan'
 import type { Override, OverrideRequest, Review } from '../types'
 
 // #59: the override decisions, out of register.tsx and under the gate's own catch check (2026-10-18).
@@ -143,5 +143,83 @@ describe('planDecision: a person decides the waiting request', () => {
 
   test('nothing waiting', () => {
     expect(planDecision([], true, null, T0, labelOf)).toEqual({ record: [], reply: 'dope-tdd: no override request is waiting.', pause: false })
+  })
+})
+
+// #59, second slice: the override lifecycle (2026-10-18).
+const MINUTE = 60_000
+const PAUSE_REASON = 'pairing on the prod incident in #301 and back after'
+const pauseEntry = (over: Partial<Override> = {}): Override => ({
+  ...plan({ request: ask({ by: 'human', scope: 'pause', kind: 'other', module: null, path: null, minutes: 30, reason: PAUSE_REASON }) }).entry,
+  ...over,
+})
+const approvedChange = (over: Partial<Override> = {}): Override => ({ ...plan({ present: false, request: ask({ kind: 'hotfix' }) }).entry, ...over })
+
+describe('planExpiry: a pause whose minutes ran out', () => {
+  test('ends at its own end time, resumes the guard, and says what happened while it was on', () => {
+    const expired = planExpiry([pauseEntry({ edits: ['hooks/a.ts'] })], T0 + 31 * MINUTE)
+    expect(expired.record[0]?.endedAtMs).toBe(T0 + 30 * MINUTE)
+    expect(expired.resume).toBe(true)
+    expect(expired.summaries).toEqual([`dope-tdd is back on after 30m (${PAUSE_REASON}): 1 edit to 1 file while paused, none tested. Pin them with /dope-tdd:pin.`])
+  })
+
+  test('nothing to do while it still runs', () => {
+    expect(planExpiry([pauseEntry()], T0 + 29 * MINUTE)).toEqual({ record: [pauseEntry()], resume: false, summaries: [] })
+  })
+})
+
+describe('planResume: /tdd resume ends a pause early', () => {
+  test('closes it now and says how long it ran', () => {
+    const resumed = planResume([pauseEntry()], true, T0 + 5 * MINUTE)
+    expect(resumed.record[0]?.endedAtMs).toBe(T0 + 5 * MINUTE)
+    expect(resumed.resume).toBe(true)
+    expect(resumed.reply).toBe(
+      `dope-tdd is on: an edit to untested source is refused until its test is written.\ndope-tdd is back on after 5m (${PAUSE_REASON}): no edits while paused.`,
+    )
+  })
+
+  test('a guard paused with no pause on record (from before) is resumed all the same', () => {
+    expect(planResume([], true, T0)).toEqual({
+      record: [],
+      resume: true,
+      reply: 'dope-tdd is on: an edit to untested source is refused until its test is written.',
+    })
+  })
+
+  test('nothing paused: already on', () => {
+    expect(planResume([], false, T0)).toEqual({ record: [], resume: false, reply: 'dope-tdd is already on.' })
+  })
+})
+
+describe('planEnd: /tdd override end <module|pause>', () => {
+  test('ends the named module and says the guard is back', () => {
+    const ended = planEnd([approvedChange()], 'runPlan', T0 + MINUTE)
+    expect(ended.record[0]?.endedAtMs).toBe(T0 + MINUTE)
+    expect(ended).toMatchObject({ resume: false, reply: 'dope-tdd: ended the override on runPlan; the guard is back on it.' })
+  })
+
+  test('ending the pause resumes the guard', () => {
+    expect(planEnd([pauseEntry()], 'pause', T0 + MINUTE).resume).toBe(true)
+  })
+
+  test('a miss lists what is open; nothing named says how', () => {
+    expect(planEnd([approvedChange({ scope: 'module', kind: 'spike', until: 'the spike PR closes', decidedBy: 'human' })], 'stats', T0).reply).toBe(
+      'No open override on stats. Open: runPlan (module · spike, until the spike PR closes). End one with /tdd override end <module>, or /tdd override end pause.',
+    )
+    expect(planEnd([], undefined, T0).reply).toBe('Name what to end: /tdd override end <module>, or /tdd override end pause.')
+  })
+})
+
+describe('planShellCover: a shell write to a locked module that an override covers', () => {
+  test('passes and counts on the override; the rest stay locked', () => {
+    const covered = planShellCover([approvedChange({ session: 'A' })], ['runPlan', 'stats'], [{ path: 'hooks/runPlan.ts', module: 'runPlan' }, { path: 'hooks/stats.ts', module: 'stats' }], T0, 'A')
+    expect(covered.stillLocked).toEqual(['stats'])
+    expect(covered.record[0]?.edits).toEqual(['hooks/runPlan.ts'])
+  })
+
+  test("another session's override covers nothing", () => {
+    const covered = planShellCover([approvedChange({ session: 'A' })], ['runPlan'], [{ path: 'hooks/runPlan.ts', module: 'runPlan' }], T0, 'B')
+    expect(covered.stillLocked).toEqual(['runPlan'])
+    expect(covered.record[0]?.edits).toEqual([])
   })
 })

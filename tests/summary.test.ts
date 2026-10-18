@@ -60,5 +60,11 @@ describe('/tdd why explains the band words of the 2026-10-18 redesign', () => {
     expect(text).toMatch(/^ {2}CAN'T READ RUNS test runs happened and none could be read/m)
     expect(text).toMatch(/^ {2}UNWATCHED {6}code files edited outside the layout/m)
     expect(text).toMatch(/^ {2}NEXT {11}the one step to take now/m)
+    // Override with a reason, v1 (2026-10-18): no off switch, so PAUSED points at a time and a reason.
+    expect(text).toMatch(/^ {2}OVERRIDE REQUESTED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
+    expect(text).toMatch(/^ {2}OVERRIDDEN +a person let this module's edits through until what "until" names/m)
+    expect(text).toMatch(/^ {2}OVERRIDES OPEN +overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt/m)
+    expect(text).toMatch(/^ {2}PAUSED +\/tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or \/tdd resume/m)
+    expect(text).not.toMatch(/\/tdd off/)
   })
 })

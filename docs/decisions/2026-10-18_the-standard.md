@@ -30,7 +30,9 @@ in not having the argument.
 
 The standard has two layers, and both are ours:
 1. **Rules dope-tdd enforces.** Deterministic, cheap, checked on every change. If we cannot check it
-   mechanically, it is not a rule.
+   mechanically, it is not a rule. A judgement, such as whether an override was warranted, is a
+   principle: an approver decides it and the record keeps it. Only its mechanical part is a rule (a
+   kind, a reason, what ends it, the rising bar). *(Clarified 2026-10-18 with override v1.)*
 2. **Principles dope-tdd teaches.** In the advice it gives, the skills and the docs. Judgement lives here.
 3. **Examples dope-tdd shows.** A handful of tests and code we consider excellent, each beside a bad
    version and one line on why. Agents follow examples far more reliably than abstract principles, so
@@ -45,22 +47,39 @@ We cannot foresee every situation, and it is not intelligent to gate everything.
 - **Every guardrail can be passed.** By the agent or the engineer, always.
 - **Passing one takes a reason and a scope.** Every reason is recorded and shows on the receipt.
   Nothing is silent.
+- **No agent approves its own exception.** The agent asks; an approver decides. The approver is a
+  role: a person today, and next a reviewer model or a team's own EM, PM or principal agent. With
+  nobody to approve, the agent stops and reports. A hotfix is the one exception: it always passes,
+  recorded, as debt (see Hotfixes).
+- **Exceptions stay rare,** by rising friction and visibility, not a hard budget: one request waits
+  at a time, an override left open past a week blocks the next, the approver sees each request's
+  history, and the receipt shows overrides per cycle.
 
-**Scopes.** **[proposed]**
-- **This change:** the default, for almost everything.
-- **This module, until a condition:** "mock the payments client until the API change lands". The
-  override names what ends it, and the receipt shows it until then.
-- **No session scope.** A blanket bypass is easy to reach for and hard to justify later. A spike is
-  "this module, until the spike is thrown away".
+**Scopes.** *(Built in override v1, 2026-10-18.)*
+- **This change:** one edit, the default, for almost everything.
+- **This module, until a condition:** "a spike on the parser until the spike PR closes". The
+  override names what ends it, and the receipt shows it until a person ends it.
+- **A pause: every module, for a set time.** No silent or open-ended bypass: a pause has a reason
+  and minutes (at most two hours), ends by itself, and what was edited during it stays debt on the
+  receipt until someone deals with it. *(Changed 2026-10-18 from "no session scope": the rule we
+  meant was no silent or open-ended bypass, and a person who cannot pause uninstalls, which loses the
+  record entirely.)*
 
 **Reasons.** A kind, so reports can count them, and one line of free text, so a person can read why.
-Kinds: spike, hotfix, generated code, temporary mock, legacy (no tests yet), other. **[proposed]**
+Kinds: spike, hotfix, generated code, legacy (no tests yet), other. A mock is not a kind: mocks
+follow the mocking rule, and needing an override for one means the rule is missing.
 A good reason is specific: it says what, why, and what happens next. "Needed to proceed" is not a
-reason; "temporary mock of the payment client until #212 lands, removed in the follow-up" is. The
-mechanical part is checked (a kind, text that is not empty, a follow-up named for temporary kinds);
-the rest is taught by examples.
+reason; "trying two parsers to see which handles Windows output; the loser is deleted" is. The
+mechanical part is checked (a kind, a reason long enough to say something and not an empty phrase,
+what ends a module override, minutes for a pause); the rest is the approver's judgement, taught by
+examples.
 
-There is no quiet "off". There is an override with a reason, and there is uninstalling.
+**The record.** Overrides live in `dope-tdd.overrides.json` in the repo, so who approved what is in
+the pull request's diff. Only dope-tdd writes it. It names roles (human, hotfix rule, unattended),
+never people.
+
+There is no quiet "off". There is an override with a reason, a pause with a time, and there is
+uninstalling.
 
 ## Answering upward
 Whoever ships a change answers for it: to their EM, a director, the CTO, the customer, customer
@@ -221,7 +240,11 @@ recorded, labels present), and an agent applies them only when it knows they app
 
 dope-tdd does not judge compliance. It keeps compliance requirements from silently regressing.
 
-dope-tdd holds itself to the same principles. It sends nothing off the machine. What it stores
+dope-tdd holds itself to the same principles. It sends nothing off the machine today. A reviewer
+model for overrides would send the request and the module's diff to the model API through the
+session's own client; it will be opt-in, stated in the README and listed here before it ships. The
+override record is kept in the repo on purpose, since it is part of the change, and holds roles,
+never names. What it stores
 locally (session state, the catch-check journal, session logs) is to be minimised (hashes rather than
 file texts), given a retention limit, and listed in the README. The audit of 2026-10-18 confirmed that
 the shipped plugin sends nothing off the machine, and found where it falls short: one log line can

@@ -55,7 +55,7 @@ describe('scenario: the escape hatch', () => {
     await touchTest($, world, 'money/formatCents')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
-    await ui.press({ key: 'pause' })
+    await $.command.run({ command: 'tdd', args: 'pause 30 pairing on the prod incident in #301 and back after' } as never)
     const edit = await editAt($, 'src/cart/applyDiscount.ts')
     const status = await runCommand($, 'tdd')
 

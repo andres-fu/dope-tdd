@@ -8,6 +8,10 @@ import { extOf, sourcePathFor, testPathFor } from './mirror.ts'
 // A name that says throwaway (`orig.index.tmp`, `scratch/compare`): the refusal also says where such a script belongs (#32).
 export const LOOKS_THROWAWAY = /(?:^|[/._-])(?:tmp|temp|scratch|orig)(?:[/._-]|$)/i
 
+// The cheap paths come first; the override is last, and says a person decides (the standard, "Guardrails, not walls").
+export const OVERRIDE_HINT =
+  ' No test for this code yet? /dope-tdd:pin pins what it does now. Neither fits? Ask for an override with mcp__dope-tdd__override_request: a person decides, and it is recorded.'
+
 /**
  * `staleAgeMs`: the module had a carried-over unlock, dropped because its test changed since (#54); the refusal says so.
  * `sourceExt`: the extension of the file being written, so the test named is one the project's runner runs (#53).
@@ -17,7 +21,7 @@ export function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: 
   const scratch = LOOKS_THROWAWAY.test(module) ? ' One-off script? Put it outside the repo (your scratchpad or temp directory); dope-tdd guards project sources.' : ''
   const testPath = testPathFor(config, module, sourceExt)
   const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPath, staleAgeMs)
-  return `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
+  return `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}${OVERRIDE_HINT}`
 }
 
 /** A refused write to a locked module's file, with the stale note when a carried-over unlock was dropped for it. */

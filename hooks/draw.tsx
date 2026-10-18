@@ -1,6 +1,6 @@
 import type { Elements, RenderSurface } from 'claude-code'
 
-import type { CurrentTest, TddStats } from '../types'
+import type { CurrentTest, Override, TddStats } from '../types'
 import { bandView } from './bandModel.ts'
 import type { Problem, Step, Watch } from './bandModel.ts'
 import type { GuardConfig } from './config.ts'
@@ -19,8 +19,12 @@ export type BandModel = {
   logo: string | null
   /** The git operation the guard stands down for, or '' when it is on. */
   standingDown: string
+  /** The repo's override record: a waiting request, and the current module's open override, show on the band. */
+  overrides: readonly Override[]
   onViewTest: () => unknown
-  onTogglePause: () => unknown
+  onApprove: () => unknown
+  onDeny: () => unknown
+  onResume: () => unknown
   onReset: () => unknown
 }
 
@@ -126,7 +130,7 @@ function drawProblems(el: AnyElements, problems: readonly Problem[]) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config)
+  const view = bandView(s, config, model.overrides)
   const watching = view.watch.kind === 'watching'
   const progress = view.showProgress
 
@@ -145,6 +149,18 @@ export function drawBand(el: AnyElements, model: BandModel) {
         {progress && drawTrail(el, s)}
       </Box>
       {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
+      {view.overridden !== null && (
+        <Box flexDirection="row" gap={2}>
+          <Text bold color={ACCENT.paused}>OVERRIDDEN</Text>
+          <Text>{`${view.overridden.kind}${view.overridden.until === null ? '' : ` · until ${view.overridden.until}`} · approved by ${view.overridden.decidedBy ?? 'unknown'}`}</Text>
+        </Box>
+      )}
+      {view.pending !== null && (
+        <Box flexDirection="row" gap={2}>
+          <Text bold color={ACCENT.paused}>OVERRIDE REQUESTED</Text>
+          <Text>{`${view.pending.kind} · ${view.pending.module === null ? 'every module' : moduleLabel(config, view.pending.module)}: "${view.pending.reason.trim()}"`}</Text>
+        </Box>
+      )}
       {view.problems.length > 0 && drawProblems(el, view.problems)}
       <Box flexDirection="row" gap={2}>
         <Text dimColor>NEXT</Text>
@@ -152,7 +168,10 @@ export function drawBand(el: AnyElements, model: BandModel) {
       </Box>
       <Box flexDirection="row" gap={1}>
         {s.current !== null && <Button key="view-test" label="VIEW TEST" onPress={model.onViewTest} />}
-        <Button key="pause" label={s.paused ? 'RESUME GUARD' : 'PAUSE GUARD'} onPress={model.onTogglePause} />
+        {view.pending !== null && <Button key="approve" label="APPROVE" onPress={model.onApprove} />}
+        {view.pending !== null && <Button key="deny" label="DENY" onPress={model.onDeny} />}
+        {/* No pause button: a pause takes a time and a reason (/tdd pause). Resume is one press. */}
+        {s.paused && <Button key="resume" label="RESUME" onPress={model.onResume} />}
         <Button key="reset" label="RESET" onPress={model.onReset} />
       </Box>
     </Box>

@@ -575,8 +575,8 @@ describe('workarounds are on the record', () => {
     await touchTest($, world, 'money/formatCents')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
-    await ui.press({ key: 'pause' })
-    await ui.press({ key: 'pause' })
+    await $.command.run({ command: 'tdd', args: 'pause 30 pairing on the prod incident in #301 and back after' } as never)
+    await ui.press({ key: 'resume' })
     await writeAt($, 'dope-tdd.json', '{"mode":"warn"}')
     await writeAt($, 'dope-tdd.json', '{"mode":"enforce"}')
     const status = await runCommand($, 'tdd')
@@ -850,10 +850,10 @@ describe('checkable state', () => {
     await touchTest($, world, 'utils/formatDuration')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
 
-    await ui.press({ key: 'pause' })
-    await ui.press({ key: 'pause' })
+    await $.command.run({ command: 'tdd', args: 'pause 30 pairing on the prod incident in #301 and back after' } as never)
+    await ui.press({ key: 'resume' })
 
-    expect(world.toasts).toEqual(['TDD guard paused', 'TDD guard resumed'])
+    expect(world.toasts).toEqual(['TDD guard paused for 30m', 'TDD guard resumed'])
   })
 })
 

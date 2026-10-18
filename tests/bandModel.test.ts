@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { bandView, countsAsUnwatched } from '../hooks/bandModel'
 import { DEFAULT_CONFIG } from '../hooks/config'
+import type { Override } from '../hooks/overrides'
 import { INITIAL_STATS } from '../hooks/stats'
 import type { TddStats } from '../types'
 
@@ -182,5 +183,33 @@ describe("problems: the current cycle's, above zero; session totals stay in /tdd
 
   test('a mode other than enforce is shown', () => {
     expect(bandView(on({}), { ...CONFIG, mode: 'warn' }).problems).toContainEqual({ label: 'MODE WARN', tone: 'warn' })
+  })
+})
+
+describe('overrides on the band (2026-10-18)', () => {
+  const override = (over: Partial<Override> = {}): Override => ({
+    by: 'agent', scope: 'module', kind: 'spike', module: 'runPlan', path: 'hooks/runPlan.ts',
+    reason: 'trying two parsers for the run summary; the loser is deleted', until: 'the spike PR closes', minutes: null,
+    id: 'o1', atMs: 0, status: 'approved', decidedBy: 'human', decidedAtMs: 0, endedAtMs: null, settledAtMs: null, note: null, edits: [],
+    ...over,
+  })
+
+  test('a waiting request is shown, and the next step is to decide it', () => {
+    const view = bandView(on({ phase: 'writing' }), CONFIG, [override({ status: 'pending', decidedBy: null })])
+    expect(view.pending?.id).toBe('o1')
+    expect(view.next).toBe('approve or deny the override request: /tdd approve, or /tdd deny <why>')
+  })
+
+  test("the current module's open override is named, and open overrides and debt are counted", () => {
+    const view = bandView(on({ phase: 'writing' }), CONFIG, [override(), override({ id: 'o2', module: 'stats', kind: 'hotfix', scope: 'change' })])
+    expect(view.overridden?.id).toBe('o1')
+    expect(view.problems).toContainEqual({ label: '2 OVERRIDES OPEN', tone: 'warn' })
+  })
+
+  test('no overrides, nothing said', () => {
+    const view = bandView(on({}), CONFIG, [])
+    expect(view.pending).toBeNull()
+    expect(view.overridden).toBeNull()
+    expect(view.problems).toEqual([])
   })
 })

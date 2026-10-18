@@ -194,13 +194,21 @@ export function serializeRecord(record: readonly Override[]): string {
   return `${JSON.stringify({ overrides: record }, null, 2)}\n`
 }
 
+/** A model's decision names the model, its effort and its reason, so it never reads as a person's sign-off. */
+function decider(o: Override): string {
+  if (o.decidedBy === 'model' && o.review !== undefined) {
+    return `model ${o.review.model} (${o.review.effort})`
+  }
+  return o.decidedBy ?? 'unknown'
+}
+
 function lineFor(o: Override): string {
   const head = `  ${o.module ?? 'pause'}  ${o.scope} · ${o.kind}`
   if (o.status === 'pending') {
     return `${head}  waiting for a person`
   }
   if (o.status === 'denied') {
-    return `${head}  denied by ${o.decidedBy ?? 'unknown'}${o.note === null ? '' : `: ${o.note}`}`
+    return `${head}  denied by ${decider(o)}${o.note === null ? '' : `: ${o.note}`}`
   }
   const until = o.until === null ? '' : `  until ${o.until}`
   const minutes = o.scope === 'pause' ? `  ${o.minutes ?? 0}m` : ''
@@ -216,7 +224,8 @@ function lineFor(o: Override): string {
           : o.scope === 'module'
             ? '  OPEN'
             : ''
-  return `${head}  approved by ${o.decidedBy ?? 'unknown'}${until}${minutes}${state}`
+  const why = o.decidedBy === 'model' && o.review !== undefined && o.review.reason !== '' ? `: ${o.review.reason}` : ''
+  return `${head}  approved by ${decider(o)}${why}${until}${minutes}${state}`
 }
 
 /** For /tdd and the receipt: the rate per cycle first, so 2 in 40 reads differently from 2 in 3. */

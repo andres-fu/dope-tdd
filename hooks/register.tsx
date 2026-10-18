@@ -10,7 +10,10 @@ import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck.ts'
 import type { RunnerKind } from './catchCheck.ts'
-import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
+import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
+import type { Approver } from './config.ts'
+import { applyBar, decideAfterReview, failureVerdict, moduleHunks, parseVerdict, reviewPrompt, reviewerFor } from './reviewer.ts'
+import type { ReviewResult } from './reviewer.ts'
 import type { GuardConfig } from './config.ts'
 import {
   assertionsRemovedAdvice,
@@ -85,7 +88,7 @@ import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringL
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { OVERRIDES_FILE, checkRequest, closePauses, coveringOverride, decideAtRequest, endOverride, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, refuseByBar, requestNotes, serializeRecord } from './overrides.ts'
-import type { Override, OverrideKind, OverrideRequest, OverrideScope } from '../types'
+import type { Override, OverrideKind, OverrideRequest, OverrideScope, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
 import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
@@ -275,7 +278,13 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   if (barred !== null) {
     return `dope-tdd: override refused: ${barred}.`
   }
-  const decision = decideAtRequest(request, await read($, attended))
+  const isAttended = await read($, attended)
+  const approver = approverOf(config)
+  const notes = requestNotes(record, request, nowMs)
+  // A hotfix and a person's own request never go to the model: the first is recovery, the second is the approver.
+  const review =
+    approver.approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix' ? await reviewRequest($, root, request, notes, approver) : undefined
+  const decision = review === undefined ? decideAtRequest(request, isAttended) : decideAfterReview(review.verdict, isAttended)
   const entry: Override = {
     ...request,
     id: `o${nowMs.toString(36)}-${record.length + 1}`,
@@ -285,16 +294,27 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
     decidedAtMs: decision.status === 'pending' ? null : nowMs,
     endedAtMs: null,
     settledAtMs: null,
-    note: null,
+    note: review !== undefined && decision.decidedBy === 'model' && decision.status === 'denied' ? review.reason : null,
     edits: [],
+    ...(review === undefined ? {} : { review }),
   }
   await writeOverrides($, root, [...record, entry])
   const label = request.module === null ? 'every module' : moduleLabel(config, request.module)
   const reason = request.reason.trim()
+  const byModel = review === undefined ? '' : `model ${review.model} (${review.effort})`
+  if (entry.decidedBy === 'model' && review !== undefined) {
+    const approved = entry.status === 'approved'
+    const line = `⚑ dope-tdd: override ${approved ? 'approved' : 'denied'} by ${byModel} for ${request.kind} on ${label}: "${reason}". ${review.reason}`
+    $.ui.toast(line)
+    $.ui.log(line)
+    return approved
+      ? `dope-tdd: override approved by ${byModel}: ${review.reason} ${request.scope} on ${label}, recorded in ${OVERRIDES_FILE}.`
+      : `dope-tdd: override denied by ${byModel}: ${review.reason} Do that instead; do not work around the guard.`
+  }
   if (entry.status === 'pending') {
-    const notes = requestNotes(record, request, nowMs)
     const history = notes.length === 0 ? '' : ` (${notes.join('; ')})`
-    const line = `⚑ dope-tdd: override needs you. ${request.kind} on ${label}: "${reason}"${history}. /tdd approve, or /tdd deny <why>`
+    const escalated = review === undefined ? '' : ` (the reviewer model escalated: ${review.reason})`
+    const line = `⚑ dope-tdd: override needs you. ${request.kind} on ${label}: "${reason}"${history}${escalated}. /tdd approve, or /tdd deny <why>`
     $.ui.toast(line)
     $.ui.log(line)
     return 'dope-tdd: override requested; waiting for a person to approve it. Stop here: tell the user what you asked for and why, and wait for their answer. Do not retry or work around the guard.'
@@ -316,6 +336,33 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   return request.scope === 'pause'
     ? `dope-tdd is paused for ${request.minutes ?? 0} minutes (${reason}). It comes back on by itself; /tdd resume ends it sooner. The pause is on the record.`
     : `dope-tdd: override approved: ${request.scope} on ${label}, recorded in ${OVERRIDES_FILE}.`
+}
+
+/**
+ * The reviewer model, when the repo opted in (reviewer.ts). It gets the rubric as its system prompt, the request as
+ * delimited data, dope-tdd's own facts, and the module's and its test's hunks only; no tools. A failed or unreadable
+ * answer escalates, and a repeat on the same module cannot be approved by it.
+ */
+async function reviewRequest($: EngineInterface, root: string, request: OverrideRequest, history: readonly string[], approver: Approver & { approver: 'model' }): Promise<Review> {
+  const choice = reviewerFor(approver, await $.session.model())
+  const s = await readStats($)
+  const unlocked = request.module === null ? undefined : s.unlocked[request.module]
+  const testPath = unlocked === undefined ? null : relativePath(root, unlocked)
+  const lastCatch = request.module !== null && s.lastCatch?.module === request.module ? s.lastCatch.outcome.kind.toUpperCase() : null
+  const paths = [request.path, testPath].filter((path): path is string => path !== null)
+  const diff = paths.length === 0 ? null : await gitQuiet($, root, ['diff', '--no-ext-diff', 'HEAD', '--', ...paths])
+  const hunks = moduleHunks(diff === null || diff.exitCode !== 0 ? '' : diff.stdout, paths, 120)
+  const { system, prompt } = reviewPrompt(request, { testPath, lastCatch, hunks, history })
+  let result: ReviewResult
+  try {
+    const reply = await $.model.complete({ model: choice.model, effort: choice.effort as never, system, prompt, maxTokens: 300, timeoutMs: 60_000 })
+    result = reply.isAnswered ? parseVerdict(reply.text) : failureVerdict(reply.reason === 'api-error' ? `api-error ${reply.status ?? 'no status'}` : reply.reason)
+  } catch {
+    result = failureVerdict('the call was refused')
+  }
+  // Only a repeat on the same module raises the bar for the model; requests across modules in a day are the person's note.
+  const barred = applyBar(result, history.filter(note => note.endsWith(' this week')))
+  return { model: choice.model, effort: choice.effort, verdict: barred.verdict, reason: barred.reason }
 }
 
 /** A person's decision on the waiting request, from /tdd or the band. */

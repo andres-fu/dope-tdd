@@ -199,6 +199,26 @@ describe('debt: what the receipt keeps showing until someone deals with it', () 
   })
 })
 
+describe('a model decision on the record (2026-10-18)', () => {
+  const review = { model: 'claude-sonnet-5-5', effort: 'high', verdict: 'approve' as const, reason: 'low risk: the module keeps its proven test' }
+
+  test('names the model and effort and its reason, so it never reads as a person', () => {
+    expect(formatOverrides([entry({ decidedBy: 'model', review })], 10)[1]).toBe(
+      '  runPlan  module · spike  approved by model claude-sonnet-5-5 (high): low risk: the module keeps its proven test  until the spike PR closes  OPEN',
+    )
+  })
+
+  test('a model denial reads the same way', () => {
+    const denied = entry({ status: 'denied', decidedBy: 'model', note: 'write the test; it is one cycle', review: { ...review, verdict: 'deny', reason: 'write the test; it is one cycle' } })
+    expect(formatOverrides([denied], 10)[1]).toBe('  runPlan  module · spike  denied by model claude-sonnet-5-5 (high): write the test; it is one cycle')
+  })
+
+  test('the review survives the file', () => {
+    const record = [entry({ decidedBy: 'model', review })]
+    expect(parseRecord(serializeRecord(record))).toEqual(record)
+  })
+})
+
 describe('the record file', () => {
   test('is named for the repo, next to dope-tdd.json', () => {
     expect(OVERRIDES_FILE).toBe('dope-tdd.overrides.json')

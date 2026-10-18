@@ -153,7 +153,11 @@ export type OverrideKind = 'spike' | 'hotfix' | 'generated' | 'legacy' | 'other'
 export type OverrideScope = 'change' | 'module' | 'pause'
 export type OverrideStatus = 'pending' | 'approved' | 'denied'
 /** A role, never a name: the record goes into the repo. */
-export type Decider = 'human' | 'hotfix rule' | 'unattended'
+export type Decider = 'human' | 'hotfix rule' | 'unattended' | 'model'
+
+export type Verdict = 'approve' | 'deny' | 'escalate'
+/** What the reviewer model said, kept with the override so a person can second-guess it: never a human sign-off. */
+export type Review = { model: string; effort: string; verdict: Verdict; reason: string }
 
 export type OverrideRequest = {
   by: 'agent' | 'human'
@@ -181,6 +185,8 @@ export type Override = OverrideRequest & {
   note: string | null
   /** Files edited under it, relative to the root. */
   edits: string[]
+  /** The reviewer model's answer, when the repo's approver is a model. */
+  review?: Review
 }
 
 declare module 'claude-code' {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -443,5 +443,54 @@ describe("Node's built-in runner, read from real output (node --test, Node 24, W
   test('one file runs through node --test, and that is the command a reviewer re-runs', () => {
     expect(runnerArgv('C:/vibecast', 'node-test', 'test/helpers.test.js')).toEqual(['node', '--test', 'test/helpers.test.js'])
     expect(runnerNamed('node-test').describe('test/helpers.test.js')).toBe('node --test test/helpers.test.js')
+  })
+})
+
+describe("node --test with Node's own flags in the test script (seen on dope-tdd itself, 2026-10-18)", () => {
+  const pkg = (scripts: Record<string, string>) => JSON.stringify({ scripts })
+
+  test('a loader before --test is carried, with its value', () => {
+    expect(nodeTestLauncher(pkg({ test: 'node --import ./tests/node/register.mjs --test tests/*.test.ts' }))).toEqual([
+      'node',
+      '--import',
+      './tests/node/register.mjs',
+    ])
+  })
+
+  test('each spelling of a loader, and runtime switches, are carried in order', () => {
+    expect(nodeTestLauncher(pkg({ test: 'node --import=tsx -r dotenv/config --experimental-strip-types --no-warnings --test test/' }))).toEqual([
+      'node',
+      '--import=tsx',
+      '-r',
+      'dotenv/config',
+      '--experimental-strip-types',
+      '--no-warnings',
+    ])
+  })
+
+  test('a loader after --test counts, and a quoted value loses its quotes', () => {
+    expect(nodeTestLauncher(pkg({ 'test:unit': 'node --test --import "tsx" test/' }))).toEqual(['node', '--import', 'tsx'])
+  })
+
+  test("the runner's own flags and the files to run are never carried", () => {
+    expect(nodeTestLauncher(pkg({ test: 'node --test-reporter=spec --test-name-pattern "slow" --test test/' }))).toBeUndefined()
+  })
+
+  test('no flags, no node --test script, or no readable package: nothing to carry', () => {
+    expect(nodeTestLauncher(pkg({ test: 'node --test test/' }))).toBeUndefined()
+    expect(nodeTestLauncher(pkg({ test: 'vitest run', start: 'node --import tsx index.js' }))).toBeUndefined()
+    expect(nodeTestLauncher('{ not json')).toBeUndefined()
+  })
+
+  test('the catch check and the receipt both run the file through the carried flags', () => {
+    const launcher = ['node', '--import', './tests/node/register.mjs']
+    expect(runnerArgv('C:/dope-tdd', 'node-test', 'tests/runPlan.test.ts', undefined, { launcher })).toEqual([
+      'node',
+      '--import',
+      './tests/node/register.mjs',
+      '--test',
+      'tests/runPlan.test.ts',
+    ])
+    expect(runnerNamed('node-test').describe('tests/runPlan.test.ts', launcher)).toBe('node --import ./tests/node/register.mjs --test tests/runPlan.test.ts')
   })
 })

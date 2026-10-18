@@ -23,6 +23,7 @@ import {
   recordTestChanged,
   recordTestTouch,
   recordUnreadRun,
+  recordOtherPass,
   recordWorkaround,
   releaseCheck,
   resetStats,
@@ -530,5 +531,26 @@ describe('closeCyclesForTest: what a run closes for other modules (#41)', () => 
     expect(closed.cycleMsTotal).toBe(s.cycleMsTotal)
     expect(closed.neverSawRed).toBe(s.neverSawRed)
     expect(closed.unproven).not.toContain('utils/stale')
+  })
+})
+
+describe("a green of another module's test, not about the current one (seen on dope-tdd itself, 2026-10-18)", () => {
+  test('counts as a pass, logged for the module whose test ran, and leaves the current cycle open', () => {
+    const working = {
+      ...INITIAL_STATS,
+      phase: 'red' as const,
+      cycleStartMs: 100,
+      sawRed: true,
+      unlocked: { 'utils/b': 'C:/r/tests/utils/b.test.ts' },
+      current: { module: 'utils/b', testPath: 'C:/r/tests/utils/b.test.ts' },
+    }
+    const after = recordOtherPass(working, 'utils/x', 500)
+    expect(after.passes).toBe(1)
+    expect(after.history).toEqual(['pass'])
+    expect(after.events.at(-1)).toEqual({ atMs: 500, kind: 'pass', module: 'utils/x' })
+    expect(after.phase).toBe('red')
+    expect(after.cycleStartMs).toBe(100)
+    expect(after.cycles).toBe(0)
+    expect(after.current?.module).toBe('utils/b')
   })
 })

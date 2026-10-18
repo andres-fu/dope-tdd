@@ -63,7 +63,10 @@ export async function findRunner(
               return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root), launcher: launcher.argv }
             }
           }
-          return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root) }
+          // The marker itself may name one: Node's own flags in the test script that found the runner.
+          const named = runner.launcherFrom === undefined || read === undefined ? undefined : await read(`${dir}/${marker}`)
+          const launcher = named === undefined || named === null ? undefined : runner.launcherFrom?.(named)
+          return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root), ...(launcher === undefined ? {} : { launcher }) }
         }
       }
     }

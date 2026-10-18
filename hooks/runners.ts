@@ -45,8 +45,10 @@ export type Runner = {
   argv: (runnerRoot: string, testPath: string, tool: string, options: RunnerOptions) => string[]
   read: (output: string) => RunOutcome
   failedFiles: (output: string) => string[]
-  /** The command a person types to run one test file, for a receipt a reviewer can re-run. */
-  describe: (testPath: string) => string
+  /** The command a person types to run one test file, for a receipt a reviewer can re-run; `launcher` as in argv. */
+  describe: (testPath: string, launcher?: readonly string[]) => string
+  /** The launcher a marker's text names, when the runner is found through it: Node's own flags in a test script. */
+  launcherFrom?: (markerText: string) => readonly string[] | undefined
   provisional: boolean
 }
 
@@ -151,6 +153,51 @@ const NODE_TEST_COUNT = (word: string): RegExp => new RegExp(String.raw`^.{0,4}$
 // the file as one failed test. The stack line is Node's own, so a test printing the message does not look like it.
 const NODE_RUNNER_CRASH = /Unable to deserialize cloned data[^\n]*\r?\n\s+at #processRawBuffer \(node:internal\/test_runner\//
 const NODE_TEST_FAILED_FILE = /^(?:test at |\s*location: ')((?:[A-Za-z]:)?[^'\n]+?\.(?:test|spec)\.[cm]?[jt]sx?):\d+:\d+/gm
+
+// Node's own flags a test script may need to load its tests (`node --import tsx --test`), wherever they stand in the
+// script. Only these are carried into a check's command: the runner's own flags (`--test-name-pattern`, reporters) and
+// the files to run would change what the check runs, so they never are.
+const NODE_VALUE_FLAGS = new Set(['--import', '--require', '-r', '--loader', '--experimental-loader', '--conditions', '-C', '--env-file', '--env-file-if-exists'])
+const NODE_FLAG_WITH_VALUE = /^(?:--import|--require|--loader|--experimental-loader|--conditions|--env-file|--env-file-if-exists)=/
+const NODE_SWITCH = /^--(?:no-)?experimental-[\w-]+(?:=\S+)?$|^--(?:no-warnings|no-deprecation|enable-source-maps)$/
+const NODE_TEST_SCRIPT = /^test(?::[\w-]+)?$/
+const NODE_TEST_INVOCATION = /\bnode(?:\.exe)?\s((?:[^&|;]*?\s)?--test(?=\s|$)[^&|;]*)/
+
+/**
+ * The launcher a package's node --test script implies: `node` and the loader flags it passes, so a check runs one test
+ * file the way the script runs them all. Undefined when the script passes none, or no script runs node --test.
+ */
+export function nodeTestLauncher(packageJsonText: string): string[] | undefined {
+  let scripts: unknown
+  try {
+    scripts = (JSON.parse(packageJsonText) as { scripts?: unknown }).scripts
+  } catch {
+    return undefined
+  }
+  if (typeof scripts !== 'object' || scripts === null) {
+    return undefined
+  }
+  for (const [name, script] of Object.entries(scripts)) {
+    const invocation = typeof script === 'string' && NODE_TEST_SCRIPT.test(name) ? NODE_TEST_INVOCATION.exec(script)?.[1] : undefined
+    if (invocation === undefined) {
+      continue
+    }
+    const tokens = [...invocation.matchAll(/"[^"]*"|'[^']*'|\S+/g)].map(match => match[0].replace(/^(["'])(.*)\1$/, '$2'))
+    const flags: string[] = []
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i] ?? ''
+      const value = tokens[i + 1]
+      if (NODE_VALUE_FLAGS.has(token) && value !== undefined) {
+        flags.push(token, value)
+        i += 1
+      } else if (NODE_FLAG_WITH_VALUE.test(token) || NODE_SWITCH.test(token)) {
+        flags.push(token)
+      }
+    }
+    return flags.length === 0 ? undefined : ['node', ...flags]
+  }
+  return undefined
+}
 
 /** True when node --test could not read a test file's output: its red is the runner's, not the test's. */
 export function nodeRunnerCrashed(output: string): boolean {
@@ -415,7 +462,7 @@ export const RUNNERS: readonly Runner[] = [
   },
   {
     kind: 'node-test',
-    describe: testPath => `node --test ${testPath}`,
+    describe: (testPath, launcher) => `${(launcher ?? ['node']).join(' ')} --test ${testPath}`,
     alsoFor: [],
     exts: ['ts', 'tsx', 'js', 'jsx', 'mts', 'cts', 'mjs', 'cjs'],
     stack: 'node',
@@ -425,7 +472,8 @@ export const RUNNERS: readonly Runner[] = [
     tools: [],
     fallback: 'node',
     command: NODE_COMMAND,
-    argv: (_root, testPath, tool) => [tool, '--test', testPath],
+    argv: (_root, testPath, tool, options) => [...(options.launcher ?? [tool]), '--test', testPath],
+    launcherFrom: nodeTestLauncher,
     read: readNodeTest,
     failedFiles: nodeTestFailedFiles,
     provisional: false,

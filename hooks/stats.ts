@@ -257,6 +257,16 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere
   return logged(withModule(base, module, state), 'pass', nowMs, module)
 }
 
+/**
+ * A green of another module's own test that says nothing about the current one: that module is not unlocked, so the
+ * band cannot follow it, and the test does not import the current module. A pass in the totals, logged for the module
+ * whose test ran; the current module's cycle stays as it was, so the run neither closes it nor checks it.
+ */
+export function recordOtherPass(s: TddStats, module: string, nowMs: number): TddStats {
+  const history = [...s.history, 'pass'].slice(-HISTORY_LENGTH) as TddStats['history']
+  return logged({ ...s, passes: s.passes + 1, history }, 'pass', nowMs, module)
+}
+
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */
 export function recordUnreadRun(s: TddStats, nowMs: number): TddStats {
   return logged({ ...s, unreadRuns: s.unreadRuns + 1 }, 'unread', nowMs, s.current?.module)

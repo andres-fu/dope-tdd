@@ -80,3 +80,12 @@ export function importCandidates(testPath: string, text: string, stack: StackNam
           : []
   return [...new Set(candidates)]
 }
+
+/**
+ * Whether a touched test speaks for its own module, so the band should follow it. A test whose source does not exist
+ * is usually a new module written test-first, and it imports that module; one that imports only other modules (a test
+ * of the drawing, say, named after no module) is a test of those, and must not put a module with no code on the band.
+ */
+export function testsItsOwnModule(module: string, importedSources: readonly string[], ownSourceExists: boolean): boolean {
+  return ownSourceExists || importedSources.length === 0 || importedSources.includes(module)
+}

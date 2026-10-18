@@ -170,7 +170,8 @@ function mirrored(s: TddStats, state: ModuleState): TddStats {
   }
 }
 
-export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number): TddStats {
+/** `makeCurrent` false: the module unlocks and its cycle opens, but the band stays on the current module (imports.ts). */
+export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number, makeCurrent = true): TddStats {
   const prev = moduleState(s, touched.module)
   const isCycleOpen = prev.cycleStartMs !== null
   const state: ModuleState = {
@@ -183,14 +184,15 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
   }
   const base: TddStats = {
     ...s,
-    current: touched,
+    current: makeCurrent ? touched : s.current,
     unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
     unproven: s.unproven.filter(module => module !== touched.module),
     inherited: without(s.inherited, touched.module),
     stale: without(s.stale, touched.module),
     reminded: s.reminded.filter(module => module !== touched.module),
   }
-  return logged(mirrored(withModule(base, touched.module, state), state), 'touched', nowMs, touched.module)
+  const withState = withModule(base, touched.module, state)
+  return logged(makeCurrent ? mirrored(withState, state) : withState, 'touched', nowMs, touched.module)
 }
 
 /**

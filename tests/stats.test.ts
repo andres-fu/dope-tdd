@@ -47,6 +47,14 @@ describe('phases', () => {
     expect(s.unlocked).toEqual({ [MODULE]: TEST_PATH })
   })
 
+  test('a touch that is not to become current unlocks the module but leaves the band on the current one (2026-10-18)', () => {
+    const before = touch()
+    const s = recordTestTouch(before, { module: 'band', testPath: 'C:/w/tests/band.test.tsx' }, T0 + 5, false)
+    expect(s.current).toEqual({ module: MODULE, testPath: TEST_PATH })
+    expect(s.cycleStartMs).toBe(T0)
+    expect(s.unlocked).toEqual({ [MODULE]: TEST_PATH, band: 'C:/w/tests/band.test.tsx' })
+  })
+
   test('a failing run is RED and marks the cycle as having seen red', () => {
     const s = recordRun(touch(), false, T0 + 5_000)
     expect(s.phase).toBe('red')

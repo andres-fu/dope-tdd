@@ -61,3 +61,13 @@ describe('testsItsOwnModule: whether a touched test speaks for its own module (2
     expect(testsItsOwnModule('band', ['theme', 'draw'], false)).toBe(false)
   })
 })
+
+describe('testsItsOwnModule: a test of test helpers only (live trial, 2026-10-18)', () => {
+  test('no source, no project source imports, but it imports test helpers: a test of other code, it does not', () => {
+    expect(testsItsOwnModule('reviewerFlow', [], false, true)).toBe(false)
+  })
+
+  test('importing nothing at all is still treated as a possible new module', () => {
+    expect(testsItsOwnModule('slugify', [], false, false)).toBe(true)
+  })
+})

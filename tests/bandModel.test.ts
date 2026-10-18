@@ -213,3 +213,27 @@ describe('overrides on the band (2026-10-18)', () => {
     expect(view.problems).toEqual([])
   })
 })
+
+describe('open overrides on the band, whichever module is current (live trial, 2026-10-18)', () => {
+  const approved = (over: Partial<Override> = {}): Override => ({
+    by: 'agent', scope: 'change', kind: 'spike', module: 'timeText', path: 'hooks/timeText.ts',
+    reason: 'try seconds under a minute; a test follows', until: null, minutes: null,
+    id: 'o1', atMs: 0, status: 'approved', decidedBy: 'model', decidedAtMs: 0, endedAtMs: null, settledAtMs: null, note: null, edits: [],
+    review: { model: 'claude-sonnet-5-5', effort: 'high', verdict: 'approve', reason: 'small spike' },
+    ...over,
+  })
+
+  test('each override that still lets something through is listed, with what ends it', () => {
+    expect(bandView(INITIAL_STATS, CONFIG, [approved()], 0).open).toEqual([
+      { target: 'timeText', text: 'timeText · spike · 1 edit left · approved by model claude-sonnet-5-5 (high)' },
+    ])
+  })
+
+  test('a spent one is not', () => {
+    expect(bandView(INITIAL_STATS, CONFIG, [approved({ edits: ['hooks/timeText.ts'] })], 0).open).toEqual([])
+  })
+
+  test('with no module current, the next step is to use it or end it', () => {
+    expect(bandView(INITIAL_STATS, CONFIG, [approved()], 0).next).toBe('use it or end it: /tdd override end timeText')
+  })
+})

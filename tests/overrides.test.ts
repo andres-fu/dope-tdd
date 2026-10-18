@@ -3,6 +3,10 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   OVERRIDES_FILE,
   checkRequest,
+  deciderLabel,
+  endHint,
+  isAttended,
+  overrideLeft,
   closePauses,
   coveringOverride,
   decideAtRequest,
@@ -254,5 +258,38 @@ describe('formatOverrides: for /tdd and the receipt', () => {
       '  mirror  change · hotfix  approved by hotfix rule  DEBT: no test yet',
       '  stats  change · spike  denied by human: write the test; it is one cycle',
     ])
+  })
+})
+
+describe('live-trial fixes (2026-10-18)', () => {
+  test('a person is there when the session is interactive or anything draws it: the desktop app is an SDK host', () => {
+    expect(isAttended(true, [])).toBe(true)
+    expect(isAttended(false, ['desktop'])).toBe(true)
+    expect(isAttended(false, [])).toBe(false)
+  })
+
+  test('what an override still allows: an edit, until a condition, or minutes', () => {
+    expect(overrideLeft(entry({ scope: 'change' }), T0)).toBe('1 edit left')
+    expect(overrideLeft(entry(), T0)).toBe('until the spike PR closes')
+    expect(overrideLeft(entry({ scope: 'pause', module: null, minutes: 30 }), T0 + 18 * 60_000)).toBe('12m left')
+  })
+
+  test('nothing, once it is spent, ended, out of time, denied or waiting', () => {
+    expect(overrideLeft(entry({ scope: 'change', edits: ['hooks/runPlan.ts'] }), T0)).toBeNull()
+    expect(overrideLeft(entry({ endedAtMs: T0 }), T0)).toBeNull()
+    expect(overrideLeft(entry({ scope: 'pause', module: null, minutes: 30 }), T0 + 30 * 60_000)).toBeNull()
+    expect(overrideLeft(entry({ status: 'denied' }), T0)).toBeNull()
+    expect(overrideLeft(entry({ status: 'pending' }), T0)).toBeNull()
+  })
+
+  test('a miss lists what is open and how to end it', () => {
+    const record = [entry({ scope: 'change', module: 'timeText' }), entry({ id: 'o2', status: 'denied', module: 'theme' })]
+    expect(endHint(record, T0)).toBe('Open: timeText (change · spike, 1 edit left). End one with /tdd override end <module>, or /tdd override end pause.')
+    expect(endHint([], T0)).toBe('Nothing is open.')
+  })
+
+  test('the decider reads the same everywhere', () => {
+    expect(deciderLabel(entry({ decidedBy: 'model', review: { model: 'claude-sonnet-5-5', effort: 'high', verdict: 'approve', reason: 'ok' } }))).toBe('model claude-sonnet-5-5 (high)')
+    expect(deciderLabel(entry())).toBe('human')
   })
 })

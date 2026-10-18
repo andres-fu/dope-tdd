@@ -25,6 +25,8 @@ export type BandModel = {
   onApprove: () => unknown
   onDeny: () => unknown
   onResume: () => unknown
+  /** Ends the open override on a module, or `pause`. */
+  onEnd: (target: string) => unknown
   onReset: () => unknown
 }
 
@@ -130,7 +132,7 @@ function drawProblems(el: AnyElements, problems: readonly Problem[]) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config, model.overrides)
+  const view = bandView(s, config, model.overrides, nowMs)
   const watching = view.watch.kind === 'watching'
   const progress = view.showProgress
 
@@ -149,12 +151,14 @@ export function drawBand(el: AnyElements, model: BandModel) {
         {progress && drawTrail(el, s)}
       </Box>
       {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
-      {view.overridden !== null && (
+      {/* Every open door gets a sign, whichever module is current, and a way to close it (live trial, 2026-10-18). */}
+      {view.open.map(door => (
         <Box flexDirection="row" gap={2}>
-          <Text bold color={ACCENT.paused}>OVERRIDDEN</Text>
-          <Text>{`${view.overridden.kind}${view.overridden.until === null ? '' : ` · until ${view.overridden.until}`} · approved by ${view.overridden.decidedBy ?? 'unknown'}`}</Text>
+          <Text bold color={ACCENT.paused}>OVERRIDE OPEN</Text>
+          <Text>{door.text}</Text>
+          <Button key={`end-${door.target}`} label="END" onPress={() => model.onEnd(door.target)} />
         </Box>
-      )}
+      ))}
       {view.pending !== null && (
         <Box flexDirection="row" gap={2}>
           <Text bold color={ACCENT.paused}>OVERRIDE REQUESTED</Text>

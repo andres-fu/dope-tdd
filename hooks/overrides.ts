@@ -135,6 +135,39 @@ export function closePauses(record: readonly Override[], nowMs: number): Overrid
   return record.map(o => (isOpen(o) && o.scope === 'pause' ? { ...o, endedAtMs: nowMs } : o))
 }
 
+/**
+ * Whether a person can answer a request now. `isInteractive` is false for every SDK host, the desktop app among them
+ * (live trial, 2026-10-18), so a surface drawing the session counts too; a plain -p run has none.
+ */
+export function isAttended(isInteractive: boolean, surfaces: readonly string[]): boolean {
+  return isInteractive || surfaces.length > 0
+}
+
+/** What an approved override still lets through now, for the band; null once it is spent, ended or out of time. */
+export function overrideLeft(o: Override, nowMs: number): string | null {
+  if (!isOpen(o)) {
+    return null
+  }
+  if (o.scope === 'pause') {
+    const leftMs = o.atMs + (o.minutes ?? 0) * MINUTE - nowMs
+    return leftMs > 0 ? `${Math.ceil(leftMs / MINUTE)}m left` : null
+  }
+  if (o.scope === 'change') {
+    return o.edits.length === 0 ? '1 edit left' : null
+  }
+  return `until ${o.until ?? 'it is ended'}`
+}
+
+/** For an /tdd override end that matched nothing: what is open, and how to end it. */
+export function endHint(record: readonly Override[], nowMs: number): string {
+  const open = record.filter(o => overrideLeft(o, nowMs) !== null)
+  if (open.length === 0) {
+    return 'Nothing is open.'
+  }
+  const listed = open.map(o => `${o.module ?? 'pause'} (${o.scope} · ${o.kind}, ${overrideLeft(o, nowMs)})`).join('; ')
+  return `Open: ${listed}. End one with /tdd override end <module>, or /tdd override end pause.`
+}
+
 export function expiredPauses(record: readonly Override[], nowMs: number): Override[] {
   return record.filter(o => isOpen(o) && o.scope === 'pause' && nowMs >= o.atMs + (o.minutes ?? 0) * MINUTE)
 }
@@ -194,8 +227,8 @@ export function serializeRecord(record: readonly Override[]): string {
   return `${JSON.stringify({ overrides: record }, null, 2)}\n`
 }
 
-/** A model's decision names the model, its effort and its reason, so it never reads as a person's sign-off. */
-function decider(o: Override): string {
+/** A model's decision names the model and its effort, so it never reads as a person's sign-off. */
+export function deciderLabel(o: Override): string {
   if (o.decidedBy === 'model' && o.review !== undefined) {
     return `model ${o.review.model} (${o.review.effort})`
   }
@@ -208,7 +241,7 @@ function lineFor(o: Override): string {
     return `${head}  waiting for a person`
   }
   if (o.status === 'denied') {
-    return `${head}  denied by ${decider(o)}${o.note === null ? '' : `: ${o.note}`}`
+    return `${head}  denied by ${deciderLabel(o)}${o.note === null ? '' : `: ${o.note}`}`
   }
   const until = o.until === null ? '' : `  until ${o.until}`
   const minutes = o.scope === 'pause' ? `  ${o.minutes ?? 0}m` : ''
@@ -225,7 +258,7 @@ function lineFor(o: Override): string {
             ? '  OPEN'
             : ''
   const why = o.decidedBy === 'model' && o.review !== undefined && o.review.reason !== '' ? `: ${o.review.reason}` : ''
-  return `${head}  approved by ${decider(o)}${why}${until}${minutes}${state}`
+  return `${head}  approved by ${deciderLabel(o)}${why}${until}${minutes}${state}`
 }
 
 /** For /tdd and the receipt: the rate per cycle first, so 2 in 40 reads differently from 2 in 3. */

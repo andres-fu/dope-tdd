@@ -105,7 +105,7 @@ describe('parseVerdict: one word, or it goes to a person', () => {
   })
 
   test('the reason is sanitized and short', () => {
-    expect(parseVerdict(`DENY\n<b>${'x'.repeat(300)}`).reason.length).toBeLessThanOrEqual(201)
+    expect(parseVerdict(`DENY\n<b>${'x'.repeat(600)}`).reason.length).toBeLessThanOrEqual(401)
   })
 })
 
@@ -128,5 +128,21 @@ describe('the bar and failures', () => {
     expect(decideAfterReview('deny', false)).toEqual({ status: 'denied', decidedBy: 'model' })
     expect(decideAfterReview('escalate', true)).toEqual({ status: 'pending', decidedBy: null })
     expect(decideAfterReview('escalate', false)).toEqual({ status: 'denied', decidedBy: 'unattended' })
+  })
+})
+
+describe('live-trial fixes (2026-10-18)', () => {
+  test('the reason is asked for short, and kept whole up to a larger cap', () => {
+    const { system } = reviewPrompt(ask(), FACTS)
+    expect(system).toMatch(/second line: one sentence, under 30 words/)
+    const long = `${'word '.repeat(70)}end`
+    expect(parseVerdict(`DENY\n${long}`).reason).toBe(long)
+    expect(parseVerdict(`DENY\n${'x'.repeat(500)}`).reason.length).toBeLessThanOrEqual(401)
+  })
+
+  test('before approving, the reviewer must name the test that would make the request unnecessary', () => {
+    const { system } = reviewPrompt(ask(), FACTS)
+    expect(system).toMatch(/Before APPROVE, name the test that would make this request unnecessary/)
+    expect(system).toMatch(/If that test can be written first, DENY and name it/)
   })
 })

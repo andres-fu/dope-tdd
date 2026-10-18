@@ -215,3 +215,44 @@ describe('pause settings in dope-tdd.json', () => {
     expect((await tdd($, 'pause 30 pairing on the prod incident in #301 and back after')).text).toMatch(/at most 20 minutes/)
   })
 })
+
+describe('live-trial fixes (2026-10-18)', () => {
+  test('in the desktop app (not interactive, but drawn), a request waits for the person instead of being denied', async ($, on) => {
+    const world = fakeEngine(on)
+    world.surfaces = ['desktop']
+    await $.session.start({ cwd: ROOT, surface: null, isInteractive: false } as never)
+    expect((await ask($, {})).result).toMatch(/waiting for a person/)
+  })
+
+  test('an end that matches nothing lists what is open, without a doubled prefix', async ($, on) => {
+    fakeEngine(on)
+    await ask($, {})
+    await tdd($, 'approve')
+    const missed = await tdd($, 'override end 30 min')
+    expect(missed.text).toMatch(/^No open override on 30\. Open: utils\/calculateDuration \(change · spike, 1 edit left\)\./)
+    expect((await tdd($, 'approve')).text.startsWith('dope-tdd: ')).toBe(false)
+  })
+
+  test('an approved override that is not spent shows on the band with END, whichever module is current', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await ask($, {})
+    await tdd($, 'approve')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: /^utils\/calculateDuration · spike · 1 edit left · approved by human$/ })).toBeDefined()
+    await ui.press({ key: 'end-utils/calculateDuration' })
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
+  })
+
+  test('a test that imports only test helpers does not take over the band', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/src/utils/formatDuration.ts`, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.fileContents.set(`${ROOT}/tests/helpers.ts`, 'export const h = 1')
+    world.fileContents.set(`${ROOT}/tests/flow.test.ts`, "import { h } from './helpers'\nexpect(h).toBe(1)\n")
+    await touchTest($, world, 'flow')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'FLOW' })).toBeUndefined()
+  })
+})

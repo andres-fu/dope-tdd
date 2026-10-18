@@ -88,8 +88,8 @@ import { formatGlossary, formatStatus } from './summary.ts'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
-import { OVERRIDES_FILE, closePauses, coveringOverride, endHint, endOverride, isAttended, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, requestNotes, serializeRecord } from './overrides.ts'
-import { planDecision, planRequest, refusal, requestFrom, sendsToModel } from './requestPlan.ts'
+import { OVERRIDES_FILE, coveringOverride, isAttended, formatOverrides, parseRecord, recordEdit, requestNotes, serializeRecord } from './overrides.ts'
+import { planDecision, planEnd, planExpiry, planRequest, planResume, planShellCover, refusal, requestFrom, sendsToModel } from './requestPlan.ts'
 import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
@@ -230,16 +230,13 @@ async function resumeGuard($: EngineInterface, nowMs: number): Promise<void> {
 
 /** A pause whose minutes ran out ends here: the guard is back, and the person hears what happened while it was off. */
 async function endExpiredPauses($: EngineInterface, root: string, nowMs: number): Promise<void> {
-  const record = await readOverrides($, root)
-  const expired = expiredPauses(record, nowMs)
-  if (expired.length === 0) {
+  const expiry = planExpiry(await readOverrides($, root), nowMs)
+  if (!expiry.resume) {
     return
   }
-  const ids = new Set(expired.map(pause => pause.id))
-  await writeOverrides($, root, record.map(o => (ids.has(o.id) ? { ...o, endedAtMs: o.atMs + (o.minutes ?? 0) * MINUTE } : o)))
+  await writeOverrides($, root, expiry.record)
   await resumeGuard($, nowMs)
-  for (const pause of expired) {
-    const line = pauseSummary(pause)
+  for (const line of expiry.summaries) {
     toast($, line)
     $.ui.log(line)
   }
@@ -377,37 +374,32 @@ async function resumeNow($: EngineInterface): Promise<string> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   const record = await readOverrides($, root)
-  const open = record.filter(o => o.status === 'approved' && o.scope === 'pause' && o.endedAtMs === null)
-  if (open.length === 0 && !(await readStats($)).paused) {
-    return 'dope-tdd is already on.'
+  const resumed = planResume(record, (await readStats($)).paused, nowMs)
+  if (!resumed.resume) {
+    return resumed.reply
   }
-  if (open.length > 0) {
-    await writeOverrides($, root, closePauses(record, nowMs))
+  if (resumed.record.some((o, index) => o !== record[index])) {
+    await writeOverrides($, root, resumed.record)
   }
   await resumeGuard($, nowMs)
   toast($, 'TDD guard resumed')
-  const summaries = open.map(pause => pauseSummary({ ...pause, minutes: Math.max(1, Math.round((nowMs - pause.atMs) / MINUTE)) }))
-  summaries.forEach(line => $.ui.log(line))
-  return ['dope-tdd is on: an edit to untested source is refused until its test is written.', ...summaries].join('\n')
+  $.ui.log(resumed.reply)
+  return resumed.reply
 }
 
 /** /tdd override end <module|pause>: a person ends an override; an ended hotfix or module override is no longer debt. */
 async function endNamed($: EngineInterface, target: string | undefined): Promise<string> {
-  if (target === undefined || target === '') {
-    return 'Name what to end: /tdd override end <module>, or /tdd override end pause.'
-  }
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   const record = await readOverrides($, root)
-  const ended = endOverride(record, target, nowMs)
-  if (JSON.stringify(ended) === JSON.stringify(record)) {
-    return `No open override on ${target}. ${endHint(record, nowMs)}`
+  const ended = planEnd(record, target, nowMs)
+  if (ended.record.some((o, index) => o !== record[index])) {
+    await writeOverrides($, root, ended.record)
   }
-  await writeOverrides($, root, ended)
-  if (target === 'pause') {
+  if (ended.resume) {
     await resumeGuard($, nowMs)
   }
-  return `dope-tdd: ended the override on ${target}; the guard is back on it.`
+  return ended.reply
 }
 
 async function readWhole($: EngineInterface, path: string): Promise<string | null> {
@@ -2190,22 +2182,12 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
 
 /** Locked modules a shell command writes that an approved override covers are let through and counted on it; the rest stay locked. */
 async function coverShellWrites($: EngineInterface, root: string, locked: readonly string[], writes: readonly { path: string; module: string | null }[]): Promise<string[]> {
-  const nowMs = await $.clock.now()
-  let record = await readOverrides($, root)
-  const stillLocked: string[] = []
-  for (const module of locked) {
-    const covering = coveringOverride(record, module, nowMs, await sessionIdNow($))
-    const path = writes.find(write => write.module === module)?.path
-    if (covering === null || path === undefined) {
-      stillLocked.push(module)
-    } else {
-      record = recordEdit(record, covering.id, relativePath(root, path))
-    }
+  const relative = writes.map(write => ({ ...write, path: relativePath(root, write.path) }))
+  const covered = planShellCover(await readOverrides($, root), locked, relative, await $.clock.now(), await sessionIdNow($))
+  if (covered.stillLocked.length < locked.length) {
+    await writeOverrides($, root, covered.record)
   }
-  if (stillLocked.length < locked.length) {
-    await writeOverrides($, root, record)
-  }
-  return stillLocked
+  return covered.stillLocked
 }
 
 /** This repository's field guide as a briefing section, or null when there is none. Never fails the prompt. */

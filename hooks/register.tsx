@@ -6,7 +6,7 @@ import { findSourceWrites } from './bashWrites.ts'
 import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
-import { importCandidates } from './imports.ts'
+import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck.ts'
 import type { RunnerKind } from './catchCheck.ts'
@@ -1278,9 +1278,11 @@ async function checkFileWrite(
     return tell(quiet, result, [...inherited, ...commented])
   }
   if (target.kind === 'test') {
-    const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs))
-    await rememberUnlock($, root, target.module, filePath, nowMs)
     const source = await readWhole($, filePath)
+    // A test named after no module (tests/band.test.tsx tests the drawing) unlocks, but does not take over the band.
+    const makeCurrent = testsItsOwnModule(target.module, importTargets(root, config, filePath, source), await hasOwnSource($, root, config, target.module))
+    const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs, makeCurrent))
+    await rememberUnlock($, root, target.module, filePath, nowMs)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
     const signals = before === undefined ? [] : await noteTestEdit($, root, target.module, filePath, beforeText(before), source, nowMs)
     // A Write of the same bytes: the touch counts, and so does the fact that it changed nothing. An Edit always changes something.
@@ -1462,9 +1464,14 @@ async function checkShell(
       .filter(write => changedModules.has(write.module))
       .map(async write => ({ ...write, after: await readWhole($, write.path) })),
   )
+  const leading = await Promise.all(
+    touchedTests.map(async ({ path, module }) =>
+      testsItsOwnModule(module, importTargets(root, config, `${root}/${path}`, await readWhole($, `${root}/${path}`)), await hasOwnSource($, root, config, module)),
+    ),
+  )
   const updated = await change($, s => {
     const withTouches = touchedTests.reduce(
-      (acc, { path, module }) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs),
+      (acc, { path, module }, index) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs, leading[index] ?? true),
       s,
     )
     const withEdits = changedSources.reduce(
@@ -1767,6 +1774,28 @@ async function hasOwnTest($: EngineInterface, root: string, config: GuardConfig,
 }
 
 /** The source modules a test file imports, each with the file that resolved: a test covers what it imports. */
+/** The modules a test's imports name, whether or not their source exists yet: a new module's test names its own. */
+function importTargets(root: string, config: GuardConfig, testPath: string, text: string | null): string[] {
+  if (text === null) {
+    return []
+  }
+  const found = importCandidates(relativePath(root, testPath), text, config.stack)
+    .slice(0, 80)
+    .map(candidate => classifyPath(root, `${root}/${candidate}`, config))
+    .flatMap(target => (target.kind === 'source' ? [target.module] : []))
+  return [...new Set(found)]
+}
+
+/** The module's own source file exists, in any of the stack's extensions. */
+async function hasOwnSource($: EngineInterface, root: string, config: GuardConfig, module: string): Promise<boolean> {
+  for (const ext of stackOf(config.stack).exts) {
+    if (await $.fs.exists(`${root}/${sourcePathFor(config, module)}.${ext}`)) {
+      return true
+    }
+  }
+  return false
+}
+
 async function importedModules($: EngineInterface, root: string, config: GuardConfig, testPath: string, text?: string | null): Promise<string[]> {
   const source = text ?? (await readWhole($, testPath))
   if (source === null) {

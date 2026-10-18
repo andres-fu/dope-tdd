@@ -28,6 +28,29 @@ describe('band content', () => {
     }
   })
 
+  test('a test named after no module, testing other modules, does not take over the band (2026-10-18)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.fileContents.set(`${ROOT}/tests/band.test.ts`, "import { a } from '../src/utils/formatDuration'\nexpect(a).toBe(1)\n")
+    await touchTest($, world, 'band')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'BAND' })).toBeUndefined()
+  })
+
+  test('a new module written test-first, whose source does not exist yet, does take over the band', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.fileContents.set(`${ROOT}/tests/utils/slugify.test.ts`, "import { slugify } from '../../src/utils/slugify'\nexpect(slugify('A')).toBe('a')\n")
+    await touchTest($, world, 'utils/slugify')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: 'UTILS/SLUGIFY' })).toBeDefined()
+  })
+
   test('says IDLE, not WRITING, when a reset keeps the module but no cycle is open', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')

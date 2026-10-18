@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { importCandidates, joinRelative } from '../hooks/imports'
+import { importCandidates, joinRelative, testsItsOwnModule } from '../hooks/imports'
 
 describe('importCandidates', () => {
   test('TypeScript ESM: a .js import names the .ts file, relative to the test', () => {
@@ -41,5 +41,23 @@ describe('importCandidates', () => {
   test('a path that climbs above the root resolves to nothing', () => {
     expect(joinRelative('test', '../../outside/a.ts')).toBe(null)
     expect(importCandidates('test/a.test.ts', "import { a } from '../../outside/a.js'\n", 'node')).toEqual([])
+  })
+})
+
+describe('testsItsOwnModule: whether a touched test speaks for its own module (2026-10-18)', () => {
+  test('its own source exists: it does', () => {
+    expect(testsItsOwnModule('runPlan', ['stats'], true)).toBe(true)
+  })
+
+  test('no source yet, but it imports its own module: a new module written test-first, it does', () => {
+    expect(testsItsOwnModule('runPlan', ['runPlan', 'stats'], false)).toBe(true)
+  })
+
+  test('no source and no project imports at all: it may still be a new module, it does', () => {
+    expect(testsItsOwnModule('runPlan', [], false)).toBe(true)
+  })
+
+  test('no source of its own, and it imports only other modules: a test of those, not a module, it does not', () => {
+    expect(testsItsOwnModule('band', ['theme', 'draw'], false)).toBe(false)
   })
 })

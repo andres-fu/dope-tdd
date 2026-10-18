@@ -1,6 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 
 import { FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { storeRoot } from '../hooks/unlocks'
 
 /** A home folder on the fixture drive, so it resolves the same way the root does on any host. */
 const HOME_DIR = `${FIXTURE_DRIVE}Users/tester`
@@ -332,6 +333,61 @@ describe('the revert is safe', () => {
     expect(world.toasts.some(t => /restored 1 file/.test(t))).toBe(true)
   })
 
+  test('a journal written for a check carries the time it was written', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
+    await fixUnderGuard($, world)
+    let seen: unknown
+    world.onCatchRun = () => {
+      seen = world.store.get(`catch-journal:${storeRoot(ROOT)}:utils/formatDuration`)
+    }
+
+    await runTests($, world, 'pass')
+
+    expect((seen as { atMs?: number }).atMs).toBe(T0)
+  })
+
+  test("another project's journal is never settled here, however old: a session writes only in its own repository (#89)", async ($, on) => {
+    const OTHER = 'C:/elsewhere/proj'
+    const world = fakeEngine(on, {
+      env: { HOME: HOME_DIR },
+      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 30 * 24 * 60 * 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
+    })
+    world.fileContents.set(`${OTHER}/m.ts`, 'a')
+
+    await startSession($)
+
+    expect(world.store.has(`catch-journal:${OTHER}:m`)).toBe(true)
+    expect(world.fileContents.get(`${OTHER}/m.ts`)).toBe('a')
+  })
+
+  test("another project's interrupted check is reported to the user and recorded, never repaired from here (#89)", async ($, on) => {
+    const OTHER = 'C:/elsewhere/proj'
+    const world = fakeEngine(on, {
+      env: { HOME: HOME_DIR },
+      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 30 * 24 * 60 * 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
+    })
+    world.fileContents.set(`${OTHER}/m.ts`, 'a')
+
+    await startSession($)
+
+    expect(world.toasts.some(t => t.includes(`may have left ${OTHER}/m.ts reverted`))).toBe(true)
+    const status = await $.tool.call({ tool: 'mcp__dope-tdd__status' } as never)
+    expect(JSON.stringify(status)).toContain('reported-elsewhere')
+  })
+
+  test('a recent journal of another project is left alone: its check may be running', async ($, on) => {
+    const OTHER = 'C:/elsewhere/proj'
+    const world = fakeEngine(on, {
+      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
+    })
+    world.fileContents.set(`${OTHER}/m.ts`, 'a')
+
+    await startSession($)
+
+    expect(world.store.has(`catch-journal:${OTHER}:m`)).toBe(true)
+    expect(world.fileContents.get(`${OTHER}/m.ts`)).toBe('a')
+  })
+
   test('a journal keyed by the normalised root (a lower-case drive) is repaired the same way', async ($, on) => {
     const world = fakeEngine(on, {
       store: { [`catch-journal:${ROOT.replace(/^C:/, 'c:')}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
@@ -569,6 +625,20 @@ describe('the catch check stays out of the way', () => {
     const kept = world.writes.find(([, text]) => text === 'export const b = 1')
     expect(kept?.[0]).toBe(`${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`)
     expect(world.toasts.some(t => t.includes(`your change is in ${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`))).toBe(true)
+  })
+
+  test('a change that could not even be kept aside is never written into the log: source text stays out of logs', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
+    world.writeFails = path => path.includes('/.dope-tdd/kept/')
+    await fixUnderGuard($, world)
+    world.onCatchRun = () => {
+      world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
+    }
+
+    await runTests($, world, 'pass')
+
+    expect(world.logs.some(line => line.includes('changed while reverted'))).toBe(true)
+    expect(world.logs.some(line => line.includes('export const b = 1'))).toBe(false)
   })
 })
 

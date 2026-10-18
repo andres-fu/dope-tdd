@@ -9,6 +9,33 @@ export function isJournalFile(value: unknown): value is JournalFile {
   return typeof file === 'object' && file !== null && typeof file.path === 'string' && typeof file.before === 'string' && typeof file.after === 'string'
 }
 
+/** The journal as stored: the files, and when it was written, so its age is on record. */
+export function journalEntry(files: JournalFile[], atMs: number): { files: JournalFile[]; atMs: number } {
+  return { files, atMs }
+}
+
+/** A journal younger than this may belong to a check still running in another session, so it is not reported. */
+export const RUNNING_GRACE_MS = 15 * 60_000
+
+const NAMED = 3
+
+/**
+ * Another project's interrupted catch check, as it is told to the user. A session never repairs another project (#89:
+ * an agent changes only what it owns); it reports, so the owner repairs it by opening a session there. A journal with
+ * no time is from an earlier build, so its check is long over. Null when there is nothing to report.
+ */
+export function elsewhereNotice(found: readonly { paths: readonly string[]; atMs?: number }[], nowMs: number): string | null {
+  const paths = found.filter(journal => journal.atMs === undefined || nowMs - journal.atMs > RUNNING_GRACE_MS).flatMap(journal => journal.paths)
+  if (paths.length === 0) {
+    return null
+  }
+  const named = paths.slice(0, NAMED).join(', ') + (paths.length > NAMED ? ` and ${paths.length - NAMED} more` : '')
+  return (
+    `dope-tdd: a catch check in another project was interrupted and may have left ${named} reverted. ` +
+    `Open a session in that project and dope-tdd puts ${paths.length === 1 ? 'it' : 'them'} back; nothing there was changed from here.`
+  )
+}
+
 export function journalFiles(value: unknown): JournalFile[] | null {
   const journal = value as { files?: unknown } | null
   return typeof journal === 'object' && journal !== null && Array.isArray(journal.files) ? journal.files.filter(isJournalFile) : null

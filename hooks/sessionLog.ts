@@ -12,7 +12,6 @@ export type SessionRecord = {
   endedAt: string
   reason: string
   repo: string
-  root: string
   mode: GuardConfig['mode']
   stack: GuardConfig['stack']
   layout: string
@@ -44,7 +43,6 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     endedAt: new Date(meta.endedAtMs).toISOString(),
     reason: meta.reason,
     repo: root.slice(root.lastIndexOf('/') + 1),
-    root,
     mode: config.mode,
     stack: config.stack,
     layout: config.layout.name,

@@ -65,6 +65,7 @@ import {
   recordImporter,
   recordKnownFailures,
   recordRedNames,
+  recordReportedElsewhere,
   recordSourceEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -81,7 +82,8 @@ import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringL
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { succeeded, tell, withContext } from './toolResult.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
+import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -380,6 +382,32 @@ async function journalKeys($: EngineInterface, root: string): Promise<string[]> 
   }
 }
 
+/**
+ * Another project's interrupted catch check: told to the user and put on the record, never repaired from here (#89: a
+ * session writes only in its own repository). The owner repairs it by opening a session there. Never fails the start.
+ */
+async function reportJournalsElsewhere($: EngineInterface, root: string, nowMs: number): Promise<void> {
+  try {
+    const own = await journalKeys($, root)
+    const found: { paths: string[]; atMs?: number }[] = []
+    for (const key of await $.store.keys()) {
+      if (key.startsWith(JOURNAL_PREFIX) && !own.includes(key)) {
+        const value = await $.store.get(key)
+        const atMs = (value as { atMs?: unknown } | null)?.atMs
+        found.push({ paths: (journalFiles(value) ?? []).map(file => file.path), ...(typeof atMs === 'number' ? { atMs } : {}) })
+      }
+    }
+    const notice = elsewhereNotice(found, nowMs)
+    if (notice !== null) {
+      $.ui.toast(notice)
+      $.ui.log(notice)
+      await change($, s => recordReportedElsewhere(s, notice.replace(/^dope-tdd: /, ''), nowMs))
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not look for other projects' checks: ${String(error)}`)
+  }
+}
+
 async function forget($: EngineInterface, key: string): Promise<void> {
   try {
     await $.store.delete(key)
@@ -415,6 +443,7 @@ async function keepAside($: EngineInterface, root: string, path: string, text: s
 async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
+  // Only this root's journals: a session writes only in its own repository, never in another project (#89).
   for (const key of await journalKeys($, root)) {
     const files = journalFiles(await $.store.get(key)) ?? []
     for (const file of files) {
@@ -868,7 +897,7 @@ async function checkAgainst(
   }
   const journalKey = journalKeyFor(root, module)
   try {
-    await $.store.set(journalKey, { files: [{ path, before, after }] })
+    await $.store.set(journalKey, journalEntry([{ path, before, after }], lockedAt))
   } catch (error) {
     await releaseAll()
     $.ui.log(`dope-tdd: could not journal the catch check for ${path}: ${String(error)}`)
@@ -917,7 +946,10 @@ async function checkAgainst(
     const kept = await keepAside($, root, path, after)
     const where = kept === null ? 'see the log' : `your change is in ${kept.startsWith(root) ? relativePath(root, kept) : kept}`
     $.ui.toast(`dope-tdd: ${relativePath(root, path)} changed during the catch check and was left as is; ${where}`)
-    $.ui.log(`dope-tdd: ${path} changed while reverted; the text after your change: ${kept ?? `(could not be written) ${after}`}`)
+    // Never the text itself: a log outlives the session and is read by tools this plugin does not control, and the
+    // text may hold secrets. When keepAside failed, the file on disk was changed by someone else and `after` is lost
+    // with this session; say so by size so the loss is visible without copying the source anywhere.
+    $.ui.log(`dope-tdd: ${path} changed while reverted; your change is ${kept ?? `not saved (could not write it aside; ${after.length} characters lost)`}`)
     await forget($, journalKey)
     return { kind: 'unverified', reason: 'changed during check' }
   }
@@ -1652,10 +1684,60 @@ async function seedRememberedUnlocks($: EngineInterface): Promise<void> {
   }
 }
 
+/**
+ * At a session start: removes session logs written more than 30 days ago, and names the changes kept aside, which are
+ * never removed (retention.ts says why). $.fs cannot delete, so node does; a machine without node keeps the files,
+ * which is the safe failure. Never fails the start.
+ */
+async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
+  try {
+    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+    if (home === undefined || home === '') {
+      return
+    }
+    const base = `${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd`
+    const filesUnder = async (dir: string, depth = 0): Promise<{ path: string; mtimeMs: number }[]> => {
+      let entries: Awaited<ReturnType<typeof $.fs.list>> = []
+      try {
+        entries = await $.fs.list(dir)
+      } catch {
+        return []
+      }
+      const found: { path: string; mtimeMs: number }[] = []
+      for (const entry of entries) {
+        if (entry.kind === 'dir' && !entry.isLink && depth < 8) {
+          found.push(...(await filesUnder(`${dir}/${entry.name}`, depth + 1)))
+        } else if (entry.kind === 'file') {
+          found.push({ path: `${dir}/${entry.name}`, mtimeMs: entry.mtimeMs })
+        }
+      }
+      return found
+    }
+    for (const folder of PRUNED_FOLDERS) {
+      for (const file of await filesUnder(`${base}/${folder}`)) {
+        if (isExpired(file.mtimeMs, nowMs)) {
+          await $.process.run(pruneArgv(file.path), { timeoutMs: 10_000 }).catch(() => undefined)
+        }
+      }
+    }
+    const kept = await filesUnder(`${base}/kept`)
+    const notice = keptNotice(kept.map(file => file.path.slice(`${base}/kept/`.length)))
+    if (notice !== null) {
+      $.ui.toast(notice)
+      $.ui.log(notice)
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not prune old files: ${String(error)}`)
+  }
+}
+
 /** What a session starts from: an interrupted check repaired, the unlocks remembered in the store, the config read. */
 async function seedFromStore($: EngineInterface): Promise<void> {
   const root = await $.session.root()
-  await ensureRepaired($, root, await $.clock.now())
+  const nowMs = await $.clock.now()
+  await ensureRepaired($, root, nowMs)
+  await reportJournalsElsewhere($, root, nowMs)
+  await pruneOldFiles($, nowMs)
   await seedRememberedUnlocks($)
   await loadConfig($, root)
 }

@@ -124,6 +124,7 @@ export function drawBand(el: AnyElements, model: BandModel) {
   const { stats: s, config, nowMs, logo } = model
   const view = bandView(s, config)
   const watching = view.watch.kind === 'watching'
+  const progress = view.showProgress
 
   return (
     <Box
@@ -136,8 +137,8 @@ export function drawBand(el: AnyElements, model: BandModel) {
         {drawLogo(el, logo)}
         <Text bold>{TITLE}</Text>
         {drawWatch(el, view.watch)}
-        {watching && drawPhase(el, s, nowMs, model.standingDown)}
-        {watching && drawTrail(el, s)}
+        {(progress || s.paused || model.standingDown !== '') && drawPhase(el, s, nowMs, model.standingDown)}
+        {progress && drawTrail(el, s)}
       </Box>
       {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
       {view.problems.length > 0 && drawProblems(el, view.problems)}

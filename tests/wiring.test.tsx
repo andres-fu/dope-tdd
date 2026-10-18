@@ -879,8 +879,9 @@ describe('honest phases on the band', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
+    // An unguarded edit during this cycle shows whatever module it touched; NEVER SAW RED is the chain's (2026-10-18).
     expect(await ui.find({ type: 'Text', text: /1 UNGUARDED/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /1 NEVER SAW RED/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'NEVER SAW RED' })).toBeDefined()
   })
 
   test('a test run that names a test file makes that module current', async ($, on) => {

@@ -113,7 +113,7 @@ describe('band verdict', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'MISSED' }))?.props.color).toBe(ACCENT.ember)
-    expect((await ui.find({ type: 'Text', text: '1 MISSED' }))?.props.bold).toBe(true)
+    expect(await ui.find({ type: 'Text', text: '1 MISSED' })).toBeUndefined()
   })
 
   test('a test that went green without failing says NEVER SAW RED', async ($, on) => {
@@ -123,7 +123,37 @@ describe('band verdict', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect((await ui.find({ type: 'Text', text: 'NEVER SAW RED' }))?.props.color).toBe(ACCENT.paused)
-    expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeUndefined()
+  })
+
+  test('a green module that went quiet stops being current: no GREEN and no trail without a module (2026-10-18)', async ($, on) => {
+    const world = fakeEngine(on)
+    await startSession($)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    await runTests($, world, 'pass')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
+
+    await world.clock.advance(16 * MINUTE)
+
+    expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^●$/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /write a failing test first/ })).toBeDefined()
+  })
+
+  test("the band's problems are this cycle's: an earlier cycle's block is gone once a new cycle passes", async ($, on) => {
+    const world = fakeEngine(on)
+    await editAt($, 'src/utils/formatDuration.ts')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    await runTests($, world, 'pass')
+    await touchTest($, world, 'utils/formatDuration')
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: /BLOCKED/ })).toBeUndefined()
+    const status = await $.command.run({ command: 'tdd', args: '' } as never)
+    expect(status.text).toMatch(/blocked 1/)
   })
 
   test('a refactor that kept the test green says REFACTOR, in plain text: a fact about the change, not credit', async ($, on) => {

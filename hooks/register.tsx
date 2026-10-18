@@ -46,6 +46,7 @@ import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
+import { countsAsUnwatched } from './bandModel.ts'
 import type { Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
@@ -67,6 +68,7 @@ import {
   recordRedNames,
   recordReportedElsewhere,
   recordSourceEdit,
+  recordUnwatchedEdit,
   recordStaleUnlocks,
   recordTestChanged,
   recordTestTouch,
@@ -130,7 +132,8 @@ let guardFailureToasted = false
 type FileRead = { kind: 'text'; text: string } | { kind: BeforeState }
 
 function hasActivity(s: TddStats): boolean {
-  return s.events.length > 0 || s.paused || s.current !== null
+  // Unwatched edits and unread runs count: the band must show up to say it is not watching (2026-10-18).
+  return s.events.length > 0 || s.paused || s.current !== null || s.unwatched.length > 0 || s.unreadRuns > 0
 }
 
 function change($: EngineInterface, fn: (s: TddStats) => TddStats): Promise<TddStats> {
@@ -1190,6 +1193,10 @@ async function checkFileWrite(
   const isConfig = relativePath(root, filePath) === CONFIG_FILE
   const current = await readStats($)
   const quiet = config.mode === 'observe'
+  // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
+  if (target.kind === 'other' && !isConfig && isInsideRoot(root, filePath) && countsAsUnwatched(relativePath(root, filePath), config)) {
+    await change($, s => recordUnwatchedEdit(s, relativePath(root, filePath)))
+  }
   const policy = target.kind === 'source' ? policyFor(config, relativePath(root, filePath)) : null
   if (policy === 'exempt') {
     return proceed()

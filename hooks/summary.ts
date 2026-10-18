@@ -107,6 +107,11 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig): 
 export function formatGlossary(): string {
   return [
     'dope-tdd: what the words mean',
+    '  WATCHING       the edited code matches the layout and the test runs can be read: dope-tdd is guarding it',
+    '  NOT WATCHING   code was edited that no test layout pairs, and nothing is guarded yet: /tdd setup, or a layout in dope-tdd.json',
+    "  CAN'T READ RUNS test runs happened and none could be read: run one test file so its summary line is in the output",
+    '  UNWATCHED      code files edited outside the layout, beside guarded work: dope-tdd cannot check them',
+    '  NEXT           the one step to take now',
     '  WRITING        a test was created or edited and has not run yet',
     '  RED            the last run of that test failed: the bug or the missing behaviour is reproduced',
     '  RED ELSEWHERE  the last run failed in other test files, not in this module\'s test',

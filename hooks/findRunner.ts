@@ -66,6 +66,10 @@ export async function findRunner(
           // The marker itself may name one: Node's own flags in the test script that found the runner.
           const named = runner.launcherFrom === undefined || read === undefined ? undefined : await read(`${dir}/${marker}`)
           const launcher = named === undefined || named === null ? undefined : runner.launcherFrom?.(named)
+          // A .tsx or .jsx test this runner can load only through a JSX-capable loader the script does not pass: not its runner.
+          if (runner.jsxLoader !== undefined && /\.[jt]sx$/.test(testPath) && !(launcher ?? []).some(arg => runner.jsxLoader?.test(arg))) {
+            continue
+          }
           return { kind: runner.kind, root: dir, tool: fallbackTool(runner, root), ...(launcher === undefined ? {} : { launcher }) }
         }
       }

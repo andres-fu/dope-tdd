@@ -35,6 +35,11 @@ test('toContain finds a substring, or an item by identity', () => {
   fails(() => expect('abc').toContain('z'))
 })
 
+test('toContainEqual finds an item by deep equality', () => {
+  expect([{ a: 1 }, { b: 2 }]).toContainEqual({ b: 2 })
+  fails(() => expect([{ a: 1 }]).toContainEqual({ a: 2 }))
+})
+
 test('toMatchObject checks a subset of properties, deeply', () => {
   expect({ a: 1, b: { c: 2, d: 3 } }).toMatchObject({ b: { c: 2 } })
   fails(() => expect({ a: 1 }).toMatchObject({ a: 1, b: 2 }))

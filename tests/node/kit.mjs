@@ -56,6 +56,7 @@ const MATCHERS = {
   toEqual: (actual, expected) => equals(actual, expected),
   toMatch: (actual, expected) => (expected instanceof RegExp ? expected.test(actual) : String(actual).includes(expected)),
   toContain: (actual, expected) => (typeof actual === 'string' ? actual.includes(expected) : [...actual].includes(expected)),
+  toContainEqual: (actual, expected) => [...actual].some(item => equals(item, expected)),
   toMatchObject: (actual, expected) => matchesObject(actual, expected),
   toBeNull: actual => actual === null,
   toBeUndefined: actual => actual === undefined,

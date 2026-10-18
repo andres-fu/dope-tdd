@@ -1,6 +1,8 @@
 import type { Elements, RenderSurface } from 'claude-code'
 
-import type { CatchOutcome, CurrentTest, TddStats } from '../types'
+import type { CurrentTest, TddStats } from '../types'
+import { bandView } from './bandModel.ts'
+import type { Problem, Step, Watch } from './bandModel.ts'
 import type { GuardConfig } from './config.ts'
 import { moduleLabel } from './mirror.ts'
 import { ACCENT, ALARM_TEXT, RED_TIMER_ALARM_MS } from './theme.ts'
@@ -55,39 +57,38 @@ function drawPhase(el: AnyElements, s: TddStats, nowMs: number, standingDown: st
     : <Text bold color={ACCENT.ember}>{`■ RED${timer}`}</Text>
 }
 
-function drawCatchWord(el: AnyElements, outcome: CatchOutcome | { kind: 'refactor' }) {
+/** The first thing the band says: whether dope-tdd can see the code and read the runs at all (bandModel.ts). */
+function drawWatch(el: AnyElements, watch: Watch) {
   const { Text } = el
-  if (outcome.kind === 'caught') {
-    return <Text bold color={ACCENT.pass}>CAUGHT</Text>
+  if (watch.kind === 'watching') {
+    return <Text color={ACCENT.pass}>{`● WATCHING ${watch.where}`}</Text>
   }
-  if (outcome.kind === 'proven') {
-    return <Text bold color={ACCENT.pass}>PROVEN</Text>
+  if (watch.kind === 'not-watching') {
+    const files = `${watch.files} edited code file${watch.files === 1 ? ' matches' : 's match'} no test layout: ${watch.example}${watch.files > 1 ? ` +${watch.files - 1}` : ''}`
+    return [<Text bold color={ACCENT.paused}>⚠ NOT WATCHING</Text>, <Text>{files}</Text>]
   }
-  if (outcome.kind === 'missed') {
-    return <Text bold color={ACCENT.ember}>MISSED</Text>
-  }
-  if (outcome.kind === 'refactor') {
-    // A fact about the change, not a verdict on the test: plain text, never the pass colour.
-    return <Text bold>REFACTOR</Text>
-  }
-  return <Text dimColor>UNVERIFIED</Text>
+  return <Text bold color={ACCENT.paused}>⚠ CAN'T READ RUNS</Text>
 }
 
-function drawVerdict(el: AnyElements, s: TddStats, current: CurrentTest, label: string) {
-  const { Box, Text } = el
-  const closedCycle = s.phase === 'green' && s.lastCycle?.module === current.module ? s.lastCycle : null
-  const sawRed = (s.phase !== 'green' && s.sawRed) || closedCycle?.sawRed === true
-  const neverSawRed = s.unproven.includes(current.module)
-  const catchWord = s.phase === 'green' && s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
+function drawStep(el: AnyElements, step: Step) {
+  const { Text } = el
+  if (step.state === 'failed') {
+    return <Text bold color={step.word === 'MISSED' ? ACCENT.ember : ACCENT.paused}>{step.word ?? `${step.name} ✗`}</Text>
+  }
+  if (step.state === 'done') {
+    return step.word === undefined ? <Text color={ACCENT.pass}>{`${step.name} ✓`}</Text> : <Text bold color={ACCENT.pass}>{step.word}</Text>
+  }
+  // REFACTOR and UNVERIFIED are facts about the change, not credit: plain, never the pass colour.
+  return step.word === undefined ? <Text dimColor>{`${step.name} ·`}</Text> : <Text bold>{step.word}</Text>
+}
 
+function drawChain(el: AnyElements, s: TddStats, chain: readonly Step[], label: string) {
+  const { Box, Text } = el
   return (
     <Box flexDirection="row" gap={2}>
       <Text bold>{label.toUpperCase()}</Text>
-      {neverSawRed && <Text bold color={ACCENT.paused}>NEVER SAW RED</Text>}
-      {!neverSawRed && sawRed && <Text dimColor>SAW RED</Text>}
+      {chain.map(step => drawStep(el, step))}
       {s.redElsewhere.length > 0 && <Text dimColor>RED ELSEWHERE</Text>}
-      {closedCycle?.testChanged === true && <Text bold color={ACCENT.paused}>TEST CHANGED</Text>}
-      {catchWord !== null && drawCatchWord(el, catchWord)}
     </Box>
   )
 }
@@ -108,31 +109,12 @@ function drawTrail(el: AnyElements, s: TddStats) {
   )
 }
 
-function drawCount(el: AnyElements, count: number, label: string, color: string) {
-  const { Text } = el
-  return count > 0
-    ? <Text bold color={color}>{`${count} ${label}`}</Text>
-    : <Text dimColor>{`${count} ${label}`}</Text>
-}
-
-function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
+/** Only problems above zero: a row of zeros read as "all good" even when dope-tdd could see nothing. */
+function drawProblems(el: AnyElements, problems: readonly Problem[]) {
   const { Box, Text } = el
-  const scoped = config.scope.length > 0
-  const showMode = config.mode !== 'enforce' || scoped
-
   return (
     <Box flexDirection="row" gap={2}>
-      <Text dimColor>{`CYCLES ${s.cycles}`}</Text>
-      {drawCount(el, s.caught, 'CAUGHT', ACCENT.pass)}
-      {s.proven > 0 && drawCount(el, s.proven, 'PROVEN', ACCENT.pass)}
-      {drawCount(el, s.missed, 'MISSED', ACCENT.ember)}
-      {s.refactors > 0 && <Text>{`${s.refactors} REFACTOR`}</Text>}
-      {s.neverSawRed > 0 && drawCount(el, s.neverSawRed, 'NEVER SAW RED', ACCENT.paused)}
-      {s.testChanged > 0 && drawCount(el, s.testChanged, 'TEST CHANGED', ACCENT.paused)}
-      {s.workarounds > 0 && drawCount(el, s.workarounds, 'WORKAROUNDS', ACCENT.paused)}
-      {drawCount(el, s.unguarded, 'UNGUARDED', ACCENT.paused)}
-      {drawCount(el, s.blocked, 'BLOCKED', ACCENT.paused)}
-      {showMode && <Text bold color={ACCENT.paused}>{`MODE ${config.mode.toUpperCase()}${scoped ? ' (SCOPED)' : ''}`}</Text>}
+      {problems.map(problem => <Text bold color={problem.tone === 'alarm' ? ACCENT.ember : ACCENT.paused}>{problem.label}</Text>)}
     </Box>
   )
 }
@@ -140,6 +122,8 @@ function drawTally(el: AnyElements, s: TddStats, config: GuardConfig) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
+  const view = bandView(s, config)
+  const watching = view.watch.kind === 'watching'
 
   return (
     <Box
@@ -151,11 +135,16 @@ export function drawBand(el: AnyElements, model: BandModel) {
       <Box flexDirection="row" gap={2}>
         {drawLogo(el, logo)}
         <Text bold>{TITLE}</Text>
-        {drawPhase(el, s, nowMs, model.standingDown)}
-        {drawTrail(el, s)}
+        {drawWatch(el, view.watch)}
+        {watching && drawPhase(el, s, nowMs, model.standingDown)}
+        {watching && drawTrail(el, s)}
       </Box>
-      {s.current !== null && drawVerdict(el, s, s.current, moduleLabel(config, s.current.module))}
-      {drawTally(el, s, config)}
+      {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
+      {view.problems.length > 0 && drawProblems(el, view.problems)}
+      <Box flexDirection="row" gap={2}>
+        <Text dimColor>NEXT</Text>
+        <Text>{view.next}</Text>
+      </Box>
       <Box flexDirection="row" gap={1}>
         {s.current !== null && <Button key="view-test" label="VIEW TEST" onPress={model.onViewTest} />}
         <Button key="pause" label={s.paused ? 'RESUME GUARD' : 'PAUSE GUARD'} onPress={model.onTogglePause} />

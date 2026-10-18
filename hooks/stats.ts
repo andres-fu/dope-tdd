@@ -53,6 +53,7 @@ export const INITIAL_STATS: TddStats = {
   refactors: 0,
   checkMsTotal: 0,
   worktreeChecks: 0,
+  unwatched: [],
   lastCatch: null,
   lastCycle: null,
   current: null,
@@ -120,6 +121,7 @@ export function normalizeStats(stored: unknown): TddStats {
     refactors: pick('refactors', isNumber),
     checkMsTotal: pick('checkMsTotal', isNumber),
     worktreeChecks: pick('worktreeChecks', isNumber),
+    unwatched: strings(pick('unwatched', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
@@ -273,6 +275,16 @@ export function recordOtherPass(s: TddStats, module: string, nowMs: number): Tdd
  */
 export function recordReportedElsewhere(s: TddStats, detail: string, nowMs: number): TddStats {
   return logged(s, 'reported-elsewhere', nowMs, undefined, detail)
+}
+
+const MAX_UNWATCHED = 20
+
+/**
+ * A code file edited that the layout pairs with no test: dope-tdd cannot guard it. Remembered once, newest last, so the
+ * band can say it is not watching instead of showing calm zeros (2026-10-18, when it was blind to its own repository).
+ */
+export function recordUnwatchedEdit(s: TddStats, path: string): TddStats {
+  return { ...s, unwatched: [...s.unwatched.filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
 }
 
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */

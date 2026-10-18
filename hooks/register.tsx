@@ -13,7 +13,7 @@ import type { RunnerKind } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
 import { buildLabel } from './build.ts'
-import { applyBar, decideAfterReview, failureVerdict, moduleHunks, parseVerdict, reviewPrompt, reviewerFor } from './reviewer.ts'
+import { applyBar, failureVerdict, moduleHunks, parseVerdict, reviewPrompt, reviewerFor } from './reviewer.ts'
 import type { ReviewResult } from './reviewer.ts'
 import type { GuardConfig } from './config.ts'
 import {
@@ -88,8 +88,9 @@ import { formatGlossary, formatStatus } from './summary.ts'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
-import { OVERRIDES_FILE, checkRequest, closePauses, coveringOverride, decideAtRequest, endHint, endOverride, isAttended, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, refuseByBar, requestNotes, serializeRecord } from './overrides.ts'
-import type { Override, OverrideKind, OverrideRequest, OverrideScope, Review } from '../types'
+import { OVERRIDES_FILE, closePauses, coveringOverride, endHint, endOverride, isAttended, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, requestNotes, serializeRecord } from './overrides.ts'
+import { planDecision, planRequest, refusal, requestFrom, sendsToModel } from './requestPlan.ts'
+import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
 import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
@@ -289,89 +290,42 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   const root = await $.session.root()
   const config = await loadConfig($, root)
   const nowMs = await $.clock.now()
-  const scope = (inputText(input, 'scope') ?? '') as OverrideScope
-  const path = scope === 'pause' ? null : inputText(input, 'path')
+  const path = inputText(input, 'path')
   const absolute = path === null ? null : absolutePath(root, path)
   const target = absolute === null ? null : classifyPath(root, absolute, config)
-  const request: OverrideRequest = {
-    by,
-    scope,
-    kind: (inputText(input, 'kind') ?? '') as OverrideKind,
+  const request = requestFrom(input, by, {
     module: target !== null && target.kind === 'source' ? target.module : null,
     path: absolute === null ? null : relativePath(root, absolute),
-    reason: inputText(input, 'reason') ?? '',
-    until: inputText(input, 'until'),
-    minutes: typeof input.minutes === 'number' ? input.minutes : null,
-  }
-  const malformed = checkRequest(request, { pauseMaxMinutes: pauseLimit(config) })
-  if (malformed !== null) {
-    return `dope-tdd: override refused: ${malformed}.`
-  }
+  })
   const record = await readOverrides($, root)
-  const barred = refuseByBar(record, request, nowMs)
-  if (barred !== null) {
-    return `dope-tdd: override refused: ${barred}.`
+  const refused = refusal(request, record, nowMs, { pauseMaxMinutes: pauseLimit(config) })
+  if (refused !== null) {
+    return refused
   }
-  const present = isAttended(await read($, attended), await surfacesNow($))
   const approver = approverOf(config)
-  const notes = requestNotes(record, request, nowMs)
-  // A hotfix and a person's own request never go to the model: the first is recovery, the second is the approver.
-  const review =
-    approver.approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix' ? await reviewRequest($, root, request, notes, approver) : undefined
-  const decision = review === undefined ? decideAtRequest(request, present) : decideAfterReview(review.verdict, present)
+  const review = approver.approver === 'model' && sendsToModel(request, 'model') ? await reviewRequest($, root, request, requestNotes(record, request, nowMs), approver) : undefined
   const session = await sessionIdNow($)
-  const entry: Override = {
-    ...request,
-    ...(session === undefined ? {} : { session }),
-    id: `o${nowMs.toString(36)}-${record.length + 1}`,
-    atMs: nowMs,
-    status: decision.status,
-    decidedBy: decision.decidedBy,
-    decidedAtMs: decision.status === 'pending' ? null : nowMs,
-    endedAtMs: null,
-    settledAtMs: null,
-    note: review !== undefined && decision.decidedBy === 'model' && decision.status === 'denied' ? review.reason : null,
-    edits: [],
+  // The decisions are requestPlan.ts's; this records them, pauses if asked, and says what it said.
+  const planned = planRequest({
+    request,
+    record,
+    nowMs,
+    present: isAttended(await read($, attended), await surfacesNow($)),
+    labelOf: module => (module === null ? 'every module' : moduleLabel(config, module)),
     ...(review === undefined ? {} : { review }),
-  }
-  await writeOverrides($, root, [...record, entry])
-  const label = request.module === null ? 'every module' : moduleLabel(config, request.module)
-  const reason = request.reason.trim()
-  const byModel = review === undefined ? '' : `model ${review.model} (${review.effort})`
-  if (entry.decidedBy === 'model' && review !== undefined) {
-    const approved = entry.status === 'approved'
-    const line = `⚑ dope-tdd: override ${approved ? 'approved' : 'denied'} by ${byModel} for ${request.kind} on ${label}: "${reason}". ${review.reason}`
-    toast($, line)
-    $.ui.log(line)
-    return approved
-      ? `dope-tdd: override approved by ${byModel}: ${review.reason} ${request.scope} on ${label}, recorded in ${OVERRIDES_FILE}.`
-      : `dope-tdd: override denied by ${byModel}: ${review.reason} Do that instead; do not work around the guard.`
-  }
-  if (entry.status === 'pending') {
-    const history = notes.length === 0 ? '' : ` (${notes.join('; ')})`
-    const escalated = review === undefined ? '' : ` (the reviewer model escalated: ${review.reason})`
-    const line = `⚑ dope-tdd: override needs you. ${request.kind} on ${label}: "${reason}"${history}${escalated}. /tdd approve, or /tdd deny <why>`
-    toast($, line)
-    $.ui.log(line)
-    return 'dope-tdd: override requested; waiting for a person to approve it. Stop here: tell the user what you asked for and why, and wait for their answer. Do not retry or work around the guard.'
-  }
-  if (entry.status === 'denied') {
-    $.ui.log(`dope-tdd: override denied, nobody is here to approve it: ${request.kind} on ${label}: "${reason}"`)
-    return 'dope-tdd: override denied: nobody is here to approve it. Stop and report what you needed and why; do not work around the guard.'
-  }
-  if (entry.scope === 'pause') {
+    ...(session === undefined ? {} : { session }),
+  })
+  await writeOverrides($, root, [...record, planned.entry])
+  if (planned.pause) {
     await pauseGuard($, nowMs)
-    toast($, `TDD guard paused for ${request.minutes ?? 0}m`)
   }
-  if (entry.decidedBy === 'hotfix rule') {
-    const line = `⚑ dope-tdd: hotfix override on ${label}: "${reason}". Recorded as debt until a test is written.`
-    toast($, line)
-    $.ui.log(line)
-    return `dope-tdd: override approved (hotfix rule): ${request.scope} on ${label}. It is debt in ${OVERRIDES_FILE} until a test is written; end it with /tdd override end ${request.module ?? 'pause'} once one is.`
+  for (const notice of planned.notices) {
+    if (notice.toast) {
+      toast($, notice.text)
+    }
+    $.ui.log(notice.text)
   }
-  return request.scope === 'pause'
-    ? `dope-tdd is paused for ${request.minutes ?? 0} minutes (${reason}). It comes back on by itself; /tdd resume ends it sooner. The pause is on the record.`
-    : `dope-tdd: override approved: ${request.scope} on ${label}, recorded in ${OVERRIDES_FILE}.`
+  return planned.reply
 }
 
 /**
@@ -406,21 +360,16 @@ async function decidePending($: EngineInterface, approve: boolean, why: string |
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   const record = await readOverrides($, root)
-  const pending = record.find(o => o.status === 'pending')
-  if (pending === undefined) {
-    return 'dope-tdd: no override request is waiting.'
+  const config = await loadConfig($, root)
+  const decided = planDecision(record, approve, why, nowMs, module => (module === null ? 'every module' : moduleLabel(config, module)))
+  if (decided.record.some((o, index) => o !== record[index])) {
+    await writeOverrides($, root, decided.record)
+    $.ui.log(decided.reply)
   }
-  const decided: Override = { ...pending, status: approve ? 'approved' : 'denied', decidedBy: 'human', decidedAtMs: nowMs, note: approve ? null : why }
-  await writeOverrides($, root, record.map(o => (o.id === pending.id ? decided : o)))
-  if (approve && decided.scope === 'pause') {
+  if (decided.pause) {
     await pauseGuard($, nowMs)
   }
-  const label = decided.module === null ? 'every module' : moduleLabel(await loadConfig($, root), decided.module)
-  const line = approve
-    ? `dope-tdd: override approved: ${decided.scope} on ${label}. Tell the agent to go on.`
-    : `dope-tdd: override denied${why === null ? '' : `: ${why}`}. Tell the agent what to do instead.`
-  $.ui.log(line)
-  return line
+  return decided.reply
 }
 
 /** /tdd resume (and /tdd on): ends a pause early. Its untested edits stay debt; the person hears how many. */
@@ -2174,7 +2123,8 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   // A module may be named as its label (`dashboard/src/lib/pkce`) as well as its id.
   const known = [...new Set([...Object.keys(s.unlocked), ...Object.keys(s.modules)])]
   const module = named === undefined ? s.current?.module : (known.find(id => id === named || moduleLabel(config, id) === named) ?? named)
-  const status = formatStatus(s, nowMs, config)
+  // The build first: a reviewer reads which version of the rules applied (2026-10-18).
+  const status = formatStatus(s, nowMs, config, (await read($, buildAtom)) || undefined)
   // Overrides go on every receipt: who approved what, and what is still debt, read by someone who was not there.
   const overrideLines = formatOverrides(await readOverrides($, root), s.cycles)
   const overrides = overrideLines.length === 0 ? [] : ['```', ...overrideLines, '```']

@@ -69,6 +69,24 @@ whoever made the call, when they made it. The receipt is that record: what chang
 proves it, what was overridden and why, and what is left unproven. It is written to be read by
 someone who was not there. **[proposed: reasons on every override; the receipt in the PR description]**
 
+## Own your space, report across boundaries
+*Added 2026-10-18 as a correction to the frozen draft: a gap, not a new rule.*
+
+An agent changes only what it was assigned: its repository, its branch or worktree, its module. Two
+agents in one repository still each own only their own assignment.
+- **Anything it finds elsewhere, it reports** to the owner, never fixes in place: what, where, when.
+- **It tells its human first,** and the report is recorded, so it shows on the receipt and in the logs.
+- **In an emergency it proposes, never takes over:** a pull request or an issue, which the owner decides
+  on. Posting in someone else's repository is still an outward action, so it asks its human before it
+  posts.
+- **No response from the owner:** escalate to a human. Never take over.
+- **Be a good owner too:** reports about your space must be easy to find and acted on.
+
+This is how teams that work well already behave (on-call pages the owner; contributors open pull
+requests), and agents need it more: they act fast, at scale and often unwatched, and a fix in the wrong
+place is hard to trace. dope-tdd follows it itself: a session never repairs another project's
+interrupted catch check; it names it to the user and records it. **[today: #89]**
+
 ## What the research says (2026-10-18)
 The industry review (sources in the research session's report) changes some of this draft:
 - **Process gates are contested; outcome gates are not.** The one controlled comparison of TDD and

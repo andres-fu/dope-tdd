@@ -14,14 +14,12 @@ import { CONFIG_FILE, describeConfigChange, isLoosening, parseConfig, policyFor 
 import type { GuardConfig } from './config.ts'
 import {
   assertionsRemovedAdvice,
-  carriedOnAdvice,
   carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
   hollowAdvice,
   importAdvice,
   hollowTouchAdvice,
-  redUnlockAdvice,
   inheritedAdvice,
   runAdvice,
   skippedAdvice,
@@ -29,7 +27,6 @@ import {
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
-  unreadableRunnerAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
 import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges.ts'
@@ -43,6 +40,7 @@ import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './ru
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
+import { gateShellWrites, judgeFailures, shellReminders } from './shellVerdict.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
@@ -1387,13 +1385,7 @@ async function checkShell(
       return { path, module: sourceModuleOf(root, path, config), policy: policyFor(config, relativePath(root, path)) }
     }),
   )
-  const locked = writes.flatMap(({ module, policy }) =>
-    module !== null && policy === 'enforce' && current.unlocked[module] === undefined ? [module] : [],
-  )
-  // #54: a shell write to a module unlocked only by a carry-over waits for its run, as an Edit does.
-  const waiting = writes.flatMap(({ module, policy }) =>
-    module !== null && policy === 'enforce' && current.unlocked[module] !== undefined && current.inherited[module] !== undefined ? [module] : [],
-  )
+  const { locked, waiting } = gateShellWrites(writes, current.unlocked, current.inherited)
   if ((locked.length > 0 || waiting.length > 0) && !current.paused) {
     const nowMs = await $.clock.now()
     await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
@@ -1510,16 +1502,12 @@ async function checkShell(
         names = all
       }
     }
-    const state = moduleState(updated, working.module)
-    const within = (set: readonly string[]) => names.length > 0 && set.length > 0 && names.every(name => set.includes(name))
-    if (within(state.knownFailures ?? [])) {
-      outcome = 'pass'
-      alreadyFailing = names
-    } else if (within(state.redFailures ?? []) && names.length < (state.redFailures ?? []).length) {
-      outcome = 'pass'
-      alreadyFailing = names
+    const judged = judgeFailures(names, moduleState(updated, working.module))
+    outcome = judged.outcome
+    alreadyFailing = judged.alreadyFailing
+    if (judged.record === 'known') {
       await change($, s => recordKnownFailures(s, working.module, names))
-    } else if (names.length > 0) {
+    } else if (judged.record === 'red') {
       await change($, s => recordRedNames(s, working.module, names))
     }
   }
@@ -1633,23 +1621,24 @@ async function checkShell(
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
         : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed })
 
-  const reminders = current.paused
-    ? []
-    : [
-        ...unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
-        ...(alreadyFailing.length === 0
-          ? []
-          : [
-              `dope-tdd: ${working === null ? 'this module' : moduleLabel(config, working.module)} is green apart from ${alreadyFailing.length} test${alreadyFailing.length === 1 ? ' that was' : 's that were'} already failing before your change: ${alreadyFailing.slice(0, 3).join('; ')}${alreadyFailing.length > 3 ? '; …' : ''}.`,
-            ]),
-        ...(notStarted === null ? [] : [`dope-tdd: the test runner did not start (${notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
-        ...(firstUnreadable && unreadable !== null ? [unreadableRunnerAdvice(unreadable)] : []),
-        ...bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
-        ...commented,
-        ...redUnlocked.map(module => redUnlockAdvice(moduleLabel(config, module), sourcePathFor(config, module))),
-        ...carriedOn.map(module => carriedOnAdvice(sourcePathFor(config, module), relativePath(root, afterRun.unlocked[module] ?? ''), outcome === 'pass')),
-        ...(advice === null ? [] : [advice]),
-      ]
+  const reminders = shellReminders(
+    {
+      paused: current.paused,
+      unguardedPaths,
+      alreadyFailing,
+      alreadyFailingModule: working === null ? null : working.module,
+      notStarted,
+      unreadableRunner: firstUnreadable ? unreadable : null,
+      bystanders,
+      commented,
+      redUnlocked,
+      carriedOn: carriedOn.map(module => ({ module, testPath: afterRun.unlocked[module] ?? '' })),
+      passed: outcome === 'pass',
+      advice,
+    },
+    config,
+    root,
+  )
   return tell(quiet, result, reminders)
 }
 

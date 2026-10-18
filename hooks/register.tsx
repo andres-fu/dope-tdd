@@ -65,6 +65,7 @@ import {
   recordImporter,
   recordKnownFailures,
   recordRedNames,
+  recordReportedElsewhere,
   recordSourceEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -82,7 +83,7 @@ import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -378,6 +379,32 @@ async function journalKeys($: EngineInterface, root: string): Promise<string[]> 
   } catch (error) {
     $.ui.log(`dope-tdd: could not list the store: ${String(error)}`)
     return []
+  }
+}
+
+/**
+ * Another project's interrupted catch check: told to the user and put on the record, never repaired from here (#89: a
+ * session writes only in its own repository). The owner repairs it by opening a session there. Never fails the start.
+ */
+async function reportJournalsElsewhere($: EngineInterface, root: string, nowMs: number): Promise<void> {
+  try {
+    const own = await journalKeys($, root)
+    const found: { paths: string[]; atMs?: number }[] = []
+    for (const key of await $.store.keys()) {
+      if (key.startsWith(JOURNAL_PREFIX) && !own.includes(key)) {
+        const value = await $.store.get(key)
+        const atMs = (value as { atMs?: unknown } | null)?.atMs
+        found.push({ paths: (journalFiles(value) ?? []).map(file => file.path), ...(typeof atMs === 'number' ? { atMs } : {}) })
+      }
+    }
+    const notice = elsewhereNotice(found, nowMs)
+    if (notice !== null) {
+      $.ui.toast(notice)
+      $.ui.log(notice)
+      await change($, s => recordReportedElsewhere(s, notice.replace(/^dope-tdd: /, ''), nowMs))
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not look for other projects' checks: ${String(error)}`)
   }
 }
 
@@ -1709,6 +1736,7 @@ async function seedFromStore($: EngineInterface): Promise<void> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   await ensureRepaired($, root, nowMs)
+  await reportJournalsElsewhere($, root, nowMs)
   await pruneOldFiles($, nowMs)
   await seedRememberedUnlocks($)
   await loadConfig($, root)

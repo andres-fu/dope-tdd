@@ -28,6 +28,8 @@ export type EventKind =
   | 'carried-on'
   /** #54: a carried-over unlock dropped at session start because its test changed since. */
   | 'stale-unlock'
+  /** #89: a problem found in another project, reported to its owner and never fixed from here. */
+  | 'reported-elsewhere'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */

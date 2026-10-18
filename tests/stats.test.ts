@@ -24,6 +24,7 @@ import {
   recordTestTouch,
   recordUnreadRun,
   recordOtherPass,
+  recordReportedElsewhere,
   recordWorkaround,
   releaseCheck,
   resetStats,
@@ -552,5 +553,13 @@ describe("a green of another module's test, not about the current one (seen on d
     expect(after.cycleStartMs).toBe(100)
     expect(after.cycles).toBe(0)
     expect(after.current?.module).toBe('utils/b')
+  })
+})
+
+describe('a problem reported in another project is on the record (#89)', () => {
+  test('logged with what was reported, so the session log and /tdd show it, and nothing else changes', () => {
+    const after = recordReportedElsewhere(INITIAL_STATS, 'C:/elsewhere/proj/m.ts', 700)
+    expect(after.events.at(-1)).toEqual({ atMs: 700, kind: 'reported-elsewhere', detail: 'C:/elsewhere/proj/m.ts' })
+    expect({ ...after, events: [], lastEventMs: null }).toEqual(INITIAL_STATS)
   })
 })

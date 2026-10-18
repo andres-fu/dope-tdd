@@ -360,6 +360,21 @@ describe('the revert is safe', () => {
     expect(world.fileContents.get(`${OTHER}/m.ts`)).toBe('a')
   })
 
+  test("another project's interrupted check is reported to the user and recorded, never repaired from here (#89)", async ($, on) => {
+    const OTHER = 'C:/elsewhere/proj'
+    const world = fakeEngine(on, {
+      env: { HOME: HOME_DIR },
+      store: { [`catch-journal:${OTHER}:m`]: { atMs: T0 - 30 * 24 * 60 * 60_000, files: [{ path: `${OTHER}/m.ts`, before: 'a', after: 'b' }] } },
+    })
+    world.fileContents.set(`${OTHER}/m.ts`, 'a')
+
+    await startSession($)
+
+    expect(world.toasts.some(t => t.includes(`may have left ${OTHER}/m.ts reverted`))).toBe(true)
+    const status = await $.tool.call({ tool: 'mcp__dope-tdd__status' } as never)
+    expect(JSON.stringify(status)).toContain('reported-elsewhere')
+  })
+
   test('a recent journal of another project is left alone: its check may be running', async ($, on) => {
     const OTHER = 'C:/elsewhere/proj'
     const world = fakeEngine(on, {

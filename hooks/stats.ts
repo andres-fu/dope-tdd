@@ -267,6 +267,14 @@ export function recordOtherPass(s: TddStats, module: string, nowMs: number): Tdd
   return logged({ ...s, passes: s.passes + 1, history }, 'pass', nowMs, module)
 }
 
+/**
+ * A problem found in another project and reported to its owner, never fixed from here (#89: an agent changes only what
+ * it owns). Only logged, with what was reported, so the session log and /tdd show it was raised.
+ */
+export function recordReportedElsewhere(s: TddStats, detail: string, nowMs: number): TddStats {
+  return logged(s, 'reported-elsewhere', nowMs, undefined, detail)
+}
+
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */
 export function recordUnreadRun(s: TddStats, nowMs: number): TddStats {
   return logged({ ...s, unreadRuns: s.unreadRuns + 1 }, 'unread', nowMs, s.current?.module)

@@ -1,9 +1,9 @@
-# 2026-10-18 — The standard: what good looks like (DRAFT v0.2)
+# 2026-10-18 — The standard: what good looks like (DRAFT v0.3)
 
 > Drafted by Claude from the 2026-10-18 conversation, for Andres to edit until it sounds like him.
 > Lines marked **[today]** describe what dope-tdd already does; **[proposed]** is not built yet;
-> **[decide]** is an open question for Andres. v0.2 folds in the industry review of the same day and
-> Andres's answers to the v0.1 questions.
+> **[decide]** is an open question for Andres. v0.2 folded in the industry review of the same day and
+> Andres's answers to the v0.1 questions; v0.3, his answers to v0.2's.
 
 ## Why this exists
 Code changes. A product owner changes their mind, a bug turns up at 3 a.m., a feature grows. What
@@ -31,13 +31,33 @@ The standard has two layers, and both are ours:
 1. **Rules dope-tdd enforces.** Deterministic, cheap, checked on every change. If we cannot check it
    mechanically, it is not a rule.
 2. **Principles dope-tdd teaches.** In the advice it gives, the skills and the docs. Judgement lives here.
+3. **Examples dope-tdd shows.** A handful of tests and code we consider excellent, each beside a bad
+   version and one line on why. Agents follow examples far more reliably than abstract principles, so
+   this is how taste is passed on. **[proposed]**
+
+The layers stack. Ours is the base, opinionated and shipped with dope-tdd. A company or project adds
+its own on top (its CLAUDE.md, its own examples), because every company is different. Whenever a
+person corrects an agent, the correction becomes a rule or an example, so it is never said twice.
 
 ## Guardrails, not walls
 We cannot foresee every situation, and it is not intelligent to gate everything. So:
 - **Every guardrail can be passed.** By the agent or the engineer, always.
-- **Passing one takes a reason,** in one line, and a scope: this change, this module, or this session
-  ("spike, throwaway code", "hotfix for the outage", "mock until the API change lands").
-- **Every reason is recorded** and shows on the receipt. Nothing is silent.
+- **Passing one takes a reason and a scope.** Every reason is recorded and shows on the receipt.
+  Nothing is silent.
+
+**Scopes.** **[proposed]**
+- **This change:** the default, for almost everything.
+- **This module, until a condition:** "mock the payments client until the API change lands". The
+  override names what ends it, and the receipt shows it until then.
+- **No session scope.** A blanket bypass is easy to reach for and hard to justify later. A spike is
+  "this module, until the spike is thrown away".
+
+**Reasons.** A kind, so reports can count them, and one line of free text, so a person can read why.
+Kinds: spike, hotfix, generated code, temporary mock, legacy (no tests yet), other. **[proposed]**
+A good reason is specific: it says what, why, and what happens next. "Needed to proceed" is not a
+reason; "temporary mock of the payment client until #212 lands, removed in the follow-up" is. The
+mechanical part is checked (a kind, text that is not empty, a follow-up named for temporary kinds);
+the rest is taught by examples.
 
 There is no quiet "off". There is an override with a reason, and there is uninstalling.
 
@@ -65,7 +85,7 @@ The industry review (sources in the research session's report) changes some of t
   and instability (DORA 2025, Faros 2025, secondhand). Our delivery claims are a hypothesis to measure,
   not a fact to sell.
 
-**Decided in v0.2 (Andres to confirm).** The outcome is what we hold the line on: proven before commit.
+**Decided (v0.2, confirmed by Andres in v0.3).** The outcome is what we hold the line on: proven before commit.
 Test-first stays the default and the taught way, guarded at the edit as today, but like every
 guardrail it can be passed with a recorded reason. We do not claim test-first is the only road to
 correct code; the evidence does not support that, and the catch check proves the outcome either way.
@@ -113,7 +133,7 @@ Blocking teaches the agent to game more cleverly; showing makes it pointless.
 - Its name reads as a line of the spec.
 - It covers the edges that matter: empty, boundary, error.
 - Someone who has never seen the code can read it and know what the code does.
-- **[decide]** your view on mocks, fixtures, and how much is enough.
+- Mocks are a tool, used within reason (see rule 3). **[decide]** fixtures, and how much testing is enough.
 
 ## Good code (the principles)
 - **Easy to change** is the measure of good. Everything below serves it.
@@ -150,6 +170,19 @@ written. Strict by default, never in the way of recovery.
 - **Never lies.** No false green, no reassuring zeros. "Not watching" must look different from "all
   good". **[proposed: today the band shows zeros when it cannot see the code or read the runner]**
 
+## Compliance
+Code coverage is not a security or compliance control: it shows code ran, nothing more. GDPR, HIPAA,
+PCI, PII handling and WCAG each require specific behaviour (data masked, access logged, consent
+recorded, labels present), and an agent applies them only when it knows they apply. So:
+- **The project says which apply,** in its own layer (its CLAUDE.md or a requirements document): "this
+  service handles card data; PCI applies."
+- **Each requirement becomes a test:** "card numbers never appear in logs", "every form input has a
+  label". dope-tdd then proves that test can fail, and records anyone who weakens or skips it.
+- **Specialised tools cover the rest:** secret scanning, static security analysis, accessibility
+  checkers.
+
+dope-tdd does not judge compliance. It keeps compliance requirements from silently regressing.
+
 ## Measuring it
 Only what dope-tdd can see, on the engineer's machine:
 - **Inner-loop cycle time:** first test touched, red, proven green, commit.
@@ -170,8 +203,6 @@ measure it before we claim it.
   test file, how to read its result, where tests live).
 
 ## Open questions for Andres
-1. Confirm the v0.2 decision: outcome enforced, test-first the default guardrail.
-2. Override scopes: are change, module and session the right three?
-3. What makes a reason good enough? Free text, or a short list of kinds (spike, hotfix, generated,
-   temporary mock, other)?
-4. The standard's name, and whether it is published on its own, apart from the plugin.
+1. The standard's name, and whether it is published on its own, apart from the plugin.
+2. The first examples: which tests and code (from this repo, VibeCast or elsewhere) show what
+   excellent looks like?

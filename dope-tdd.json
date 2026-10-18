@@ -1,0 +1,4 @@
+{
+  "layout": { "source": "hooks/{module}.{ext}", "test": "tests/{module}.test.{ext}" },
+  "exempt": ["hooks/register.tsx", "hooks/draw.tsx"]
+}

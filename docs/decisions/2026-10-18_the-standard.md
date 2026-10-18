@@ -1,0 +1,177 @@
+# 2026-10-18 — The standard: what good looks like (DRAFT v0.2)
+
+> Drafted by Claude from the 2026-10-18 conversation, for Andres to edit until it sounds like him.
+> Lines marked **[today]** describe what dope-tdd already does; **[proposed]** is not built yet;
+> **[decide]** is an open question for Andres. v0.2 folds in the industry review of the same day and
+> Andres's answers to the v0.1 questions.
+
+## Why this exists
+Code changes. A product owner changes their mind, a bug turns up at 3 a.m., a feature grows. What
+makes the next change cheap and safe is a set of tests you can trust. That is the whole point of TDD:
+it is a pain up front and it makes every later change easier.
+
+AI agents write code fast and claim "tests pass" for free. dope-tdd turns that claim into evidence.
+
+**The promise: every change is proven by a test that can fail before it is committed, and every
+exception is explained.**
+
+## Who it is for
+- **Engineers** who want their agents to work the way a disciplined engineer would.
+- **The agents and humans who come back later** to change the code. We write for them.
+
+Not, first, for people who want safety without caring how: they are welcome, but we do not bend the
+standard for them.
+
+## Our stance
+We are opinionated. We say what a good test and good code look like, and we hold the bar. People
+choose whether to adopt it; we do not offer a setting for every taste. Like a formatter, the value is
+in not having the argument.
+
+The standard has two layers, and both are ours:
+1. **Rules dope-tdd enforces.** Deterministic, cheap, checked on every change. If we cannot check it
+   mechanically, it is not a rule.
+2. **Principles dope-tdd teaches.** In the advice it gives, the skills and the docs. Judgement lives here.
+
+## Guardrails, not walls
+We cannot foresee every situation, and it is not intelligent to gate everything. So:
+- **Every guardrail can be passed.** By the agent or the engineer, always.
+- **Passing one takes a reason,** in one line, and a scope: this change, this module, or this session
+  ("spike, throwaway code", "hotfix for the outage", "mock until the API change lands").
+- **Every reason is recorded** and shows on the receipt. Nothing is silent.
+
+There is no quiet "off". There is an override with a reason, and there is uninstalling.
+
+## Answering upward
+Whoever ships a change answers for it: to their EM, a director, the CTO, the customer, customer
+support. When someone asks "why did this ship like this?", the answer must already be written down, by
+whoever made the call, when they made it. The receipt is that record: what changed, the test that
+proves it, what was overridden and why, and what is left unproven. It is written to be read by
+someone who was not there. **[proposed: reasons on every override; the receipt in the PR description]**
+
+## What the research says (2026-10-18)
+The industry review (sources in the research session's report) changes some of this draft:
+- **Process gates are contested; outcome gates are not.** The one controlled comparison of TDD and
+  non-TDD agent runs (Böckeler, Thoughtworks, on martinfowler.com) found no quality gain from
+  enforced red-green, at 3 to 8 times the tokens. Agents also faked the red step under TDD prompts.
+  It is one small study, judged by a model, on new code only, but it is the only one. Uncle Bob
+  reportedly gates on quality thresholds rather than on test-first (secondhand).
+- **Gaming is real and documented:** deleting or skipping tests, editing them to match, special-casing
+  outputs, faking red (Beck, EvilGenie, Böckeler). Cheap file-change checks catch the blatant cases.
+- **Over-mocking is measured:** 36% of agent commits add mocks against 26% of others (Hora and Robbes,
+  1.2M commits). This is the Node/TypeScript risk to target first.
+- **Guards get bypassed when they misfire.** tdd-guard's own README names refactors and multi-step
+  edits as its weak spots; a related tool ships its guard off by default.
+- **No evidence yet that test discipline improves delivery metrics with agents.** AI raises throughput
+  and instability (DORA 2025, Faros 2025, secondhand). Our delivery claims are a hypothesis to measure,
+  not a fact to sell.
+
+**Decided in v0.2 (Andres to confirm).** The outcome is what we hold the line on: proven before commit.
+Test-first stays the default and the taught way, guarded at the edit as today, but like every
+guardrail it can be passed with a recorded reason. We do not claim test-first is the only road to
+correct code; the evidence does not support that, and the catch check proves the outcome either way.
+
+## The loop
+1. **Red.** Write or change the test first, and see it fail for the right reason. **[today: enforced
+   at the edit; see the decision above]**
+2. **Green.** Make it pass with the simplest change. **[today]**
+3. **Proven.** dope-tdd undoes the change (or plants a small mutant in new code) and reruns the
+   test. It must fail. CAUGHT or PROVEN, never MISSED. **[today]**
+4. **Refactor.** With the tests proven, clean up: names, duplication, structure. This is the safe
+   moment, and the one most often skipped. **[proposed: a nudge after a proven green, a REFACTOR
+   state on the band until the next red or commit]**
+5. **Commit.** Only proven work is committed or put up for review. **[proposed]**
+   - **At a commit:** a warning to the agent naming what is red, MISSED or unproven. The agent fixes
+     it or overrides with a reason. Today nothing is said at a commit.
+   - **At a PR:** the receipt goes in the description, listing anything unproven or overridden, with
+     reasons. This is where humans step in.
+   - **Strict mode,** for teams that want a refusal at the commit: off by default.
+   - Agents can run this loop entirely on their own; humans read the receipt rather than watch.
+
+## A good test (the rules)
+A test that breaks any of these is not good, whatever the coverage report says.
+
+1. **It can fail.** Undoing the change makes it fail. **[today: the catch check]**
+2. **It asserts something real.** A test whose only checks are "is defined", "is truthy", "does not
+   throw" or `expect(true)` is an assertion-free test (the Liar). **[proposed]**
+3. **It does not mock the thing it tests.** That is gaming, and is flagged. **[proposed]**
+   Other mocks are a tool, used within reason: sometimes you must stub something until a change
+   elsewhere lands. A change's new mocks are counted on the receipt, and a temporary one carries a
+   reason. Agents add mocks far more than people do (see the research), so this is the first rule to
+   build. **[proposed]**
+4. **It is not skipped, focused or commented out.** **[today: recorded as a workaround]**
+5. **It was not bent to fit the code.** A test edited after a red, with the code untouched, is the
+   test agreeing with the bug. **[today: recorded]**
+6. **It is fast.** One unit test file runs in well under a second. **[proposed: measured and shown
+   first; a hard number once we have real data]**
+7. **It gives the same answer twice.** **[proposed: compare with the catch check's baseline run]**
+
+Gaming is not blocked, it is shown. Every workaround goes on the receipt, where the human sees it.
+Blocking teaches the agent to game more cleverly; showing makes it pointless.
+
+## A good test (the principles)
+- It tests behaviour through the public interface, not the internals.
+- Its name reads as a line of the spec.
+- It covers the edges that matter: empty, boundary, error.
+- Someone who has never seen the code can read it and know what the code does.
+- **[decide]** your view on mocks, fixtures, and how much is enough.
+
+## Good code (the principles)
+- **Easy to change** is the measure of good. Everything below serves it.
+- **Keep it simple.** The simplest thing that passes the test.
+- **Don't repeat yourself, by the rule of three.** Extract on the third repeat, not the second: with
+  agents writing similar code fast, the wrong abstraction is as costly as duplication.
+- **Modular, with a thin shell.** Decisions live in pure code that is quick to test; the code that
+  talks to the outside world stays too simple to need many tests (the Humble Object). Code that is
+  hard to test is telling you its design is wrong.
+- **No hard-coding** of what will change: paths, names, limits.
+- **Shared code becomes a library** when two places need it, not before.
+- **[decide]** naming, function size, comments.
+
+dope-tdd does not lint style. It makes refactoring safe, nudges at the right moment, and leaves taste
+to people and their linters. **[proposed: report hard numbers on a change, such as size growth or
+code duplicated by it, as facts rather than refusals]**
+
+## Speed is part of good
+A slow suite is a reliability problem: if a fix takes 20 minutes of tests to ship, recovery takes at
+least 20 minutes. dope-tdd tracks and shows, on the receipt: time per test file, time per suite, and
+its own overhead (milliseconds per tool call, seconds per catch check, tokens it adds per turn).
+**[proposed]** Budgets come later, from real numbers rather than guesses.
+
+## Hotfixes
+How a company declares a hotfix is its own business; we do not model it. A hotfix is an override
+whose reason says so. It goes through, and the receipt shows the missing test as debt until one is
+written. Strict by default, never in the way of recovery.
+
+## What dope-tdd proves, and what it does not
+- **Proves:** each change is caught by a test that can fail; no gaming went unseen.
+- **Does not prove:** that the tests are the right ones, that every edge case is covered, or anything
+  only integration, end-to-end, smoke or contract suites can show. dope-tdd is the inner loop; it sits
+  beside those suites, never instead of them.
+- **Never lies.** No false green, no reassuring zeros. "Not watching" must look different from "all
+  good". **[proposed: today the band shows zeros when it cannot see the code or read the runner]**
+
+## Measuring it
+Only what dope-tdd can see, on the engineer's machine:
+- **Inner-loop cycle time:** first test touched, red, proven green, commit.
+- **Its own cost:** seconds and tokens per session.
+- **Lead time to merge:** from git and the PR, where available.
+- **What it caught:** MISSED tests strengthened, untested edits refused, workarounds shown.
+
+These are our slice of the team's delivery measures (change failure rate, time to restore, lead time
+for changes). Deploys and incidents belong to the team's own tools; we say so rather than guess. That
+dope-tdd lowers change failure rate or review time is a hypothesis: no study shows it yet, so we
+measure it before we claim it.
+
+## Scope
+- **Supported:** Node and TypeScript (Vitest, Jest, `node --test`). The catch check runs in a
+  throwaway worktree and never touches the engineer's files.
+- **Experimental:** everything else, until the core is clearly winning. No new languages before then.
+- **One plugin, many stacks:** the core is language-neutral; each stack is an adapter (how to run one
+  test file, how to read its result, where tests live).
+
+## Open questions for Andres
+1. Confirm the v0.2 decision: outcome enforced, test-first the default guardrail.
+2. Override scopes: are change, module and session the right three?
+3. What makes a reason good enough? Free text, or a short list of kinds (spike, hotfix, generated,
+   temporary mock, other)?
+4. The standard's name, and whether it is published on its own, apart from the plugin.

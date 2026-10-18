@@ -130,7 +130,7 @@ export function formatGlossary(): string {
     '  BLOCKED        an edit was refused until the test is written',
     '  PAUSED         /tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or /tdd resume; they stay debt',
     '  OVERRIDE REQUESTED the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>',
-    '  OVERRIDDEN     a person let this module\'s edits through until what "until" names; /tdd override end <module>',
+    '  OVERRIDE OPEN  an approved override that still lets edits through: what is left and who approved it; END closes it',
     '  OVERRIDES OPEN overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt',
     '  GIT REBASE     a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard stands down until it ends',
     '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',

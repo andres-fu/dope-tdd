@@ -4,7 +4,7 @@
 import type { Override, TddStats } from '../types'
 import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
-import { openDebt } from './overrides.ts'
+import { deciderLabel, openDebt, overrideLeft } from './overrides.ts'
 import { isCodeFile } from './setup.ts'
 import { stackOf } from './stacks.ts'
 
@@ -41,6 +41,8 @@ export type BandView = {
   problems: Problem[]
   pending: Override | null
   overridden: Override | null
+  /** Every override that still lets something through, whichever module is current: an open door has a sign on it. */
+  open: { target: string; text: string }[]
 }
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
@@ -92,7 +94,7 @@ function chainOf(s: TddStats): Step[] | null {
   return [{ name: 'test', state: 'done' }, red, { name: 'green', state: green ? 'done' : 'open' }, proven]
 }
 
-function nextOf(s: TddStats, watch: Watch, pending: Override | null): string {
+function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: readonly { target: string }[]): string {
   if (watch.kind === 'not-watching') {
     return 'run /tdd setup, or add a layout to dope-tdd.json'
   }
@@ -107,6 +109,10 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null): string {
     return 'resume the guard when you are done'
   }
   const current = s.current
+  const door = open[0]
+  if (current === null && door !== undefined) {
+    return `use it or end it: /tdd override end ${door.target}`
+  }
   if (current === null) {
     return 'write a failing test first'
   }
@@ -183,11 +189,15 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
     : problems
 }
 
-export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = []): BandView {
+export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = [], nowMs = 0): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
   const pending = record.find(o => o.status === 'pending') ?? null
   const module = s.current?.module
   const overridden = record.find(o => o.status === 'approved' && o.endedAtMs === null && o.scope === 'module' && o.module === module) ?? null
-  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch, pending), problems: problemsOf(s, config, watch, record), pending, overridden }
+  const open = record.flatMap(o => {
+    const left = overrideLeft(o, nowMs)
+    return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}` }]
+  })
+  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch, pending, open), problems: problemsOf(s, config, watch, record), pending, overridden, open }
 }

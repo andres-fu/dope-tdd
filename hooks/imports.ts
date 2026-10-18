@@ -86,6 +86,7 @@ export function importCandidates(testPath: string, text: string, stack: StackNam
  * is usually a new module written test-first, and it imports that module; one that imports only other modules (a test
  * of the drawing, say, named after no module) is a test of those, and must not put a module with no code on the band.
  */
-export function testsItsOwnModule(module: string, importedSources: readonly string[], ownSourceExists: boolean): boolean {
-  return ownSourceExists || importedSources.length === 0 || importedSources.includes(module)
+export function testsItsOwnModule(module: string, importedSources: readonly string[], ownSourceExists: boolean, importsTestHelpers = false): boolean {
+  // A test that imports only test helpers (tests/engine.tsx) is a test of other code through them (live trial, 2026-10-18).
+  return ownSourceExists || importedSources.includes(module) || (importedSources.length === 0 && !importsTestHelpers)
 }

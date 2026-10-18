@@ -97,6 +97,8 @@ export type FakeWorld = {
   modelCalls: { model: string; effort?: string; system?: string; prompt: string }[]
   /** The session's own model, as $.session.model() says. */
   sessionModel: string
+  /** The surfaces drawing the session, as $.session.surfaces() says: the desktop app is one. */
+  surfaces: string[]
   /** What `git diff --no-ext-diff -- <paths>` prints: the module's hunks for the reviewer. */
   diffText: string
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
@@ -155,6 +157,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     modelReply: { isAnswered: true, text: 'DENY\nwrite the test first', usage: { input_tokens: 1, output_tokens: 1 } },
     modelCalls: [],
     sessionModel: 'claude-opus-5-5',
+    surfaces: [],
     diffText: '',
     readOnly: false,
     onCatchRun: () => {},
@@ -179,6 +182,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
   on('session.start', () => ({ cwd: ROOT }))
   on('session.model', () => ({ value: world.sessionModel }) as never)
+  on('session.surfaces', () => ({ value: world.surfaces }) as never)
   on('model.complete', (_$, e) => {
     world.modelCalls.push(e as never)
     return { value: world.modelReply } as never

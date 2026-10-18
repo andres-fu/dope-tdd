@@ -87,7 +87,7 @@ import { formatGlossary, formatStatus } from './summary.ts'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
-import { OVERRIDES_FILE, checkRequest, closePauses, coveringOverride, decideAtRequest, endOverride, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, refuseByBar, requestNotes, serializeRecord } from './overrides.ts'
+import { OVERRIDES_FILE, checkRequest, closePauses, coveringOverride, decideAtRequest, endHint, endOverride, isAttended, expiredPauses, formatOverrides, parseRecord, pauseSummary, recordEdit, refuseByBar, requestNotes, serializeRecord } from './overrides.ts'
 import type { Override, OverrideKind, OverrideRequest, OverrideScope, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
@@ -241,6 +241,14 @@ async function endExpiredPauses($: EngineInterface, root: string, nowMs: number)
   }
 }
 
+async function surfacesNow($: EngineInterface): Promise<readonly string[]> {
+  try {
+    return await $.session.surfaces()
+  } catch {
+    return []
+  }
+}
+
 function inputText(input: Record<string, unknown>, key: string): string | null {
   const value = input[key]
   return typeof value === 'string' ? value : null
@@ -278,13 +286,13 @@ async function requestOverride($: EngineInterface, input: Record<string, unknown
   if (barred !== null) {
     return `dope-tdd: override refused: ${barred}.`
   }
-  const isAttended = await read($, attended)
+  const present = isAttended(await read($, attended), await surfacesNow($))
   const approver = approverOf(config)
   const notes = requestNotes(record, request, nowMs)
   // A hotfix and a person's own request never go to the model: the first is recovery, the second is the approver.
   const review =
     approver.approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix' ? await reviewRequest($, root, request, notes, approver) : undefined
-  const decision = review === undefined ? decideAtRequest(request, isAttended) : decideAfterReview(review.verdict, isAttended)
+  const decision = review === undefined ? decideAtRequest(request, present) : decideAfterReview(review.verdict, present)
   const entry: Override = {
     ...request,
     id: `o${nowMs.toString(36)}-${record.length + 1}`,
@@ -416,7 +424,7 @@ async function endNamed($: EngineInterface, target: string | undefined): Promise
   const record = await readOverrides($, root)
   const ended = endOverride(record, target, nowMs)
   if (JSON.stringify(ended) === JSON.stringify(record)) {
-    return `dope-tdd: no open override on ${target}.`
+    return `No open override on ${target}. ${endHint(record, nowMs)}`
   }
   await writeOverrides($, root, ended)
   if (target === 'pause') {
@@ -1530,7 +1538,12 @@ async function checkFileWrite(
   if (target.kind === 'test') {
     const source = await readWhole($, filePath)
     // A test named after no module (tests/band.test.tsx tests the drawing) unlocks, but does not take over the band.
-    const makeCurrent = testsItsOwnModule(target.module, importTargets(root, config, filePath, source), await hasOwnSource($, root, config, target.module))
+    const makeCurrent = testsItsOwnModule(
+      target.module,
+      importTargets(root, config, filePath, source),
+      await hasOwnSource($, root, config, target.module),
+      await importsTestHelpers($, root, config, filePath, source),
+    )
     const touched = await change($, s => recordTestTouch(s, { module: target.module, testPath: filePath }, nowMs, makeCurrent))
     await rememberUnlock($, root, target.module, filePath, nowMs)
     const hollow = source !== null && !hasAssertion(source) ? [hollowAdvice(relativePath(root, filePath))] : []
@@ -1721,7 +1734,12 @@ async function checkShell(
   )
   const leading = await Promise.all(
     touchedTests.map(async ({ path, module }) =>
-      testsItsOwnModule(module, importTargets(root, config, `${root}/${path}`, await readWhole($, `${root}/${path}`)), await hasOwnSource($, root, config, module)),
+      testsItsOwnModule(
+        module,
+        importTargets(root, config, `${root}/${path}`, await readWhole($, `${root}/${path}`)),
+        await hasOwnSource($, root, config, module),
+        await importsTestHelpers($, root, config, `${root}/${path}`, await readWhole($, `${root}/${path}`)),
+      ),
     ),
   )
   const updated = await change($, s => {
@@ -2021,7 +2039,14 @@ async function releaseStaleCurrent($: EngineInterface, root: string, config: Gua
     return
   }
   const text = await readWhole($, current.testPath)
-  if (!testsItsOwnModule(current.module, importTargets(root, config, current.testPath, text), await hasOwnSource($, root, config, current.module))) {
+  if (
+    !testsItsOwnModule(
+      current.module,
+      importTargets(root, config, current.testPath, text),
+      await hasOwnSource($, root, config, current.module),
+      await importsTestHelpers($, root, config, current.testPath, text),
+    )
+  ) {
     await change($, releaseCurrent)
   }
 }
@@ -2054,6 +2079,19 @@ function importTargets(root: string, config: GuardConfig, testPath: string, text
     .map(candidate => classifyPath(root, `${root}/${candidate}`, config))
     .flatMap(target => (target.kind === 'source' ? [target.module] : []))
   return [...new Set(found)]
+}
+
+/** The test imports a project file that is not source, such as a test helper (tests/engine.tsx). */
+async function importsTestHelpers($: EngineInterface, root: string, config: GuardConfig, testPath: string, text: string | null): Promise<boolean> {
+  if (text === null) {
+    return false
+  }
+  for (const candidate of importCandidates(relativePath(root, testPath), text, config.stack).slice(0, 80)) {
+    if (classifyPath(root, `${root}/${candidate}`, config).kind !== 'source' && (await $.fs.exists(`${root}/${candidate}`))) {
+      return true
+    }
+  }
+  return false
 }
 
 /** The module's own source file exists, in any of the stack's extensions. */
@@ -2261,6 +2299,42 @@ async function currentStatus($: EngineInterface): Promise<string> {
   return [...notes, status, ...overrides].join('\n')
 }
 
+/** /tdd and its subcommands; the hook drops the plugin prefix the app adds itself. */
+async function tddCommand($: EngineInterface, args: string): Promise<string> {
+  const raw = args.trim().split(/\s+/).filter(word => word !== '')
+  const words = raw.map(word => word.toLowerCase())
+  if (words[0] === 'why') {
+    return formatGlossary()
+  }
+  if (words[0] === 'setup') {
+    return await setupText($, await $.session.root(), words[1] === 'write', await $.clock.now())
+  }
+  // No off switch (the standard, "Guardrails, not walls"): a pause takes a time and a reason, and ends by itself.
+  if (words[0] === 'off') {
+    return 'dope-tdd has no off switch: a pause takes a time and a reason, and comes back on by itself. /tdd pause <minutes> <reason>, for example: /tdd pause 30 pairing on the prod incident in #301'
+  }
+  if (words[0] === 'on' || words[0] === 'resume') {
+    return await resumeNow($)
+  }
+  if (words[0] === 'pause') {
+    return await requestOverride($, { scope: 'pause', kind: 'other', minutes: Number(words[1]), reason: raw.slice(2).join(' ') }, 'human')
+  }
+  if (words[0] === 'approve' || words[0] === 'deny') {
+    const why = raw.slice(1).join(' ')
+    return await decidePending($, words[0] === 'approve', why === '' ? null : why)
+  }
+  if (words[0] === 'override' && words[1] === 'end') {
+    // The module id keeps its case, as for the receipt.
+    return await endNamed($, raw[2])
+  }
+  if (words[0] === 'receipt') {
+    const root = await $.session.root()
+    // The module id keeps its case: server/managers/RoomManager is not server/managers/roommanager.
+    return await receiptText($, root, await loadConfig($, root), raw[1], await $.clock.now())
+  }
+  return await currentStatus($)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     $.clock.every(MINUTE, () => {
@@ -2281,7 +2355,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'override_request',
       description:
-        'Ask to pass the TDD guard, with a reason. Use it only when writing or pinning a test first does not fit. A person decides; the request and the decision are recorded in dope-tdd.overrides.json and shown on the receipt. After asking, stop and wait for the person. scope: change (one edit), module (every edit to the module, until what "until" names), pause (every module, for "minutes").',
+        'Ask to pass the TDD guard, with a reason. Use it only when writing or pinning a test first does not fit. The approver this repo set decides: the person, or a reviewer model the repo opted into. The request and the decision are recorded in dope-tdd.overrides.json and shown on the receipt. If it waits for the person, stop and wait. scope: change (one edit), module (every edit to the module, until what "until" names), pause (every module, for "minutes").',
       inputSchema: {
         type: 'object',
         properties: {
@@ -2332,40 +2406,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'tdd' }, async ($, e) => {
-    const raw = e.args.trim().split(/\s+/).filter(word => word !== '')
-    const words = raw.map(word => word.toLowerCase())
-    if (words[0] === 'why') {
-      return { text: formatGlossary() }
-    }
-    if (words[0] === 'setup') {
-      return { text: await setupText($, await $.session.root(), words[1] === 'write', await $.clock.now()) }
-    }
-    // No off switch (the standard, "Guardrails, not walls"): a pause takes a time and a reason, and ends by itself.
-    if (words[0] === 'off') {
-      return { text: 'dope-tdd has no off switch: a pause takes a time and a reason, and comes back on by itself. /tdd pause <minutes> <reason>, for example: /tdd pause 30 pairing on the prod incident in #301' }
-    }
-    if (words[0] === 'on' || words[0] === 'resume') {
-      return { text: await resumeNow($) }
-    }
-    if (words[0] === 'pause') {
-      return { text: await requestOverride($, { scope: 'pause', kind: 'other', minutes: Number(words[1]), reason: raw.slice(2).join(' ') }, 'human') }
-    }
-    if (words[0] === 'approve' || words[0] === 'deny') {
-      const why = raw.slice(1).join(' ')
-      return { text: await decidePending($, words[0] === 'approve', why === '' ? null : why) }
-    }
-    if (words[0] === 'override' && words[1] === 'end') {
-      // The module id keeps its case, as for the receipt.
-      return { text: await endNamed($, raw[2]) }
-    }
-    if (words[0] === 'receipt') {
-      const root = await $.session.root()
-      // The module id keeps its case: server/managers/RoomManager is not server/managers/roommanager.
-      return { text: await receiptText($, root, await loadConfig($, root), raw[1], await $.clock.now()) }
-    }
-    return { text: await currentStatus($) }
-  })
+  // The app already names the plugin on a command's output (live trial: "dope-tdd: dope-tdd: ..."), so the text drops it.
+  on('command.run', { command: 'tdd' }, async ($, e) => ({ text: (await tddCommand($, e.args)).replace(/^dope-tdd: /, '') }))
 
   // The briefing: the rules in Claude's system prompt, so the first refusal is an expected step, not a surprise.
   on('prompt.compose', async ($, e, next) => {
@@ -2444,6 +2486,7 @@ export const register: Register = on => {
       onResume: async () => {
         await resumeNow($)
       },
+      onEnd: async (target: string) => $.ui.toast(await endNamed($, target)),
       onReset: async () => {
         await change($, resetStats)
         $.ui.toast('TDD stats reset')

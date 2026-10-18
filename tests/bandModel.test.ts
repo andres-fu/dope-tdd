@@ -121,18 +121,48 @@ describe('one next step, always', () => {
   })
 })
 
-describe('problems: only what is above zero', () => {
+describe('progress shows only with a module to show it for', () => {
+  test('no current module: no phase or trail, whatever the last phase was', () => {
+    expect(bandView({ ...INITIAL_STATS, phase: 'green', history: ['pass'] }, CONFIG).showProgress).toBe(false)
+  })
+
+  test('a current module, watched: phase and trail show', () => {
+    expect(bandView(on({ phase: 'green' }), CONFIG).showProgress).toBe(true)
+  })
+
+  test('not watching: no phase or trail, even with a module', () => {
+    expect(bandView(on({ unreadRuns: 2 }), CONFIG).showProgress).toBe(false)
+  })
+})
+
+describe("problems: the current cycle's, above zero; session totals stay in /tdd", () => {
+  const event = (kind: TddStats['events'][number]['kind'], module = 'runPlan') => ({ atMs: 0, kind, module })
+
   test('a clean session has none, so there are no calm zeros', () => {
     expect(bandView(on({}), CONFIG).problems).toEqual([])
   })
 
-  test('each problem with its count, missed as an alarm', () => {
-    const view = bandView(on({ missed: 1, workarounds: 2, blocked: 1 }), CONFIG)
-    expect(view.problems).toEqual([
-      { label: '1 MISSED', tone: 'alarm' },
-      { label: '2 WORKAROUNDS', tone: 'warn' },
+  test('session totals alone are not shown: they belong to /tdd', () => {
+    expect(bandView(on({ missed: 1, workarounds: 2, blocked: 3 }), CONFIG).problems).toEqual([])
+  })
+
+  test("an open cycle counts its own problems since the module's last pass", () => {
+    const events = [event('blocked'), event('fail'), event('pass'), event('touched'), event('blocked'), event('unguarded'), event('test-changed'), event('fail')]
+    expect(bandView(on({ phase: 'red', events }), CONFIG).problems).toEqual([
+      { label: '1 TEST CHANGED', tone: 'warn' },
+      { label: '1 UNGUARDED', tone: 'warn' },
       { label: '1 BLOCKED', tone: 'warn' },
     ])
+  })
+
+  test('a cycle that just closed keeps its problems until the next one opens', () => {
+    const events = [event('blocked'), event('pass'), event('touched'), event('skipped'), event('assertion-removed'), event('fail'), event('pass'), event('caught')]
+    expect(bandView(on({ phase: 'green', events }), CONFIG).problems).toEqual([{ label: '2 WORKAROUNDS', tone: 'warn' }])
+  })
+
+  test("another module's problems count when they happen during this cycle, and not before it", () => {
+    const events = [event('blocked', 'stats'), event('pass'), event('touched'), event('unguarded', 'stats'), event('fail')]
+    expect(bandView(on({ phase: 'red', events }), CONFIG).problems).toEqual([{ label: '1 UNGUARDED', tone: 'warn' }])
   })
 
   test('a mode other than enforce is shown', () => {

@@ -30,7 +30,8 @@ export type Watch = { kind: 'watching'; where: string } | { kind: 'not-watching'
 export type StepName = 'test' | 'red' | 'green' | 'proven'
 export type Step = { name: StepName; state: 'done' | 'open' | 'failed'; word?: string }
 export type Problem = { label: string; tone: 'alarm' | 'warn' }
-export type BandView = { watch: Watch; chain: Step[] | null; next: string; problems: Problem[] }
+/** `showProgress`: the phase and the run trail belong to a module; with none current, or nothing watched, they mislead. */
+export type BandView = { watch: Watch; showProgress: boolean; chain: Step[] | null; next: string; problems: Problem[] }
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
 function watchedPlace(config: Pick<GuardConfig, 'layout' | 'stack'>): string {
@@ -106,14 +107,43 @@ function nextOf(s: TddStats, watch: Watch): string {
   return 'refactor while the test guards it, then commit'
 }
 
+// Events that close a cycle rather than belong to the next one: a pass and the verdicts that follow it.
+const CLOSING: ReadonlySet<string> = new Set(['pass', 'caught', 'proven', 'missed', 'unverified', 'refactor', 'carried-on'])
+const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch'])
+
+/**
+ * Every event during the current module's current cycle, whichever module it touched: from the module's previous pass
+ * on, including the events that closed the cycle when it has just closed. An unguarded edit made now shows now, and a
+ * cycle's problems stay on the band until the next cycle opens, and no longer.
+ */
+function cycleEvents(s: TddStats): TddStats['events'] {
+  const module = s.current?.module
+  if (module === undefined) {
+    return []
+  }
+  const own = s.events.flatMap((event, index) => (event.module === module ? [{ event, index }] : []))
+  let end = own.length
+  while (end > 0 && CLOSING.has(own[end - 1]?.event.kind ?? '')) {
+    end -= 1
+  }
+  let start = end
+  while (start > 0 && own[start - 1]?.event.kind !== 'pass') {
+    start -= 1
+  }
+  const from = start === 0 ? 0 : (own[start - 1]?.index ?? -1) + 1
+  return s.events.slice(from)
+}
+
 function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, watch: Watch): Problem[] {
+  // The current cycle's problems only: session totals never clear, and a warning that never clears stops being read.
+  // MISSED and NEVER SAW RED are already in the chain; the session's totals are in /tdd and on the receipt.
+  const events = cycleEvents(s)
+  const count = (kinds: ReadonlySet<string>) => events.filter(event => kinds.has(event.kind)).length
   const counted: [number, string, Problem['tone']][] = [
-    [s.missed, 'MISSED', 'alarm'],
-    [s.neverSawRed, 'NEVER SAW RED', 'warn'],
-    [s.testChanged, 'TEST CHANGED', 'warn'],
-    [s.workarounds, 'WORKAROUNDS', 'warn'],
-    [s.unguarded, 'UNGUARDED', 'warn'],
-    [s.blocked, 'BLOCKED', 'warn'],
+    [count(new Set(['test-changed'])), 'TEST CHANGED', 'warn'],
+    [count(WORKAROUND_KINDS), 'WORKAROUNDS', 'warn'],
+    [count(new Set(['unguarded'])), 'UNGUARDED', 'warn'],
+    [count(new Set(['blocked'])), 'BLOCKED', 'warn'],
     // Unwatched edits are the alarm itself when nothing else is watched; beside watched work they are one count.
     [watch.kind === 'not-watching' ? 0 : s.unwatched.length, 'UNWATCHED', 'warn'],
   ]
@@ -126,5 +156,6 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
 
 export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>): BandView {
   const watch = watchOf(s, config)
-  return { watch, chain: chainOf(s), next: nextOf(s, watch), problems: problemsOf(s, config, watch) }
+  const showProgress = watch.kind === 'watching' && s.current !== null
+  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch), problems: problemsOf(s, config, watch) }
 }

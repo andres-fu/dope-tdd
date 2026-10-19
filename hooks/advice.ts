@@ -15,6 +15,8 @@ export type RunContext = {
   label?: string
   /** This run closed the current module's own cycle; cycles it closed for other modules do not count (#41). */
   cycleCompleted?: boolean
+  /** The open module whose own test this run was, when the band stayed on the current one (runPlan.ts, ownTestOf). */
+  ownTestOf?: string
 }
 
 function defaultSource(module: string): string {
@@ -155,10 +157,12 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
     return say('red.elsewhere', { module, sourcePath, files: context.elsewhere, sawRed: before.sawRed })
   }
-  if (after.phase === 'red') {
-    // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
-    // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
-    return say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
-  }
-  return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning)
+  const red = after.phase === 'red'
+  // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
+  // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
+  const line = red
+    ? say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
+    : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning)
+  const other = context.ownTestOf
+  return line === null || other === undefined ? line : line + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
 }

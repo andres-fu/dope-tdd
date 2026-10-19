@@ -1826,6 +1826,7 @@ async function checkShell(
   let ownCycleClosed = false
   // A green of another module's test is not this module's run: it neither closes its cycle nor starts its check.
   let countsForCurrent = true
+  let ownTestOf: string | null = null
   let elsewhere: string[] = []
   let redUnlocked: string[] = []
   let carriedOn: string[] = []
@@ -1862,7 +1863,7 @@ async function checkShell(
       for (const { module, testPath } of plan.remember) {
         await rememberUnlock($, root, module, testPath, nowMs)
       }
-      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent } = plan)
+      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent, ownTestOf } = plan)
     }
   }
   const passedModule = outcome === 'pass' && countsForCurrent && !afterRun.paused ? afterRun.current?.module : undefined
@@ -1891,7 +1892,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
 
   const reminders = shellReminders(
     {

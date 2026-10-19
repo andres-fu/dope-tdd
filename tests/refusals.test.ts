@@ -52,3 +52,22 @@ describe('the refusal ends with the last run, in the band\'s own words', () => {
     expect(lockedMessage(CONFIG, 'runPlan', undefined, 'ts')).not.toMatch(/last run/)
   })
 })
+
+// Option A from the docs review (2026-10-18): refactoring code whose test already passes had no option that fit.
+// "(1) make it fail" read as breaking a good test, and "(2) no test for this code yet" was false. When the test
+// exists, the menu says the honest path: one assertion for what is about to change, seen failing; or pin and refactor.
+describe('when the module already has a test, the menu fits a refactor', () => {
+  test('the first way is one new or tighter assertion, seen failing; the second is to pin and refactor under the pins', () => {
+    const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts', { command: COMMAND, testExists: true })
+    const lines = message.split('\n')
+    expect(lines).toContain(`(1) tests/runPlan.test.ts exists: add or tighten one assertion for what you are about to change, and see it fail: ${COMMAND}`)
+    expect(lines).toContain('(2) a refactor that should change nothing: /dope-tdd:pin pins what the code does now in that test and proves the pins; then refactor under them')
+    expect(message).not.toMatch(/no test for this code yet/)
+  })
+
+  test('with no test yet, the menu is as before', () => {
+    const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts', { command: COMMAND, testExists: false })
+    expect(message).toMatch(/^\(1\) write or edit tests\/runPlan\.test\.ts so it fails, then run it: /m)
+    expect(message).toMatch(/^\(2\) no test for this code yet: \/dope-tdd:pin pins what it does now$/m)
+  })
+})

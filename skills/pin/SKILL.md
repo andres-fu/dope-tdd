@@ -1,5 +1,5 @@
 ---
-description: Pin the current behaviour of untested code with tests, prove the tests can fail, then change or refactor the code safely under Dope TDD. Use when asked to refactor, clean up, or change code that has no tests, or when a test went green without ever failing.
+description: Pin the current behaviour of code with tests, prove the tests can fail, then change or refactor the code safely under Dope TDD. Use when asked to refactor, clean up, or change code that has no tests, when refactoring code whose existing test passes (pin what it does now in that test), or when a test went green without ever failing.
 argument-hint: "[source file]"
 ---
 
@@ -19,7 +19,7 @@ Use this when the code you are about to change has no test that guards it. The g
 
 Run only that test file, with the command the briefing gives. It should pass. Dope TDD will say **UNPROVEN · never failed**: correct, because a test that has never failed has proven nothing yet.
 
-If a pin is red on its first run, the source has not changed, so the pin guessed today's behaviour wrongly. Fix the assertion to what the code does, and say in your reply which pin was wrong and why. Dope TDD records it as **test changed** after red: that is expected here, and it stays on the record because the same steps would also hide a test rewritten to match a bug. Then prove the corrected pin in step 3 as usual.
+If a pin is red on its first run, the source has not changed, so the pin guessed today's behaviour wrongly. Fix the assertion to what the code does, and say in your reply which pin was wrong and why. Dope TDD records it as **UNPROVEN · the test changed** after red: that is expected here, and it stays on the record because the same steps would also hide a test rewritten to match a bug. Then prove the corrected pin in step 3 as usual.
 
 ## 3. Prove the pins can fail
 
@@ -30,7 +30,7 @@ If a pin is red on its first run, the source has not changed, so the pin guessed
 
 ## 4. Now change the code
 
-- With the pins proven, refactor or change the code. Do not edit the test file during a refactor. If the change is a refactor, the pins stay green and Dope TDD names it **REFACTOR**.
+- With the pins proven, refactor or change the code. Do not edit the test file during a refactor. If the change is a refactor, the pins stay green and Dope TDD names it **refactor · not re-checked**.
 - If you are changing behaviour on purpose, change the test first to the new expectation, see it fail, then change the code: that is an ordinary red, green cycle, and the catch check will verify it (**PROVEN** or **MISSED**).
 
 ## What not to do

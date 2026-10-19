@@ -124,8 +124,8 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
 
 /** One glossary row: the word, then what it means, in two columns. */
 function word(name: string, meaning: string): string {
-  // 15 wide: the longest word, CAN'T READ RUNS, still leaves a space before its meaning.
-  return `  ${name.padEnd(15)} ${meaning}`
+  // 16 wide: the longest word, "unlocked earlier" (a row /tdd prints), still leaves a space before its meaning.
+  return `  ${name.padEnd(16)} ${meaning}`
 }
 
 // One verdict vocabulary (2026-10-18): the words the band and /tdd show now, and only those. CAUGHT, UNVERIFIED,
@@ -153,6 +153,13 @@ export function formatGlossary(): string {
     word('OVERRIDE ASKED', 'the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>'),
     word('OVERRIDE OPEN', 'an approved override that still lets edits through: what is left and who approved it; END closes it'),
     '/tdd',
+    // The docs review (2026-10-18): every row /tdd prints, and the two words the rest leans on.
+    word('touch', "creating or editing a test file: it unlocks that test's module for this session, as a run that fails does"),
+    word('catch check', 'after a green, dope-tdd undoes your change, runs the test again, and puts the change back: PROVEN if the test then fails, MISSED if it still passes'),
+    word('phase', 'where the current module is: IDLE, WRITING (a test touched, not run yet), RED or GREEN'),
+    word('also open', 'other modules with a cycle still open, and where each stands'),
+    word('test-first', 'source edits made after their test was touched or seen failing, out of all source edits and refusals'),
+    word('unlocked earlier', 'modules whose test was touched in an earlier session (up to 7 days); each needs one run of its test before its first edit'),
     word('unguarded', 'a source file changed with no test touched first'),
     word('blocked', 'an edit was refused until the test is written'),
     word('never failed', 'cycles that went green without the test ever failing'),

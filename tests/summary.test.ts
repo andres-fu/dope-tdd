@@ -75,16 +75,16 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     expect(text).toMatch(/^ {2}red ✓ green ✓ +the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first/m)
     expect(text).toMatch(/^ {2}RED 4M +the test fails now, and how long since the cycle opened/m)
     expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when;/m)
-    for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'WRITING', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
+    for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
       expect(text).not.toContain(retired)
     }
   })
 
   test('watching, not watching, runs it cannot read, and the next step', () => {
     const text = formatGlossary()
-    expect(text).toMatch(/^ {2}NOT WATCHING {4}code was edited that no test layout pairs/m)
-    expect(text).toMatch(/^ {2}CAN'T READ RUNS test runs happened and none could be read/m)
-    expect(text).toMatch(/^ {2}next {12}the one step to take now/m)
+    expect(text).toMatch(/^ {2}NOT WATCHING {5}code was edited that no test layout pairs/m)
+    expect(text).toMatch(/^ {2}CAN'T READ RUNS {2}test runs happened and none could be read/m)
+    expect(text).toMatch(/^ {2}next {13}the one step to take now/m)
     // Override with a reason, v1 (2026-10-18): no off switch, so PAUSED points at a time and a reason.
     expect(text).toMatch(/^ {2}OVERRIDE ASKED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
     // Band v3 (2026-10-18): the verdict and guard words the band now uses.
@@ -144,13 +144,26 @@ describe('/tdd why is one even column, and explains what /tdd prints', () => {
   test('every meaning starts in the same column, the longest word included', () => {
     const rows = formatGlossary().split('\n').filter(line => line.startsWith('  '))
     for (const row of rows) {
-      expect(row.slice(17, 19)).toMatch(/^ \S$/)
+      expect(row.slice(18, 20)).toMatch(/^ \S$/)
     }
   })
 
   test('the overrides line is explained, and the last run says when it was not this module', () => {
     const text = formatGlossary()
-    expect(text).toMatch(/^ {2}overrides {7}this session's overrides: how many were approved and denied, and who decided each; one not yet ended, and edits made under it or a pause with no test yet, are debt on the receipt/m)
+    expect(text).toMatch(/^ {2}overrides {8}this session's overrides: how many were approved and denied, and who decided each; one not yet ended, and edits made under it or a pause with no test yet, are debt on the receipt/m)
     expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when; "not this module" when it failed in other test files; click it to open that test/m)
+  })
+})
+
+// The docs review (2026-10-18): /tdd printed rows /tdd why never explained, and "touch" and "catch check" were
+// used everywhere without a definition.
+describe('/tdd why explains every row /tdd prints, and the two words everything else leans on', () => {
+  test('phase, module, also open, runs, cycles, test-first, catch check, unlocked earlier, and touch', () => {
+    const text = formatGlossary()
+    for (const row of ['phase', 'also open', 'test-first', 'catch check', 'unlocked earlier', 'touch']) {
+      expect(text).toMatch(new RegExp('^ {2}' + row + ' +\\S', 'm'))
+    }
+    expect(text).toMatch(/^ {2}catch check +after a green, dope-tdd undoes your change, runs the test again, and puts the change back: PROVEN if the test then fails/m)
+    expect(text).toMatch(/^ {2}touch +creating or editing a test file: it unlocks that test's module for this session/m)
   })
 })

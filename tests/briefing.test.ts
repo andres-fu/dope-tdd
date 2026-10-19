@@ -23,6 +23,14 @@ describe('briefingText', () => {
     expect(briefingText({ ...DEFAULT_CONFIG, mode: 'warn' }, null)).not.toMatch(/earlier session/)
   })
 
+  // Option A (docs review, 2026-10-18): refactoring tested code, and the override, said before the first refusal.
+  test('in enforce mode says how to refactor tested code, and that an override request means stop and wait', () => {
+    const text = briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>')
+    expect(text).toMatch(/To refactor code whose test already passes, add or tighten one assertion for what you will change and see it fail, or pin it first\./)
+    expect(text).toMatch(/If nothing fits, ask with mcp__dope-tdd__override_request, then stop and wait: a person decides\./)
+    expect(briefingText({ ...DEFAULT_CONFIG, mode: 'observe' }, null)).not.toMatch(/override_request/)
+  })
+
   test('in observe mode says nothing is refused, and without a runner gives no command', () => {
     const text = briefingText({ ...DEFAULT_CONFIG, mode: 'observe' }, null)
     expect(text).toMatch(/watches and records only; nothing is refused/)

@@ -2105,7 +2105,7 @@ async function runCommandFor($: EngineInterface, root: string, config: GuardConf
 async function lockedFacts($: EngineInterface, root: string, config: GuardConfig, s: TddStats, module: string, writtenPath: string | undefined, nowMs: number): Promise<LockedFacts> {
   const testPath = `${root}/${testPathFor(config, module, writtenPath === undefined ? undefined : extOf(writtenPath))}`
   const command = await runCommandFor($, root, config, testPath)
-  return { ...(command === null ? {} : { command }), lastRun: lastRunLine(s, nowMs) }
+  return { ...(command === null ? {} : { command }), testExists: await $.fs.exists(testPath), lastRun: lastRunLine(s, nowMs) }
 }
 
 /** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */

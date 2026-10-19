@@ -125,9 +125,10 @@ itself.
   watcher may flicker, so don't save that file during a check. If the file
   changed under it, your file is left alone and your change is kept in
   `~/.dope-tdd/kept/<repo>/`, never inside the repository.
-- Vitest, Jest and ava check in a throwaway copy and never touch your files,
-  except in a linked worktree, with more than 300 changed files, or when the
-  test is not green in the copy: then they check on disk the same way.
+- Vitest, Jest, ava and `node --test` check in a throwaway copy (in a clone
+  or a linked worktree) and never touch your files, except with more than 300
+  changed files, or when the test is not green in the copy: then they check on
+  disk the same way.
 - Godot, Java and .NET summary readers are provisional: they were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most

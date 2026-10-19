@@ -1,7 +1,8 @@
 import type { CatchOutcome, MutationResult, TddStats } from '../types'
 import { formatAgo } from './timeText.ts'
 
-const REFACTOR = 'Now refactor with the test untouched.'
+// After a proven green the next step is a refactor or the next red; on a tests-only task, the next pin (VibeCast, 2026-10-18).
+const REFACTOR = 'Now refactor with the test untouched, or write the next failing test.'
 const PROVE = 'Break the code on purpose and run again to prove the test can fail.'
 
 export type Check = CatchOutcome | 'refactor'
@@ -89,12 +90,16 @@ export function unreadRunAdvice(truncated: boolean, runner?: 'node-test', crashe
   if (crashed) {
     return 'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'
   }
-  const why = truncated ? ' (the result was truncated)' : ''
+  // VibeCast field test (2026-10-18): a 40 KB `npm test` was cut before its summary, and the advice said to pipe through
+  // tail, against the briefing. Cut output is said as too long; the generic advice no longer suggests a pipe.
+  if (truncated) {
+    return 'dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.'
+  }
   const how =
     runner === 'node-test'
       ? 'node --test prints its summary before the failures, so a tail cuts it: run the one test file without a pipe, or with --test-reporter=tap | tail -40.'
-      : 'Run the one test file, or pipe through tail -40, so the summary survives.'
-  return `dope-tdd: a test run happened but its summary line was not in the output${why}, so nothing was counted. ${how}`
+      : 'Run one test file and keep the end of its output, where the summary is.'
+  return `dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. ${how}`
 }
 
 export function unreadableRunnerAdvice(runner: string): string {
@@ -231,7 +236,11 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
     return elsewhereAdvice(module, context.elsewhere, before.sawRed, sourcePath)
   }
   if (after.phase === 'red') {
-    return `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
+    // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
+    // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
+    return after.changes[id] === undefined
+      ? `dope-tdd: RED on ${module}. If this is the bug or the missing behaviour, make it pass with the smallest change, then run it again. If you are pinning what the code does now, the pin guessed wrong: fix the assertion and say why.`
+      : `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
   }
   return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath)
 }

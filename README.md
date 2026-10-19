@@ -271,9 +271,10 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
   `"effort": "high"`. Its decisions are recorded as the model's, with its
   reason, and turning it on is recorded as a loosening.
 
-With Vitest, Jest or ava in an ordinary git clone, the catch check undoes
-your change in a throwaway copy inside `.git` and never writes your files.
-Otherwise (a linked worktree, a copy that cannot reproduce the project, or
+With Vitest, Jest, ava or `node --test` in a git checkout (a clone or a linked
+worktree), the catch check undoes your change in a throwaway copy inside the
+checkout's git directory and never writes your files. Otherwise (a copy that
+cannot reproduce the project, or
 an experimental runner with `"catchCheck": true`) it writes the old code
 into your file for the length of one test run, then puts your change back. If the session ends mid-check, the
 change is put back on the way out (or at the next session start). If the

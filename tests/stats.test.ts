@@ -606,3 +606,29 @@ describe('the override record changed outside dope-tdd (2026-10-18)', () => {
     expect(s.events.at(-1)?.kind).toBe('record-edited')
   })
 })
+
+// The last run as a stored record (2026-10-18): the band, /tdd and the advice read one fact, not event text.
+describe('lastRun, the record each run leaves', () => {
+  test('none before any run, and an older saved state without it reads as none', () => {
+    expect(INITIAL_STATS.lastRun).toBeNull()
+    const { lastRun: _dropped, ...older } = INITIAL_STATS
+    expect(normalizeStats(older).lastRun).toBeNull()
+  })
+
+  test("the current module's pass or fail", () => {
+    expect(recordRun(touch(), true, T0 + 5).lastRun).toEqual({ module: MODULE, outcome: 'pass', files: [], atMs: T0 + 5 })
+    expect(recordRun(touch(), false, T0 + 5).lastRun).toEqual({ module: MODULE, outcome: 'fail', files: [], atMs: T0 + 5 })
+  })
+
+  test('a red elsewhere names the files that failed', () => {
+    expect(recordRun(touch(), false, T0 + 5, ['tests/other.test.ts']).lastRun).toEqual({ module: MODULE, outcome: 'elsewhere', files: ['tests/other.test.ts'], atMs: T0 + 5 })
+  })
+
+  test("another module's green", () => {
+    expect(recordOtherPass(touch(), 'utils/b', T0 + 5).lastRun).toEqual({ module: 'utils/b', outcome: 'pass', files: [], atMs: T0 + 5 })
+  })
+
+  test('a run that could not be read is the last run too', () => {
+    expect(recordUnreadRun(touch(), T0 + 5).lastRun).toEqual({ module: MODULE, outcome: 'unread', files: [], atMs: T0 + 5 })
+  })
+})

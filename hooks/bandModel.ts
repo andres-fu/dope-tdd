@@ -95,7 +95,15 @@ function chainOf(s: TddStats): Step[] | null {
         : outcome.kind === 'missed'
           ? { name: 'proven', state: 'failed', word: 'MISSED' }
           : { name: 'proven', state: 'open', word: outcome.kind.toUpperCase() }
+  // The code changed since the green: neither the green nor what proved it is about this code any more (2026-10-18).
+  if (green && changedSinceGreen(s, current.module)) {
+    return [{ name: 'test', state: 'done' }, red, { name: 'green', state: 'open', word: 'CHANGED' }, { name: 'proven', state: 'open' }]
+  }
   return [{ name: 'test', state: 'done' }, red, { name: 'green', state: green ? 'done' : 'open' }, proven]
+}
+
+function changedSinceGreen(s: TddStats, module: string): boolean {
+  return s.modules[module]?.editedSinceRun === true
 }
 
 function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: readonly { target: string }[]): string {
@@ -128,6 +136,9 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
   }
   if (s.phase !== 'green') {
     return 'run the test'
+  }
+  if (changedSinceGreen(s, current.module)) {
+    return 'run the test: the code changed since it went green'
   }
   const outcome = s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
   if (outcome?.kind === 'missed') {
@@ -193,24 +204,26 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
     : problems
 }
 
-const RUN_KINDS: ReadonlySet<string> = new Set(['pass', 'fail', 'elsewhere'])
-
 function fileName(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
 }
 
 /**
  * The last run in words, in place of a trail of ● and ✗ that said nothing a person could act on (2026-10-18): the test,
- * how it went, and whose it was when it was not the current module's.
+ * how it went, and whose it was when it was not the current module's. Read from the stored record, never from event
+ * text, so a run that could not be read is the last run too.
  */
 function lastRunOf(s: TddStats, nowMs: number): string | null {
-  const last = [...s.events].reverse().find(event => RUN_KINDS.has(event.kind))
-  if (last === undefined) {
+  const last = s.lastRun
+  if (last === null) {
     return null
   }
   const ago = formatAgo(nowMs - last.atMs).toLowerCase()
-  if (last.kind === 'elsewhere') {
-    const files = (last.detail ?? '').split(', ').filter(file => file !== '')
+  if (last.outcome === 'unread') {
+    return `last run: not read · the output had no summary line · ${ago}`
+  }
+  if (last.outcome === 'elsewhere') {
+    const files = last.files
     const first = files[0]
     if (first === undefined || first === UNNAMED_FAILURE) {
       return `last run: failed, the output did not say where · not this module · ${ago}`
@@ -221,7 +234,7 @@ function lastRunOf(s: TddStats, nowMs: number): string | null {
   const testPath = module === undefined ? undefined : s.unlocked[module]
   const name = testPath !== undefined ? fileName(testPath) : module !== undefined ? `${module} test` : 'the tests'
   const whose = module !== undefined && s.current !== null && module !== s.current.module ? ' · another module' : ''
-  return `last run: ${name} ${last.kind === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
+  return `last run: ${name} ${last.outcome === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
 }
 
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */

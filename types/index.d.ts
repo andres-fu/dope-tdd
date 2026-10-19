@@ -146,7 +146,12 @@ export type TddStats = {
   current: CurrentTest | null
   events: readonly TddEvent[]
   lastEventMs: number | null
+  /** The last test run, read or not (2026-10-18): the one fact the band's "last run" line renders. */
+  lastRun: LastRun | null
 }
+
+/** `module`: the module the run was about (the current one, or another's own test); `files`: for elsewhere, what failed. */
+export type LastRun = { module: string | null; outcome: 'pass' | 'fail' | 'elsewhere' | 'unread'; files: string[]; atMs: number }
 
 export type OverrideKind = 'spike' | 'hotfix' | 'generated' | 'legacy' | 'other'
 /** `change`: one edit. `module`: until a condition the request names. `pause`: every module, for some minutes. */

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { bandView, countsAsUnwatched } from '../hooks/bandModel'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import type { Override } from '../hooks/overrides'
-import { INITIAL_STATS } from '../hooks/stats'
+import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const CONFIG = { ...DEFAULT_CONFIG, layout: { name: 'custom', source: 'hooks/{module}.{ext}', test: 'tests/{module}.test.{ext}' } }
@@ -257,30 +257,59 @@ describe("another session's override on the band (2026-10-18)", () => {
   })
 })
 
-// The last run in words, in place of a trail of symbols (2026-10-18): which test, how it went, whose it was, when.
+// The last run in words, in place of a trail of symbols (2026-10-18): which test, how it went, whose it was, when. Read
+// from the stored record (stats.ts), never rebuilt from event text, so an unread run is the last run too.
 describe('lastRun', () => {
-  const at = (kind: TddStats['events'][number]['kind'], module?: string, detail?: string) => ({ atMs: 0, kind, ...(module === undefined ? {} : { module }), ...(detail === undefined ? {} : { detail }) })
-  const lastRun = (events: TddStats['events'], over: Partial<TddStats> = {}) => bandView(on({ events, ...over }), CONFIG, [], 90_000).lastRun
+  const record = (outcome: NonNullable<TddStats['lastRun']>['outcome'], module: string | null = 'runPlan', files: string[] = []) => ({ module, outcome, files, atMs: 0 })
+  const lastRun = (last: TddStats['lastRun'], over: Partial<TddStats> = {}) => bandView(on({ lastRun: last, ...over }), CONFIG, [], 90_000).lastRun
 
   test('no runs yet: nothing', () => {
-    expect(lastRun([at('touched', 'runPlan')])).toBeNull()
+    expect(lastRun(null)).toBeNull()
   })
 
   test("this module's test passed or failed", () => {
-    expect(lastRun([at('fail', 'runPlan'), at('pass', 'runPlan')])).toBe('last run: runPlan.test.ts passed · 1m ago')
-    expect(lastRun([at('fail', 'runPlan')])).toBe('last run: runPlan.test.ts failed · 1m ago')
+    expect(lastRun(record('pass'))).toBe('last run: runPlan.test.ts passed · 1m ago')
+    expect(lastRun(record('fail'))).toBe('last run: runPlan.test.ts failed · 1m ago')
   })
 
   test('another file failed: not this module', () => {
-    expect(lastRun([at('elsewhere', 'runPlan', 'tests/overrideFlow.test.tsx')])).toBe('last run: overrideFlow.test.tsx failed · not this module · 1m ago')
-    expect(lastRun([at('elsewhere', 'runPlan', 'tests/a.test.ts, tests/b.test.ts')])).toBe('last run: a.test.ts +1 failed · not this module · 1m ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['tests/overrideFlow.test.tsx']))).toBe('last run: overrideFlow.test.tsx failed · not this module · 1m ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['tests/a.test.ts', 'tests/b.test.ts']))).toBe('last run: a.test.ts +1 failed · not this module · 1m ago')
   })
 
   test('a failure the output did not place', () => {
-    expect(lastRun([at('elsewhere', 'runPlan', 'a file the output did not name')])).toBe('last run: failed, the output did not say where · not this module · 1m ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['a file the output did not name']))).toBe('last run: failed, the output did not say where · not this module · 1m ago')
   })
 
   test("another module's test passed", () => {
-    expect(lastRun([at('pass', 'stats')], { unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('last run: stats.test.ts passed · another module · 1m ago')
+    expect(lastRun(record('pass', 'stats'), { unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('last run: stats.test.ts passed · another module · 1m ago')
+  })
+
+  test('a run that could not be read is the last run, said plainly, never an older run in its place', () => {
+    expect(lastRun(record('unread'))).toBe('last run: not read · the output had no summary line · 1m ago')
+  })
+})
+
+// Seen by the engineering review (2026-10-18): after an edit, the band still said GREEN … PROVEN about changed code.
+describe('green and proven go stale when the code changes after them', () => {
+  const edited = (editedSinceRun: boolean) =>
+    on({
+      phase: 'green',
+      modules: { runPlan: { ...FRESH_MODULE, phase: 'green', editedSinceRun } },
+      lastCycle: { module: 'runPlan', sawRed: true, testChanged: false },
+      ...catchOf({ kind: 'proven' }),
+    })
+  const states = (s: TddStats) => bandView(s, CONFIG).chain?.map(step => `${step.name}:${step.state}${step.word === undefined ? '' : `:${step.word}`}`)
+
+  test('edited since green: the green is CHANGED and nothing is proven', () => {
+    expect(states(edited(true))).toEqual(['test:done', 'red:done', 'green:open:CHANGED', 'proven:open'])
+  })
+
+  test('and the next step is to run the test', () => {
+    expect(bandView(edited(true), CONFIG).next).toBe('run the test: the code changed since it went green')
+  })
+
+  test('not edited: proven as before', () => {
+    expect(states(edited(false))?.at(-1)).toBe('proven:done:PROVEN')
   })
 })

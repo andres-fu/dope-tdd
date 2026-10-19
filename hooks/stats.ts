@@ -1,4 +1,4 @@
-import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, ModuleState, TddEvent, TddStats } from '../types'
+import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, LastRun, ModuleState, TddEvent, TddStats } from '../types'
 import type { WorkaroundKind } from './workarounds.ts'
 import { pathKey } from './mirror.ts'
 
@@ -59,12 +59,27 @@ export const INITIAL_STATS: TddStats = {
   current: null,
   events: [],
   lastEventMs: null,
+  lastRun: null,
 }
 
 const PHASES: readonly TddStats['phase'][] = ['idle', 'writing', 'red', 'green']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isLastRun(value: unknown): boolean {
+  if (value === null) {
+    return true
+  }
+  const run = value as Partial<LastRun> | undefined
+  return (
+    typeof run === 'object' &&
+    (run.module === null || typeof run.module === 'string') &&
+    ['pass', 'fail', 'elsewhere', 'unread'].includes(run.outcome ?? '') &&
+    isStringList(run.files) &&
+    typeof run.atMs === 'number'
+  )
 }
 
 function isStringList(value: unknown): value is string[] {
@@ -129,6 +144,7 @@ export function normalizeStats(stored: unknown): TddStats {
       (event): event is TddEvent => isRecord(event) && typeof event.atMs === 'number' && typeof event.kind === 'string',
     ),
     lastEventMs: pick('lastEventMs', isNumberOrNull),
+    lastRun: pick('lastRun', isLastRun),
   }
 }
 
@@ -200,6 +216,12 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
  * module's own test: the suite is red, the module is not. Its phase does not move.
  */
 export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[] = []): TddStats {
+  const red = !passed && elsewhere.length > 0 ? 'elsewhere' : passed ? 'pass' : 'fail'
+  const lastRun: LastRun = { module: s.current?.module ?? null, outcome: red, files: red === 'elsewhere' ? [...elsewhere] : [], atMs: nowMs }
+  return { ...runOutcome(s, passed, nowMs, elsewhere), lastRun }
+}
+
+function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[]): TddStats {
   const history = [...s.history, passed ? 'pass' : 'fail'].slice(-HISTORY_LENGTH) as TddStats['history']
 
   if (!passed && elsewhere.length > 0) {
@@ -268,7 +290,7 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere
  */
 export function recordOtherPass(s: TddStats, module: string, nowMs: number): TddStats {
   const history = [...s.history, 'pass'].slice(-HISTORY_LENGTH) as TddStats['history']
-  return logged({ ...s, passes: s.passes + 1, history }, 'pass', nowMs, module)
+  return logged({ ...s, passes: s.passes + 1, history, lastRun: { module, outcome: 'pass', files: [], atMs: nowMs } }, 'pass', nowMs, module)
 }
 
 /**
@@ -291,7 +313,9 @@ export function recordUnwatchedEdit(s: TddStats, path: string): TddStats {
 
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */
 export function recordUnreadRun(s: TddStats, nowMs: number): TddStats {
-  return logged({ ...s, unreadRuns: s.unreadRuns + 1 }, 'unread', nowMs, s.current?.module)
+  // An unread run is the last run too: the band never names an older run in its place (2026-10-18).
+  const lastRun: LastRun = { module: s.current?.module ?? null, outcome: 'unread', files: [], atMs: nowMs }
+  return logged({ ...s, unreadRuns: s.unreadRuns + 1, lastRun }, 'unread', nowMs, s.current?.module)
 }
 
 function countWorkaround(s: TddStats, kind: WorkaroundKind): TddStats {

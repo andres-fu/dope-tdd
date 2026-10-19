@@ -19,6 +19,20 @@ const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
 
 const RECENT_EVENTS = 10
 
+// The stored event kinds are internal names; /tdd says them in the one vocabulary (2026-10-18), so "caught runPlan"
+// never sits under "proven 11". Kinds not listed read as they are.
+const EVENT_WORDS: Readonly<Record<string, string>> = {
+  caught: 'proven',
+  unverified: 'not checked',
+  elsewhere: 'failed, not this module',
+  fail: 'failed',
+  pass: 'passed',
+  unread: 'run not read',
+  'test-changed': 'unproven, the test changed',
+  'hollow-touch': 'touched unchanged',
+  'needs-run': 'needs a run',
+}
+
 function cycleLine(s: TddStats): string {
   if (s.cycles === 0) {
     return 'cycles: 0'
@@ -54,7 +68,7 @@ function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
     .reverse()
     .map(e => {
       const what = [e.module === undefined ? '' : label(e.module), e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
-      return `${formatAgo(nowMs - e.atMs)}: ${e.kind} ${what}`.trimEnd()
+      return `${formatAgo(nowMs - e.atMs)}: ${EVENT_WORDS[e.kind] ?? e.kind} ${what}`.trimEnd()
     })
   return ['recent events: newest first', ...rows]
 }
@@ -110,7 +124,8 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
 
 /** One glossary row: the word, then what it means, in two columns. */
 function word(name: string, meaning: string): string {
-  return `  ${name.padEnd(14)} ${meaning}`
+  // 15 wide: the longest word, CAN'T READ RUNS, still leaves a space before its meaning.
+  return `  ${name.padEnd(15)} ${meaning}`
 }
 
 // One verdict vocabulary (2026-10-18): the words the band and /tdd show now, and only those. CAUGHT, UNVERIFIED,
@@ -127,7 +142,7 @@ export function formatGlossary(): string {
     word('CHANGED', 'the code changed since it went green: run the test again before trusting the green'),
     word('refactor', 'code changed while green with the test untouched; not re-checked'),
     word('proving…', 'dope-tdd is running the test with your change undone'),
-    word('last run', 'which test ran last, how it went, and when; click it to open that test'),
+    word('last run', 'which test ran last, how it went, and when; "not this module" when it failed in other test files; click it to open that test'),
     word('next', 'the one step to take now'),
     word('NOT WATCHING', 'code was edited that no test layout pairs, and nothing is guarded yet: /tdd setup, or a layout in dope-tdd.json'),
     word("CAN'T READ RUNS", 'test runs happened and none could be read: run one test file so its summary line is in the output'),
@@ -143,7 +158,7 @@ export function formatGlossary(): string {
     word('never failed', 'cycles that went green without the test ever failing'),
     word('not checked', 'greens the catch check could not run on; the agent was told why'),
     word('workarounds', 'ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged'),
-    word('OVERRIDES OPEN', 'overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt'),
+    word('overrides', "this session's overrides: how many were approved and denied, and who decided each; one not yet ended, and edits made under it or a pause with no test yet, are debt on the receipt"),
     word('mode', 'enforce denies, warn tells, observe only records (dope-tdd.json)'),
     word('DOPE', "Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar"),
   ].join('\n')

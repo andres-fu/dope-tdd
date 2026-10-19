@@ -184,7 +184,7 @@ function mirrored(s: TddStats, state: ModuleState): TddStats {
   }
 }
 
-/** `makeCurrent` false: the module unlocks and its cycle opens, but the band stays on the current module (imports.ts). */
+/** `makeCurrent` false: the module unlocks, but no cycle opens and the band stays on the current module (imports.ts). */
 export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number, makeCurrent = true): TddStats {
   const prev = moduleState(s, touched.module)
   const isCycleOpen = prev.cycleStartMs !== null
@@ -205,8 +205,12 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
     stale: without(s.stale, touched.module),
     reminded: s.reminded.filter(module => module !== touched.module),
   }
-  const withState = withModule(base, touched.module, state)
-  return logged(makeCurrent ? mirrored(withState, state) : withState, 'touched', nowMs, touched.module)
+  if (!makeCurrent) {
+    // A test that does not lead tests no source of its own (tests/kitRuns.test.tsx): its cycle could never close, and
+    // it sat in /tdd as "also open: kitRuns (writing)" (2026-10-18). It unlocks and is logged; nothing opens.
+    return logged(base, 'touched', nowMs, touched.module)
+  }
+  return logged(mirrored(withModule(base, touched.module, state), state), 'touched', nowMs, touched.module)
 }
 
 /**

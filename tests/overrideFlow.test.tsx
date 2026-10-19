@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { BAND, MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, test, touchTest, writeAt } from './engine'
+import { BAND, MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, touchTest, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 // Override with a reason, v1 (2026-10-18): the agent asks, a person decides, the repo keeps the record.
@@ -28,6 +28,27 @@ describe('a refused edit offers the cheap path first, then the override', () => 
     expect(refused.deny).toMatch(/write the failing test first/)
     expect(refused.deny).toMatch(/\/dope-tdd:pin/)
     expect(refused.deny).toMatch(/mcp__dope-tdd__override_request/)
+  })
+
+  // The agent contract (2026-10-18): a numbered menu with the exact command; the override offered once per module.
+  test('numbered, with the command that runs the test, and the override only the first time', async ($, on) => {
+    fakeEngine(on)
+    const first = await editAt($, 'src/utils/calculateDuration.ts')
+    expect(first.deny).toMatch(/^\(1\) write or edit tests\/utils\/calculateDuration\.test\.ts so it fails, then run it: \S+/m)
+    expect(first.deny).toMatch(/^\(3\) neither fits: ask for an override with mcp__dope-tdd__override_request/m)
+    const again = await editAt($, 'src/utils/calculateDuration.ts')
+    expect(again.deny).toMatch(/^\(2\) no test for this code yet/m)
+    expect(again.deny).not.toMatch(/override_request/)
+    const other = await editAt($, 'src/utils/formatDuration.ts')
+    expect(other.deny).toMatch(/override_request/)
+  })
+
+  test('the refusal ends with the last run, as the band says it', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    const refused = await editAt($, 'src/utils/calculateDuration.ts')
+    expect(refused.deny).toMatch(/\nlast run: formatDuration\.test\.ts failed · just now$/)
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandView, countsAsUnwatched } from '../hooks/bandModel'
+import { bandView, countsAsUnwatched, lastRunLine } from '../hooks/bandModel'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import type { Override } from '../hooks/overrides'
 import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
@@ -390,5 +390,14 @@ describe('green and proven go stale when the code changes after them', () => {
 
   test('not edited: proven as before', () => {
     expect(states(edited(false))?.at(-1)).toBe('proven:done:PROVEN')
+  })
+})
+
+// The agent contract (2026-10-18): the refusal quotes the band's last-run line, so the person and the agent read one fact.
+describe('lastRunLine is the band\'s own last-run line', () => {
+  test('the same text the band shows, from the same record', () => {
+    const s = on({ lastRun: { module: 'runPlan', outcome: 'fail', files: [], atMs: 0 } })
+    expect(lastRunLine(s, 60_000)).toBe(bandView(s, CONFIG, [], 60_000).lastRun)
+    expect(lastRunLine(s, 60_000)).toBe('last run: runPlan.test.ts failed · 1m ago')
   })
 })

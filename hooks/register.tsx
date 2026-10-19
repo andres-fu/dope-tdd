@@ -50,7 +50,7 @@ import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
-import { countsAsUnwatched } from './bandModel.ts'
+import { countsAsUnwatched, lastRunLine } from './bandModel.ts'
 import type { Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
@@ -88,6 +88,7 @@ import { formatGlossary, formatStatus } from './summary.ts'
 import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
+import type { LockedFacts } from './refusals.ts'
 import { OVERRIDES_FILE, coveringOverride, isAttended, formatOverrides, parseRecord, recordEdit, requestNotes, serializeRecord } from './overrides.ts'
 import { planDecision, planEnd, planExpiry, planRequest, planResume, planShellCover, refusal, requestFrom, sendsToModel } from './requestPlan.ts'
 import { gateWrite } from './fileGate.ts'
@@ -1438,7 +1439,7 @@ async function checkFileWrite(
   }
   if (verdict.kind === 'blocked' && target.kind === 'source') {
     await change($, s => recordBlocked(s, target.module, gateNowMs))
-    return { deny: lockedFor(config, current, target.module, gateNowMs, filePath) }
+    return { deny: lockedFor(config, current, target.module, gateNowMs, filePath, await lockedFacts($, root, config, current, target.module, filePath, gateNowMs)) }
   }
   if (verdict.kind === 'carry-wait' && target.kind === 'source') {
     await change($, s => recordCarryWait(s, target.module, gateNowMs))
@@ -1663,7 +1664,10 @@ async function checkShell(
     await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
     const waits = await Promise.all([...new Set(waiting)].map(module => carryWait($, root, config, current, module, nowMs)))
     const writtenPath = (module: string) => writes.find(write => write.module === module)?.path
-    return { deny: [...locked.map(module => lockedFor(config, current, module, nowMs, writtenPath(module))), ...waits].join('\n') }
+    const refusals = await Promise.all(
+      locked.map(async module => lockedFor(config, current, module, nowMs, writtenPath(module), await lockedFacts($, root, config, current, module, writtenPath(module), nowMs))),
+    )
+    return { deny: [...refusals, ...waits].join('\n') }
   }
   // While a file is reverted on disk, neither a write to source nor a test run may read it.
   if (writes.some(({ module }) => module !== null) || isTestRun(command)) {
@@ -2105,6 +2109,13 @@ async function importedModules($: EngineInterface, root: string, config: GuardCo
 async function runCommandFor($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string | null> {
   const runner = await detectRunner($, root, config, testPath)
   return runner === null ? null : runnerNamed(runner.kind).describe(relativePath(root, testPath), runner.launcher)
+}
+
+/** What a refusal quotes besides the paths: the command that runs the module's test, and the band's last-run line. */
+async function lockedFacts($: EngineInterface, root: string, config: GuardConfig, s: TddStats, module: string, writtenPath: string | undefined, nowMs: number): Promise<LockedFacts> {
+  const testPath = `${root}/${testPathFor(config, module, writtenPath === undefined ? undefined : extOf(writtenPath))}`
+  const command = await runCommandFor($, root, config, testPath)
+  return { ...(command === null ? {} : { command }), lastRun: lastRunLine(s, nowMs) }
 }
 
 /** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */

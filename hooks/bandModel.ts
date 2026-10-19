@@ -262,7 +262,8 @@ function fileName(path: string): string {
  * how it went, and whose it was when it was not the current module's. Read from the stored record, never from event
  * text, so a run that could not be read is the last run too.
  */
-function lastRunOf(s: TddStats, nowMs: number): string | null {
+/** The last run in words: the band shows it, and a refusal quotes it (refusals.ts), so both read one fact. */
+export function lastRunLine(s: TddStats, nowMs: number): string | null {
   const last = s.lastRun
   if (last === null) {
     return null
@@ -308,7 +309,7 @@ export function bandView(
   })
   const chain = chainOf(s)
   const guard = guardOf(s, config, watch, record, nowMs, standingDown)
-  const lastRun = lastRunOf(s, nowMs)
+  const lastRun = lastRunLine(s, nowMs)
   return {
     watch,
     showProgress,

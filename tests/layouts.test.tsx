@@ -22,7 +22,8 @@ describe('colocated tests', () => {
     const touched = await writeAt($, 'src/utils/a.test.ts', "it('x', () => { expect(1).toBe(1) })")
     const allowed = await editAt($, 'src/utils/a.ts')
 
-    expect(blocked.deny).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts, or run it and see it fail, before editing src/utils/a.' + OVERRIDE_HINT)
+    expect(blocked.deny.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch src/utils/a.test.ts, or run it and see it fail, before editing src/utils/a.')
+    expect(blocked.deny.split('\n')).toContain(OVERRIDE_HINT)
     expect(touched.context?.join(' ')).toMatch(/utils\/a unlocked\. Run its test and see it fail before editing src\/utils\/a\./)
     expect(allowed.deny).toBeUndefined()
   })

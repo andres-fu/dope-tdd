@@ -169,7 +169,11 @@ fixture.
 - `src/**/X.ts(x)` can't be edited (Edit, Write, or a shell write) until
   `tests/**/X.test.ts(x)` was created or edited in this session, or run and
   seen failing. The refusal names the test with the extension of the file
-  being edited (`a.js` → `a.test.js`).
+  being edited (`a.js` → `a.test.js`), then lists numbered ways to unblock:
+  (1) make that test fail, with the exact command that runs it; (2) pin
+  untested code with `/dope-tdd:pin`; (3) ask for an override. The override
+  is offered on the module's first refusal only, so it reads as the last
+  resort it is. The refusal ends with the band's own "last run" line.
 - A module unlocked in an earlier session (up to 7 days) waits for one run of
   its test this session, red or green, before its first edit; the carry-over
   is dropped if that test changed since.

@@ -1,9 +1,6 @@
-import type { CatchOutcome, MutationResult, TddStats } from '../types'
-import { formatAgo } from './timeText.ts'
-
-// After a proven green the next step is a refactor or the next red; on a tests-only task, the next pin (VibeCast, 2026-10-18).
-const REFACTOR = 'Now refactor with the test untouched, or write the next failing test.'
-const PROVE = 'Break the code on purpose and run again to prove the test can fail.'
+// What to tell the agent after an edit or a run: the decisions. The words are in the catalogue (messages.ts, 2026-10-18).
+import type { CatchOutcome, TddStats } from '../types'
+import { say } from './messages.ts'
 
 export type Check = CatchOutcome | 'refactor'
 
@@ -29,155 +26,75 @@ function defaultTest(module: string): string {
 }
 
 export function touchAdvice(module: string, sourcePath = defaultSource(module), command?: string): string {
-  const run = command === undefined ? '' : ` Run it with: ${command}`
-  return `dope-tdd: ${module} unlocked. Run its test and see it fail before editing ${sourcePath}.${run}`
+  return say('touch.unlocked', { module, sourcePath, command })
 }
 
 /** Warn mode only: there the edit under a carried-over unlock goes through, and this reminder follows it. */
 export function inheritedAdvice(module: string, testPath: string, ageMs: number, sourcePath = defaultSource(module)): string {
-  return `dope-tdd: ${sourcePath} is unlocked because ${testPath} was touched ${formatAgo(ageMs)} in an earlier session. Run that test first if you have not this session.`
+  return say('inherited.reminder', { sourcePath, testPath, ageMs })
 }
 
-/*
- * #54, carried-over unlocks in enforce mode. An agent meets these cold, often on day 2 of a refactor, after an edit
- * that was allowed yesterday. Each message says what happened, why, and the exact next step, so nobody has to read
- * the plugin to understand why an unlocked module is refused.
- */
-
-/** The first edit under a carried-over unlock, refused until its test runs once this session. */
+/** #54: the first edit under a carried-over unlock, refused until its test runs once this session. */
 export function carryWaitMessage(sourcePath: string, testPath: string, ageMs: number, command?: string): string {
-  return (
-    `dope-tdd: ${sourcePath} was unlocked ${formatAgo(ageMs)} in an earlier session, when ${testPath} was touched. ` +
-    `Before the first edit this session, run that test once, red or green: ${command ?? testPath}. ` +
-    'Why: the earlier proof counts only while the test still runs, and a run now shows where things stand before your change. No test edit is needed.'
-  )
+  return say('carry.wait', { sourcePath, testPath, ageMs, command })
 }
 
 /** That run happened: the unlock is active, and a red is named as already there, not the agent's. */
 export function carriedOnAdvice(sourcePath: string, testPath: string, passed: boolean): string {
-  return passed
-    ? `dope-tdd: ${testPath} ran green this session, so the unlock of ${sourcePath} carried over from an earlier session is active again. Edit away; your next green is checked as usual.`
-    : `dope-tdd: ${testPath} ran red this session, before any edit, so the unlock of ${sourcePath} carried over from an earlier session is active again. Those failures were already there: they are not from your change.`
+  return say(passed ? 'carry.onGreen' : 'carry.onRed', { sourcePath, testPath })
 }
 
 /** Appended to the ordinary refusal when the module had a carried-over unlock that was dropped because its test changed. */
 export function staleUnlockNote(testPath: string, ageMs: number): string {
-  return ` ${testPath} unlocked it ${formatAgo(ageMs)} in an earlier session, but that test has changed since (a checkout, a merge, or an edit this guard did not see), so the earlier unlock no longer counts.`
+  return say('note.staleUnlock', { testPath, ageMs })
 }
 
 export function redUnlockAdvice(module: string, sourcePath = defaultSource(module)): string {
-  return `dope-tdd: ${module} unlocked by a red run of its own test. Fix ${sourcePath}, run again, and the fix will be checked.`
+  return say('red.unlocked', { module, sourcePath })
 }
 
 export function hollowTouchAdvice(testPath: string): string {
-  return `dope-tdd: ${testPath} was re-saved unchanged. A touch that changes nothing proves nothing. Recorded; say why in your reply.`
+  return say('touch.unchanged', { testPath })
 }
 
 export function importAdvice(testPath: string, modules: readonly string[]): string {
-  return `dope-tdd: ${testPath} imports ${modules.join(', ')}, so it is the test for ${modules.length === 1 ? 'that module' : 'those modules'} too: ${modules.length === 1 ? 'it is' : 'they are'} unlocked, and ${modules.length === 1 ? 'its' : 'their'} catch check runs this file.`
+  return say('touch.imports', { testPath, modules })
 }
 
 export function hollowAdvice(testPath: string): string {
-  return `dope-tdd: ${testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`
+  return say('test.noAssertion', { testPath })
 }
 
 export function unguardedAdvice(module: string, sourcePath = defaultSource(module), testPath = defaultTest(module)): string {
-  return `dope-tdd: ${sourcePath} was edited with no test touched first. Write ${testPath} next and see it fail.`
+  return say('edit.unguarded', { sourcePath, testPath })
 }
 
 /** `runner` is the one that ran, when the command says (node --test prints its summary before the failures). */
 export function unreadRunAdvice(truncated: boolean, runner?: 'node-test', crashed = false): string {
   if (crashed) {
-    return 'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'
+    return say('run.crashed', {})
   }
-  // VibeCast field test (2026-10-18): a 40 KB `npm test` was cut before its summary, and the advice said to pipe through
-  // tail, against the briefing. Cut output is said as too long; the generic advice no longer suggests a pipe.
-  if (truncated) {
-    return 'dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.'
-  }
-  const how =
-    runner === 'node-test'
-      ? 'node --test prints its summary before the failures, so a tail cuts it: run the one test file without a pipe, or with --test-reporter=tap | tail -40.'
-      : 'Run one test file and keep the end of its output, where the summary is.'
-  return `dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. ${how}`
+  return truncated ? say('run.truncated', {}) : say('run.unread', { nodeTest: runner === 'node-test' })
 }
 
 export function unreadableRunnerAdvice(runner: string): string {
-  return `dope-tdd: this was a ${runner} run, and dope-tdd cannot read ${runner}'s summary yet, so ${runner} runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.`
+  return say('run.unreadable', { runner })
 }
 
 export function configChangedAdvice(detail: string): string {
-  return `dope-tdd: dope-tdd.json changed (${detail}). This is recorded in /tdd; say why in your reply.`
+  return say('config.changed', { detail })
 }
 
 export function skippedAdvice(testPath: string, added: number): string {
-  return `dope-tdd: ${testPath} gained ${added} skip/only marker${added === 1 ? '' : 's'}. A skipped test guards nothing. Recorded; say why in your reply.`
+  return say('workaround.skipped', { testPath, added })
 }
 
 export function assertionsRemovedAdvice(testPath: string, before: number, after: number): string {
-  return `dope-tdd: ${testPath} went from ${before} to ${after} assertion${after === 1 ? '' : 's'}. Recorded; say why in your reply.`
+  return say('workaround.assertionsRemoved', { testPath, before, after })
 }
 
 export function commentedOutAdvice(sourcePath: string, lines: number): string {
-  return `dope-tdd: ${sourcePath}: ${lines} line${lines === 1 ? '' : 's'} of code commented out by this edit. Recorded; say why in your reply.`
-}
-
-function elsewhereAdvice(module: string, files: readonly string[], sawRed: boolean, sourcePath: string): string {
-  const failed = `${files.join(', ')} failed; ${module}'s own test did not fail this run.`
-  return sawRed
-    ? `dope-tdd: RED, but not on ${module}: ${failed}`
-    : `dope-tdd: RED, but not on ${module}: ${failed} ${module} has not seen red yet. Make its test fail before editing ${sourcePath}.`
-}
-
-function testChangedAdvice(module: string, sourcePath: string): string {
-  return `dope-tdd: GREEN on ${module}, saw red, but the test changed after red and ${sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code. If the assertion was wrong (a pin that guessed today's behaviour wrongly), say why in your reply; it stays on the record.`
-}
-
-function slippedLines(slipped: readonly string[] | undefined): string {
-  return slipped === undefined || slipped.length === 0
-    ? ''
-    : ` The change it did not notice:\n${slipped.map(line => `  ${line}`).join('\n')}\nAdd an assertion that fails without it.`
-}
-
-function mutationAdvice(module: string, kind: 'proven' | 'missed', mutation: MutationResult): string {
-  const lines = (changes: readonly string[]) => changes.map(change => `  ${change}`).join('\n')
-  const head = `dope-tdd: GREEN on ${module}. ${module} is a new file: dope-tdd changed it ${mutation.tried} way${mutation.tried === 1 ? '' : 's'} in a throwaway copy and the test`
-  if (kind === 'missed') {
-    return `${head} passed every time, so it checks none of these:\n${lines(mutation.survived)}\nAdd an assertion that fails with each change.`
-  }
-  const rest =
-    mutation.survived.length === 0
-      ? ''
-      : ` These went unnoticed:\n${lines(mutation.survived)}\nAdd an assertion for each that matters. A change that cannot alter what the code does (an equivalent mutant) is fine to leave; say so.`
-  return `${head} failed for ${mutation.caught}, so it is PROVEN.${rest} ${REFACTOR}`
-}
-
-/** #57: said when the restore matches the code from before the break except CRLF against LF, so nobody wonders why. */
-const LINE_ENDINGS_NOTE =
-  ' Only its line endings differ from before the break (CRLF and LF: a shell edit on Windows, such as `sed -i`, can rewrite them); that does not change what the code does.'
-
-/**
- * #55: a pin proof is one deliberate break, so it proves one behaviour. The small changes tried after it say what else
- * the pins check. The verdict stays PROVEN whatever they find: the break was caught; the rest is what to pin next.
- */
-function pinnedMutationAdvice(module: string, mutation: MutationResult, lineEndings: boolean): string {
-  const lines = mutation.survived.map(change => `  ${change}`).join('\n')
-  const caught = mutation.caught === mutation.tried ? 'all of them' : `${mutation.caught}`
-  const rest =
-    mutation.survived.length === 0
-      ? ''
-      : ` These went unnoticed:\n${lines}\nOne break proves one behaviour; add a pin for each of these that matters. A change that cannot alter what the code does (an equivalent mutant) is fine to leave; say so.`
-  return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${lineEndings ? LINE_ENDINGS_NOTE : ''} dope-tdd also changed it ${mutation.tried} way${mutation.tried === 1 ? '' : 's'} in a throwaway copy: the test failed for ${caught}.${rest} ${REFACTOR}`
-}
-
-function missedAdvice(module: string, sawRed: boolean, slipped?: readonly string[]): string {
-  return `${missedVerdict(module, sawRed)}${slippedLines(slipped)}`
-}
-
-function missedVerdict(module: string, sawRed: boolean): string {
-  return sawRed
-    ? `dope-tdd: GREEN on ${module}, but MISSED: with your change undone its test still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.`
-    : `dope-tdd: GREEN on ${module}, MISSED: its test has never failed, and it still passes with your change undone, so it has proven nothing yet. If the change was a fix, the test is missing an assertion for it; if it was a refactor, break the code on purpose and run again to prove the test.`
+  return say('workaround.commentedOut', { sourcePath, lines })
 }
 
 function greenAdvice(
@@ -191,42 +108,41 @@ function greenAdvice(
   pinning = false,
 ): string | null {
   if (check === 'refactor') {
-    return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.`
+    return say('green.refactor', { module })
   }
   if (check?.kind === 'proven' && check.pinned === true && check.mutation !== undefined) {
-    return pinnedMutationAdvice(module, check.mutation, check.lineEndings === true)
+    const { tried, caught, survived } = check.mutation
+    return say('green.pinProven', { module, tried, caught, survived, lineEndings: check.lineEndings === true })
   }
-  if ((check?.kind === 'missed' || check?.kind === 'proven') && check.mutation !== undefined) {
-    return mutationAdvice(module, check.kind, check.mutation)
+  if (check?.kind === 'missed' && check.mutation !== undefined) {
+    return say('green.newFileMissed', { module, tried: check.mutation.tried, survived: check.mutation.survived })
+  }
+  if (check?.kind === 'proven' && check.mutation !== undefined) {
+    const { tried, caught, survived } = check.mutation
+    return say('green.newFileProven', { module, tried, caught, survived })
   }
   if (check?.kind === 'missed') {
-    return missedAdvice(module, sawRed, check.slipped)
+    return say('green.missed', { module, sawRed, slipped: check.slipped ?? [] })
   }
   if (check?.kind === 'proven') {
-    return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${check.lineEndings === true ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`
+    return say('green.brokenProven', { module, lineEndings: check.lineEndings === true })
   }
   if (check?.kind === 'caught' && check.by !== undefined) {
-    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}, but its own test, ${check.own ?? 'its paired test'}, does not catch the change, but ${check.by} does: PROVEN by ${check.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`
+    return say('green.provenBy', { module, sawRed, own: check.own ?? 'its paired test', by: check.by })
   }
   if (check?.kind === 'caught') {
-    return sawRed
-      ? `dope-tdd: GREEN on ${module}, saw red, and its test catches the change: PROVEN. ${REFACTOR}`
-      : `dope-tdd: GREEN on ${module}, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. ${REFACTOR}`
+    return say('green.caught', { module, sawRed })
   }
   if (check?.kind === 'unverified') {
-    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${check.reason}). ${REFACTOR}`
+    return say('green.notChecked', { module, sawRed, reason: check.reason })
   }
   if (testChanged) {
-    return pinning
-      ? `dope-tdd: GREEN on ${module}: the pin was corrected after its red, with ${sourcePath} unchanged. With the pin skill in use that is the expected fix for a pin that guessed wrong; it is on the record as a pin correction. Now prove the pin: break the code on purpose, see red, put it back exactly.`
-      : testChangedAdvice(module, sourcePath)
+    return say(pinning ? 'green.pinCorrected' : 'green.testChanged', { module, sourcePath })
   }
   if (!cycleCompleted) {
     return null
   }
-  return sawRed
-    ? `dope-tdd: GREEN on ${module}, saw red. ${REFACTOR}`
-    : `dope-tdd: GREEN on ${module} but it never saw red: UNPROVEN. ${PROVE}`
+  return say(sawRed ? 'green.sawRed' : 'green.neverRed', { module })
 }
 
 export function runAdvice(before: TddStats, after: TddStats, check?: Check, context: RunContext = {}): string | null {
@@ -237,14 +153,12 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   const module = context.label ?? id
   const sourcePath = context.sourcePath ?? defaultSource(module)
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
-    return elsewhereAdvice(module, context.elsewhere, before.sawRed, sourcePath)
+    return say('red.elsewhere', { module, sourcePath, files: context.elsewhere, sawRed: before.sawRed })
   }
   if (after.phase === 'red') {
     // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
     // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
-    return after.changes[id] === undefined
-      ? `dope-tdd: RED on ${module}. If this is the bug or the missing behaviour, make it pass with the smallest change, then run it again. If you are pinning what the code does now, the pin guessed wrong: fix the assertion and say why.`
-      : `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
+    return say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
   }
   return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning)
 }

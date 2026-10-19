@@ -475,7 +475,7 @@ describe('a test changed after red', () => {
 
     expect(result.context?.join(' ')).toMatch(/the test changed after red and src\/money\/formatCents did not/)
     expect(status.text).toMatch(/test changed 1/)
-    expect(status.text).toMatch(/test-changed\s+money\/formatCents/)
+    expect(status.text).toMatch(/unproven, the test changed\s+money\/formatCents/)
     expect(await ui.find({ type: 'Text', text: "UNPROVEN · the test changed, the code didn't" })).toBeDefined()
   })
 
@@ -653,7 +653,7 @@ describe('memory across sessions', () => {
     expect(first.deny).not.toMatch(/write the failing test first/)
     expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
     expect(status.text).toMatch(/blocked 0/)
-    expect(status.text).toMatch(/needs-run/)
+    expect(status.text).toMatch(/needs a run/)
   })
 
   test('a green run of its test makes it active: the agent is told, and the edit goes through', async ($, on) => {

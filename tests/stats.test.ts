@@ -642,3 +642,13 @@ describe('lastRun, the record each run leaves', () => {
     expect(recordUnreadRun(touch(), T0 + 5).lastRun).toEqual({ module: MODULE, outcome: 'unread', files: [], atMs: T0 + 5 })
   })
 })
+
+// The five /tdd fixes (2026-10-18): `also open: kitRuns (writing)` was a cycle no edit could close.
+describe('a test that does not lead opens no cycle', () => {
+  test('it unlocks and is on the record, but nothing is left open', () => {
+    const s = recordTestTouch(INITIAL_STATS, { module: 'kitRuns', testPath: 'C:/r/tests/kitRuns.test.tsx' }, T0, false)
+    expect(s.unlocked.kitRuns).toBe('C:/r/tests/kitRuns.test.tsx')
+    expect(s.events.at(-1)).toMatchObject({ kind: 'touched', module: 'kitRuns' })
+    expect(otherOpenModules(s)).toEqual([])
+  })
+})

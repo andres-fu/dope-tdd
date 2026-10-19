@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
 import { INITIAL_STATS, recordRun, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import type { TddStats } from '../types'
 
 const T0 = 1_000_000
 
@@ -73,7 +74,7 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     expect(text).toMatch(/^ {2}MISSED +with your change undone the test still passes/m)
     expect(text).toMatch(/^ {2}red ✓ green ✓ +the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first/m)
     expect(text).toMatch(/^ {2}RED 4M +the test fails now, and how long since the cycle opened/m)
-    expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when; click it to open that test/m)
+    expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when;/m)
     for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'WRITING', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
       expect(text).not.toContain(retired)
     }
@@ -81,9 +82,9 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
 
   test('watching, not watching, runs it cannot read, and the next step', () => {
     const text = formatGlossary()
-    expect(text).toMatch(/^ {2}NOT WATCHING {3}code was edited that no test layout pairs/m)
+    expect(text).toMatch(/^ {2}NOT WATCHING {4}code was edited that no test layout pairs/m)
     expect(text).toMatch(/^ {2}CAN'T READ RUNS test runs happened and none could be read/m)
-    expect(text).toMatch(/^ {2}next {11}the one step to take now/m)
+    expect(text).toMatch(/^ {2}next {12}the one step to take now/m)
     // Override with a reason, v1 (2026-10-18): no off switch, so PAUSED points at a time and a reason.
     expect(text).toMatch(/^ {2}OVERRIDE ASKED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
     // Band v3 (2026-10-18): the verdict and guard words the band now uses.
@@ -95,7 +96,7 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     // Live trial: one row for every override still open, whichever module is current, with END (2026-10-18).
     expect(text).toMatch(/^ {2}OVERRIDE OPEN +an approved override that still lets edits through: what is left and who approved it; END closes it/m)
     expect(text).not.toMatch(/OVERRIDDEN/)
-    expect(text).toMatch(/^ {2}OVERRIDES OPEN +overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt/m)
+    expect(text).not.toMatch(/OVERRIDES OPEN/)
     expect(text).toMatch(/^ {2}PAUSED +\/tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or \/tdd resume/m)
     expect(text).not.toMatch(/\/tdd off/)
   })
@@ -122,5 +123,34 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
 
   test('no events is one row', () => {
     expect(formatStatus(INITIAL_STATS, T0)).toMatch(/^recent events: none yet$/m)
+  })
+})
+
+// The five /tdd fixes (2026-10-18), from reading /tdd and /tdd why live.
+describe('/tdd says each event in the one vocabulary', () => {
+  test('a catch check is proven, not caught; one that could not run is not checked', () => {
+    const at = (kind: string, module: string) => ({ atMs: T0, kind, module }) as TddStats['events'][number]
+    const s = { ...INITIAL_STATS, events: [at('caught', 'runPlan'), at('proven', 'stats'), at('unverified', 'briefing'), at('elsewhere', 'runPlan')] }
+    const text = formatStatus(s, T0)
+    expect(text).toMatch(/^JUST NOW: proven runPlan$/m)
+    expect(text).toMatch(/^JUST NOW: proven stats$/m)
+    expect(text).toMatch(/^JUST NOW: not checked briefing$/m)
+    expect(text).toMatch(/^JUST NOW: failed, not this module runPlan$/m)
+    expect(text).not.toMatch(/caught|unverified|: elsewhere/)
+  })
+})
+
+describe('/tdd why is one even column, and explains what /tdd prints', () => {
+  test('every meaning starts in the same column, the longest word included', () => {
+    const rows = formatGlossary().split('\n').filter(line => line.startsWith('  '))
+    for (const row of rows) {
+      expect(row.slice(17, 19)).toMatch(/^ \S$/)
+    }
+  })
+
+  test('the overrides line is explained, and the last run says when it was not this module', () => {
+    const text = formatGlossary()
+    expect(text).toMatch(/^ {2}overrides {7}this session's overrides: how many were approved and denied, and who decided each; one not yet ended, and edits made under it or a pause with no test yet, are debt on the receipt/m)
+    expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when; "not this module" when it failed in other test files; click it to open that test/m)
   })
 })

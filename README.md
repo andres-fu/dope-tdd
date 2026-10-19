@@ -468,7 +468,15 @@ minutes. Once, before opening a pull request, run everything:
 ```bash
 npm run check            # validate, plugin test and node --test, all at once
 npm run check -- --all   # the same, plus the POSIX-root pass
+npm run golden           # after changing a message's words: rewrite the golden file
 ```
+
+Every sentence dope-tdd says to the agent lives in `hooks/messages.ts`, by id,
+with an example. Its exact words are pinned once, in
+`tests/fixtures/messages.golden.ts`; other tests check which message is said,
+with `say(id, facts)`. To change wording, edit the template, run
+`npm run golden`, and review the golden file's diff: it is every sentence the
+agent will read differently.
 
 It starts the suites at the same time, prints each one's output whole as it
 finishes (its own summary line included), then one PASS/FAIL line per suite

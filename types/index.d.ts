@@ -1,5 +1,4 @@
 export type Phase = 'idle' | 'writing' | 'red' | 'green'
-export type HistoryEntry = 'pass' | 'fail'
 export type EventKind =
   | 'touched'
   | 'edited'
@@ -101,7 +100,6 @@ export type TddStats = {
   passes: number
   fails: number
   unreadRuns: number
-  history: readonly HistoryEntry[]
   cycles: number
   cycleMsTotal: number
   cycleStartMs: number | null
@@ -213,6 +211,8 @@ declare module 'claude-code' {
       overrides: readonly Override[]
       /** Whether a person is there to approve a request: from session.start. */
       attended: boolean
+      /** This session's id, read once at session start for the band; '' until read. */
+      'session-id': string
     }
   }
 }

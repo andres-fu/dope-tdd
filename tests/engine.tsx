@@ -101,6 +101,8 @@ export type FakeWorld = {
   surfaces: string[]
   /** This session's id, as $.session.id() says. */
   sessionId: string
+  /** How many times $.session.id() was asked. */
+  sessionIdCalls: number
   /** What `git log -1 --format=%h|%cs|%s` prints in the plugin's own folder: which build is running. */
   pluginGit: string
   /** What `git diff --no-ext-diff -- <paths>` prints: the module's hunks for the reviewer. */
@@ -163,6 +165,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     sessionModel: 'claude-opus-5-5',
     surfaces: [],
     sessionId: 'session-1',
+    sessionIdCalls: 0,
     pluginGit: '',
     diffText: '',
     readOnly: false,
@@ -189,7 +192,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   on('session.start', () => ({ cwd: ROOT }))
   on('session.model', () => ({ value: world.sessionModel }) as never)
   on('session.surfaces', () => ({ value: world.surfaces }) as never)
-  on('session.id', () => ({ value: world.sessionId }) as never)
+  on('session.id', () => {
+    world.sessionIdCalls++
+    return { value: world.sessionId } as never
+  })
   on('model.complete', (_$, e) => {
     world.modelCalls.push(e as never)
     return { value: world.modelReply } as never

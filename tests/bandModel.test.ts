@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandView, countsAsUnwatched, lastRunLine } from '../hooks/bandModel'
+import { bandView, countsAsUnwatched, lastRunLine, lastRunTarget } from '../hooks/bandModel'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import type { Override } from '../hooks/overrides'
 import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
@@ -66,16 +66,16 @@ describe("the current module's evidence chain", () => {
   const states = (s: TddStats) => bandView(s, CONFIG).chain?.map(step => `${step.name}:${step.state}${step.word === undefined ? '' : `:${step.word}`}`)
 
   test('a touched test: the test is there, the rest is still open', () => {
-    expect(states(on({ phase: 'writing' }))).toEqual(['test:done', 'red:open', 'green:open', 'proven:open'])
+    expect(states(on({ phase: 'writing' }))).toEqual(['red:open', 'green:open', 'proven:open'])
   })
 
   test('red: test and red done', () => {
-    expect(states(on({ phase: 'red', sawRed: true }))).toEqual(['test:done', 'red:done', 'green:open', 'proven:open'])
+    expect(states(on({ phase: 'red', sawRed: true }))).toEqual(['red:done', 'green:open', 'proven:open'])
   })
 
   test('green and caught: every step done', () => {
     const s = on({ phase: 'green', lastCycle: { module: 'runPlan', sawRed: true, testChanged: false }, ...catchOf({ kind: 'caught' }) })
-    expect(states(s)).toEqual(['test:done', 'red:done', 'green:done', 'proven:done:CAUGHT'])
+    expect(states(s)).toEqual(['red:done', 'green:done', 'proven:done:CAUGHT'])
   })
 
   test('green and missed: the chain breaks at proven', () => {
@@ -84,17 +84,17 @@ describe("the current module's evidence chain", () => {
   })
 
   test('green that never saw red: the red step failed', () => {
-    expect(states(on({ phase: 'green', unproven: ['runPlan'] }))?.[1]).toBe('red:failed:NEVER SAW RED')
+    expect(states(on({ phase: 'green', unproven: ['runPlan'] }))?.[0]).toBe('red:failed:NEVER SAW RED')
   })
 
   test('green without red, then caught: the catch check saw the red, so the red step is done', () => {
     const s = on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'caught' }) })
-    expect(states(s)).toEqual(['test:done', 'red:done:BY CATCH', 'green:done', 'proven:done:CAUGHT'])
+    expect(states(s)).toEqual(['red:done:BY CATCH', 'green:done', 'proven:done:CAUGHT'])
   })
 
   test('green without red, then missed: still never saw red', () => {
     const s = on({ phase: 'green', unproven: ['runPlan'], ...catchOf({ kind: 'missed' }) })
-    expect(states(s)?.[1]).toBe('red:failed:NEVER SAW RED')
+    expect(states(s)?.[0]).toBe('red:failed:NEVER SAW RED')
   })
 
   test('no current module: no chain', () => {
@@ -144,7 +144,7 @@ describe('one next step, always', () => {
 
 describe('progress shows only with a module to show it for', () => {
   test('no current module: no phase or trail, whatever the last phase was', () => {
-    expect(bandView({ ...INITIAL_STATS, phase: 'green', history: ['pass'] }, CONFIG).showProgress).toBe(false)
+    expect(bandView({ ...INITIAL_STATS, phase: 'green' }, CONFIG).showProgress).toBe(false)
   })
 
   test('a current module, watched: phase and trail show', () => {
@@ -381,7 +381,7 @@ describe('green and proven go stale when the code changes after them', () => {
   const states = (s: TddStats) => bandView(s, CONFIG).chain?.map(step => `${step.name}:${step.state}${step.word === undefined ? '' : `:${step.word}`}`)
 
   test('edited since green: the green is CHANGED and nothing is proven', () => {
-    expect(states(edited(true))).toEqual(['test:done', 'red:done', 'green:open:CHANGED', 'proven:open'])
+    expect(states(edited(true))).toEqual(['red:done', 'green:open:CHANGED', 'proven:open'])
   })
 
   test('and the next step is to run the test', () => {
@@ -399,5 +399,43 @@ describe('lastRunLine is the band\'s own last-run line', () => {
     const s = on({ lastRun: { module: 'runPlan', outcome: 'fail', files: [], atMs: 0 } })
     expect(lastRunLine(s, 60_000)).toBe(bandView(s, CONFIG, [], 60_000).lastRun)
     expect(lastRunLine(s, 60_000)).toBe('last run: runPlan.test.ts failed · 1m ago')
+  })
+})
+
+// "last run" opens what that run was (2026-10-18): every element on the band says something or opens something.
+describe('lastRunTarget: the test file a click on the last run opens', () => {
+  const run = (outcome: NonNullable<TddStats['lastRun']>['outcome'], module: string | null = 'runPlan', files: string[] = []) => on({ lastRun: { module, outcome, files, atMs: 0 } })
+
+  test('no runs yet: nothing to open', () => {
+    expect(lastRunTarget(on({ lastRun: null }))).toBeNull()
+  })
+
+  test("a pass or a fail opens the test of the module it belonged to", () => {
+    expect(lastRunTarget(run('pass'))).toBe(TEST)
+    expect(lastRunTarget(run('fail'))).toBe(TEST)
+  })
+
+  test("another module's run opens that module's test, not the current one", () => {
+    expect(lastRunTarget({ ...run('pass', 'stats'), unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('C:/r/tests/stats.test.ts')
+  })
+
+  test('a module with no known test, or no module, has nothing to open', () => {
+    expect(lastRunTarget(run('pass', 'mirror'))).toBeNull()
+    expect(lastRunTarget(run('fail', null))).toBeNull()
+  })
+
+  test('a failure elsewhere opens the first file that failed', () => {
+    expect(lastRunTarget(run('elsewhere', 'runPlan', ['tests/a.test.ts', 'tests/b.test.ts']))).toBe('tests/a.test.ts')
+  })
+
+  test('a failure the output did not place, or a run that was not read, has nothing to open', () => {
+    expect(lastRunTarget(run('elsewhere', 'runPlan', ['a file the output did not name']))).toBeNull()
+    expect(lastRunTarget(run('elsewhere', 'runPlan', []))).toBeNull()
+    expect(lastRunTarget(run('unread'))).toBeNull()
+  })
+
+  test('the band carries it beside the line it opens from', () => {
+    expect(bandView(run('fail'), CONFIG).lastRunOpens).toBe(TEST)
+    expect(bandView(run('unread'), CONFIG).lastRunOpens).toBeNull()
   })
 })

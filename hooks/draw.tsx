@@ -21,6 +21,8 @@ export type BandModel = {
   /** The repo's override record: a waiting request, and the open overrides, show on the band. */
   overrides: readonly Override[]
   onViewTest: () => unknown
+  /** Opens the test file the last run was (bandModel.ts, lastRunTarget). */
+  onOpenLastRun: () => unknown
   onApprove: () => unknown
   onDeny: () => unknown
   onResume: () => unknown
@@ -80,7 +82,11 @@ export function drawBand(el: AnyElements, model: BandModel) {
         {view.verdict !== null && drawToken(el, view.verdict)}
         {view.guard !== null && <Text bold color={ACCENT.paused}>{view.guard.word}</Text>}
         {view.guard !== null && <Text>{view.guard.detail}</Text>}
-        {view.lastRun !== null && <Text dimColor>{view.lastRun}</Text>}
+        {/* The last run opens the test it ran (2026-10-18); keyed, since its text holds the age. Unread stays plain. */}
+        {view.lastRun !== null && view.lastRunOpens !== null && (
+          <Button key="last-run" label={view.lastRun} plain dimColor onPress={model.onOpenLastRun} />
+        )}
+        {view.lastRun !== null && view.lastRunOpens === null && <Text dimColor>{view.lastRun}</Text>}
       </Box>
       {/* Every open door gets a sign, whichever module is current, and a way to close it (live trial, 2026-10-18). */}
       {view.open.map(door => (

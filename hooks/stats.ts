@@ -2,7 +2,6 @@ import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, La
 import type { WorkaroundKind } from './workarounds.ts'
 import { pathKey } from './mirror.ts'
 
-const HISTORY_LENGTH = 10
 const EVENT_LOG_LENGTH = 50
 const CURRENT_EXPIRY_MS = 15 * 60_000
 /** Longer than the catch check's hardest budget (a minute) plus the restore; a lock older than this is a crash, not a check. */
@@ -23,7 +22,6 @@ export const INITIAL_STATS: TddStats = {
   passes: 0,
   fails: 0,
   unreadRuns: 0,
-  history: [],
   cycles: 0,
   cycleMsTotal: 0,
   cycleStartMs: null,
@@ -104,7 +102,7 @@ export function normalizeStats(stored: unknown): TddStats {
     passes: pick('passes', isNumber),
     fails: pick('fails', isNumber),
     unreadRuns: pick('unreadRuns', isNumber),
-    history: pick('history', Array.isArray).filter(outcome => outcome === 'pass' || outcome === 'fail'),
+    // `history` (the old band's trail of symbols) is no longer kept (2026-10-18): a record that has it parses, without it.
     cycles: pick('cycles', isNumber),
     cycleMsTotal: pick('cycleMsTotal', isNumber),
     cycleStartMs: pick('cycleStartMs', isNumberOrNull),
@@ -222,11 +220,9 @@ export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere
 }
 
 function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[]): TddStats {
-  const history = [...s.history, passed ? 'pass' : 'fail'].slice(-HISTORY_LENGTH) as TddStats['history']
-
   if (!passed && elsewhere.length > 0) {
     return logged(
-      { ...s, fails: s.fails + 1, history, redElsewhere: elsewhere },
+      { ...s, fails: s.fails + 1, redElsewhere: elsewhere },
       'elsewhere',
       nowMs,
       s.current?.module,
@@ -243,7 +239,6 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
       ...s,
       phase: 'red',
       fails: s.fails + 1,
-      history,
       cycleStartMs: s.cycleStartMs ?? nowMs,
       sawRed: true,
       redElsewhere: [],
@@ -265,7 +260,6 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
     ...s,
     phase: 'green',
     passes: s.passes + 1,
-    history,
     cycleStartMs: null,
     sawRed: false,
     redElsewhere: [],
@@ -289,8 +283,7 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
  * whose test ran; the current module's cycle stays as it was, so the run neither closes it nor checks it.
  */
 export function recordOtherPass(s: TddStats, module: string, nowMs: number): TddStats {
-  const history = [...s.history, 'pass'].slice(-HISTORY_LENGTH) as TddStats['history']
-  return logged({ ...s, passes: s.passes + 1, history, lastRun: { module, outcome: 'pass', files: [], atMs: nowMs } }, 'pass', nowMs, module)
+  return logged({ ...s, passes: s.passes + 1, lastRun: { module, outcome: 'pass', files: [], atMs: nowMs } }, 'pass', nowMs, module)
 }
 
 /**

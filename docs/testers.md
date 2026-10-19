@@ -9,7 +9,8 @@ Dope TDD is a Claude Code plugin that keeps Claude test-first. It **denies**
 an edit to source until that module's test exists, **observes** every edit
 and every test run, **proves** a passing test actually catches the change by
 undoing the change and running the test again, and keeps the **evidence**
-where you and Claude can both read it. It never calls a model of its own: it
+where you and Claude can both read it. It calls no model of its own unless you turn on the model approver for
+override requests (off by default): it
 runs inside your session, on your plan, and `claude plugin validate .` lists
 every file, process and store call it makes before you install it.
 

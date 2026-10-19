@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { buildLabel } from '../hooks/build'
+import { buildLabel, manifestVersion } from '../hooks/build'
 
 // Which build of dope-tdd is running, shown first in /tdd (2026-10-18): after each merged PR, at a glance.
 describe('buildLabel', () => {
@@ -20,5 +20,19 @@ describe('buildLabel', () => {
     expect(buildLabel(null, '0.6.0')).toBe('version 0.6.0')
     expect(buildLabel('', null)).toBe('build unknown')
     expect(buildLabel('garbled', null)).toBe('build unknown')
+  })
+})
+
+// A marketplace install said "build unknown" (2026-10-19): an install has no .git, so plugin.json names the build.
+describe('manifestVersion', () => {
+  test('the version field of plugin.json', () => {
+    expect(manifestVersion('{ "name": "dope-tdd", "version": "0.6.0" }')).toBe('0.6.0')
+  })
+
+  test('no manifest, no version, or a manifest that is not JSON: null', () => {
+    expect(manifestVersion(null)).toBeNull()
+    expect(manifestVersion('{ "name": "dope-tdd" }')).toBeNull()
+    expect(manifestVersion('{ "version": 6 }')).toBeNull()
+    expect(manifestVersion('not json')).toBeNull()
   })
 })

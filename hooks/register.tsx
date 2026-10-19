@@ -14,7 +14,7 @@ import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck
 import type { RunnerKind } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
-import { buildLabel } from './build.ts'
+import { buildLabel, manifestVersion } from './build.ts'
 import { applyBar, failureVerdict, moduleHunks, parseVerdict, reviewPrompt, reviewerFor } from './reviewer.ts'
 import type { ReviewResult } from './reviewer.ts'
 import type { GuardConfig } from './config.ts'
@@ -35,7 +35,7 @@ import {
   unreadRunAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { changedPaths, isRevertCommand, parseNumstat } from './gitChanges.ts'
+import { changedPaths, isRevertCommand, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
@@ -53,6 +53,7 @@ import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
 import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
+import type { Saved } from './bandModel.ts'
 import type { Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
@@ -121,6 +122,8 @@ const gitOperation = atom({ plugin: 'dope-tdd', key: 'git-operation' } as const,
 const unreadRunners = atom({ plugin: 'dope-tdd', key: 'unread-runners' } as const, [] as readonly string[])
 /** The repo's override record (dope-tdd.overrides.json), kept here too so the band never reads the file to draw. */
 const overrideRecord = atom({ plugin: 'dope-tdd', key: 'overrides' } as const, [] as readonly Override[])
+/** Whether the current module's work is committed or pushed, read from git after each tool call while green; '' module before. */
+const savedAtom = atom({ plugin: 'dope-tdd', key: 'saved' } as const, { module: '', state: 'uncommitted' } as Saved)
 /** Whether a person is there to approve an override; unknown counts as there, as in a session the tests start bare. */
 const attended = atom({ plugin: 'dope-tdd', key: 'attended' } as const, true)
 const OVERRIDE_TOOL = /^mcp__dope-tdd__override_request$/
@@ -280,10 +283,14 @@ async function sessionIdForBand($: EngineInterface): Promise<string | undefined>
   return kept !== '' ? kept : await sessionIdNow($)
 }
 
-/** The plugin's own folder is a git checkout while it is developed: its last commit names the build. */
+/** The plugin's own folder is a git checkout while it is developed: its last commit names the build; else plugin.json. */
 async function readBuild($: EngineInterface): Promise<string> {
   const log = await gitQuiet($, $.plugin.root, ['log', '-1', '--format=%h|%cs|%s'])
-  return buildLabel(log === null || log.exitCode !== 0 ? null : log.stdout, null)
+  if (log !== null && log.exitCode === 0) {
+    return buildLabel(log.stdout, null)
+  }
+  const manifest = (await $.fs.exists(`${$.plugin.root}/.claude-plugin/plugin.json`)) ? await readSource($, `${$.plugin.root}/.claude-plugin/plugin.json`) : null
+  return buildLabel(null, manifestVersion(manifest))
 }
 
 async function surfacesNow($: EngineInterface): Promise<readonly string[]> {
@@ -1358,6 +1365,25 @@ async function detectGitOperation($: EngineInterface, root: string): Promise<Git
 }
 
 /**
+ * Whether the current module's work is committed, and pushed, so a green band stops saying "then commit" once it is
+ * (2026-10-19). One git status of the module's two files, and only while green: the only phase whose next step uses it.
+ */
+async function noteSaved($: EngineInterface, root: string): Promise<void> {
+  const s = await readStats($)
+  const module = s.current?.module
+  const testPath = module === undefined ? undefined : s.unlocked[module]
+  if (module === undefined || testPath === undefined || s.phase !== 'green') {
+    return
+  }
+  const config = await loadConfig($, root)
+  const status = await gitQuiet($, root, ['status', '--porcelain=v2', '--branch', '--', `${sourcePathFor(config, module)}.*`, relativePath(root, testPath)])
+  const state = status === null || status.exitCode !== 0 ? null : savedStateOf(status.stdout)
+  if (state !== null) {
+    await update($, savedAtom, () => ({ module, state }))
+  }
+}
+
+/**
  * The git operation in progress, and the lines that say what changed since the last tool call: the start and the end
  * are each said once, to the agent in the tool result and to the person in a toast.
  */
@@ -1414,6 +1440,7 @@ async function guardFileWrite(
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
   }
   const result = await checkFileWrite($, tool, filePath, proceed)
+  await noteSaved($, root)
   return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
 }
 
@@ -1627,6 +1654,7 @@ async function guardShell(
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
     const result = await checkShell($, command, proceed, shell)
+    await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
   // The shell still moves while the guard stands down, so the next command starts where this one left it.
@@ -2487,6 +2515,7 @@ export const register: Register = on => {
       nowMs,
       logo,
       standingDown,
+      saved: await read($, savedAtom),
       onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current === null ? '' : moduleLabel(config, current.current.module)}` }),
       onOpenLastRun: () => {
         const target = lastRunTarget(current)

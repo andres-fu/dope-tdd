@@ -1,6 +1,30 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { changedPaths, isRevertCommand, parseNumstat } from '../hooks/gitChanges'
+import { changedPaths, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
+
+// `git status --porcelain=v2 --branch -- <source> <test>`: whether the module's work is committed, and pushed (2026-10-19).
+describe('savedStateOf', () => {
+  const head = '# branch.oid 0fcba10\n# branch.head karl-feedback\n'
+  test('a changed or untracked file of the module is uncommitted', () => {
+    expect(savedStateOf(`${head}1 .M N... 100644 100644 100644 a b hooks/build.ts\n`)).toBe('uncommitted')
+    expect(savedStateOf(`${head}? tests/build.test.ts\n`)).toBe('uncommitted')
+  })
+
+  test('clean with no upstream, or ahead of it, is committed', () => {
+    expect(savedStateOf(head)).toBe('committed')
+    expect(savedStateOf(`${head}# branch.upstream origin/karl-feedback\n# branch.ab +2 -0\n`)).toBe('committed')
+  })
+
+  test('clean and level with its upstream is pushed', () => {
+    expect(savedStateOf(`${head}# branch.upstream origin/karl-feedback\n# branch.ab +0 -0\n`)).toBe('pushed')
+    expect(savedStateOf(`${head}# branch.upstream origin/karl-feedback\n# branch.ab +0 -3\n`)).toBe('pushed')
+  })
+
+  test('output without the branch header is not git status: unknown, never a guess of committed', () => {
+    expect(savedStateOf('')).toBeNull()
+    expect(savedStateOf('fatal: not a git repository\n')).toBeNull()
+  })
+})
 
 describe('parseNumstat', () => {
   test('keys each changed path by its add/delete counts', () => {

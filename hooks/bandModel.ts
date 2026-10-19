@@ -6,6 +6,7 @@ import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
 import { moduleLabel } from './mirror.ts'
 import { deciderLabel, overrideLeft } from './overrides.ts'
+import type { SavedState } from './gitChanges.ts'
 import { UNNAMED_FAILURE } from './runPlan.ts'
 import { isCodeFile } from './setup.ts'
 import { stackOf } from './stacks.ts'
@@ -122,7 +123,10 @@ function changedSinceGreen(s: TddStats, module: string): boolean {
   return s.modules[module]?.editedSinceRun === true
 }
 
-function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: readonly { target: string }[]): string {
+/** Whether a module's work is committed or pushed, as git last said. */
+export type Saved = { module: string; state: SavedState }
+
+function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: readonly { target: string }[], saved: Saved | null): string {
   if (watch.kind === 'not-watching') {
     return 'run /tdd setup, or add a layout to dope-tdd.json'
   }
@@ -168,7 +172,13 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
   if (outcome?.kind === 'unverified' || (!caught && s.unproven.includes(current.module))) {
     return 'prove it by hand: break the code, see red, put it back'
   }
-  return 'refactor while the test guards it, then commit'
+  // Read from git after each tool call while green, so a pushed PR stops being told to commit (2026-10-19).
+  const where = saved?.module === current.module ? saved.state : 'uncommitted'
+  return where === 'pushed'
+    ? 'committed and pushed · write the next failing test'
+    : where === 'committed'
+      ? 'committed · push it, or refactor while the test guards it'
+      : 'refactor while the test guards it, then commit'
 }
 
 // Band v3 (2026-10-18), from the principal UX and engineering reviews. Counts (BLOCKED, WORKAROUNDS, UNWATCHED) left
@@ -333,6 +343,7 @@ export function bandView(
   session?: string,
   /** The git operation the guard stands down for, or ''. */
   standingDown = '',
+  saved: Saved | null = null,
 ): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
@@ -351,7 +362,7 @@ export function bandView(
     watch,
     showProgress,
     chain,
-    next: nextOf(s, watch, pending, open),
+    next: nextOf(s, watch, pending, open, saved),
     pending,
     overridden,
     open,

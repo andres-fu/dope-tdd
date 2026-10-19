@@ -671,7 +671,7 @@ describe('the catch check in a worktree, never in your files', () => {
   // Field test on VibeCast (2026-10-18): in a linked worktree `.git` is a file, so `.git/HEAD` never exists and both
   // the isolated check and the small changes to a new file were skipped without a word. The desktop app runs every
   // side session in a linked worktree. The throwaway copy now lives in the worktree's own git directory.
-  const LINKED_GIT_DIR = 'C:/work/main/.git/worktrees/throughline'
+  const LINKED_GIT_DIR = `${FIXTURE_DRIVE}work/main/.git/worktrees/throughline`
   const LINKED_WT = `${LINKED_GIT_DIR}/dope-tdd/wt`
   const linkedWorktree = (world: ReturnType<typeof fakeEngine>) => world.fileContents.set(`${ROOT}/.git`, `gitdir: ${LINKED_GIT_DIR}\n`)
 

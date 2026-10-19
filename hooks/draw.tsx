@@ -2,15 +2,14 @@ import type { Elements, RenderSurface } from 'claude-code'
 
 import type { CurrentTest, Override, TddStats } from '../types'
 import { bandView } from './bandModel.ts'
-import type { Problem, Step, Watch } from './bandModel.ts'
+import type { Token } from './bandModel.ts'
 import type { GuardConfig } from './config.ts'
 import { moduleLabel } from './mirror.ts'
-import { ACCENT, ALARM_TEXT, RED_TIMER_ALARM_MS } from './theme.ts'
-import { formatSpan } from './timeText.ts'
+import { ACCENT, ALARM_TEXT } from './theme.ts'
 
 type AnyElements = Elements[RenderSurface]
 
-const TITLE = 'DOPE TDD'
+const NAME = 'dope-tdd'
 
 export type BandModel = {
   stats: TddStats
@@ -19,7 +18,7 @@ export type BandModel = {
   logo: string | null
   /** The git operation the guard stands down for, or '' when it is on. */
   standingDown: string
-  /** The repo's override record: a waiting request, and the current module's open override, show on the band. */
+  /** The repo's override record: a waiting request, and the open overrides, show on the band. */
   overrides: readonly Override[]
   onViewTest: () => unknown
   onApprove: () => unknown
@@ -29,7 +28,6 @@ export type BandModel = {
   onEnd: (target: string) => unknown
   /** This session's id, so another session's override is marked as theirs. */
   session?: string
-  onReset: () => unknown
 }
 
 function drawLogo(el: AnyElements, logo: string | null) {
@@ -41,105 +39,49 @@ function drawLogo(el: AnyElements, logo: string | null) {
   return <Text bold color={ACCENT.ember}>☠</Text>
 }
 
-function drawPhase(el: AnyElements, s: TddStats, nowMs: number, standingDown: string) {
+/** A word in its tone: green for a pass, ember for RED and MISSED, amber for what needs a look, dim for what is open. */
+function drawToken(el: AnyElements, token: Token) {
   const { Text } = el
-  if (standingDown !== '') {
-    return <Text bold color={ACCENT.paused}>{`⏸ GIT ${standingDown.toUpperCase()}`}</Text>
+  switch (token.tone) {
+    case 'pass':
+      return <Text bold={token.text === token.text.toUpperCase()} color={ACCENT.pass}>{token.text}</Text>
+    case 'ember':
+      return <Text bold color={ACCENT.ember}>{token.text}</Text>
+    case 'alarm':
+      return <Text bold color={ALARM_TEXT} backgroundColor={ACCENT.ember}>{` ${token.text} `}</Text>
+    case 'warn':
+      return <Text bold color={ACCENT.paused}>{token.text}</Text>
+    case 'dim':
+      return <Text dimColor>{token.text}</Text>
+    default:
+      return <Text>{token.text}</Text>
   }
-  if (s.paused) {
-    return <Text bold color={ACCENT.paused}>⏸ PAUSED</Text>
-  }
-  const openForMs = s.cycleStartMs === null ? null : nowMs - s.cycleStartMs
-  const timer = openForMs === null ? '' : ` ${formatSpan(openForMs)}`
-  if (s.phase === 'green') {
-    return <Text bold color={ACCENT.pass}>■ GREEN</Text>
-  }
-  if (s.phase === 'writing') {
-    return <Text bold>{`✎ WRITING${timer}`}</Text>
-  }
-  if (s.phase === 'idle') {
-    return <Text bold dimColor>IDLE</Text>
-  }
-  return openForMs !== null && openForMs >= RED_TIMER_ALARM_MS
-    ? <Text bold color={ALARM_TEXT} backgroundColor={ACCENT.ember}>{` ■ RED${timer} `}</Text>
-    : <Text bold color={ACCENT.ember}>{`■ RED${timer}`}</Text>
 }
 
-/** The first thing the band says: whether dope-tdd can see the code and read the runs at all (bandModel.ts). */
-function drawWatch(el: AnyElements, watch: Watch) {
-  const { Text } = el
-  if (watch.kind === 'watching') {
-    // Where it looks never changes within a repo: the band says it is watching, /tdd names the layout (2026-10-18).
-    return <Text color={ACCENT.pass}>● WATCHING</Text>
-  }
-  if (watch.kind === 'not-watching') {
-    const files = `${watch.files} edited code file${watch.files === 1 ? ' matches' : 's match'} no test layout: ${watch.example}${watch.files > 1 ? ` +${watch.files - 1}` : ''}`
-    return [<Text bold color={ACCENT.paused}>⚠ NOT WATCHING</Text>, <Text>{files}</Text>]
-  }
-  return <Text bold color={ACCENT.paused}>⚠ CAN'T READ RUNS</Text>
-}
-
-function drawStep(el: AnyElements, step: Step) {
-  const { Text } = el
-  if (step.state === 'failed') {
-    return <Text bold color={step.word === 'MISSED' ? ACCENT.ember : ACCENT.paused}>{step.word ?? `${step.name} ✗`}</Text>
-  }
-  if (step.state === 'done') {
-    // Red seen by the catch check, not by hand: done, but said quietly, so it reads as evidence and not as credit.
-    if (step.name === 'red' && step.word !== undefined) {
-      return <Text color={ACCENT.pass}>{`red ✓ ${step.word.toLowerCase()}`}</Text>
-    }
-    return step.word === undefined ? <Text color={ACCENT.pass}>{`${step.name} ✓`}</Text> : <Text bold color={ACCENT.pass}>{step.word}</Text>
-  }
-  // REFACTOR and UNVERIFIED are facts about the change, not credit: plain, never the pass colour.
-  return step.word === undefined ? <Text dimColor>{`${step.name} ·`}</Text> : <Text bold>{step.word}</Text>
-}
-
-function drawChain(el: AnyElements, s: TddStats, chain: readonly Step[], label: string) {
-  const { Box, Text } = el
-  return (
-    <Box flexDirection="row" gap={2}>
-      <Text bold>{label.toUpperCase()}</Text>
-      {chain.map(step => drawStep(el, step))}
-      {s.redElsewhere.length > 0 && <Text dimColor>RED ELSEWHERE</Text>}
-    </Box>
-  )
-}
-
-
-/** Only problems above zero: a row of zeros read as "all good" even when dope-tdd could see nothing. */
-function drawProblems(el: AnyElements, problems: readonly Problem[]) {
-  const { Box, Text } = el
-  return (
-    <Box flexDirection="row" gap={2}>
-      {problems.map(problem => <Text bold color={problem.tone === 'alarm' ? ACCENT.ember : ACCENT.paused}>{problem.label}</Text>)}
-    </Box>
-  )
-}
-
+/**
+ * Band v3 (2026-10-18), from the principal UX and engineering reviews. Line 1 is the story: the name, the module as
+ * it is named, its red and green, the one verdict, and the last run. Line 2 is the next step. A third line appears only
+ * when a person must act. Enforcing is silent; a guard that is not gets one amber word. Counts live in /tdd.
+ */
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config, model.overrides, nowMs, model.session)
-  const watching = view.watch.kind === 'watching'
-  const progress = view.showProgress
+  const view = bandView(s, config, model.overrides, nowMs, model.session, model.standingDown)
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor={ACCENT.ember}
-      paddingX={1}
-    >
+    <Box flexDirection="column" borderStyle="single" borderColor={ACCENT.ember} paddingX={1}>
       <Box flexDirection="row" gap={2}>
         {drawLogo(el, logo)}
-        <Text bold>{TITLE}</Text>
-        {drawWatch(el, view.watch)}
-        {(progress || s.paused || model.standingDown !== '') && drawPhase(el, s, nowMs, model.standingDown)}
-        {/* The last run in words, in place of a trail of ● and ✗ that told no story (2026-10-18). */}
+        <Text bold>{NAME}</Text>
+        {view.idle && <Text>ready · write a failing test, or edit code, and this band follows</Text>}
+        {view.idle && <Text dimColor>/tdd for status</Text>}
+        {view.module !== null && <Text bold>{view.module}</Text>}
+        {view.tokens.map(token => drawToken(el, token))}
+        {view.verdict !== null && drawToken(el, view.verdict)}
+        {view.guard !== null && <Text bold color={ACCENT.paused}>{view.guard.word}</Text>}
+        {view.guard !== null && <Text>{view.guard.detail}</Text>}
         {view.lastRun !== null && <Text dimColor>{view.lastRun}</Text>}
       </Box>
-      {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
       {/* Every open door gets a sign, whichever module is current, and a way to close it (live trial, 2026-10-18). */}
       {view.open.map(door => (
         <Box flexDirection="row" gap={2}>
@@ -148,25 +90,24 @@ export function drawBand(el: AnyElements, model: BandModel) {
           <Button key={`end-${door.target}`} label="END" onPress={() => model.onEnd(door.target)} />
         </Box>
       ))}
-      {view.pending !== null && (
+      {!view.idle && (
         <Box flexDirection="row" gap={2}>
-          <Text bold color={ACCENT.paused}>OVERRIDE REQUESTED</Text>
-          <Text>{`${view.pending.kind} · ${view.pending.module === null ? 'every module' : moduleLabel(config, view.pending.module)}: "${view.pending.reason.trim()}"`}</Text>
+          <Text dimColor>next</Text>
+          <Text>{view.next}</Text>
+          {s.current !== null && <Button key="view-test" label="VIEW TEST" onPress={model.onViewTest} />}
+          {/* No pause button: a pause takes a time and a reason (/tdd pause). Resume is one press. */}
+          {s.paused && <Button key="resume" label="RESUME" onPress={model.onResume} />}
         </Box>
       )}
-      {view.problems.length > 0 && drawProblems(el, view.problems)}
-      <Box flexDirection="row" gap={2}>
-        <Text dimColor>NEXT</Text>
-        <Text>{view.next}</Text>
-      </Box>
-      <Box flexDirection="row" gap={1}>
-        {s.current !== null && <Button key="view-test" label="VIEW TEST" onPress={model.onViewTest} />}
-        {view.pending !== null && <Button key="approve" label="APPROVE" onPress={model.onApprove} />}
-        {view.pending !== null && <Button key="deny" label="DENY" onPress={model.onDeny} />}
-        {/* No pause button: a pause takes a time and a reason (/tdd pause). Resume is one press. */}
-        {s.paused && <Button key="resume" label="RESUME" onPress={model.onResume} />}
-        <Button key="reset" label="RESET" onPress={model.onReset} />
-      </Box>
+      {/* The one line that asks a person to act. */}
+      {view.pending !== null && (
+        <Box flexDirection="row" gap={2}>
+          <Text bold color={ACCENT.paused}>OVERRIDE ASKED</Text>
+          <Text>{`${view.pending.kind} · ${view.pending.module === null ? 'every module' : moduleLabel(config, view.pending.module)}: "${view.pending.reason.trim()}"`}</Text>
+          <Button key="approve" label="APPROVE" onPress={model.onApprove} />
+          <Button key="deny" label="DENY" onPress={model.onDeny} />
+        </Box>
+      )}
     </Box>
   )
 }

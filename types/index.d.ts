@@ -30,6 +30,8 @@ export type EventKind =
   | 'carried-on'
   /** #54: a carried-over unlock dropped at session start because its test changed since. */
   | 'stale-unlock'
+  /** A person reset the session's counts with /tdd reset: on the record, never silent (band v3, 2026-10-18). */
+  | 'reset'
   /** #89: a problem found in another project, reported to its owner and never fixed from here. */
   | 'reported-elsewhere'
 

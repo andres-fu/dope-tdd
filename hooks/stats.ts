@@ -577,15 +577,22 @@ export function otherOpenModules(s: TddStats): { module: string; phase: ModuleSt
     .map(([module, state]) => ({ module, phase: state.phase }))
 }
 
-export function resetStats(s: TddStats): TddStats {
-  return {
-    ...INITIAL_STATS,
-    paused: s.paused,
-    unlocked: s.unlocked,
-    inherited: s.inherited,
-    stale: s.stale,
-    reminded: s.reminded,
-    changes: s.changes,
-    current: s.current,
-  }
+/** /tdd reset: the counts start over, but the workarounds stay and the reset itself is logged: nothing silent. */
+export function resetStats(s: TddStats, nowMs: number): TddStats {
+  return logged(
+    {
+      ...INITIAL_STATS,
+      workarounds: s.workarounds,
+      workaroundsBy: s.workaroundsBy,
+      paused: s.paused,
+      unlocked: s.unlocked,
+      inherited: s.inherited,
+      stale: s.stale,
+      reminded: s.reminded,
+      changes: s.changes,
+      current: s.current,
+    },
+    'reset',
+    nowMs,
+  )
 }

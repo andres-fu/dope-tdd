@@ -15,15 +15,15 @@ describe('band content', () => {
     }
   })
 
-  test('names the module and says WRITING once a test is touched', async ($, on) => {
+  test('names the module and shows its open steps once a test is touched', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
-      expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: 'DOPE TDD' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'red ·' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'dope-tdd' })).toBeDefined()
       await ui.unmount()
     }
   })
@@ -36,8 +36,8 @@ describe('band content', () => {
     await touchTest($, world, 'band')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'BAND' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^band$/ })).toBeUndefined()
   })
 
   test('a test named after no module that was on the band before an upgrade is let go when dope-tdd loads (2026-10-18)', async ($, on) => {
@@ -49,7 +49,7 @@ describe('band content', () => {
     await startSession($)
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'BAND' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^band$/ })).toBeUndefined()
   })
 
   test('a new module written test-first, whose source does not exist yet, does take over the band', async ($, on) => {
@@ -60,30 +60,31 @@ describe('band content', () => {
     await touchTest($, world, 'utils/slugify')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'UTILS/SLUGIFY' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/slugify' })).toBeDefined()
   })
 
-  test('says IDLE, not WRITING, when a reset keeps the module but no cycle is open', async ($, on) => {
+  test('a reset keeps the module, with its steps open again', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'pass')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
-    await ui.press({ key: 'reset' })
+    await $.command.run({ command: 'tdd', args: 'reset yes' } as never)
 
-    expect(await ui.find({ type: 'Text', text: 'IDLE' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'green ·' })).toBeDefined()
   })
 
-  test('the cycle timer advances with the minute tick', async ($, on) => {
+  test('the RED timer advances with the minute tick', async ($, on) => {
     const world = fakeEngine(on)
     await startSession($)
     await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
     await world.clock.advance(3 * MINUTE)
 
-    expect(await ui.find({ type: 'Text', text: 'WRITING 3M' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'RED 3M' })).toBeDefined()
   })
 
   // A trail of ● and ✗ said nothing a person could act on: which test, which module, when (2026-10-18). The last run, in
@@ -95,7 +96,7 @@ describe('band content', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /CYCLES|0 CAUGHT|0 BLOCKED/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: 'last run: formatDuration.test.ts passed · just now' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^[●✗]$/ })).toBeUndefined()
@@ -106,12 +107,12 @@ describe('band content', () => {
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
     const red = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await red.find({ type: 'Text', text: /■ RED/ }))?.props.color).toBe(ACCENT.ember)
+    expect((await red.find({ type: 'Text', text: /^RED/ }))?.props.color).toBe(ACCENT.ember)
     await red.unmount()
 
     await runTests($, world, 'pass')
     const green = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await green.find({ type: 'Text', text: /GREEN/ }))?.props.color).toBe(ACCENT.pass)
+    expect((await green.find({ type: 'Text', text: 'green ✓' }))?.props.color).toBe(ACCENT.pass)
   })
 
   test('draws the skull logo on desktop and a skull glyph on the terminal', async ($, on) => {
@@ -128,17 +129,17 @@ describe('band content', () => {
 })
 
 describe('band verdict', () => {
-  test('a fix that saw red and is caught shows the whole chain done, CAUGHT, and the next step', async ($, on) => {
+  test('a fix that saw red and is caught shows the whole chain done, PROVEN, and the next step', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    for (const step of ['test ✓', 'red ✓', 'green ✓']) {
+    for (const step of ['red ✓', 'green ✓']) {
       expect((await ui.find({ type: 'Text', text: step }))?.props.color).toBe(ACCENT.pass)
     }
-    expect((await ui.find({ type: 'Text', text: 'CAUGHT' }))?.props.color).toBe(ACCENT.pass)
+    expect((await ui.find({ type: 'Text', text: 'PROVEN' }))?.props.color).toBe(ACCENT.pass)
     expect(await ui.find({ type: 'Text', text: /refactor while the test guards it, then commit/ })).toBeDefined()
   })
 
@@ -149,7 +150,7 @@ describe('band verdict', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: 'MISSED' }))?.props.color).toBe(ACCENT.ember)
+    expect((await ui.find({ type: 'Text', text: 'MISSED · passes without your change' }))?.props.color).toBe(ACCENT.ember)
     expect(await ui.find({ type: 'Text', text: '1 MISSED' })).toBeUndefined()
   })
 
@@ -159,7 +160,7 @@ describe('band verdict', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: 'NEVER SAW RED' }))?.props.color).toBe(ACCENT.paused)
+    expect((await ui.find({ type: 'Text', text: 'UNPROVEN · never failed' }))?.props.color).toBe(ACCENT.paused)
     expect(await ui.find({ type: 'Text', text: '1 NEVER SAW RED' })).toBeUndefined()
   })
 
@@ -172,8 +173,8 @@ describe('band verdict', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: 'red ✓ by catch' }))?.props.color).toBe(ACCENT.pass)
-    expect(await ui.find({ type: 'Text', text: 'NEVER SAW RED' })).toBeUndefined()
+    expect((await ui.find({ type: 'Text', text: 'red ✓' }))?.props.color).toBe(ACCENT.pass)
+    expect(await ui.find({ type: 'Text', text: /UNPROVEN/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /refactor while the test guards it, then commit/ })).toBeDefined()
   })
 
@@ -184,11 +185,11 @@ describe('band verdict', () => {
     await runTests($, world, 'fail')
     await runTests($, world, 'pass')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeDefined()
 
     await world.clock.advance(16 * MINUTE)
 
-    expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /^●$/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /write a failing test first/ })).toBeDefined()
   })
@@ -216,19 +217,19 @@ describe('band verdict', () => {
     await runTests($, world, 'pass')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: 'REFACTOR' }))?.props.color).not.toBe(ACCENT.pass)
+    expect((await ui.find({ type: 'Text', text: 'refactor · not re-checked' }))?.props.color).not.toBe(ACCENT.pass)
   })
 
   test('shows the mode only when it is not plain enforce', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     const plain = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await plain.find({ type: 'Text', text: /MODE/ })).toBeUndefined()
+    expect(await plain.find({ type: 'Text', text: /WARN ONLY|OBSERVING/ })).toBeUndefined()
     await plain.unmount()
 
     await writeAt($, 'dope-tdd.json', '{"mode":"warn"}')
     const warn = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await warn.find({ type: 'Text', text: 'MODE WARN' })).toBeDefined()
+    expect(await warn.find({ type: 'Text', text: 'WARN ONLY' })).toBeDefined()
   })
 })
 
@@ -251,8 +252,8 @@ describe('band theming', () => {
     await touchTest($, world, 'utils/formatDuration')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
-    const module = await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })
-    const next = await ui.find({ type: 'Text', text: 'NEXT' })
+    const module = await ui.find({ type: 'Text', text: 'utils/formatDuration' })
+    const next = await ui.find({ type: 'Text', text: 'next' })
     expect(module?.props.color).toBeUndefined()
     expect(next?.props.color).toBeUndefined()
     expect(next?.props.dimColor).toBe(true)
@@ -261,13 +262,13 @@ describe('band theming', () => {
 
 describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', () => {
   // Where it looks never changes within a repo, so the band says only that it is watching; /tdd names the layout.
-  test('watching says so, and nothing more', async ($, on) => {
+  // Band v3: while the guard enforces and watches, it says nothing about it; only the opposite earns a word.
+  test('watching and enforcing is silent', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: '● WATCHING' }))?.props.color).toBe(ACCENT.pass)
-    expect(await ui.find({ type: 'Text', text: /WATCHING src\// })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /WATCHING/ })).toBeUndefined()
   })
 
   test('code edited outside every layout, with nothing guarded, says NOT WATCHING and how to fix it', async ($, on) => {
@@ -276,7 +277,7 @@ describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', 
 
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
-      expect((await ui.find({ type: 'Text', text: '⚠ NOT WATCHING' }))?.props.color).toBe(ACCENT.paused)
+      expect((await ui.find({ type: 'Text', text: 'NOT WATCHING' }))?.props.color).toBe(ACCENT.paused)
       expect(await ui.find({ type: 'Text', text: /1 edited code file matches no test layout: scripts\/build\.ts/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /run \/tdd setup, or add a layout to dope-tdd\.json/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /GREEN|IDLE/ })).toBeUndefined()
@@ -292,7 +293,7 @@ describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', 
     await runTests($, world, 'fail')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: "⚠ CAN'T READ RUNS" }))?.props.color).toBe(ACCENT.paused)
+    expect((await ui.find({ type: 'Text', text: "CAN'T READ RUNS" }))?.props.color).toBe(ACCENT.paused)
     expect(await ui.find({ type: 'Text', text: /run one test file, so its summary line reaches the output/ })).toBeDefined()
   })
 })
@@ -314,7 +315,7 @@ describe('band buttons', () => {
       await ui.press({ key: 'resume' })
       const guarded = await editAt($, 'src/utils/calculateDuration.ts')
       expect(guarded.deny).toBeDefined()
-      await ui.press({ key: 'reset' })
+      await $.command.run({ command: 'tdd', args: 'reset yes' } as never)
       await ui.unmount()
     }
   })
@@ -326,7 +327,7 @@ describe('band buttons', () => {
     await editAt($, 'src/utils/calculateDuration.ts')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    await ui.press({ key: 'reset' })
+    await $.command.run({ command: 'tdd', args: 'reset yes' } as never)
 
     expect(await ui.find({ type: 'Text', text: '1 BLOCKED' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /BLOCKED|MISSED|WORKAROUNDS/ })).toBeUndefined()
@@ -401,6 +402,13 @@ describe('/tdd why', () => {
       "CAN'T READ RUNS",
       'UNWATCHED',
       'NEXT',
+      // Band v3 (2026-10-18)
+      'UNPROVEN',
+      'CHANGED',
+      'STANDING DOWN',
+      'WARN ONLY',
+      'OBSERVING',
+      'OVERRIDE ASKED',
     ]) {
       expect(result.text).toMatch(new RegExp(`^  ${word} `, 'm'))
     }
@@ -415,8 +423,78 @@ describe('a module in a folder with a layout of its own (#24)', () => {
 
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
-      expect(await ui.find({ type: 'Text', text: 'DASHBOARD/SRC/LIB/PKCE' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'dashboard/src/lib/pkce' })).toBeDefined()
       await ui.unmount()
     }
+  })
+})
+
+// Band v3 (2026-10-18), as mocked and agreed: two lines (a third only when a person must act), silence while the guard
+// enforces, the module as it is named, one verdict word, and a line before anything happens instead of no band at all.
+describe('band v3', () => {
+  const mount = ($: Parameters<typeof touchTest>[0]) => $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+  test('before anything happens: the name and what it will do, never an empty space', async ($, on) => {
+    fakeEngine(on)
+    const ui = await mount($)
+    expect(await ui.find({ type: 'Text', text: 'dope-tdd' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^ready · write a failing test, or edit code, and this band follows/ })).toBeDefined()
+  })
+
+  test('writing: the module as named, both steps open, no WATCHING, no header, no RESET', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    const ui = await mount($)
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'red ·' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'green ·' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /WATCHING|DOPE TDD/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', text: 'RESET' })).toBeUndefined()
+  })
+
+  test('RED in ember', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    const ui = await mount($)
+    expect((await ui.find({ type: 'Text', text: /^RED/ }))?.props.color).toBe(ACCENT.ember)
+  })
+
+  test('PROVEN in green, after red and green', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+    const ui = await mount($)
+    expect((await ui.find({ type: 'Text', text: 'PROVEN' }))?.props.color).toBe(ACCENT.pass)
+    expect(await ui.find({ type: 'Text', text: 'red ✓' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeDefined()
+  })
+
+  test('MISSED is its own word, in ember, the strongest colour', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  3 passed (3)\n', exitCode: 0 }
+    await runTests($, world, 'pass')
+    const ui = await mount($)
+    expect((await ui.find({ type: 'Text', text: 'MISSED · passes without your change' }))?.props.color).toBe(ACCENT.ember)
+  })
+
+  test('a guard that is not enforcing says one amber word and what it means', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"warn"}')
+    await touchTest($, world, 'utils/formatDuration')
+    const ui = await mount($)
+    expect((await ui.find({ type: 'Text', text: 'WARN ONLY' }))?.props.color).toBe(ACCENT.paused)
+    expect(await ui.find({ type: 'Text', text: 'untested edits go through, with a warning' })).toBeDefined()
+  })
+
+  test('/tdd reset asks first, then resets on the record', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    const asked = (await $.command.run({ command: 'tdd', args: 'reset' } as never)) as { text: string }
+    expect(asked.text).toMatch(/\/tdd reset yes/)
+    await $.command.run({ command: 'tdd', args: 'reset yes' } as never)
+    expect(((await $.command.run({ command: 'tdd', args: '' } as never)) as { text: string }).text).toMatch(/^JUST NOW: reset$/m)
   })
 })

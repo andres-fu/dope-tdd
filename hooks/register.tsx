@@ -2298,6 +2298,16 @@ async function tddCommand($: EngineInterface, args: string): Promise<string> {
     // The module id keeps its case, as for the receipt.
     return await endNamed($, raw[2])
   }
+  // Band v3: reset left the band (one unconfirmed press erased the record). It asks first, keeps the workarounds,
+  // and logs itself.
+  if (words[0] === 'reset') {
+    if (words[1] !== 'yes') {
+      return 'This starts the session counts over: runs, cycles, blocked, the recent events. The workarounds and the override record stay. /tdd reset yes to go ahead.'
+    }
+    const nowMs = await $.clock.now()
+    await change($, s => resetStats(s, nowMs))
+    return 'dope-tdd: the session counts start over; the reset is on the record.'
+  }
   if (words[0] === 'receipt') {
     const root = await $.session.root()
     // The module id keeps its case: server/managers/RoomManager is not server/managers/roommanager.
@@ -2438,7 +2448,8 @@ export const register: Register = on => {
     const current = await readStats($)
     const standingDown = await read($, gitOperation)
     const record = await read($, overrideRecord)
-    if (e.props.hasSurvey || (!hasActivity(current) && standingDown === '' && !record.some(o => o.status === 'pending'))) {
+    // Band v3: always drawn, so a new user learns it is there; before any activity it says what it will do.
+    if (e.props.hasSurvey) {
       return next(e)
     }
 
@@ -2461,10 +2472,6 @@ export const register: Register = on => {
         await resumeNow($)
       },
       onEnd: async (target: string) => toast($, await endNamed($, target)),
-      onReset: async () => {
-        await change($, resetStats)
-        toast($, 'TDD stats reset')
-      },
     })
   })
 

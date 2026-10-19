@@ -29,6 +29,11 @@ why and lists the ways past it.
   supported path. Python (pytest), Godot 4 (gdUnit4), Java (Maven or Gradle)
   and .NET work too, but their catch check is experimental and off by
   default; see the rough edges.
+- Not watched yet: Go, Rust and Ruby, and test commands that hide the runner
+  behind another tool (`python -m unittest`, `tox`, `make test`, a shell
+  script). Their runs are not recognised, so the guard sees no red or green
+  and the band stays at writing after a run. Pick a project in a supported stack;
+  if you try one of these anyway, the `/tdd` output is still a useful report.
 - Node and git.
 - **What appears in your repository.** `dope-tdd.json` at the root if you run
   `/tdd setup` (the layout and settings; commit it). `dope-tdd.overrides.json`

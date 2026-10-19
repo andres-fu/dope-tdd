@@ -664,6 +664,11 @@ export function isPureTestRun(command: string): boolean {
   return segments.some(runs) && segments.every(segment => runs(segment) || HARMLESS.test(segment))
 }
 
+/** A run that always covers the whole folder (the plugin kit): its red belongs to whichever files it names, if any. */
+export function runsWholeFolder(command: string): boolean {
+  return commandSegments(command).some(segment => PLUGIN_KIT_COMMAND.test(executedText(segment)))
+}
+
 export function isTestRun(command: string): boolean {
   return commandSegments(command).some(segment => RUNNERS.some(runner => runner.command.test(executedText(segment))))
 }

@@ -69,7 +69,8 @@ function drawPhase(el: AnyElements, s: TddStats, nowMs: number, standingDown: st
 function drawWatch(el: AnyElements, watch: Watch) {
   const { Text } = el
   if (watch.kind === 'watching') {
-    return <Text color={ACCENT.pass}>{`● WATCHING ${watch.where}`}</Text>
+    // Where it looks never changes within a repo: the band says it is watching, /tdd names the layout (2026-10-18).
+    return <Text color={ACCENT.pass}>● WATCHING</Text>
   }
   if (watch.kind === 'not-watching') {
     const files = `${watch.files} edited code file${watch.files === 1 ? ' matches' : 's match'} no test layout: ${watch.example}${watch.files > 1 ? ` +${watch.files - 1}` : ''}`
@@ -105,21 +106,6 @@ function drawChain(el: AnyElements, s: TddStats, chain: readonly Step[], label: 
   )
 }
 
-function drawTrail(el: AnyElements, s: TddStats) {
-  const { Box, Text } = el
-  if (s.history.length === 0) {
-    return <Text dimColor>NO RUNS YET</Text>
-  }
-  return (
-    <Box flexDirection="row">
-      {s.history.map(outcome =>
-        outcome === 'pass'
-          ? <Text color={ACCENT.pass}>●</Text>
-          : <Text color={ACCENT.ember}>✗</Text>,
-      )}
-    </Box>
-  )
-}
 
 /** Only problems above zero: a row of zeros read as "all good" even when dope-tdd could see nothing. */
 function drawProblems(el: AnyElements, problems: readonly Problem[]) {
@@ -150,7 +136,8 @@ export function drawBand(el: AnyElements, model: BandModel) {
         <Text bold>{TITLE}</Text>
         {drawWatch(el, view.watch)}
         {(progress || s.paused || model.standingDown !== '') && drawPhase(el, s, nowMs, model.standingDown)}
-        {progress && drawTrail(el, s)}
+        {/* The last run in words, in place of a trail of ● and ✗ that told no story (2026-10-18). */}
+        {view.lastRun !== null && <Text dimColor>{view.lastRun}</Text>}
       </Box>
       {watching && s.current !== null && view.chain !== null && drawChain(el, s, view.chain, moduleLabel(config, s.current.module))}
       {/* Every open door gets a sign, whichever module is current, and a way to close it (live trial, 2026-10-18). */}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -529,5 +529,12 @@ describe('claude plugin test, read from real output', () => {
 
   test('it is provisional: the catch check does not re-run the whole kit by itself', () => {
     expect(runnerNamed('plugin-kit').provisional).toBe(true)
+  })
+
+  test('it always runs the whole folder; other runners run what the command names', () => {
+    expect(runsWholeFolder('claude plugin test .')).toBe(true)
+    expect(runsWholeFolder('cd /c/r && claude plugin test . 2>&1')).toBe(true)
+    expect(runsWholeFolder('npx vitest run')).toBe(false)
+    expect(runsWholeFolder('node --test tests/a.test.ts')).toBe(false)
   })
 })

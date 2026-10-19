@@ -52,7 +52,12 @@ export type RunFacts = {
   readonly importsOf: Readonly<Record<string, readonly string[]>>
   /** Whether a module has a test of its own, for each module a failing test imports. */
   readonly ownTest: Readonly<Record<string, boolean>>
+  /** The runner always runs the whole folder (runners.ts, runsWholeFolder). */
+  readonly wholeFolder?: boolean
 }
+
+/** The red elsewhere of a whole-folder run that did not say which files failed. */
+export const UNNAMED_FAILURE = 'a file the output did not name'
 
 export type RunPlan = {
   readonly state: TddStats
@@ -126,6 +131,12 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.
     const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
     elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? [...failed] : []
+    // A whole-folder run that named no failed file says only that something failed somewhere: it is not the current
+    // module's red (seen live, 2026-10-18: a kit run read without its file headers turned the band RED). A run of the
+    // module's own test, or a suite that does not name files (vitest's summary), keeps its old reading.
+    if (facts.wholeFolder === true && failed.length === 0 && own !== undefined) {
+      elsewhere = [UNNAMED_FAILURE]
+    }
   }
   // A green of another module's own test, when the band could not follow it there (that module is not unlocked) and
   // the test does not import the current module, says nothing about the current module (seen on dope-tdd, 2026-10-18).

@@ -1,7 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
-import type { BeforeState, CatchOutcome, TddStats } from '../types'
+import type { CatchOutcome, TddStats } from '../types'
+import { beforeText, captureEdit, recordFileEdit, recordShellChanges, unguardedShellPaths } from './afterWrite.ts'
+import type { FileRead } from './afterWrite.ts'
 import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
 import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
@@ -44,7 +46,7 @@ import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './ru
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
-import { gateShellWrites, judgeFailures, shellReminders } from './shellVerdict.ts'
+import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
@@ -58,20 +60,17 @@ import {
   acquireCheck,
   expireCurrent,
   isChecking,
-  markReminded,
   moduleState,
   normalizeStats,
   recordBlocked,
   recordCarryWait,
   recordCatch,
-  recordChange,
   recordConfigChange,
   recordImportUnlock,
   recordImporter,
   recordKnownFailures,
   recordRedNames,
   recordReportedElsewhere,
-  recordSourceEdit,
   recordUnwatchedEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -148,8 +147,6 @@ const detectedStacks = new Map<string, StackName | undefined>()
 /** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
 const repairedRoots = new Set<string>()
 let guardFailureToasted = false
-
-type FileRead = { kind: 'text'; text: string } | { kind: BeforeState }
 
 function hasActivity(s: TddStats): boolean {
   // Unwatched edits and unread runs count: the band must show up to say it is not watching (2026-10-18).
@@ -1265,14 +1262,6 @@ async function setupText($: EngineInterface, root: string, write: boolean, nowMs
   return `${text}\nwritten: ${CONFIG_FILE} (${detail})`
 }
 
-function beforeText(file: FileRead): string | null {
-  return file.kind === 'text' ? file.text : null
-}
-
-function beforeState(file: FileRead): BeforeState | undefined {
-  return file.kind === 'text' ? undefined : file.kind
-}
-
 /** Code commented out by an edit is recorded and said; the count is the detail. */
 async function noteCommentedOut(
   $: EngineInterface,
@@ -1486,19 +1475,8 @@ async function checkFileWrite(
   if (target.kind === 'source') {
     const inheritedAt = current.reminded.includes(target.module) ? undefined : current.inherited[target.module]
     const after = before === undefined ? null : await readWhole($, filePath)
-    // A file that could not be read before the edit is still a change to account for, with that reason.
-    const captured =
-      before === undefined
-        ? null
-        : after !== null
-          ? { before: beforeText(before), after, state: beforeState(before) }
-          : before.kind === 'unreadable'
-            ? { before: null, after: '', state: 'unreadable' as const }
-            : null
-    const edited = await change($, s => {
-      const recorded = markReminded(recordSourceEdit(s, target.module, !isLocked, nowMs), target.module)
-      return captured === null ? recorded : recordChange(recorded, target.module, filePath, captured.before, captured.after, captured.state)
-    })
+    const captured = captureEdit(before, after)
+    const edited = await change($, s => recordFileEdit(s, target.module, filePath, !isLocked, captured, nowMs))
     if (edited.paused) {
       return result
     }
@@ -1653,16 +1631,19 @@ async function checkShell(
       return { path, module: sourceModuleOf(root, path, config), policy: policyFor(config, relativePath(root, path)) }
     }),
   )
-  if (writesFileNamed(command, OVERRIDES_FILE)) {
+  const gated = gateShellWrites(writes, current.unlocked, current.inherited)
+  const writesRecord = writesFileNamed(command, OVERRIDES_FILE)
+  const covered = writesRecord || gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
+  // The verdict is shellVerdict.ts's; this words the refusal and records it.
+  const gate = shellGate({ writesRecord, locked: covered, waiting: gated.waiting, paused: current.paused })
+  if (gate.kind === 'deny-record') {
     return { deny: RECORD_DENY }
   }
-  const gated = gateShellWrites(writes, current.unlocked, current.inherited)
-  const waiting = gated.waiting
-  const locked = gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
-  if ((locked.length > 0 || waiting.length > 0) && !current.paused) {
+  if (gate.kind === 'refuse') {
+    const { locked, waiting } = gate
     const nowMs = await $.clock.now()
     await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
-    const waits = await Promise.all([...new Set(waiting)].map(module => carryWait($, root, config, current, module, nowMs)))
+    const waits = await Promise.all(waiting.map(module => carryWait($, root, config, current, module, nowMs)))
     const writtenPath = (module: string) => writes.find(write => write.module === module)?.path
     const refusals = await Promise.all(
       locked.map(async module => lockedFor(config, current, module, nowMs, writtenPath(module), await lockedFacts($, root, config, current, module, writtenPath(module), nowMs))),
@@ -1725,23 +1706,8 @@ async function checkShell(
       ),
     ),
   )
-  const updated = await change($, s => {
-    const withTouches = touchedTests.reduce(
-      (acc, { path, module }, index) => recordTestTouch(acc, { module, testPath: `${root}/${path}` }, nowMs, leading[index] ?? true),
-      s,
-    )
-    const withEdits = changedSources.reduce(
-      (acc, { module }) => recordSourceEdit(acc, module, acc.unlocked[module] !== undefined, nowMs),
-      withTouches,
-    )
-    return captured.reduce(
-      (acc, write) =>
-        write.after === null
-          ? acc
-          : recordChange(acc, write.module, write.path, beforeText(write.before), write.after, beforeState(write.before)),
-      withEdits,
-    )
-  })
+  const tests = touchedTests.map(({ path, module }, index) => ({ path, module, leads: leading[index] ?? true }))
+  const updated = await change($, s => recordShellChanges(s, { root, touchedTests: tests, changedSources, captured }, nowMs))
   for (const { path, module } of touchedTests) {
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
@@ -1751,9 +1717,7 @@ async function checkShell(
       commented.push(...(await noteCommentedOut($, root, write.module, write.path, beforeText(write.before), write.after, nowMs)))
     }
   }
-  const unguardedPaths = changedSources
-    .filter(source => updated.unlocked[source.module] === undefined && policyFor(config, source.path) !== 'observe')
-    .map(source => source.path)
+  const unguardedPaths = unguardedShellPaths(changedSources, updated.unlocked, path => policyFor(config, path))
 
   const output = result.text ?? ''
   // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.

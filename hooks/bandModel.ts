@@ -241,19 +241,32 @@ function verdictOf(s: TddStats): Token | null {
     return { text: "UNPROVEN · the test changed, the code didn't", tone: 'warn' }
   }
   const outcome = s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
-  if (outcome?.kind === 'caught' || outcome?.kind === 'proven') {
-    return { text: 'PROVEN', tone: 'pass' }
-  }
   if (outcome?.kind === 'missed') {
+    // The band adds what MISSED means: it is the strongest warning, and the only verdict with no second word.
     return { text: 'MISSED · passes without your change', tone: 'ember' }
   }
-  if (outcome?.kind === 'unverified') {
-    return { text: `UNPROVEN · not checked: ${outcome.reason}`, tone: 'warn' }
-  }
-  if (outcome?.kind === 'refactor') {
-    return { text: 'refactor · not re-checked', tone: 'plain' }
+  if (outcome !== null) {
+    return { text: catchWord(outcome), tone: outcome.kind === 'unverified' ? 'warn' : outcome.kind === 'refactor' ? 'plain' : 'pass' }
   }
   return s.unproven.includes(current.module) ? { text: 'UNPROVEN · never failed', tone: 'warn' } : null
+}
+
+/**
+ * A catch check's outcome in the one vocabulary (2026-10-18), for the band, /tdd, and the model reviewer's facts.
+ * CAUGHT (dope-tdd undid the change) and PROVEN (you broke the code on purpose) are the same fact to a reader.
+ */
+export function catchWord(outcome: NonNullable<TddStats['lastCatch']>['outcome']): string {
+  switch (outcome.kind) {
+    case 'caught':
+    case 'proven':
+      return 'PROVEN'
+    case 'missed':
+      return 'MISSED'
+    case 'unverified':
+      return `UNPROVEN · not checked: ${outcome.reason}`
+    default:
+      return 'refactor · not re-checked'
+  }
 }
 
 function fileName(path: string): string {

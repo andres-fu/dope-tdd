@@ -19,7 +19,7 @@ const ask = (over: Partial<OverrideRequest> = {}): OverrideRequest => ({
   ...over,
 })
 
-const FACTS = { testPath: 'tests/runPlan.test.ts', lastCatch: 'CAUGHT', hunks: '', history: [] as string[] }
+const FACTS = { testPath: 'tests/runPlan.test.ts', lastCatch: 'PROVEN', hunks: '', history: [] as string[] }
 
 describe('reviewerFor: a different model from the session, unless the repo names one', () => {
   test('an Opus session is reviewed by Sonnet, any other by Opus, at high effort', () => {
@@ -88,7 +88,7 @@ describe('reviewPrompt: the rubric is the system prompt; the request is data', (
 
   test('the facts and history are dope-tdd\'s own, outside the agent\'s block', () => {
     const { prompt } = reviewPrompt(ask(), { ...FACTS, history: ['2nd override request on runPlan this week'] })
-    expect(prompt).toMatch(/<facts>\nmodule: runPlan\ntest: tests\/runPlan.test.ts\nlast catch check: CAUGHT\nhistory: 2nd override request on runPlan this week\n<\/facts>/)
+    expect(prompt).toMatch(/<facts>\nmodule: runPlan\ntest: tests\/runPlan.test.ts\nlast catch check: PROVEN\nhistory: 2nd override request on runPlan this week\n<\/facts>/)
   })
 })
 

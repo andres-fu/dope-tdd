@@ -26,14 +26,14 @@ each moment it decides before the action runs:
 
 | Claude is about to... | Dope TDD... | Word |
 | --- | --- | --- |
-| Edit untested source | Refuses, names the test to write first | BLOCKED |
-| Touch a test | Unlocks the module; see it fail first | WRITING |
-| Run the module's own test and see it fail | Unlocks it too: the red is the evidence a touch stands for | RED |
-| Edit a module unlocked in an earlier session (up to 7 days) | Waits for one run of its test this session, red or green, and says why; drops the unlock if the test changed since | NEEDS RUN |
-| Run the tests | Reads the runner's summary, not the exit code | RED, GREEN |
-| Go green without a red | Says the test has proven nothing yet | NEVER SAW RED |
-| Go green after red | Reverts, runs that test, restores, attaches the verdict | CAUGHT, MISSED |
-| Bend the test, skip, comment out, loosen config | Counts it and asks why | WORKAROUNDS |
+| Edit untested source | Refuses, and lists the ways past it: the test to make fail (with its command), pin, or an override | the refusal in Claude's reply |
+| Touch a test | Unlocks the module; see it fail first | red · |
+| Run the module's own test and see it fail | Unlocks it too: the red is the evidence a touch stands for | RED 2M |
+| Edit a module unlocked in an earlier session (up to 7 days) | Waits for one run of its test this session, red or green, and says why; drops the unlock if the test changed since | the refusal names the command |
+| Run the tests | Reads the runner's summary, not the exit code | red ✓ green ✓, last run |
+| Go green without a red | Says the test has proven nothing yet | UNPROVEN · never failed |
+| Go green after red | Reverts, runs that test, restores, attaches the verdict | PROVEN, MISSED |
+| Bend the test, skip, comment out, loosen config | Counts it and asks why | workarounds in `/tdd` |
 
 The mechanism is the one Anthropic describes under
 [Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call);
@@ -284,7 +284,7 @@ a flipped comparison or `&&`, a nudged integer, a negated `if`, `true` for
 `false`. Strings and comments are never touched. If the test fails for any of
 them, the file is PROVEN, and the changes it did not notice are named; if it
 passes for all of them, it is MISSED. Anywhere else a new file stays
-unverified.
+UNPROVEN · not checked.
 
 The counts run in every mode. Modes decide whether an edit is denied, whether
 Claude is told, and whether the catch check runs: `warn` and `enforce` check,

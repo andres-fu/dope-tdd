@@ -25,7 +25,7 @@ describe('catches the change', () => {
     const run = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
     expect(run).toEqual(['node', `${ROOT}/node_modules/vitest/vitest.mjs`, 'run', 'tests/utils/formatDuration.test.ts'])
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(result.context?.join(' ')).toMatch(/its test catches the change/)
   })
 
@@ -39,8 +39,8 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.writes).toEqual([])
-    expect(status.text).toMatch(/caught 0/)
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).toMatch(/proven 0/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 
   test('the baseline runs once per module in a session, not on every green', async ($, on) => {
@@ -65,7 +65,7 @@ describe('catches the change', () => {
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     expect(status.text).toMatch(/missed 1/)
-    expect(result.context?.join(' ')).toMatch(/does NOT catch the change/)
+    expect(result.context?.join(' ')).toMatch(/MISSED: with your change undone its test still passes/)
     // The agent is shown what slipped past the test, so it can write the assertion.
     expect(result.context?.join(' ')).toMatch(/The change it did not notice:\n  - export const a = 1\n  \+ export const b = 1\nAdd an assertion that fails without it\./)
   })
@@ -79,8 +79,8 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/unverified 1/)
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*timeout/)
+    expect(status.text).toMatch(/not checked 1/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*timeout/)
   })
 
   test('a runner that crashes with the change undone is unverified, never caught: an exit code is not evidence', async ($, on) => {
@@ -92,8 +92,8 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/caught 0 · proven 0 · missed 0 · unverified 1/)
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner summary/)
+    expect(status.text).toMatch(/proven 0 · missed 0 · not checked 1/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*no runner summary/)
   })
 
   test('a source changed outside the session is left alone', async ($, on) => {
@@ -105,7 +105,7 @@ describe('catches the change', () => {
 
     expect(world.writes).toEqual([])
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1 // edited in the IDE')
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*changed outside/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed outside/)
   })
 
   test('a new source file is unverified, not caught: undoing it would mean deleting it', async ($, on) => {
@@ -118,8 +118,8 @@ describe('catches the change', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.writes).toEqual([])
-    expect(status.text).toMatch(/unverified 1/)
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*new file/)
+    expect(status.text).toMatch(/not checked 1/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*new file/)
   })
 
   test('a shell edit to a file that could not be read before or after is unverified, not silently green', async ($, on) => {
@@ -134,7 +134,7 @@ describe('catches the change', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.writes).toEqual([])
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*change not captured/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*change not captured/)
   })
 
   test('a test written after the code, then a fix, is still checked on the next pass', async ($, on) => {
@@ -186,7 +186,7 @@ describe('catches the change', () => {
 
     expect(world.writes).toEqual([])
     expect(status.text).toMatch(/proven 1/)
-    expect(status.text).toMatch(/never saw red 0/)
+    expect(status.text).toMatch(/never failed 0/)
   })
 
   test('a source edit made through the shell is captured and checked too', async ($, on) => {
@@ -210,7 +210,7 @@ describe('catches the change', () => {
       [SOURCE, 'export const a = 1'],
       [SOURCE, 'export const b = 1'],
     ])
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(result.context?.join(' ')).toMatch(/its test catches the change/)
   })
 
@@ -254,7 +254,7 @@ describe('one module at a time', () => {
       [A, 'export const a = 1'],
       [A, 'export const b = 1'],
     ])
-    expect(status.text).toMatch(/caught 2/)
+    expect(status.text).toMatch(/proven 2/)
   })
 })
 
@@ -268,10 +268,10 @@ describe('the revert is safe', () => {
     const retry = await editAt($, 'src/utils/formatDuration.ts')
     const status = await runCommand($, 'tdd')
 
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*restore failed/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*restore failed/)
     expect(world.toasts.some(t => /could not restore/.test(t))).toBe(true)
     expect(retry.deny).toBeUndefined()
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 
   test('a revert that fails is unverified and the file is untouched', async ($, on) => {
@@ -284,7 +284,7 @@ describe('the revert is safe', () => {
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     // Only the baseline ran, on the code as it stands; nothing ran against a revert that never happened.
     expect(world.gitCalls.filter(argv => argv.some(arg => arg.includes('vitest.mjs'))).length).toBe(world.baselineCalls)
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*revert failed/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*revert failed/)
   })
 
   test('a file edited by hand while it was reverted is left as it is, and the change is kept beside it', async ($, on) => {
@@ -301,7 +301,7 @@ describe('the revert is safe', () => {
       [SOURCE, 'export const a = 1'],
       [KEPT, 'export const b = 1'],
     ])
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*changed during check/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed during check/)
     expect(world.toasts.some(t => /left as is; your change is in src\/utils\/formatDuration\.ts\.dope-tdd\.kept/.test(t))).toBe(true)
   })
 
@@ -317,7 +317,7 @@ describe('the revert is safe', () => {
     const status = await runCommand($, 'tdd')
 
     expect((inner as { deny?: string } | null)?.deny).toMatch(/verifying that the test for utils\/formatDuration catches the change/)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
   })
 
@@ -458,7 +458,7 @@ describe('finding the runner', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.writes).toEqual([])
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*no runner found/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*no runner found/)
   })
 })
 
@@ -476,8 +476,8 @@ describe('what the check cannot see is said, not skipped', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.writes).toEqual([])
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*change not captured/)
-    expect(status.text).toMatch(/unverified 1/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*change not captured/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 
   test('a file that exists but cannot be read before the edit is unverified with that reason', async ($, on) => {
@@ -490,7 +490,7 @@ describe('what the check cannot see is said, not skipped', () => {
     const result = await runTests($, world, 'pass')
 
     expect(world.writes).toEqual([])
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*could not read the file before the edit/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*could not read the file before the edit/)
   })
 
   test('an edit under an unlock inherited from an earlier session is checked, never credited as a refactor', async ($, on) => {
@@ -513,7 +513,7 @@ describe('what the check cannot see is said, not skipped', () => {
       [SOURCE, 'export const a = 1'],
       [SOURCE, 'export const b = 1'],
     ])
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(status.text).not.toMatch(/refactors 1/)
   })
 })
@@ -528,7 +528,7 @@ describe('/tdd receipt', () => {
     const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
 
     expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
-    expect(receipt.text).toMatch(/caught 1/)
+    expect(receipt.text).toMatch(/proven 1/)
     expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
     // Never the stash: on a committed change it saves nothing, and the pop applies the reviewer's own stash.
     expect(receipt.text).not.toMatch(/stash/)
@@ -567,7 +567,7 @@ describe('PROVEN: break, red, restore, green', () => {
 
     expect(world.fileContents.get(SOURCE)).toBe('export const a = 1')
     expect(green.context?.join(' ')).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
-    expect(status.text).toMatch(/catch check: caught 0 · proven 1 · missed 0/)
+    expect(status.text).toMatch(/catch check: proven 1 · missed 0/)
     // No runner was started: there was nothing to revert.
     expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
   })
@@ -662,7 +662,7 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(world.gitCalls.some(argv => argv.join(' ').startsWith('git worktree add --detach'))).toBe(true)
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     await $.session.end({ reason: 'other', sessionId: 'wt', resume: { id: 'wt' } } as never)
     const record = world.writes.find(([path]) => path.includes('/.dope-tdd/sessions/'))
     expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(1)
@@ -768,7 +768,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     expect(said).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
     expect(said).toMatch(/Only its line endings differ from before the break/)
-    expect(said).not.toMatch(/does NOT catch the change/)
+    expect(said).not.toMatch(/MISSED: with your change undone its test still passes/)
   })
 
   test('a restore that differs in more than line endings is not taken for the code from before the break (#57)', async ($, on) => {
@@ -895,7 +895,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     const result = await runTests($, world, 'pass')
 
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*changed outside/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed outside/)
     expect(world.writes.some(([path]) => path.startsWith(WT))).toBe(false)
   })
 
@@ -955,7 +955,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     const result = await runTests($, world, 'pass')
 
-    expect(result.context?.join(' ')).toMatch(/Could not verify.*new file, with nothing in it to change/)
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*new file, with nothing in it to change/)
     expect(world.writes.some(([path]) => path.startsWith(WT))).toBe(false)
   })
 
@@ -986,7 +986,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     expect(world.writes.filter(([path]) => path === SOURCE).map(([, text]) => text)).toEqual(['export const a = 1', 'export const b = 1'])
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 
   test('a run that crashes still removes the worktree, and is unverified', async ($, on) => {
@@ -1000,7 +1000,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
     expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 })
 
@@ -1020,7 +1020,7 @@ describe('a green that closes other modules leaves the current module\'s story a
     const status = await runCommand($, 'tdd')
 
     expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
-    expect(status.text).toMatch(/cycles: 1 \(avg [^,]+, never saw red 0\)/)
+    expect(status.text).toMatch(/cycles: 1 \(avg [^,]+, never failed 0\)/)
     expect(status.text).not.toMatch(/also open/)
   })
 
@@ -1040,6 +1040,6 @@ describe('a green that closes other modules leaves the current module\'s story a
     const status = await runCommand($, 'tdd')
 
     expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
-    expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, never saw red 0\)/)
+    expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, never failed 0\)/)
   })
 })

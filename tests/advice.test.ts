@@ -33,7 +33,7 @@ describe('runAdvice', () => {
     const green = recordRun(touched, true, at(1))
 
     expect(runAdvice(touched, green)).toBe(
-      'dope-tdd: GREEN on money/formatCents but it never saw red. Break the code on purpose and run again to prove the test can fail.',
+      'dope-tdd: GREEN on money/formatCents but it never saw red: UNPROVEN. Break the code on purpose and run again to prove the test can fail.',
     )
   })
 
@@ -163,13 +163,13 @@ describe('runAdvice with the catch check', () => {
 
   test('green, saw red, and the test catches the change', () => {
     expect(runAdvice(edited, green, { kind: 'caught' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change: PROVEN. Now refactor with the test untouched.',
     )
   })
 
   test('green, saw red, but the test misses the change: fix the test first', () => {
     expect(runAdvice(edited, green, { kind: 'missed' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
+      'dope-tdd: GREEN on money/formatCents, but MISSED: with your change undone its test still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.',
     )
   })
 
@@ -177,13 +177,13 @@ describe('runAdvice with the catch check', () => {
     const greenFirst = recordRun(recordSourceEdit(touched, 'money/formatCents', true, at(1)), true, at(2))
 
     expect(runAdvice(touched, greenFirst, { kind: 'caught' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. Now refactor with the test untouched.',
     )
   })
 
   test('when the check could not run, says why and moves on', () => {
     expect(runAdvice(edited, green, { kind: 'unverified', reason: 'timeout' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, saw red. Could not verify that its test catches the change (timeout). Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red. UNPROVEN: not checked (timeout). Now refactor with the test untouched.',
     )
   })
 })
@@ -202,6 +202,6 @@ describe('runAdvice on a pass that completes no cycle', () => {
     const green = recordRun(touched, true, at(1))
     const again = recordRun(recordSourceEdit(green, 'money/formatCents', true, at(2)), true, at(3))
 
-    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/has proven nothing yet/)
+    expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/^dope-tdd: GREEN on money\/formatCents, MISSED: .*has proven nothing yet/)
   })
 })

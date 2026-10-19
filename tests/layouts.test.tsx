@@ -42,7 +42,7 @@ describe('colocated tests', () => {
 
     const run = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
     expect(run?.[3]).toBe('src/utils/a.test.ts')
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 
   test('git is asked about src only', async ($, on) => {
@@ -89,7 +89,7 @@ describe('a runner installed in the package, not hoisted', () => {
     const at = world.gitCalls.findIndex(argv => argv.some(arg => arg.includes('vitest.mjs')))
     expect(world.gitCalls[at]).toEqual(['node', `${ROOT}/server/node_modules/vitest/vitest.mjs`, 'run', 'src/__tests__/utils/dice.test.ts'])
     expect(world.runCwds[at]).toBe(`${ROOT}/server`)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 })
 

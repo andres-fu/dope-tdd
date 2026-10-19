@@ -52,14 +52,38 @@ describe('a module in a folder with a layout of its own is named by its source p
   })
 })
 
-describe('/tdd why explains the band words of the 2026-10-18 redesign', () => {
-  test('watching, not watching, runs it cannot read, unwatched edits and the next step', () => {
+// One verdict vocabulary (2026-10-18): /tdd counts in the band's words, so the band's PROVEN never sits beside "proven 0".
+describe('the catch check counts in the band\'s words', () => {
+  test('caught and proven add up to proven; unverified is not checked', () => {
+    const s = { ...INITIAL_STATS, caught: 2, proven: 1, missed: 1, unverified: 3 }
+    expect(formatStatus(s, T0)).toMatch(/^catch check: proven 3 · missed 1 · not checked 3$/m)
+    expect(formatStatus(s, T0)).not.toMatch(/caught|unverified/)
+  })
+
+  test('a green that never failed is counted as never failed', () => {
+    const s = { ...INITIAL_STATS, cycles: 2, cycleMsTotal: 120_000, neverSawRed: 1 }
+    expect(formatStatus(s, T0)).toMatch(/^cycles: 2 \(avg 1M, never failed 1\)$/m)
+  })
+})
+
+describe('/tdd why explains the words the band and /tdd use, and only those', () => {
+  test('the verdicts in the one vocabulary; the retired words are gone', () => {
     const text = formatGlossary()
-    expect(text).toMatch(/^ {2}WATCHING {7}the edited code matches the layout/m)
+    expect(text).toMatch(/^ {2}PROVEN +the test fails without your change \(dope-tdd undid it, or you broke the code on purpose\): it guards this change/m)
+    expect(text).toMatch(/^ {2}MISSED +with your change undone the test still passes/m)
+    expect(text).toMatch(/^ {2}red ✓ green ✓ +the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first/m)
+    expect(text).toMatch(/^ {2}RED 4M +the test fails now, and how long since the cycle opened/m)
+    expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when; click it to open that test/m)
+    for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'WRITING', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
+      expect(text).not.toContain(retired)
+    }
+  })
+
+  test('watching, not watching, runs it cannot read, and the next step', () => {
+    const text = formatGlossary()
     expect(text).toMatch(/^ {2}NOT WATCHING {3}code was edited that no test layout pairs/m)
     expect(text).toMatch(/^ {2}CAN'T READ RUNS test runs happened and none could be read/m)
-    expect(text).toMatch(/^ {2}UNWATCHED {6}code files edited outside the layout/m)
-    expect(text).toMatch(/^ {2}NEXT {11}the one step to take now/m)
+    expect(text).toMatch(/^ {2}next {11}the one step to take now/m)
     // Override with a reason, v1 (2026-10-18): no off switch, so PAUSED points at a time and a reason.
     expect(text).toMatch(/^ {2}OVERRIDE ASKED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
     // Band v3 (2026-10-18): the verdict and guard words the band now uses.

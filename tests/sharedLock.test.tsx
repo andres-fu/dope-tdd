@@ -16,7 +16,7 @@ describe('one catch-check lock across sessions', () => {
     await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(world.gitCalls.some(argv => argv[1] === 'update-ref' && argv[2] === REF && argv[4] === '')).toBe(true)
     expect(world.gitCalls.some(argv => argv[1] === 'update-ref' && argv[2] === '-d' && argv[3] === REF)).toBe(true)
     expect(world.refs.size).toBe(0)
@@ -34,7 +34,7 @@ describe('one catch-check lock across sessions', () => {
 
     expect(world.writes.length).toBe(before)
     expect(green.context?.join(' ')).toMatch(/another session was checking utils\/other/)
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).toMatch(/not checked 1/)
     expect(world.refs.get(REF)).toBe('held')
   })
 
@@ -47,7 +47,7 @@ describe('one catch-check lock across sessions', () => {
     await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(world.refs.size).toBe(0)
   })
 
@@ -86,7 +86,7 @@ describe('one catch-check lock across sessions', () => {
     await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(world.logs.filter(line => /covers this session only/.test(line)).length).toBe(1)
   })
 })

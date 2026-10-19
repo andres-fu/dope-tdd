@@ -53,7 +53,7 @@ describe('a test covers what it imports', () => {
     expect((edit as { deny?: string }).deny).toBeUndefined()
     expect(green.context?.join(' ')).toMatch(/GREEN on io, saw red, and its test catches the change/)
     expect(status.text).toMatch(/module: io/)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(status.text).not.toMatch(/also open/)
     expect(status.text).not.toMatch(/blocked [1-9]/)
     const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
@@ -164,8 +164,8 @@ describe('a module with its own test (#25)', () => {
     const green = await runBash($, `npx vitest run ${IO_TEST}`)
     const status = await runCommand($, 'tdd')
 
-    expect(green.context?.join(' ')).toMatch(/its own test, test\/io\.test\.ts, does not catch the change, but test\/slugify\.test\.ts does: CAUGHT by test\/slugify\.test\.ts\./)
-    expect(status.text).toMatch(/caught 1/)
+    expect(green.context?.join(' ')).toMatch(/its own test, test\/io\.test\.ts, does not catch the change, but test\/slugify\.test\.ts does: PROVEN by test\/slugify\.test\.ts\./)
+    expect(status.text).toMatch(/proven 1/)
     expect(status.text).toMatch(/missed 0/)
   })
 
@@ -188,7 +188,7 @@ describe('a module with its own test (#25)', () => {
     }
     const green = await runBash($, `npx vitest run ${IO_TEST}`)
 
-    expect(green.context?.join(' ')).toMatch(/CAUGHT by test\/slugify\.test\.ts/)
+    expect(green.context?.join(' ')).toMatch(/PROVEN by test\/slugify\.test\.ts/)
   })
 
   test('when neither its own test nor a test that imports it catches the change, it is MISSED', async ($, on) => {
@@ -240,9 +240,9 @@ describe('a module with its own test (#25)', () => {
     const second = await fixIo($, world, 'return t.normalize("NFC")')
     const status = await runCommand($, 'tdd')
 
-    expect(first.context?.join(' ')).toMatch(/CAUGHT by test\/slugify\.test\.ts/)
-    expect(second.context?.join(' ') ?? '').not.toMatch(/CAUGHT by/)
-    expect(status.text).toMatch(/caught 1 · proven 0 · missed 1/)
+    expect(first.context?.join(' ')).toMatch(/PROVEN by test\/slugify\.test\.ts/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(/PROVEN by/)
+    expect(status.text).toMatch(/proven 1 · missed 1/)
   })
 
   test('in a git checkout too, an importer gone red since its last green-before check does not make a CAUGHT (review #3)', async ($, on) => {
@@ -259,8 +259,8 @@ describe('a module with its own test (#25)', () => {
     world.baselineRun = { text: FAIL, exitCode: 1 }
     const second = await fixIo($, world, 'return t.normalize("NFC")')
 
-    expect(first.context?.join(' ')).toMatch(/CAUGHT by test\/slugify\.test\.ts/)
-    expect(second.context?.join(' ') ?? '').not.toMatch(/CAUGHT by/)
+    expect(first.context?.join(' ')).toMatch(/PROVEN by test\/slugify\.test\.ts/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(/PROVEN by/)
   })
 
   test('the check lock is taken when each check starts: an edit during a later importer check is still refused (review #7)', async ($, on) => {

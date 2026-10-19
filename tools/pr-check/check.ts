@@ -2,10 +2,11 @@
 // covers any agent (Claude Code or not), local or cloud, and any person. For each source file the pull request
 // changes, it finds that module's test, runs it on the pull request as it stands, puts back the base's version of
 // the source, runs the test again and expects it to fail, then restores the file:
-//   CAUGHT     the test fails without the change: it checks what the pull request changed
+//   PROVEN     the test fails without the change: it checks what the pull request changed
 //   MISSED     the test passes without the change: nothing checks it
 //   UNTESTED   no test for that module was found
-//   UNVERIFIED it could not tell, and says why
+//   UNPROVEN   not checked: it could not tell, and says why
+// The words are the plugin's own (bandModel.ts catchWord, 2026-10-18), so a reader learns one vocabulary.
 //   MOVED      a new file whose code came from another file unchanged, by the move check (identical, renamed or
 //              with new parameters); its own new code is named as not checked. Never a failure.
 // Tests that already fail on the pull request are judged by name: only a test failing beyond them counts.
@@ -34,7 +35,7 @@ import { declarations, findMoves } from '../move-check/move.ts'
 import type { Move, Rename } from '../move-check/move.ts'
 import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
 
-type Verdict = 'CAUGHT' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNVERIFIED'
+type Verdict = 'PROVEN' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNPROVEN'
 export type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }
 
 function git(root: string, ...args: string[]): string {
@@ -113,15 +114,16 @@ async function checkModule(root: string, config: GuardConfig, base: string, sour
 
 async function catchCheckModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number): Promise<Row> {
   const row = (verdict: Verdict, note: string): Row => ({ module, source, test, verdict, note })
+  const notChecked = (why: string): Row => row('UNPROVEN', `not checked: ${why}`)
   if (test === null) return row('UNTESTED', 'no test for this module in the pull request or beside it')
   let before: string
   try {
     before = execFileSync('git', ['show', `${base}:${source}`], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
   } catch {
-    return row('UNVERIFIED', 'a new file: there is no base version to put back')
+    return notChecked('a new file: there is no base version to put back')
   }
   const after = readFileSync(`${root}/${source}`, 'utf8')
-  if (before === after) return row('UNVERIFIED', 'unchanged against the base')
+  if (before === after) return notChecked('unchanged against the base')
   const runner = await findRunner(
     root,
     config.stack,
@@ -129,7 +131,7 @@ async function catchCheckModule(root: string, config: GuardConfig, base: string,
     path => Promise.resolve(existsSync(path)),
     path => Promise.resolve(existsSync(path) ? readFileSync(path, 'utf8') : null),
   )
-  if (runner === null) return row('UNVERIFIED', 'no test runner found')
+  if (runner === null) return notChecked('no test runner found')
   const runIn = runner.root !== root && runner.root.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? runner.root : root
   const relativeTest = relativePath(runIn, `${root}/${test}`)
   const godot = config.godot ?? process.env.GODOT_BIN ?? null
@@ -140,15 +142,15 @@ async function catchCheckModule(root: string, config: GuardConfig, base: string,
   const known = typeof baseline === 'object' && 'stdout' in baseline ? failedTestsIn(`${baseline.stdout}\n${baseline.stderr}`) : []
   const standing = catchOutcome(baseline, relativeTest, known)
   if (standing.kind !== 'missed') {
-    return row('UNVERIFIED', standing.kind === 'unverified' ? `the test does not run cleanly on the pull request: ${standing.reason}` : 'the test is red on the pull request')
+    return notChecked(standing.kind === 'unverified' ? `the test does not run cleanly on the pull request: ${standing.reason}` : 'the test is red on the pull request')
   }
   writeFileSync(`${root}/${source}`, before)
   try {
     const outcome = catchOutcome(run(argv, runIn, timeoutMs), relativeTest, known)
     const kept = known.length === 0 ? '' : `; ${known.length} test${known.length === 1 ? ' was' : 's were'} already failing on the pull request and did not count`
-    if (outcome.kind === 'caught') return row('CAUGHT', `the test fails without the change${kept}`)
+    if (outcome.kind === 'caught') return row('PROVEN', `the test fails without the change${kept}`)
     if (outcome.kind === 'missed') return row('MISSED', `the test still passes without the change${kept}`)
-    return row('UNVERIFIED', outcome.kind === 'unverified' ? outcome.reason : outcome.kind)
+    return notChecked(outcome.kind === 'unverified' ? outcome.reason : outcome.kind)
   } finally {
     writeFileSync(`${root}/${source}`, after)
   }
@@ -161,13 +163,13 @@ export function report(rows: readonly Row[], base: string): string {
     '',
     rows.length === 0
       ? 'No source file in this pull request is one the project guards.'
-      : `${count('CAUGHT')} caught · ${count('MISSED')} missed · ${count('MOVED')} moved · ${count('UNTESTED')} untested · ${count('UNVERIFIED')} unverified, against ${base}.`,
+      : `${count('PROVEN')} proven · ${count('MISSED')} missed · ${count('MOVED')} moved · ${count('UNTESTED')} untested · ${count('UNPROVEN')} not checked, against ${base}.`,
     '',
     ...(rows.length === 0
       ? []
       : ['| Module | Test | Verdict | Why |', '| --- | --- | --- | --- |', ...rows.map(row => `| ${row.module} | ${row.test ?? '—'} | **${row.verdict}** | ${row.note} |`)]),
     '',
-    'CAUGHT: with the base version of the source put back, the test fails, so it checks what this pull request changed. MISSED: it still passes, so nothing checks the change. MOVED: a new file whose code came from another file unchanged (the move check), so there was nothing new to test in that code.',
+    'PROVEN: with the base version of the source put back, the test fails, so it checks what this pull request changed. MISSED: it still passes, so nothing checks the change. MOVED: a new file whose code came from another file unchanged (the move check), so there was nothing new to test in that code. UNPROVEN: the check could not tell; the reason is given.',
     '',
   ].join('\n')
 }

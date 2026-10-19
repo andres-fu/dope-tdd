@@ -132,7 +132,7 @@ Node is supported. The other stacks are **experimental**: the guard, the
 runs and the counts work, but their catch check has no throwaway copy and
 would undo your change on disk for one test run, so it stays off until
 `"catchCheck": true` is in `dope-tdd.json`; until then a green there is
-UNVERIFIED and says why.
+UNPROVEN · not checked, and says why.
 
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
@@ -351,10 +351,11 @@ jobs:
           base: ${{ github.base_ref }}
 ```
 
-Each changed module is CAUGHT (the test fails without the change), MISSED
+Each changed module is PROVEN (the test fails without the change), MISSED
 (it still passes, so nothing checks the change), MOVED (a new file whose code
 came from another file unchanged, by the move check below), UNTESTED, or
-UNVERIFIED with the reason, in the job summary. Tests that already fail on the pull request
+UNPROVEN (not checked) with the reason, in the job summary: the same words
+the plugin uses. Tests that already fail on the pull request
 are set aside by name. By default a MISSED fails the check; `fail-on:
 untested` is stricter, `never` only reports. It reads `dope-tdd.json` the
 same way the plugin does. Run it locally from a pull request's checkout with

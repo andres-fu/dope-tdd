@@ -174,7 +174,7 @@ Then give Claude a real bug or a small feature and watch the words.
 - Python, Godot, Java and .NET are experimental. Their catch check would
   undo your change on disk for one test run, so it is off unless
   `"catchCheck": true` is in `dope-tdd.json`; until then a green there is
-  UNVERIFIED and says why. With it on, an editor or a file watcher may
+  UNPROVEN · not checked, and says why. With it on, an editor or a file watcher may
   flicker, so don't save that file during a check. If the file changed
   under it, your file is left alone and your change is kept in
   `~/.dope-tdd/kept/<repo>/`, never inside the repository.

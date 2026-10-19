@@ -197,3 +197,31 @@ describe('a whole-folder run that does not say which files failed', () => {
     expect(run(workingOn('utils/a', A_TEST), { outcome: 'fail', wholeFolder: true, failed: ['tests/utils/a.test.ts'] }).state.phase).toBe('red')
   })
 })
+
+// Seen live 2026-10-18: a run of a file outside the layout moved the current module to RED, then to GREEN with
+// "saw red": a cycle it never had. Such a run is not this module's.
+describe('a run of files outside the layout is not the current module\'s', () => {
+  const OTHER = `${ROOT}/tools/pr-check/check.spec-node.ts`
+
+  test('a red is red elsewhere, named by the file', () => {
+    const plan = run(workingOn('utils/a', A_TEST), { outcome: 'fail', namedOther: [OTHER] })
+    expect(plan.elsewhere).toEqual(['tools/pr-check/check.spec-node.ts'])
+    expect(plan.state.phase).not.toBe('red')
+    expect(plan.state.sawRed).toBe(false)
+  })
+
+  test('a green neither closes its cycle nor counts for it', () => {
+    const red = run(workingOn('utils/a', A_TEST), { outcome: 'fail', namedOther: [OTHER] }).state
+    const plan = run(red, { outcome: 'pass', namedOther: [OTHER] })
+    expect(plan.countsForCurrent).toBe(false)
+    expect(plan.ownCycleClosed).toBe(false)
+    expect(plan.state.cycles).toBe(0)
+    expect(plan.state.lastRun).toMatchObject({ module: null, outcome: 'pass' })
+  })
+
+  test('a file outside the layout that imports the current module still counts for it', () => {
+    const plan = run(workingOn('utils/a', A_TEST), { outcome: 'fail', namedOther: [OTHER], namedImports: ['utils/a'] })
+    expect(plan.elsewhere).toEqual([])
+    expect(plan.state.phase).toBe('red')
+  })
+})

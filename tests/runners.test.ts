@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -536,5 +536,22 @@ describe('claude plugin test, read from real output', () => {
     expect(runsWholeFolder('cd /c/r && claude plugin test . 2>&1')).toBe(true)
     expect(runsWholeFolder('npx vitest run')).toBe(false)
     expect(runsWholeFolder('node --test tests/a.test.ts')).toBe(false)
+  })
+})
+
+// Seen live 2026-10-18: `node --test tools/pr-check/check.spec-node.ts` names a file the stack's test rule does not
+// match, so it looked like an unnamed suite run, and its red and green were credited to the current module.
+describe('namedOtherFiles: files a test command names that are not tests by the stack rule', () => {
+  test('a spec outside the layout is named, resolved where the segment runs', () => {
+    expect(namedOtherFiles('node --test tools/pr-check/check.spec-node.ts', 'node', 'C:/r')).toEqual(['C:/r/tools/pr-check/check.spec-node.ts'])
+    expect(namedOtherFiles('cd tools && node --test pr-check/flow.spec-node.ts', 'node', 'C:/r')).toEqual(['C:/r/tools/pr-check/flow.spec-node.ts'])
+  })
+
+  test('a test by the rule, a glob, an option or no file names nothing else', () => {
+    expect(namedOtherFiles('npx vitest run tests/a.test.ts', 'node', 'C:/r')).toEqual([])
+    expect(namedOtherFiles('node --test "tests/*.test.ts"', 'node', 'C:/r')).toEqual([])
+    expect(namedOtherFiles('node --import ./tests/node/register.mjs --test tests/a.test.ts', 'node', 'C:/r')).toEqual([])
+    expect(namedOtherFiles('npm test', 'node', 'C:/r')).toEqual([])
+    expect(namedOtherFiles('ls tools/x.ts', 'node', 'C:/r')).toEqual([])
   })
 })

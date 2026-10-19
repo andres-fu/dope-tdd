@@ -795,7 +795,11 @@ async function checkRun($: EngineInterface, argv: string[], init: Parameters<Eng
 
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
 const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
-const CHECK_WORKTREE = '.git/dope-tdd/wt'
+// Inside the checkout's own git directory, so watchers and `git status` never see it: `.git/dope-tdd/wt` in a clone,
+// `<main>/.git/worktrees/<name>/dope-tdd/wt` in a linked worktree (field test on VibeCast, 2026-10-18: a linked
+// worktree, where `.git` is a file, had no isolated check and no small changes, and nothing said so). From there the
+// runner walks up to the main checkout's node_modules; a test that is not green there falls back to the check in place.
+const CHECK_WORKTREE = 'dope-tdd/wt'
 /** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
 const MAX_COPIED_FILES = 300
 /**
@@ -835,7 +839,11 @@ function listed(answer: { exitCode: number; stdout: string } | null): string[] |
  */
 async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
   const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
-  const wt = `${root}/${CHECK_WORKTREE}`
+  const gitDir = await gitDirOf($, root)
+  if (gitDir === null) {
+    return null
+  }
+  const wt = `${gitDir}/${CHECK_WORKTREE}`
   // The lock's time is when this check starts, not when the run that asked for it did (review #7).
   const lockedAt = await $.clock.now()
   const locked = await change($, state => acquireCheck(state, module, lockedAt))
@@ -941,7 +949,7 @@ async function newFileCheck(
     return { kind: 'unverified', reason: 'changed outside' }
   }
   const command = await oneTestCommand($, root, config, testPath)
-  if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || !(await $.fs.exists(`${root}/.git/HEAD`))) {
+  if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || (await gitDirOf($, root)) === null) {
     return null
   }
   const mutants = mutantsOf(after, { angles: flipsAngles(path, after), types: /\.[cm]?tsx?$/.test(path) })
@@ -1085,7 +1093,7 @@ async function checkAgainst(
   }
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
-  if (ISOLATED_RUNNERS.has(runner.kind) && (await $.fs.exists(`${root}/.git/HEAD`))) {
+  if (ISOLATED_RUNNERS.has(runner.kind) && (await gitDirOf($, root)) !== null) {
     const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh }))?.[0]
     if (isolated !== undefined) {
       await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))

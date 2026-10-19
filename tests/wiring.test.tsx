@@ -417,7 +417,7 @@ describe('honest runs', () => {
 
     const result = await runBash($, 'npx vitest run')
 
-    expect(result.context?.join(' ')).toMatch(/the result was truncated/)
+    expect(result.context?.join(' ')).toMatch(/the output was too long and was cut before its summary line/)
   })
 })
 

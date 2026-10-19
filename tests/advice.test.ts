@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { carriedOnAdvice, carryWaitMessage, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
-import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch } from '../hooks/stats'
+import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch, recordChange } from '../hooks/stats'
 
 const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
 const touched = recordTestTouch(INITIAL_STATS, { module: 'money/formatCents', testPath: 'tests/money/formatCents.test.ts' }, at(0))
@@ -15,10 +15,21 @@ describe('touchAdvice', () => {
 })
 
 describe('runAdvice', () => {
-  test('after a failing run, says RED and what comes next', () => {
+  // VibeCast field test: a new pin's first red was told to "make it pass", when the pin had guessed today's
+  // behaviour wrongly. Before any code change this cycle, the red is either the bug or a wrong pin: say both.
+  test('a red before any code change names both readings: the bug, or a pin that guessed wrong', () => {
     const red = recordRun(touched, false, at(1))
 
-    expect(runAdvice(touched, red)).toBe('dope-tdd: RED on money/formatCents. Make it pass with the smallest change, then run it again.')
+    expect(runAdvice(touched, red)).toBe(
+      'dope-tdd: RED on money/formatCents. If this is the bug or the missing behaviour, make it pass with the smallest change, then run it again. If you are pinning what the code does now, the pin guessed wrong: fix the assertion and say why.',
+    )
+  })
+
+  test('a red after a code change is the change to make pass', () => {
+    const changed = recordChange(recordRun(touched, false, at(1)), 'money/formatCents', 'C:/w/src/money/formatCents.ts', 'a', 'b')
+    const red = recordRun(changed, false, at(2))
+
+    expect(runAdvice(changed, red)).toBe('dope-tdd: RED on money/formatCents. Make it pass with the smallest change, then run it again.')
   })
 
   test('after a green that saw red, says so and gives the next step', () => {
@@ -26,7 +37,7 @@ describe('runAdvice', () => {
     const edited = recordSourceEdit(red, 'money/formatCents', true, at(2))
     const green = recordRun(edited, true, at(3))
 
-    expect(runAdvice(edited, green)).toBe('dope-tdd: GREEN on money/formatCents, saw red. Now refactor with the test untouched.')
+    expect(runAdvice(edited, green)).toBe('dope-tdd: GREEN on money/formatCents, saw red. Now refactor with the test untouched, or write the next failing test.')
   })
 
   test('after a green that never saw red, says so and how to prove the test', () => {
@@ -78,9 +89,12 @@ describe('runAdvice when the test changed after red and the code did not', () =>
 describe('unreadRunAdvice', () => {
   test('says nothing was counted and how to get a readable result', () => {
     expect(unreadRunAdvice(false)).toBe(
-      'dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. Run the one test file, or pipe through tail -40, so the summary survives.',
+      'dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. Run one test file and keep the end of its output, where the summary is.',
     )
-    expect(unreadRunAdvice(true)).toMatch(/\(the result was truncated\)/)
+    // VibeCast field test: a 40 KB npm test was cut before its summary, and the advice said to pipe through tail.
+    expect(unreadRunAdvice(true)).toBe(
+      'dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.',
+    )
   })
 
   test('for node --test, which prints its summary before the failures, the hint keeps the top or uses TAP (#18)', () => {
@@ -163,7 +177,7 @@ describe('runAdvice with the catch check', () => {
 
   test('green, saw red, and the test catches the change', () => {
     expect(runAdvice(edited, green, { kind: 'caught' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change: PROVEN. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red, and its test catches the change: PROVEN. Now refactor with the test untouched, or write the next failing test.',
     )
   })
 
@@ -177,13 +191,13 @@ describe('runAdvice with the catch check', () => {
     const greenFirst = recordRun(recordSourceEdit(touched, 'money/formatCents', true, at(1)), true, at(2))
 
     expect(runAdvice(touched, greenFirst, { kind: 'caught' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. Now refactor with the test untouched, or write the next failing test.',
     )
   })
 
   test('when the check could not run, says why and moves on', () => {
     expect(runAdvice(edited, green, { kind: 'unverified', reason: 'timeout' })).toBe(
-      'dope-tdd: GREEN on money/formatCents, saw red. UNPROVEN: not checked (timeout). Now refactor with the test untouched.',
+      'dope-tdd: GREEN on money/formatCents, saw red. UNPROVEN: not checked (timeout). Now refactor with the test untouched, or write the next failing test.',
     )
   })
 })

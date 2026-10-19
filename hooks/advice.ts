@@ -187,6 +187,8 @@ function greenAdvice(
   cycleCompleted: boolean,
   testChanged: boolean,
   sourcePath: string,
+  /** The pin skill is in use this session: a test changed after red is a pin correction (2026-10-18). */
+  pinning = false,
 ): string | null {
   if (check === 'refactor') {
     return `dope-tdd: GREEN on ${module} with the test untouched: a refactor, not re-checked. The test still guards only what it asserted before. If it changed what the code does, that has no test yet: write one first.`
@@ -215,7 +217,9 @@ function greenAdvice(
     return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${check.reason}). ${REFACTOR}`
   }
   if (testChanged) {
-    return testChangedAdvice(module, sourcePath)
+    return pinning
+      ? `dope-tdd: GREEN on ${module}: the pin was corrected after its red, with ${sourcePath} unchanged. With the pin skill in use that is the expected fix for a pin that guessed wrong; it is on the record as a pin correction. Now prove the pin: break the code on purpose, see red, put it back exactly.`
+      : testChangedAdvice(module, sourcePath)
   }
   if (!cycleCompleted) {
     return null
@@ -242,5 +246,5 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
       ? `dope-tdd: RED on ${module}. If this is the bug or the missing behaviour, make it pass with the smallest change, then run it again. If you are pinning what the code does now, the pin guessed wrong: fix the assertion and say why.`
       : `dope-tdd: RED on ${module}. Make it pass with the smallest change, then run it again.`
   }
-  return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath)
+  return greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning)
 }

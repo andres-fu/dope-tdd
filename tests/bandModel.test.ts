@@ -454,3 +454,14 @@ describe('catchWord', () => {
     expect(catchWord({ kind: 'refactor' })).toBe('refactor · not re-checked')
   })
 })
+
+// Pin corrected (2026-10-18, from the VibeCast field test): fixing a pin that guessed today's behaviour wrongly looks,
+// on the record alone, exactly like a test bent to match a bug. The difference is the pin skill: with it in use this
+// session, the correction is said as what it is, on its own line and not as a workaround; without it, it stays
+// "test changed". Either way the pin still has to be proven by a deliberate break.
+describe('the band says a corrected pin is not proven yet', () => {
+  test('UNPROVEN, naming the correction and the proof still owed', () => {
+    const s = on({ phase: 'green', lastCycle: { module: 'runPlan', sawRed: true, testChanged: true, pinCorrected: true } })
+    expect(bandView(s, CONFIG).verdict).toEqual({ text: 'UNPROVEN · pin corrected: prove it with a break', tone: 'warn' })
+  })
+})

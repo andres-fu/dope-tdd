@@ -30,6 +30,8 @@ export const INITIAL_STATS: TddStats = {
   testChangedAfterRed: false,
   neverSawRed: 0,
   testChanged: 0,
+  pinning: false,
+  pinsCorrected: 0,
   workarounds: 0,
   workaroundsBy: {},
   modules: {},
@@ -111,6 +113,8 @@ export function normalizeStats(stored: unknown): TddStats {
     testChangedAfterRed: pick('testChangedAfterRed', isBoolean),
     neverSawRed: pick('neverSawRed', isNumber),
     testChanged: pick('testChanged', isNumber),
+    pinning: pick('pinning', isBoolean),
+    pinsCorrected: pick('pinsCorrected', isNumber),
     workarounds: pick('workarounds', isNumber),
     workaroundsBy: pick('workaroundsBy', isRecord),
     modules: pick('modules', isRecord),
@@ -320,10 +324,23 @@ function countWorkaround(s: TddStats, kind: WorkaroundKind): TddStats {
   return { ...s, workarounds: s.workarounds + 1, workaroundsBy: { ...s.workaroundsBy, [kind]: (s.workaroundsBy[kind] ?? 0) + 1 } }
 }
 
-/** Green reached after red with the test edited and the code untouched: the green came from the test. */
+/**
+ * Green reached after red with the test edited and the code untouched: the green came from the test. With the pin skill
+ * in use this session it is a pin correction (VibeCast field test, 2026-10-18): on the record alone it looks exactly
+ * like a test bent to match a bug, so only the skill tells them apart. Not a workaround, but still owed a break.
+ */
 export function recordTestChanged(s: TddStats, module: string, nowMs: number): TddStats {
+  if (s.pinning) {
+    const lastCycle = s.lastCycle?.module === module ? { ...s.lastCycle, testChanged: true, pinCorrected: true } : s.lastCycle
+    return logged({ ...s, pinsCorrected: s.pinsCorrected + 1, lastCycle }, 'pin-corrected', nowMs, module)
+  }
   const lastCycle = s.lastCycle?.module === module ? { ...s.lastCycle, testChanged: true } : s.lastCycle
   return logged(countWorkaround({ ...s, testChanged: s.testChanged + 1, lastCycle }, 'test-changed'), 'test-changed', nowMs, module)
+}
+
+/** The pin skill ran (`/dope-tdd:pin`, typed or called by the agent): logged once, and kept for the session. */
+export function recordPinSkill(s: TddStats, nowMs: number): TddStats {
+  return s.pinning ? s : logged({ ...s, pinning: true }, 'pinning', nowMs)
 }
 
 /** A config edit is always logged; only one that loosens the guard counts as a workaround. */

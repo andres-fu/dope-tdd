@@ -219,3 +219,19 @@ describe('runAdvice on a pass that completes no cycle', () => {
     expect(runAdvice(green, again, { kind: 'missed' })).toMatch(/^dope-tdd: GREEN on money\/formatCents, MISSED: .*has proven nothing yet/)
   })
 })
+
+// Pin corrected (2026-10-18, from the VibeCast field test): fixing a pin that guessed today's behaviour wrongly looks,
+// on the record alone, exactly like a test bent to match a bug. The difference is the pin skill: with it in use this
+// session, the correction is said as what it is, on its own line and not as a workaround; without it, it stays
+// "test changed". Either way the pin still has to be proven by a deliberate break.
+describe('runAdvice when a pin was corrected after red', () => {
+  test('says it is the expected fix, on the record, and that a break still proves it', () => {
+    const red = recordRun({ ...touched, pinning: true }, false, at(1))
+    const retouched = recordTestTouch(red, { module: 'money/formatCents', testPath: 'tests/money/formatCents.test.ts' }, at(2))
+    const green = recordRun(retouched, true, at(3))
+
+    expect(runAdvice(retouched, green, undefined, { testChanged: true })).toBe(
+      'dope-tdd: GREEN on money/formatCents: the pin was corrected after its red, with src/money/formatCents unchanged. With the pin skill in use that is the expected fix for a pin that guessed wrong; it is on the record as a pin correction. Now prove the pin: break the code on purpose, see red, put it back exactly.',
+    )
+  })
+})

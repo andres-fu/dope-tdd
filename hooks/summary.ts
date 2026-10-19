@@ -31,6 +31,13 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'test-changed': 'unproven, the test changed',
   'hollow-touch': 'touched unchanged',
   'needs-run': 'needs a run',
+  'pin-corrected': 'pin corrected',
+  pinning: 'pin skill in use',
+}
+
+// Pin corrected (2026-10-18): a fixed pin is not a workaround, so it is said on its own line, never under workarounds.
+function pinsLine(s: TddStats): string[] {
+  return s.pinsCorrected === 0 ? [] : [`pins corrected: ${s.pinsCorrected} (a pin that guessed today's behaviour wrongly, fixed while the pin skill was in use)`]
 }
 
 function cycleLine(s: TddStats): string {
@@ -117,6 +124,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
     ...workaroundLine(s),
+    ...pinsLine(s),
     ...inheritedLine(s, nowMs, label),
     ...eventLines(s, nowMs, label),
   ].join('\n')
@@ -165,6 +173,7 @@ export function formatGlossary(): string {
     word('never failed', 'cycles that went green without the test ever failing'),
     word('not checked', 'greens the catch check could not run on; the agent was told why'),
     word('workarounds', 'ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged'),
+    word('pins corrected', 'a pin fixed after its first red, with the code unchanged, while the pin skill was in use; it still needs a deliberate break to prove it'),
     word('overrides', "this session's overrides: how many were approved and denied, and who decided each; one not yet ended, and edits made under it or a pause with no test yet, are debt on the receipt"),
     word('mode', 'enforce denies, warn tells, observe only records (dope-tdd.json)'),
     word('DOPE', "Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar"),

@@ -454,6 +454,27 @@ by `tests/node/kit.test.mjs`), so the same files also run in
 only through the live tests, which no one file pairs with. #59 keeps moving
 their decisions into pure modules that are guarded.
 
+### The loop
+
+While working, run only the one test file you are changing, as above. A full
+`claude plugin test .` takes about 35 seconds and the POSIX-root pass about 35
+more, so running every suite after every step makes a small change take
+minutes. Once, before opening a pull request, run everything:
+
+```bash
+npm run check            # validate, plugin test and node --test, all at once
+npm run check -- --all   # the same, plus the POSIX-root pass
+```
+
+It starts the suites at the same time, prints each one's output whole as it
+finishes (its own summary line included), then one PASS/FAIL line per suite
+and a combined verdict; it exits non-zero if any suite failed. The POSIX-root
+pass is left to CI by default: it runs the same ~1000 kit tests again, which
+nearly doubles the local wait, to catch path bugs a Windows machine cannot
+produce. CI still runs everything, POSIX root included, on Linux and Windows
+for every pull request. The guard is unchanged by this: red before an
+edit, green after, and the catch check all still apply to the one file you run.
+
 ## Try it, and tell us
 
 Testers start at `docs/testers.md`. Report with the **Tester report** issue

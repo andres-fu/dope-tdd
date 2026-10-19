@@ -58,6 +58,8 @@ jobs:
         run: node --test tools/pr-check/check.spec-node.ts
       - name: Check the test-time report
         run: node --test tools/ci/timings.test.mjs
+      - name: Check the npm run check runner
+        run: node --test tools/check/check.test.mjs
       - name: Check the pull-request check end to end, on a throwaway repository
         run: node --test tools/pr-check/flow.spec-node.ts
       - name: Check the move check's reading of git

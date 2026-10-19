@@ -57,6 +57,16 @@ describe('commandSegments', () => {
     expect(commandSegments(command)).toEqual(["cat > notes.md <<'EOT'\nx; y | z\nEOT", "sed -i 's/a/b/' index.md", 'echo done'])
   })
 
+  test('a wrapper that only runs the command after it is dropped, so the segment is what runs (2026-10-19)', () => {
+    expect(commandSegments('timeout 60 cp a.ts src/b.ts && time -p nice -n 5 env -i CI=1 npm test')).toEqual(['cp a.ts src/b.ts', 'CI=1 npm test'])
+    expect(commandSegments('timeout --preserve-status -k 5 10s make')).toEqual(['make'])
+  })
+
+  test('a wrapper with nothing after it stays as written', () => {
+    expect(commandSegments('env; time')).toEqual(['env', 'time'])
+    expect(commandSegments('timeout 60')).toEqual(['timeout 60'])
+  })
+
   test('drops empty segments', () => {
     expect(commandSegments('a;; b')).toEqual(['a', 'b'])
   })

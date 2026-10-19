@@ -13,7 +13,7 @@ export function buildLabel(gitLine: string | null, version: string | null): stri
   if (sha !== undefined && day !== undefined && rest.length > 0 && SHA.test(sha) && DAY.test(day)) {
     const subject = rest.join('|')
     const pr = (MERGED.exec(subject) ?? SQUASHED.exec(subject))?.[1]
-    return [...(pr === undefined ? [] : [`#${pr}`]), sha, day].join(' · ')
+    return [...(version === null ? [] : [`version ${version}`]), ...(pr === undefined ? [] : [`#${pr}`]), sha, day].join(' · ')
   }
   return version === null ? 'build unknown' : `version ${version}`
 }

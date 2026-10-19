@@ -283,14 +283,11 @@ async function sessionIdForBand($: EngineInterface): Promise<string | undefined>
   return kept !== '' ? kept : await sessionIdNow($)
 }
 
-/** The plugin's own folder is a git checkout while it is developed: its last commit names the build; else plugin.json. */
+/** The build: plugin.json's version, and the last commit when the plugin's own folder is a git checkout (while developed). */
 async function readBuild($: EngineInterface): Promise<string> {
   const log = await gitQuiet($, $.plugin.root, ['log', '-1', '--format=%h|%cs|%s'])
-  if (log !== null && log.exitCode === 0) {
-    return buildLabel(log.stdout, null)
-  }
   const manifest = (await $.fs.exists(`${$.plugin.root}/.claude-plugin/plugin.json`)) ? await readSource($, `${$.plugin.root}/.claude-plugin/plugin.json`) : null
-  return buildLabel(null, manifestVersion(manifest))
+  return buildLabel(log !== null && log.exitCode === 0 ? log.stdout : null, manifestVersion(manifest))
 }
 
 async function surfacesNow($: EngineInterface): Promise<readonly string[]> {

@@ -93,14 +93,14 @@ describe('phases', () => {
     expect(touch(touch(), T0 + 9_000).cycleStartMs).toBe(T0)
   })
 
-  test('history keeps only the last 10 runs, oldest first', () => {
+  // The run history fed the old band's trail of symbols; nothing has read it since band v3 (2026-10-18).
+  test('runs are counted, with no history of outcomes kept', () => {
     let s = INITIAL_STATS
     for (let i = 0; i < 12; i++) {
       s = recordRun(s, i % 2 === 0, T0 + i)
     }
-    expect(s.history).toHaveLength(10)
-    expect(s.history[0]).toBe('pass')
-    expect(s.history[9]).toBe('fail')
+    expect([s.passes, s.fails]).toEqual([6, 6])
+    expect('history' in s).toBe(false)
   })
 })
 
@@ -139,7 +139,6 @@ describe('red elsewhere', () => {
     expect(s.phase).toBe('writing')
     expect(s.sawRed).toBe(false)
     expect(s.fails).toBe(1)
-    expect(s.history).toEqual(['fail'])
     expect(s.redElsewhere).toEqual(['tests/cart/applyDiscount.test.ts'])
     expect(s.events.at(-1)).toEqual({ atMs: T0 + 1, kind: 'elsewhere', module: MODULE, detail: 'tests/cart/applyDiscount.test.ts' })
   })
@@ -240,6 +239,8 @@ describe('normalizeStats', () => {
   test('fills fields missing from state saved by an older version', () => {
     const v2 = { phase: 'red', paused: true, passes: 3, fails: 1, history: ['pass'], touchedTests: ['utils/a'] }
     const s = normalizeStats(v2)
+    // An old record still carries `history`: it parses, and the field is dropped (2026-10-18).
+    expect('history' in s).toBe(false)
     expect(s.paused).toBe(true)
     expect(s.passes).toBe(3)
     expect(s.events).toEqual([])
@@ -351,7 +352,7 @@ describe('corrupted stored state', () => {
     const s = normalizeStats({ events: [{ atMs: 1, kind: 'pass' }, { bogus: true }, null], history: ['pass', 'maybe'] })
 
     expect(s.events).toEqual([{ atMs: 1, kind: 'pass' }])
-    expect(s.history).toEqual(['pass'])
+    expect('history' in s).toBe(false)
   })
 })
 
@@ -561,7 +562,6 @@ describe("a green of another module's test, not about the current one (seen on d
     }
     const after = recordOtherPass(working, 'utils/x', 500)
     expect(after.passes).toBe(1)
-    expect(after.history).toEqual(['pass'])
     expect(after.events.at(-1)).toEqual({ atMs: 500, kind: 'pass', module: 'utils/x' })
     expect(after.phase).toBe('red')
     expect(after.cycleStartMs).toBe(100)

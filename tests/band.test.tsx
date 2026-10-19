@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 
 import { ACCENT } from '../hooks/theme'
-import { BAND, MINUTE, ROOT, SOURCE, TEST_SOURCE, editAt, fakeEngine, fixUnderGuard, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { BAND, MINUTE, ROOT, SOURCE, TEST_SOURCE, editAt, fakeEngine, fixUnderGuard, runBash, runTests, startSession, test, touchTest, writeAt } from './engine'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -87,6 +87,19 @@ describe('band content', () => {
     expect(await ui.find({ type: 'Text', text: 'RED 3M' })).toBeDefined()
   })
 
+  // The band draws often: it asked the engine for this session's id on every draw until it kept it at the start (2026-10-18).
+  test("the band reads this session's id once, at the session's start, not on every draw", async ($, on) => {
+    const world = fakeEngine(on)
+    await startSession($)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    const asked = world.sessionIdCalls
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    await world.clock.advance(3 * MINUTE)
+    expect(await ui.find({ type: 'Text', text: 'RED 3M' })).toBeDefined()
+    expect(world.sessionIdCalls).toBe(asked)
+  })
+
   // A trail of ● and ✗ said nothing a person could act on: which test, which module, when (2026-10-18). The last run, in
   // words, does; the history stays in /tdd.
   test('shows the last run in words, not a trail of symbols; session totals live in /tdd', async ($, on) => {
@@ -98,7 +111,7 @@ describe('band content', () => {
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /CYCLES|0 CAUGHT|0 BLOCKED/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: 'last run: formatDuration.test.ts passed · just now' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: 'last run: formatDuration.test.ts passed · just now' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^[●✗]$/ })).toBeUndefined()
   })
 
@@ -356,6 +369,41 @@ describe('band buttons', () => {
       expect(code?.props.path).toBe(`${ROOT}/tests/utils/formatDuration.test.ts`)
       await pane.unmount()
     }
+  })
+
+  // "last run" opens what that run was (2026-10-18), as VIEW TEST opens the current test: the band's words act.
+  test('the last run opens the test it ran, in a pane of its own', async ($, on) => {
+    const world = fakeEngine(on)
+    const band = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
+    await touchTest($, world, 'utils/formatDuration')
+    expect(await band.find({ type: 'Button', text: /^last run/ })).toBeUndefined()
+
+    await runTests($, world, 'fail')
+    expect(await band.find({ type: 'Button', text: 'last run: formatDuration.test.ts failed · just now' })).toBeDefined()
+    await band.press({ key: 'last-run' })
+    expect(world.openedPanes).toContain('dope-tdd-last-run')
+
+    for (const surface of SURFACES) {
+      const pane = await $.ui.mount({ plugin: 'dope-tdd', surface, component: 'Pane', requestId: 'dope-tdd-last-run', props: {} as never })
+      const code = await pane.find({ type: 'Code' })
+      expect(code?.props.source).toBe(TEST_SOURCE)
+      expect(code?.props.path).toBe(`${ROOT}/tests/utils/formatDuration.test.ts`)
+      await pane.unmount()
+    }
+  })
+
+  test('a last run that failed elsewhere opens the first file that failed', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/tests/utils/other.test.ts`, 'expect(other()).toBe(1)\n')
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    world.bashText = ['tests\\utils\\formatDuration.test.ts:', '(pass) formatDuration > formats [1.00ms]', '', 'tests\\utils\\other.test.ts:', '(fail) other > works [1.00ms]', '', ' 1 pass', ' 1 fail', 'Ran 2 tests across 2 files. [2.01s]'].join('\n')
+    await runBash($, 'claude plugin test .')
+
+    const band = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', ...BAND })
+    await band.press({ key: 'last-run' })
+    const pane = await $.ui.mount({ plugin: 'dope-tdd', surface: 'desktop', component: 'Pane', requestId: 'dope-tdd-last-run', props: {} as never })
+    expect((await pane.find({ type: 'Code' }))?.props.path).toBe(`${ROOT}/tests/utils/other.test.ts`)
   })
 
   test('the test pane says so when the file is gone instead of failing', async ($, on) => {

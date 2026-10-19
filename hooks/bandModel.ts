@@ -32,7 +32,8 @@ export function countsAsUnwatched(relativePath: string, config: GuardConfig): bo
 
 export type Watch = { kind: 'watching'; where: string } | { kind: 'not-watching'; files: number; example: string } | { kind: 'cannot-read' }
 
-export type StepName = 'test' | 'red' | 'green' | 'proven'
+// The chain had a `test` step that was always done and nothing read (2026-10-18): band v3 draws red and green only.
+export type StepName = 'red' | 'green' | 'proven'
 export type Step = { name: StepName; state: 'done' | 'open' | 'failed'; word?: string }
 /** A word on the band and how it reads: pass (green), ember (red, MISSED), alarm (red too long), warn (amber), dim, plain. */
 export type Token = { text: string; tone: 'pass' | 'ember' | 'alarm' | 'warn' | 'dim' | 'plain' }
@@ -60,6 +61,8 @@ export type BandView = {
   open: { target: string; text: string }[]
   /** The last test run in words, or null before any: which test, how it went, whose it was, when (2026-10-18). */
   lastRun: string | null
+  /** The test file a click on the last run opens, as recorded (maybe relative); null keeps the line plain text. */
+  lastRunOpens: string | null
 }
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
@@ -110,9 +113,9 @@ function chainOf(s: TddStats): Step[] | null {
           : { name: 'proven', state: 'open', word: outcome.kind.toUpperCase() }
   // The code changed since the green: neither the green nor what proved it is about this code any more (2026-10-18).
   if (green && changedSinceGreen(s, current.module)) {
-    return [{ name: 'test', state: 'done' }, red, { name: 'green', state: 'open', word: 'CHANGED' }, { name: 'proven', state: 'open' }]
+    return [red, { name: 'green', state: 'open', word: 'CHANGED' }, { name: 'proven', state: 'open' }]
   }
-  return [{ name: 'test', state: 'done' }, red, { name: 'green', state: green ? 'done' : 'open' }, proven]
+  return [red, { name: 'green', state: green ? 'done' : 'open' }, proven]
 }
 
 function changedSinceGreen(s: TddStats, module: string): boolean {
@@ -287,6 +290,23 @@ export function lastRunLine(s: TddStats, nowMs: number): string | null {
   return `last run: ${name} ${last.outcome === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
 }
 
+/**
+ * The test file the last run was (2026-10-18), so "last run" on the band opens it: a pass or a fail opens the test of
+ * the module it belonged to, a failure elsewhere the first file that failed. An unread run, a failure the output did
+ * not place, or a module with no known test has nothing to open, and the line stays plain.
+ */
+export function lastRunTarget(s: TddStats): string | null {
+  const last = s.lastRun
+  if (last === null || last.outcome === 'unread') {
+    return null
+  }
+  if (last.outcome === 'elsewhere') {
+    const first = last.files[0]
+    return first === undefined || first === UNNAMED_FAILURE ? null : first
+  }
+  return last.module === null ? null : (s.unlocked[last.module] ?? null)
+}
+
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
 export function bandView(
   s: TddStats,
@@ -319,6 +339,7 @@ export function bandView(
     overridden,
     open,
     lastRun,
+    lastRunOpens: lastRunTarget(s),
     guard,
     tokens: tokensOf(s, chain, nowMs),
     verdict: verdictOf(s),

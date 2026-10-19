@@ -349,7 +349,7 @@ describe('honest runs', () => {
     expect(status.text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
     expect(result.context?.join(' ')).toMatch(/RED, but not on money.formatCents: tests\/cart\/applyDiscount\.test\.ts failed/)
     // Band v3: a red in other files is said by the last run, and never turns this module RED.
-    expect(await ui.find({ type: 'Text', text: /failed · not this module/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: /failed · not this module/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^RED/ })).toBeUndefined()
   })
 

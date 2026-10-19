@@ -50,7 +50,7 @@ import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
-import { countsAsUnwatched, lastRunLine } from './bandModel.ts'
+import { countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
 import type { Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
@@ -100,6 +100,8 @@ import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
 const TEST_PANE = 'dope-tdd-test'
+/** The pane "last run" on the band opens: the test file that run was (bandModel.ts, lastRunTarget). */
+const LAST_RUN_PANE = 'dope-tdd-last-run'
 const STATUS_TOOL = /^mcp__dope-tdd__status$/
 const MAX_SOURCE_CHARS = 10_000
 /** Where a change left alone after a check is kept, next to its source, named in the toast. */
@@ -127,6 +129,11 @@ const RECORD_DENY = `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an 
 const RUNS_GIT = /(?:^|[;&|(]\s*)git\s/
 /** Which dope-tdd is running (build.ts): read once at session start, shown first in /tdd and kept in the session log. */
 const buildAtom = atom({ plugin: 'dope-tdd', key: 'build' } as const, '')
+/**
+ * This session's id, read once at its start (2026-10-18): the band asked the engine for it on every draw. '' until
+ * read; /clear, /resume and /branch empty $.state, so they read it again, and a draw before any read asks the engine.
+ */
+const sessionIdAtom = atom({ plugin: 'dope-tdd', key: 'session-id' } as const, '')
 type ShellName = 'bash' | 'powershell'
 
 function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
@@ -259,6 +266,20 @@ async function sessionIdNow($: EngineInterface): Promise<string | undefined> {
   } catch {
     return undefined
   }
+}
+
+/** Keeps this session's id for the band, when the engine can say it. */
+async function rememberSessionId($: EngineInterface): Promise<void> {
+  const id = await sessionIdNow($)
+  if (id !== undefined) {
+    await update($, sessionIdAtom, () => id)
+  }
+}
+
+/** The id the band draws with: the one kept at the session's start, or the engine's answer when none was kept. */
+async function sessionIdForBand($: EngineInterface): Promise<string | undefined> {
+  const kept = await read($, sessionIdAtom)
+  return kept !== '' ? kept : await sessionIdNow($)
 }
 
 /** The plugin's own folder is a git checkout while it is developed: its last commit names the build. */
@@ -2340,6 +2361,7 @@ export const register: Register = on => {
     await update($, attended, () => e.isInteractive)
     const build = await readBuild($)
     await update($, buildAtom, () => build)
+    await rememberSessionId($)
     await seedFromStore($)
     await $.command.register({
       name: 'tdd',
@@ -2373,6 +2395,7 @@ export const register: Register = on => {
   // /clear, /resume and /branch reset $.state and do not fire session.start: without this, remembered unlocks are lost
   // and the next edit to a module whose test was already written is refused. A compaction keeps $.state.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    await rememberSessionId($)
     await seedFromStore($)
     return next(e)
   }).catch(($, e, next) => {
@@ -2475,8 +2498,12 @@ export const register: Register = on => {
       logo,
       standingDown,
       onViewTest: () => $.ui.open({ id: TEST_PANE, title: `Test · ${current.current === null ? '' : moduleLabel(config, current.current.module)}` }),
+      onOpenLastRun: () => {
+        const target = lastRunTarget(current)
+        return $.ui.open({ id: LAST_RUN_PANE, title: `Last run · ${target === null ? '' : (target.replace(/\\/g, '/').split('/').pop() ?? target)}` })
+      },
       overrides: record,
-      session: await sessionIdNow($),
+      session: await sessionIdForBand($),
       onApprove: async () => toast($, await decidePending($, true, null)),
       onDeny: async () => toast($, await decidePending($, false, null)),
       onResume: async () => {
@@ -2491,5 +2518,16 @@ export const register: Register = on => {
     const source = current ? await readSource($, current.testPath) : null
     const label = current === null ? undefined : moduleLabel(await configForRender($, await $.session.root()), current.module)
     return drawTestPane($.ui.resolve(e), { current, source, label })
+  })
+
+  // The test file the last run was: the same pane as VIEW TEST, for whichever test that run belonged to (2026-10-18).
+  on('ui.render', { component: 'Pane', requestId: LAST_RUN_PANE }, async ($, e) => {
+    const s = await readStats($)
+    const target = lastRunTarget(s)
+    const root = await $.session.root()
+    const testPath = target === null ? null : absolutePath(root, target)
+    const source = testPath === null ? null : await readSource($, testPath)
+    const current = testPath === null ? null : { module: s.lastRun?.module ?? '', testPath }
+    return drawTestPane($.ui.resolve(e), { current, source, ...(testPath === null ? {} : { label: relativePath(root, testPath) }) })
   })
 }

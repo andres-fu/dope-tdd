@@ -43,6 +43,16 @@ describe('a refused edit offers the cheap path first, then the override', () => 
     expect(other.deny).toMatch(/override_request/)
   })
 
+  // Option A (2026-10-18): refactoring tested code, the menu says to add one assertion, or to pin, not "no test yet".
+  test('when the test is already on disk, the menu fits a refactor of tested code', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/tests/utils/calculateDuration.test.ts`)
+    const refused = await editAt($, 'src/utils/calculateDuration.ts')
+    expect(refused.deny).toMatch(/^\(1\) tests\/utils\/calculateDuration\.test\.ts exists: add or tighten one assertion for what you are about to change, and see it fail/m)
+    expect(refused.deny).toMatch(/^\(2\) a refactor that should change nothing: \/dope-tdd:pin/m)
+    expect(refused.deny).not.toMatch(/no test for this code yet/)
+  })
+
   test('the refusal ends with the last run, as the band says it', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')

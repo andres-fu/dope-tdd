@@ -26,7 +26,7 @@ each moment it decides before the action runs:
 
 | Claude is about to... | Dope TDD... | Word |
 | --- | --- | --- |
-| Edit untested source | Refuses, and lists the ways past it: the test to make fail (with its command), pin, or an override | the refusal in Claude's reply |
+| Edit untested source | Refuses, and lists the ways past it: the test to make fail (with its command), or, when the test already passes, one assertion to add and see fail; pin; or an override | the refusal in Claude's reply |
 | Touch a test | Unlocks the module; see it fail first | red · |
 | Run the module's own test and see it fail | Unlocks it too: the red is the evidence a touch stands for | RED 2M |
 | Edit a module unlocked in an earlier session (up to 7 days) | Waits for one run of its test this session, red or green, and says why; drops the unlock if the test changed since | the refusal names the command |
@@ -64,12 +64,14 @@ edited meanwhile. `/tdd override end <module|pause>` ends an override.
 Every override is recorded in `dope-tdd.overrides.json` in the repo, so the
 pull request shows who approved what, and the receipt lists them.
 
-Status: private prototype, being dogfooded on throughline. See `DOGFOOD.md`
-and `docs/decisions/`. Product brief: https://claude.ai/code/artifact/558d3bb2-c32c-4b7f-94e2-f3099742469d
+Status: early, public, and used daily on its own code and on real projects.
+Trying it? Start with [docs/testers.md](docs/testers.md): install, run
+`/tdd setup`, then give Claude your real task. `DOGFOOD.md` and
+`docs/decisions/` record what was learned along the way.
 
 ## Install
 
-From GitHub (the repository is private for now, so you need access to it):
+From GitHub:
 
 ```bash
 claude plugin marketplace add andres-fu/dope-tdd

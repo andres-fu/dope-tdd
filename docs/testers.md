@@ -1,80 +1,40 @@
-'# Testing Dope TDD
+# Testing Dope TDD
 
-Thanks for trying it. This page is everything you need, in the order you
-need it. Budget about thirty minutes for the first pass.
+Thanks for trying it. Install it, point it at your own project, and start on
+real work: that is how it is meant to be used, and it is the test that
+matters most. This page is in the order you need it.
 
 ## What it is, in three sentences
 
 Dope TDD is a Claude Code plugin that keeps Claude test-first. It **denies**
-an edit to source until that module's test exists, **observes** every edit
-and every test run, **proves** a passing test actually catches the change by
-undoing the change and running the test again, and keeps the **evidence**
-where you and Claude can both read it. It calls no model of its own unless you turn on the model approver for
-override requests (off by default): it
-runs inside your session, on your plan, and `claude plugin validate .` lists
-every file, process and store call it makes before you install it.
+an edit to source until that module's test has been touched or seen failing,
+**observes** every edit and every test run, **proves** a passing test
+actually catches the change by undoing the change and running the test again
+(the *catch check*), and keeps the **evidence** where you and Claude can both
+read it. It runs inside your own session, on your plan, and calls no model of
+its own unless you turn on the model approver for override requests (off by
+default).
 
-How it does that: it is a Claude Code mod, which runs inside Claude Code in
-the path of every Edit, Write and shell call. The edit is refused before it
-happens, not flagged after; after a green run the result is held until the
-catch check has finished, so the line Claude reads carries the verdict. A
-rule in CLAUDE.md is advice Claude can forget or argue with. This is a gate
-it has to pass, and every refusal says why.
+A rule in CLAUDE.md is advice Claude can forget or argue with. This is a gate
+it has to pass: the edit is refused before it happens, and every refusal says
+why and lists the ways past it.
 
-## What it steps into, and what happens there
-
-Claude Code lets a plugin stand in the path of specific actions and decide
-what happens before the action runs. Anthropic describes the mechanism
-under [Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call).
-Dope TDD stands in the path of four of Claude's tools: **Edit**, **Write**,
-**Bash** and **PowerShell**. Nothing else. Here is what it enforces at each
-moment, and what you see:
-
-| Claude is about to... | Dope TDD... | You see |
-| --- | --- | --- |
-| Edit or write a source file whose module has no test | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it, (2) `/dope-tdd:pin` for untested code, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `blocked` |
-| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
-| Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
-| Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **red ✓** / **green ✓**, and the last run in words: which test, how it went, when (click it to open that test) |
-| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **UNPROVEN · never failed** |
-| Go green after red | Holds the result. Undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads. With Vitest, Jest or ava in an ordinary git clone the undo happens in a throwaway copy inside `.git`, so your files are not touched; other runners, a linked worktree, or a copy that cannot reproduce the project undo on disk for one test run and restore. | **PROVEN**, **MISSED**, or **UNPROVEN · not checked:** with the reason |
-| Break the code on purpose, see red, put it back exactly, go green | The red was the proof. In a git checkout it then makes a few small changes to the file in a throwaway copy and names any the test did not notice | **PROVEN**, with the unnoticed changes listed |
-| Edit a module unlocked in an earlier session (up to 7 days) | Refuses the first edit until its test runs once this session, red or green, and says why; drops the carry-over if the test changed since | **NEEDS RUN** in `/tdd` |
-| Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
-| Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
-| Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed. A write outside the project (after a `cd`, also through a variable the command set) is not refused | the same words, or **UNPROVEN · not checked: change not captured** |
-| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard (`/tdd pause <minutes> <reason>`) | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
-| Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down: nothing is refused, counted or checked, and no file is undone, until the operation ends. Claude is told when it starts and when it ends. | **STANDING DOWN** · git rebase in progress (or the operation's name) |
-
-Every verdict is written into the tool result Claude reads, in the same
-call, so Claude cannot miss it and you can ask it what it saw.
-
-What it does **not** do: it never calls a model unless you turn on the model approver for overrides (`dope-tdd.json`), never writes code or tests
-for Claude, never runs anything but your own test file, and never changes a
-file except to undo and restore Claude's change during a catch check. If one
-of its own checks fails internally, the call goes through unobserved and it
-says so in the log and a toast; it fails open, on the record.
-
-To see this list from the engine itself, run `claude plugin validate .` in
-the clone. The `hooks:` line names the exact actions it steps into, and the
-`calls:` line names everything it touches.
-
-## What you need
+## Before you start
 
 - Claude Code v2.1.287 or later (`claude --version`). An older Claude Code
   does not load the plugin and says nothing about it: the agent simply runs
-  unguarded. If you have more than one Claude Code installed, check the one
-  that actually runs (`which claude`, or `where claude` on Windows): we were
-  caught by an old copy sitting earlier on the PATH. The terminal or the
-  Desktop app's Code tab show the band above the prompt. The VS Code
-  extension's chat panel runs the plugin but draws nothing, so there you
-  read the `dope-tdd:` lines in tool results and `/tdd`.
-- A project in Node (Vitest or Jest), Python (pytest), Godot 4 (gdUnit4),
-  Java (Maven or Gradle) or .NET. The first two are read from real runner
-  output; the others are provisional, see the rough edges.
+  unguarded. With more than one Claude Code installed, check the one that
+  actually runs (`which claude`, or `where claude` on Windows).
+- A project tested with Vitest, Jest, ava or `node --test`: the fully
+  supported path. Python (pytest), Godot 4 (gdUnit4), Java (Maven or Gradle)
+  and .NET work too, but their catch check is experimental and off by
+  default; see the rough edges.
 - Node and git.
-- Access to the repository (it is private for now) and git credentials that
-  can clone it.
+- **What appears in your repository.** `dope-tdd.json` at the root if you run
+  `/tdd setup` (the layout and settings; commit it). `dope-tdd.overrides.json`
+  the first time Claude asks to pass the guard (the record of who approved
+  what; commit it, it is the audit trail). Nothing else: session records and
+  the copies a catch check keeps live in `~/.dope-tdd/`, outside the repo.
 
 ## Install
 
@@ -83,88 +43,74 @@ claude plugin marketplace add andres-fu/dope-tdd
 claude plugin install dope-tdd@dope-tdd
 ```
 
-Later, `claude plugin update dope-tdd@dope-tdd` pulls the newest version.
+Then, in Claude Code, `/reload-plugins` and `/tdd`. It answers with
+`guard: ON` and the mode: the plugin is live. If `/tdd` is not a command, the
+plugin did not load; check the Claude Code version first.
 
-To try it for one session without installing anything, start Claude Code
-from a clone with `claude --plugin-dir <path-to-the-clone>`.
+Later, `claude plugin update dope-tdd@dope-tdd` pulls the newest version, and
+`claude plugin uninstall dope-tdd@dope-tdd` removes it.
 
-To watch without steering, put `{ "mode": "observe" }` in a
-`dope-tdd.json` at the project root: nothing is refused, Claude is told
-nothing, and no file is ever reverted, but every cycle is still recorded in
-`/tdd`. To remove it:
-`claude plugin uninstall dope-tdd@dope-tdd`.
+## Point it at your project
 
-## First ten minutes: the playground
+Run `/tdd setup` before the first edit. It reads where your tests live and
+proposes a `dope-tdd.json`. Out of the box Dope TDD pairs `src/<module>.ts`
+with `tests/<module>.test.ts`; co-located tests, `__tests__/` folders and
+per-package roots work once the layout is set. Skip this and a project laid
+out differently gets refusals that name the wrong test, or a band that says
+**NOT WATCHING**.
 
-Start here, not on your own code. The playground is a tiny project with
-three planted bugs and no tests, built so you can watch the plugin work
-without risking anything.
+To watch without steering at first, put `"mode": "observe"` in
+`dope-tdd.json`: nothing is refused and no file is ever undone, but every
+cycle is still recorded in `/tdd`. `"mode": "warn"` lets untested edits
+through with a warning.
 
-1. Clone this repository, then `cd playground` and `npm install`.
-2. Open Claude Code in the `playground` folder and follow
-   [playground/README.md](../playground/README.md): it gives you the task
-   to hand to Claude and says what to watch for.
-3. Type `/tdd` at any point to see the state and the recent events, and
-   `/tdd why` to have each word on the band explained.
+## Start your real task
 
-What a good run looks like: Claude is refused when it tries to edit source
-first, writes a test, runs it and sees it fail (RED), fixes the code, sees
-it pass (GREEN), and the plugin reports **PROVEN** after undoing the fix and
-watching the test fail again. The `/tdd` output at the end is the receipt.
+Give Claude the task you were going to give it anyway. Above the prompt the
+band starts as `ready · write a failing test, or edit code, and this band
+follows`, then tracks the module being worked on. What happens depends on
+the kind of change:
 
-## How you know it is on, and working
+- **A bug fix.** Claude is refused when it edits the code first. It writes or
+  edits the test (a *touch*, which unlocks the module), runs it and sees it
+  fail (**RED**), fixes the code, runs it again (**green ✓**), and Dope TDD
+  undoes the fix and runs the test once more: **PROVEN** if it fails without
+  the fix, **MISSED** if it still passes.
+- **A refactor of code that already has passing tests.** The test passing is
+  not enough: Dope TDD wants to see a red before an edit. The refusal says
+  the two honest ways: add or tighten one assertion for what is about to
+  change and see it fail, or run `/dope-tdd:pin` to pin what the code does now
+  in that test, prove the pins by breaking the code on purpose, then refactor
+  under them.
+- **Code with no tests at all.** `/dope-tdd:pin` pins today's behaviour first,
+  proves the pins, then the change goes ahead under them.
+- **Moving code into new files.** Each new file is a module of its own, so
+  each needs its test touched (or pinned) before it is written.
 
-1. **It loaded.** In a terminal, `/plugin` shows a dim line `1 mod active ·
-   dope-tdd`. On every surface, `/tdd` answers with `guard: ON` and the mode.
-   If `/tdd` is not a command, the plugin did not load: `/reload-plugins`,
-   then `claude plugin validate .` in the clone, are the first things to try.
-2. **It is watching.** In the playground, ask Claude to change a source file
-   before any test exists. On every surface Claude's reply says it was
-   refused and lists the ways past it, and `/tdd` shows `blocked 1`. That first refusal is the handshake.
-3. **It is proving.** After a red-then-green cycle, `/tdd` shows `proven 1`,
-   or `missed`, or `not checked` with the reason. The band says **PROVEN**.
+If nothing fits, Claude can ask to pass the guard with a reason
+(`mcp__dope-tdd__override_request`). It then stops and waits: you answer with
+`/tdd approve` or `/tdd deny <why>`, or the band's APPROVE and DENY. It is
+on the record either way. To pause the guard yourself:
+`/tdd pause <minutes> <reason>`; there is no off switch, and a pause ends by
+itself.
 
-Where you see it, by surface:
+## Reading what it says
 
-| Where you run Claude Code | Band above the prompt | `/tdd`, `/tdd why` | `dope-tdd:` lines in tool results |
+- **The band** (terminal and the Desktop app's Code tab): line 1 is the
+  module, `red ✓ green ✓`, the verdict (PROVEN, MISSED, `UNPROVEN · why`,
+  CHANGED) and the last run, which you can click to open that test. Line 2
+  is the one next step.
+- **`/tdd`**: the whole record, with the build first. `/tdd why` explains
+  every word on the band and every row of `/tdd`.
+- **`dope-tdd:` lines** in Claude's tool results: every refusal and verdict
+  is written there in the same call, so Claude cannot miss it, and you can ask
+  it "what did dope-tdd say about that edit?"
+
+| Where you run Claude Code | Band above the prompt | `/tdd`, `/tdd why` | `dope-tdd:` lines |
 | --- | --- | --- | --- |
 | Terminal | yes | yes | yes, dim, under the tool call |
 | Desktop app, Code tab | yes | yes | yes |
 | VS Code extension, chat panel | no | yes | only if you expand the tool call |
-
-In VS Code, `/tdd` is the view to trust. Claude reads every line the plugin
-writes, so you can also ask it directly: "what did dope-tdd say about that
-edit?"
-
-## With it and without it
-
-The playground is built for a before-and-after. Do the **without** run
-first, because the plugin remembers which tests were touched for a week: the
-same module would only wait for one run of its test, not be refused as
-untested.
-
-- **Without:** in the `playground` folder, start `claude --safe-mode`, which
-  turns every plugin off for that session, and give it Walk 1 from the
-  playground README. Watch what Claude does first. Usually it edits the
-  code, then maybe writes a test, and never sees that test fail.
-- **Reset:** from the `playground` folder, `git checkout -- src` and delete
-  the `tests` folder it created.
-- **With:** a normal session, same task. The refusal comes first, then the
-  test, then red, then the fix, then the catch check. `/tdd` at the end is
-  the receipt; the first run has no equivalent.
-
-The difference is not the result, both fixes probably work. It is whether a
-test that can fail existed before the fix, and whether anyone proved it.
-
-## Then: a small project of your own
-
-Pick something with Vitest or Jest and a few modules. Before the first
-edit, run `/tdd setup`: it reads where your tests live and proposes a
-`dope-tdd.json`. Out of the box the plugin pairs `src/<module>.ts` with
-`tests/<module>.test.ts`; co-located tests, `__tests__/` folders and
-per-package roots are supported once the layout is set.
-
-Then give Claude a real bug or a small feature and watch the words.
 
 ## Known rough edges
 
@@ -175,9 +121,9 @@ Then give Claude a real bug or a small feature and watch the words.
 - Python, Godot, Java and .NET are experimental. Their catch check would
   undo your change on disk for one test run, so it is off unless
   `"catchCheck": true` is in `dope-tdd.json`; until then a green there is
-  UNPROVEN · not checked, and says why. With it on, an editor or a file watcher may
-  flicker, so don't save that file during a check. If the file changed
-  under it, your file is left alone and your change is kept in
+  **UNPROVEN · not checked**, and says why. With it on, an editor or a file
+  watcher may flicker, so don't save that file during a check. If the file
+  changed under it, your file is left alone and your change is kept in
   `~/.dope-tdd/kept/<repo>/`, never inside the repository.
 - Vitest, Jest and ava check in a throwaway copy and never touch your files,
   except in a linked worktree, with more than 300 changed files, or when the
@@ -190,27 +136,24 @@ Then give Claude a real bug or a small feature and watch the words.
 - Mocha is recognised but not read yet: Claude is told once, its runs are
   not counted, and `/tdd` lists it under `not read:`. Untested edits are
   still refused.
-- A Godot project needs `godot` on PATH, `GODOT_BIN` set, or `"godot"` in
-  `dope-tdd.json` pointing at the binary, for the catch check to run.
+- Run one test file at a time, and keep the runner's summary line in the
+  output: Dope TDD reads that line, never the exit code, so a `tail` or a
+  `grep` that drops it leaves the run unread.
 - Several sessions in one checkout share one catch-check lock, so a second
   agent cannot edit or test a file while another session's check has it
-  undone. Outside a git checkout the lock covers one session only, and the
-  log says so. Giving each agent its own git worktree is still the calmest
-  setup.
-- There is no off switch. `/tdd pause <minutes> <reason>` pauses the guard
-  for a set time (two hours at most by default), ends by itself, and `/tdd
-  resume` ends it early. A pause is counted as a workaround, and edits made
-  during it stay on the receipt as debt.
+  undone. Giving each agent its own git worktree is the calmest setup.
 - During a git rebase, merge, cherry-pick, revert, `am` or bisect the guard
-  stands down and says so. A bisect you forgot to reset keeps it standing
-  down; the band shows **STANDING DOWN** · git bisect in progress until you run
-  `git bisect reset`.
+  stands down and says so (**STANDING DOWN**). A bisect you forgot to reset
+  keeps it standing down until you run `git bisect reset`.
 - Claude Code cloud sessions do not load plugins, so the guard does not run
   there. Use the pull-request check (see the README) to prove the result of
   a cloud session instead.
-- It is a prototype. Some words will be wrong sometimes. The plugin's rule
-  for itself is that every verdict says why, so when a word is wrong you
-  should be able to see what it was looking at.
+- If one of its own checks fails internally, the call goes through
+  unobserved and it says so in the log and a toast: it fails open, on the
+  record.
+- Some words will be wrong sometimes. The plugin's rule for itself is that
+  every verdict says why, so when a word is wrong you should be able to see
+  what it was looking at.
 
 ## What to tell us
 
@@ -220,3 +163,49 @@ with the `/tdd` output from that moment. A run where everything worked is
 useful too; say so in a line.
 
 Pasting a `dope-tdd:` line from a tool result is better than describing it.
+
+## Appendix: the playground
+
+If you want to see every verdict on purpose before using it for real, the
+repository has a tiny project with three planted bugs and no tests. Clone
+the repository, `cd playground`, `npm install`, open Claude Code there and
+follow [playground/README.md](../playground/README.md).
+
+It is also built for a before-and-after. Do the **without** run first (the
+plugin remembers touched tests for a week): start `claude --safe-mode`, which
+turns every plugin off, and give it Walk 1. Reset with `git checkout -- src`
+and delete the `tests` folder it made. Then the **with** run, same task: the
+refusal comes first, then the test, then red, then the fix, then the catch
+check. The difference is not the result; both fixes probably work. It is
+whether a test that can fail existed before the fix, and whether anyone
+proved it.
+
+## Appendix: what it steps into
+
+Claude Code lets a plugin stand in the path of specific actions and decide
+what happens before the action runs; Anthropic describes the mechanism under
+[Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call).
+Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
+**Bash** and **PowerShell**, and nothing else.
+
+| Claude is about to... | Dope TDD... | You see |
+| --- | --- | --- |
+| Edit or write a source file whose module is not unlocked | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it (or, when the test exists, one assertion to add or tighten), (2) `/dope-tdd:pin`, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `blocked` |
+| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
+| Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
+| Run the tests through the shell | Reads the runner's own summary line, not the exit code. A failure in another file, or a run of a file outside the layout, is not this module's. Output with no summary is unread, never guessed. | **red ✓** / **green ✓**, and the last run in words |
+| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **UNPROVEN · never failed** |
+| Go green after red | Holds the result, undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads | **PROVEN**, **MISSED**, or **UNPROVEN · not checked:** with the reason |
+| Break the code on purpose, see red, put it back exactly, go green | The red was the proof. In a git checkout it then makes a few small changes in a throwaway copy and names any the test did not notice | **PROVEN**, with the unnoticed changes listed |
+| Edit a module unlocked in an earlier session (up to 7 days) | Refuses the first edit until its test runs once this session, red or green, and says why; drops the carry-over if the test changed since | the refusal names the command; `/tdd` lists it under `unlocked earlier` |
+| Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
+| Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
+| Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **UNPROVEN · not checked: change not captured** |
+| Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
+| Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down until the operation ends; Claude is told when it starts and ends | **STANDING DOWN** · git rebase in progress |
+
+What it does **not** do: it never writes code or tests for Claude, never
+runs anything but your own test file, and never changes a file except to
+undo and restore Claude's change during a catch check. From a clone of the
+repository, `claude plugin validate .` lists every action it steps into
+(`hooks:`) and everything it touches (`calls:`).

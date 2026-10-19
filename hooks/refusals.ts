@@ -16,13 +16,17 @@ export const OVERRIDE_HINT = '(3) neither fits: ask for an override with mcp__do
  * agent acts on a line instead of interpreting prose. `offerOverride` is false after the module's first refusal: said
  * on every refusal, the override read as the expected path rather than the last resort.
  */
-export function unblockSteps(testPath: string, command: string | undefined, offerOverride: boolean): string {
-  return [
-    'Unblock by one of:',
-    `(1) write or edit ${testPath} so it fails, then run it${command === undefined ? '' : `: ${command}`}`,
-    '(2) no test for this code yet: /dope-tdd:pin pins what it does now',
-    ...(offerOverride ? [OVERRIDE_HINT] : []),
-  ].join('\n')
+export function unblockSteps(testPath: string, command: string | undefined, offerOverride: boolean, testExists = false): string {
+  const run = command === undefined ? '' : `: ${command}`
+  // Option A (docs review, 2026-10-18): with a passing test already there, "make it fail" read as breaking a good test
+  // and "no test for this code yet" was false. The rule stays (a red comes first); the menu says how to meet it.
+  const ways = testExists
+    ? [
+        `(1) ${testPath} exists: add or tighten one assertion for what you are about to change, and see it fail${run}`,
+        '(2) a refactor that should change nothing: /dope-tdd:pin pins what the code does now in that test and proves the pins; then refactor under them',
+      ]
+    : [`(1) write or edit ${testPath} so it fails, then run it${run}`, '(2) no test for this code yet: /dope-tdd:pin pins what it does now']
+  return ['Unblock by one of:', ...ways, ...(offerOverride ? [OVERRIDE_HINT] : [])].join('\n')
 }
 
 export type LockedFacts = {
@@ -30,6 +34,8 @@ export type LockedFacts = {
   command?: string
   /** An earlier refusal this session already offered the override for this module. */
   overrideOffered?: boolean
+  /** The module's test file is on disk: the menu then fits a refactor of tested code (option A, 2026-10-18). */
+  testExists?: boolean
   /** The band's last-run line (bandModel.ts lastRunLine): one source of facts for the person and the agent. */
   lastRun?: string | null
 }
@@ -45,7 +51,7 @@ export function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: 
   const stale = staleAgeMs === undefined ? '' : staleUnlockNote(testPath, staleAgeMs)
   const head = `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail, before editing ${sourcePathFor(config, module)}.${stale}${guess}${scratch}`
   const lastRun = facts.lastRun === undefined || facts.lastRun === null ? [] : [facts.lastRun]
-  return [head, unblockSteps(testPath, facts.command, facts.overrideOffered !== true), ...lastRun].join('\n')
+  return [head, unblockSteps(testPath, facts.command, facts.overrideOffered !== true, facts.testExists === true), ...lastRun].join('\n')
 }
 
 /** Whether this session already refused an edit to the module: the event log keeps its last 50 events, so an old one may have rolled off, and then the override is offered again. */

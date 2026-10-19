@@ -15,7 +15,10 @@ export function briefingText(config: GuardConfig, runCommand: string | null): st
     config.mode === 'enforce'
       ? // The carry-over clause (#54) is here so the agent's model of the gate matches it before it is ever refused.
         'An edit to a source file is refused until that module\'s test was touched in this session, or run and seen failing. ' +
-        'A module unlocked in an earlier session (up to 7 days) needs one run of its test this session, red or green, before its first edit, and is dropped if that test changed since.'
+        'A module unlocked in an earlier session (up to 7 days) needs one run of its test this session, red or green, before its first edit, and is dropped if that test changed since. ' +
+        // Option A (docs review, 2026-10-18): the refactor path and the override, known before the first refusal.
+        'To refactor code whose test already passes, add or tighten one assertion for what you will change and see it fail, or pin it first. ' +
+        'If nothing fits, ask with mcp__dope-tdd__override_request, then stop and wait: a person decides.'
       : config.mode === 'warn'
         ? 'An edit to a source file whose test was not touched first goes through with a warning, and is counted.'
         : 'It watches and records only; nothing is refused.'

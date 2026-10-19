@@ -348,8 +348,9 @@ describe('honest runs', () => {
     expect(status.text).toMatch(/phase: WRITING.*red elsewhere: tests\/cart\/applyDiscount\.test\.ts/)
     expect(status.text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
     expect(result.context?.join(' ')).toMatch(/RED, but not on money.formatCents: tests\/cart\/applyDiscount\.test\.ts failed/)
-    expect(await ui.find({ type: 'Text', text: 'RED ELSEWHERE' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /■ RED/ })).toBeUndefined()
+    // Band v3: a red in other files is said by the last run, and never turns this module RED.
+    expect(await ui.find({ type: 'Text', text: /failed · not this module/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^RED/ })).toBeUndefined()
   })
 
   test('a failing run that names the module\'s own test is RED for it, and the green after it saw red', async ($, on) => {
@@ -438,7 +439,7 @@ describe('one module at a time', () => {
     // The whole suite passed, so A's test passed too: its red cycle closed, counted as its own cycle.
     expect(status.text).not.toMatch(/also open/)
     expect(status.text).toMatch(/cycles: 2 /)
-    expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /the test changed/ })).toBeUndefined()
     await ui.unmount()
 
     await runBash($, 'npx vitest run tests/utils/a.test.ts')
@@ -475,7 +476,7 @@ describe('a test changed after red', () => {
     expect(result.context?.join(' ')).toMatch(/the test changed after red and src\/money\/formatCents did not/)
     expect(status.text).toMatch(/test changed 1/)
     expect(status.text).toMatch(/test-changed\s+money\/formatCents/)
-    expect(await ui.find({ type: 'Text', text: 'TEST CHANGED' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: "UNPROVEN · the test changed, the code didn't" })).toBeDefined()
   })
 
   test('green with the test edited and the code changed too is checked, not flagged', async ($, on) => {
@@ -508,7 +509,7 @@ describe('the config file is watched', () => {
     expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed \(mode enforce → observe\)/)
     expect(world.toasts.some(t => /mode enforce → observe/.test(t))).toBe(true)
     expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
-    expect(await ui.find({ type: 'Text', text: 'MODE OBSERVE' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'OBSERVING' })).toBeDefined()
   })
 
   test('a write that changes nothing the guard reads is quiet', async ($, on) => {
@@ -537,7 +538,8 @@ describe('workarounds are on the record', () => {
     expect(result.context?.join(' ')).toMatch(/tests\/money\/formatCents\.test\.ts gained 1 skip\/only marker\. A skipped test guards nothing\. Recorded; say why/)
     expect(status.text).toMatch(/workarounds: 1 \(skipped 1\)/)
     expect(status.text).toMatch(/skipped\s+money\/formatCents \(\+1\)/)
-    expect(await ui.find({ type: 'Text', text: '1 WORKAROUNDS' })).toBeDefined()
+    // Band v3: the count lives in /tdd (checked above), not on the band.
+    expect(await ui.find({ type: 'Text', text: /WORKAROUNDS/ })).toBeUndefined()
   })
 
   test('an assertion removed from a test is recorded with before and after counts', async ($, on) => {
@@ -864,8 +866,8 @@ describe('honest phases on the band', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
-    expect(await ui.find({ type: 'Text', text: /WRITING/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /■ RED/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'red ·' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^RED/ })).toBeUndefined()
   })
 
   test('shows unguarded edits and cycles that never saw red', async ($, on) => {
@@ -879,9 +881,9 @@ describe('honest phases on the band', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
 
-    // An unguarded edit during this cycle shows whatever module it touched; NEVER SAW RED is the chain's (2026-10-18).
-    expect(await ui.find({ type: 'Text', text: /1 UNGUARDED/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'NEVER SAW RED' })).toBeDefined()
+    // Band v3: the unguarded edit is counted in /tdd; the green that never failed is the verdict's.
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+    expect(await ui.find({ type: 'Text', text: 'UNPROVEN · never failed' })).toBeDefined()
   })
 
   test('a test run that names a test file makes that module current', async ($, on) => {
@@ -892,7 +894,7 @@ describe('honest phases on the band', () => {
     await runBash($, `npx vitest run ${ROOT}/tests/utils/formatDuration.test.ts`)
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
   })
 
   test('an allowed source edit makes its module current', async ($, on) => {
@@ -903,7 +905,7 @@ describe('honest phases on the band', () => {
     await editAt($, 'src/utils/formatDuration.ts')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
   })
 })
 

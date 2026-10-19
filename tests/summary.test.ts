@@ -61,7 +61,13 @@ describe('/tdd why explains the band words of the 2026-10-18 redesign', () => {
     expect(text).toMatch(/^ {2}UNWATCHED {6}code files edited outside the layout/m)
     expect(text).toMatch(/^ {2}NEXT {11}the one step to take now/m)
     // Override with a reason, v1 (2026-10-18): no off switch, so PAUSED points at a time and a reason.
-    expect(text).toMatch(/^ {2}OVERRIDE REQUESTED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
+    expect(text).toMatch(/^ {2}OVERRIDE ASKED +the agent asked to pass the guard and waits: \/tdd approve, or \/tdd deny <why>/m)
+    // Band v3 (2026-10-18): the verdict and guard words the band now uses.
+    expect(text).toMatch(/^ {2}UNPROVEN +green, but not proven by a test that failed first: the reason follows the word/m)
+    expect(text).toMatch(/^ {2}CHANGED +the code changed since it went green: run the test again/m)
+    expect(text).toMatch(/^ {2}STANDING DOWN +a git rebase, merge, cherry-pick, revert, am or bisect is in progress/m)
+    expect(text).toMatch(/^ {2}WARN ONLY +the mode lets untested edits through, with a warning/m)
+    expect(text).toMatch(/^ {2}OBSERVING +the mode refuses nothing; dope-tdd only records/m)
     // Live trial: one row for every override still open, whichever module is current, with END (2026-10-18).
     expect(text).toMatch(/^ {2}OVERRIDE OPEN +an approved override that still lets edits through: what is left and who approved it; END closes it/m)
     expect(text).not.toMatch(/OVERRIDDEN/)

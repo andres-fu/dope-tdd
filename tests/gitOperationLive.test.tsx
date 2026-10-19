@@ -91,7 +91,7 @@ describe('the guard stands down while a git operation is in progress', () => {
 
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({ plugin: 'dope-tdd', surface, ...BAND })
-      expect(await ui.find({ type: 'Text', text: '⏸ GIT REBASE' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'STANDING DOWN' })).toBeDefined()
       await ui.unmount()
     }
   })

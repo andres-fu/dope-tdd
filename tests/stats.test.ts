@@ -314,11 +314,15 @@ describe('event log and housekeeping', () => {
     expect(expireCurrent(touch(), T0 + 60 * 60_000).current).not.toBeNull()
   })
 
-  test('reset zeroes counts but keeps pause, unlocked modules and the current test', () => {
-    const s = resetStats(recordBlocked(togglePause(recordRun(touch(), true, T0 + 1), T0 + 2), 'App', T0 + 3))
+  // Band v3 (2026-10-18): a reset is never silent, and never erases the workarounds (the engineering review).
+  test('reset zeroes counts but keeps pause, unlocked modules, the current test and the workarounds, and logs itself', () => {
+    const before = recordBlocked(togglePause(recordRun(touch(), true, T0 + 1), T0 + 2), 'App', T0 + 3)
+    const s = resetStats(before, T0 + 4)
     expect(s.cycles).toBe(0)
     expect(s.blocked).toBe(0)
-    expect(s.events).toEqual([])
+    expect(s.events).toEqual([{ atMs: T0 + 4, kind: 'reset' }])
+    expect(s.workarounds).toBe(before.workarounds)
+    expect(s.workaroundsBy).toEqual(before.workaroundsBy)
     expect(s.phase).toBe('idle')
     expect(s.paused).toBe(true)
     expect(s.unlocked).toEqual({ [MODULE]: TEST_PATH })

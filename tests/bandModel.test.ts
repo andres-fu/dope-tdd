@@ -15,6 +15,10 @@ const on = (over: Partial<TddStats>): TddStats => ({
   ...over,
 })
 const catchOf = (outcome: NonNullable<TddStats['lastCatch']>['outcome']) => ({ lastCatch: { module: 'runPlan', outcome } })
+const pauseFor = (minutes: number): Override => ({
+  by: 'human', scope: 'pause', kind: 'other', module: null, path: null, reason: 'pairing on the prod incident and back after', until: null, minutes,
+  id: 'p1', atMs: 0, status: 'approved', decidedBy: 'human', decidedAtMs: 0, endedAtMs: null, settledAtMs: null, note: null, edits: [],
+})
 
 describe('whether dope-tdd is watching, said first and never as calm zeros (2026-10-18)', () => {
   test('watching names where it looks and the stack', () => {
@@ -37,10 +41,11 @@ describe('whether dope-tdd is watching, said first and never as calm zeros (2026
     expect(bandView(on({ unreadRuns: 1, passes: 3 }), CONFIG).watch.kind).toBe('watching')
   })
 
-  test('unwatched edits beside watched work are a problem count, not an alarm', () => {
+  // Band v3: the count of unwatched edits lives in /tdd; beside watched work it is never the band's alarm.
+  test('unwatched edits beside watched work raise no alarm on the band', () => {
     const view = bandView(on({ unwatched: ['scripts/build.ts'] }), CONFIG)
     expect(view.watch.kind).toBe('watching')
-    expect(view.problems).toContainEqual({ label: '1 UNWATCHED', tone: 'warn' })
+    expect(view.guard).toBeNull()
   })
 })
 
@@ -151,38 +156,112 @@ describe('progress shows only with a module to show it for', () => {
   })
 })
 
-describe("problems: the current cycle's, above zero; session totals stay in /tdd", () => {
-  const event = (kind: TddStats['events'][number]['kind'], module = 'runPlan') => ({ atMs: 0, kind, module })
+// Band v3 (2026-10-18), from the principal UX and engineering reviews: counts like BLOCKED and WORKAROUNDS left the band
+// for /tdd (a refusal is the guard working, not a problem); the mode is a guard word, below.
+describe('band v3: one guard word, only when the guard is not simply enforcing', () => {
+  const guard = (s: TddStats, over: Partial<typeof CONFIG> = {}, options: { standingDown?: string; record?: Override[]; nowMs?: number } = {}) =>
+    bandView(s, { ...CONFIG, ...over }, options.record ?? [], options.nowMs ?? 0, undefined, options.standingDown ?? '').guard
 
-  test('a clean session has none, so there are no calm zeros', () => {
-    expect(bandView(on({}), CONFIG).problems).toEqual([])
+  test('enforcing and watching: no word at all; silence is the signal', () => {
+    expect(guard(on({}))).toBeNull()
   })
 
-  test('session totals alone are not shown: they belong to /tdd', () => {
-    expect(bandView(on({ missed: 1, workarounds: 2, blocked: 3 }), CONFIG).problems).toEqual([])
+  test('a git operation in progress', () => {
+    expect(guard(on({}), {}, { standingDown: 'rebase' })).toEqual({ word: 'STANDING DOWN', detail: 'git rebase in progress · back when it ends' })
   })
 
-  test("an open cycle counts its own problems since the module's last pass", () => {
-    const events = [event('blocked'), event('fail'), event('pass'), event('touched'), event('blocked'), event('unguarded'), event('test-changed'), event('fail')]
-    expect(bandView(on({ phase: 'red', events }), CONFIG).problems).toEqual([
-      { label: '1 TEST CHANGED', tone: 'warn' },
-      { label: '1 UNGUARDED', tone: 'warn' },
-      { label: '1 BLOCKED', tone: 'warn' },
-    ])
+  test('paused, with when it resumes by itself', () => {
+    const pause = { ...pauseFor(30), atMs: 0 }
+    expect(guard(on({ paused: true }), {}, { record: [pause], nowMs: 12 * 60_000 })).toEqual({ word: 'PAUSED', detail: 'resumes by itself in 18m · /tdd resume' })
+    expect(guard(on({ paused: true }))).toEqual({ word: 'PAUSED', detail: '/tdd resume' })
   })
 
-  test('a cycle that just closed keeps its problems until the next one opens', () => {
-    const events = [event('blocked'), event('pass'), event('touched'), event('skipped'), event('assertion-removed'), event('fail'), event('pass'), event('caught')]
-    expect(bandView(on({ phase: 'green', events }), CONFIG).problems).toEqual([{ label: '2 WORKAROUNDS', tone: 'warn' }])
+  test('not watching names the files and the fix', () => {
+    expect(guard({ ...INITIAL_STATS, unwatched: ['cli/a.ts', 'cli/b.ts'] })).toEqual({
+      word: 'NOT WATCHING',
+      detail: '2 edited code files match no test layout: cli/a.ts +1 · fix: /tdd setup',
+    })
+    expect(guard({ ...INITIAL_STATS, unwatched: ['cli/a.ts'] })?.detail).toBe('1 edited code file matches no test layout: cli/a.ts · fix: /tdd setup')
   })
 
-  test("another module's problems count when they happen during this cycle, and not before it", () => {
-    const events = [event('blocked', 'stats'), event('pass'), event('touched'), event('unguarded', 'stats'), event('fail')]
-    expect(bandView(on({ phase: 'red', events }), CONFIG).problems).toEqual([{ label: '1 UNGUARDED', tone: 'warn' }])
+  test("runs it can't read", () => {
+    expect(guard({ ...INITIAL_STATS, unreadRuns: 2 })).toEqual({ word: "CAN'T READ RUNS", detail: '2 runs, none with a summary line · fix: run one test file, without piping it' })
   })
 
-  test('a mode other than enforce is shown', () => {
-    expect(bandView(on({}), { ...CONFIG, mode: 'warn' }).problems).toContainEqual({ label: 'MODE WARN', tone: 'warn' })
+  test('warn and observe modes say what they let through', () => {
+    expect(guard(on({}), { mode: 'warn' })).toEqual({ word: 'WARN ONLY', detail: 'untested edits go through, with a warning' })
+    expect(guard(on({}), { mode: 'observe' })).toEqual({ word: 'OBSERVING', detail: 'nothing is refused; dope-tdd only records' })
+  })
+})
+
+describe('band v3: the chain as words, and one verdict', () => {
+  const view = (s: TddStats, nowMs = 0) => bandView(s, CONFIG, [], nowMs)
+  const tokens = (s: TddStats, nowMs = 0) => view(s, nowMs).tokens.map(token => `${token.text}|${token.tone}`)
+  const verdict = (s: TddStats) => view(s).verdict
+  const closed = { lastCycle: { module: 'runPlan', sawRed: true, testChanged: false } }
+
+  test('writing: both steps open', () => {
+    expect(tokens(on({ phase: 'writing' }))).toEqual(['red ·|dim', 'green ·|dim'])
+  })
+
+  test('RED, with how long it has been open, an alarm after ten minutes', () => {
+    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 2 * 60_000)).toEqual(['RED 2M|ember', 'green ·|dim'])
+    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 11 * 60_000)[0]).toBe('RED 11M|alarm')
+  })
+
+  test('proven, by either kind of catch check', () => {
+    expect(tokens(on({ phase: 'green', ...closed, ...catchOf({ kind: 'proven' }) }))).toEqual(['red ✓|pass', 'green ✓|pass'])
+    expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'proven' }) }))).toEqual({ text: 'PROVEN', tone: 'pass' })
+    expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'caught' }) }))).toEqual({ text: 'PROVEN', tone: 'pass' })
+  })
+
+  test('being proven right now', () => {
+    const checking = on({ phase: 'green', ...closed, checking: { module: 'runPlan', sinceMs: 0 } })
+    expect(verdict(checking)).toEqual({ text: 'proving…', tone: 'dim' })
+    expect(view(checking).next).toBe('wait a moment: dope-tdd is undoing the change to check the test catches it')
+  })
+
+  test('MISSED stays its own word, in the strongest colour', () => {
+    expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'missed' }) }))).toEqual({ text: 'MISSED · passes without your change', tone: 'ember' })
+  })
+
+  test('the weaker proofs are UNPROVEN, with the reason', () => {
+    expect(verdict(on({ phase: 'green', unproven: ['runPlan'] }))).toEqual({ text: 'UNPROVEN · never failed', tone: 'warn' })
+    expect(tokens(on({ phase: 'green', unproven: ['runPlan'] }))[0]).toBe('red ✗|warn')
+    expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'unverified', reason: 'pytest is experimental' }) }))).toEqual({
+      text: 'UNPROVEN · not checked: pytest is experimental',
+      tone: 'warn',
+    })
+    expect(verdict(on({ phase: 'green', lastCycle: { module: 'runPlan', sawRed: true, testChanged: true } }))).toEqual({
+      text: "UNPROVEN · the test changed, the code didn't",
+      tone: 'warn',
+    })
+  })
+
+  test('changed since green', () => {
+    const changed = on({ phase: 'green', ...closed, modules: { runPlan: { ...FRESH_MODULE, phase: 'green', editedSinceRun: true } }, ...catchOf({ kind: 'proven' }) })
+    expect(verdict(changed)).toEqual({ text: 'CHANGED', tone: 'warn' })
+  })
+
+  test('a refactor is said plainly', () => {
+    expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'refactor' }) }))).toEqual({ text: 'refactor · not re-checked', tone: 'plain' })
+  })
+
+  test('no verdict before green', () => {
+    expect(verdict(on({ phase: 'red', sawRed: true }))).toBeNull()
+  })
+})
+
+describe('band v3: the module as it is named, and a line before anything happens', () => {
+  test('the module in file case, as the developer knows it', () => {
+    expect(bandView(on({}), CONFIG).module).toBe('runPlan')
+    expect(bandView(INITIAL_STATS, CONFIG).module).toBeNull()
+  })
+
+  test('idle only when there is nothing else to say', () => {
+    expect(bandView(INITIAL_STATS, CONFIG).idle).toBe(true)
+    expect(bandView(on({}), CONFIG).idle).toBe(false)
+    expect(bandView({ ...INITIAL_STATS, unreadRuns: 1 }, CONFIG).idle).toBe(false)
   })
 })
 
@@ -200,17 +279,17 @@ describe('overrides on the band (2026-10-18)', () => {
     expect(view.next).toBe('approve or deny the override request: /tdd approve, or /tdd deny <why>')
   })
 
-  test("the current module's open override is named, and open overrides and debt are counted", () => {
+  test("the current module's open override is named; each open door is its own row, not also a count", () => {
     const view = bandView(on({ phase: 'writing' }), CONFIG, [override(), override({ id: 'o2', module: 'stats', kind: 'hotfix', scope: 'change' })])
     expect(view.overridden?.id).toBe('o1')
-    expect(view.problems).toContainEqual({ label: '2 OVERRIDES OPEN', tone: 'warn' })
+    expect(view.open.map(door => door.target)).toEqual(['runPlan', 'stats'])
   })
 
   test('no overrides, nothing said', () => {
     const view = bandView(on({}), CONFIG, [])
     expect(view.pending).toBeNull()
     expect(view.overridden).toBeNull()
-    expect(view.problems).toEqual([])
+    expect(view.open).toEqual([])
   })
 })
 

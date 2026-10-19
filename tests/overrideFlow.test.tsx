@@ -60,7 +60,7 @@ describe('the agent asks, a person decides', () => {
     await touchTest($, world, 'utils/formatDuration')
     await ask($, {})
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: /OVERRIDE REQUESTED/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'OVERRIDE ASKED' })).toBeDefined()
     await ui.press({ key: 'approve' })
     expect(record(world).overrides[0]?.status).toBe('approved')
   })
@@ -93,7 +93,7 @@ describe('a module override lasts until it is ended', () => {
 
     await touchTest($, world, 'utils/formatDuration')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: '1 OVERRIDE OPEN' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^utils\/calculateDuration · spike · until the spike PR closes/ })).toBeDefined()
 
     await tdd($, 'override end utils/calculateDuration')
     expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
@@ -252,8 +252,8 @@ describe('live-trial fixes (2026-10-18)', () => {
     world.fileContents.set(`${ROOT}/tests/flow.test.ts`, "import { h } from './helpers'\nexpect(h).toBe(1)\n")
     await touchTest($, world, 'flow')
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: 'UTILS/FORMATDURATION' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'FLOW' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'utils/formatDuration' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^flow$/ })).toBeUndefined()
   })
 })
 

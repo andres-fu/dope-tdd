@@ -4,11 +4,13 @@
 import type { Override, TddStats } from '../types'
 import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
-import { deciderLabel, openDebt, overrideLeft } from './overrides.ts'
+import { moduleLabel } from './mirror.ts'
+import { deciderLabel, overrideLeft } from './overrides.ts'
 import { UNNAMED_FAILURE } from './runPlan.ts'
 import { isCodeFile } from './setup.ts'
 import { stackOf } from './stacks.ts'
-import { formatAgo } from './timeText.ts'
+import { RED_TIMER_ALARM_MS } from './theme.ts'
+import { formatAgo, formatSpan } from './timeText.ts'
 
 /** The fixed folder a layout template starts with: `tests/{module}.test.{ext}` lives under `tests/`. */
 function fixedPrefix(template: string): string {
@@ -32,7 +34,10 @@ export type Watch = { kind: 'watching'; where: string } | { kind: 'not-watching'
 
 export type StepName = 'test' | 'red' | 'green' | 'proven'
 export type Step = { name: StepName; state: 'done' | 'open' | 'failed'; word?: string }
-export type Problem = { label: string; tone: 'alarm' | 'warn' }
+/** A word on the band and how it reads: pass (green), ember (red, MISSED), alarm (red too long), warn (amber), dim, plain. */
+export type Token = { text: string; tone: 'pass' | 'ember' | 'alarm' | 'warn' | 'dim' | 'plain' }
+/** The guard when it is not simply enforcing: one amber word and what it means; null while it enforces. */
+export type Guard = { word: string; detail: string } | null
 /** `showProgress`: the phase and the run trail belong to a module; with none current, or nothing watched, they mislead. */
 /** `pending`: an override waiting for a person. `overridden`: the current module's open module override. */
 export type BandView = {
@@ -40,7 +45,15 @@ export type BandView = {
   showProgress: boolean
   chain: Step[] | null
   next: string
-  problems: Problem[]
+  guard: Guard
+  /** The red and green steps, as words. */
+  tokens: Token[]
+  /** What the green is worth: PROVEN, CHANGED, MISSED or UNPROVEN with the reason; null before a green. */
+  verdict: Token | null
+  /** The current module as the developer names it, or null. */
+  module: string | null
+  /** Nothing to say yet: the band shows a one-line introduction instead of vanishing. */
+  idle: boolean
   pending: Override | null
   overridden: Override | null
   /** Every override that still lets something through, whichever module is current: an open door has a sign on it. */
@@ -137,6 +150,9 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
   if (s.phase !== 'green') {
     return 'run the test'
   }
+  if (s.checking?.module === current.module) {
+    return 'wait a moment: dope-tdd is undoing the change to check the test catches it'
+  }
   if (changedSinceGreen(s, current.module)) {
     return 'run the test: the code changed since it went green'
   }
@@ -152,56 +168,89 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
   return 'refactor while the test guards it, then commit'
 }
 
-// Events that close a cycle rather than belong to the next one: a pass and the verdicts that follow it.
-const CLOSING: ReadonlySet<string> = new Set(['pass', 'caught', 'proven', 'missed', 'unverified', 'refactor', 'carried-on'])
-const WORKAROUND_KINDS: ReadonlySet<string> = new Set(['skipped', 'assertion-removed', 'commented-out', 'hollow-touch', 'record-edited'])
+// Band v3 (2026-10-18), from the principal UX and engineering reviews. Counts (BLOCKED, WORKAROUNDS, UNWATCHED) left
+// the band for /tdd: a refusal is the guard working, and a count reads as blame. What stays says something specific.
 
 /**
- * Every event during the current module's current cycle, whichever module it touched: from the module's previous pass
- * on, including the events that closed the cycle when it has just closed. An unguarded edit made now shows now, and a
- * cycle's problems stay on the band until the next cycle opens, and no longer.
+ * One word for a guard that is not simply enforcing, with what it means and the fix; null while it enforces and
+ * watches, because silence is the signal. The first that applies wins.
  */
-function cycleEvents(s: TddStats): TddStats['events'] {
-  const module = s.current?.module
-  if (module === undefined) {
-    return []
+function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string): Guard {
+  if (standingDown !== '') {
+    return { word: 'STANDING DOWN', detail: `git ${standingDown} in progress · back when it ends` }
   }
-  const own = s.events.flatMap((event, index) => (event.module === module ? [{ event, index }] : []))
-  let end = own.length
-  while (end > 0 && CLOSING.has(own[end - 1]?.event.kind ?? '')) {
-    end -= 1
+  if (s.paused) {
+    const pause = record.find(o => o.status === 'approved' && o.scope === 'pause' && o.endedAtMs === null)
+    const left = pause === undefined ? null : overrideLeft(pause, nowMs)
+    return { word: 'PAUSED', detail: left === null ? '/tdd resume' : `resumes by itself in ${left.replace(/ left$/, '')} · /tdd resume` }
   }
-  let start = end
-  while (start > 0 && own[start - 1]?.event.kind !== 'pass') {
-    start -= 1
+  if (watch.kind === 'not-watching') {
+    const files = `${watch.files} edited code file${watch.files === 1 ? ' matches' : 's match'}`
+    return { word: 'NOT WATCHING', detail: `${files} no test layout: ${watch.example}${watch.files > 1 ? ` +${watch.files - 1}` : ''} · fix: /tdd setup` }
   }
-  const from = start === 0 ? 0 : (own[start - 1]?.index ?? -1) + 1
-  return s.events.slice(from)
+  if (watch.kind === 'cannot-read') {
+    const runs = `${s.unreadRuns} run${s.unreadRuns === 1 ? '' : 's'}`
+    return { word: "CAN'T READ RUNS", detail: `${runs}, none with a summary line · fix: run one test file, without piping it` }
+  }
+  if (config.mode === 'warn') {
+    return { word: 'WARN ONLY', detail: 'untested edits go through, with a warning' }
+  }
+  if (config.mode === 'observe') {
+    return { word: 'OBSERVING', detail: 'nothing is refused; dope-tdd only records' }
+  }
+  return null
 }
 
-function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, watch: Watch, record: readonly Override[]): Problem[] {
-  // The current cycle's problems only: session totals never clear, and a warning that never clears stops being read.
-  // MISSED and NEVER SAW RED are already in the chain; the session's totals are in /tdd and on the receipt.
-  const events = cycleEvents(s)
-  const count = (kinds: ReadonlySet<string>) => events.filter(event => kinds.has(event.kind)).length
-  const counted: [number, string, Problem['tone']][] = [
-    [count(new Set(['test-changed'])), 'TEST CHANGED', 'warn'],
-    [count(WORKAROUND_KINDS), 'WORKAROUNDS', 'warn'],
-    [count(new Set(['unguarded'])), 'UNGUARDED', 'warn'],
-    [count(new Set(['blocked'])), 'BLOCKED', 'warn'],
-    // Unwatched edits are the alarm itself when nothing else is watched; beside watched work they are one count.
-    [watch.kind === 'not-watching' ? 0 : s.unwatched.length, 'UNWATCHED', 'warn'],
-  ]
-  const problems = counted.filter(([count]) => count > 0).map(([count, label, tone]) => ({ label: `${count} ${label}`, tone }))
-  // Overrides are not per cycle: an open one, or its debt, stays on the band until a person ends it.
-  const open = openDebt(record).length
-  if (open > 0) {
-    problems.push({ label: `${open} ${open === 1 ? 'OVERRIDE' : 'OVERRIDES'} OPEN`, tone: 'warn' })
+/** The red and green steps as words: what the chain says, plus how long RED has been open. */
+function tokensOf(s: TddStats, chain: Step[] | null, nowMs: number): Token[] {
+  if (chain === null) {
+    return []
   }
-  const scoped = config.scope.length > 0
-  return config.mode !== 'enforce' || scoped
-    ? [...problems, { label: `MODE ${config.mode.toUpperCase()}${scoped ? ' (SCOPED)' : ''}`, tone: 'warn' }]
-    : problems
+  const red = chain.find(step => step.name === 'red')
+  const green = chain.find(step => step.name === 'green')
+  const openMs = s.cycleStartMs === null ? null : nowMs - s.cycleStartMs
+  const redToken: Token =
+    s.phase === 'red'
+      ? { text: openMs === null ? 'RED' : `RED ${formatSpan(openMs)}`, tone: openMs !== null && openMs >= RED_TIMER_ALARM_MS ? 'alarm' : 'ember' }
+      : red?.state === 'done'
+        ? { text: 'red ✓', tone: 'pass' }
+        : red?.state === 'failed'
+          ? { text: 'red ✗', tone: 'warn' }
+          : { text: 'red ·', tone: 'dim' }
+  // A green the code has since changed was still a green: the verdict says CHANGED.
+  const greenToken: Token = green?.state === 'done' || green?.word === 'CHANGED' ? { text: 'green ✓', tone: 'pass' } : { text: 'green ·', tone: 'dim' }
+  return [redToken, greenToken]
+}
+
+/** The one word that says what the green is worth, or null before a green. MISSED is the strongest warning. */
+function verdictOf(s: TddStats): Token | null {
+  const current = s.current
+  if (current === null || s.phase !== 'green') {
+    return null
+  }
+  if (s.checking?.module === current.module) {
+    return { text: 'proving…', tone: 'dim' }
+  }
+  if (changedSinceGreen(s, current.module)) {
+    return { text: 'CHANGED', tone: 'warn' }
+  }
+  if (s.lastCycle?.module === current.module && s.lastCycle.testChanged) {
+    return { text: "UNPROVEN · the test changed, the code didn't", tone: 'warn' }
+  }
+  const outcome = s.lastCatch?.module === current.module ? s.lastCatch.outcome : null
+  if (outcome?.kind === 'caught' || outcome?.kind === 'proven') {
+    return { text: 'PROVEN', tone: 'pass' }
+  }
+  if (outcome?.kind === 'missed') {
+    return { text: 'MISSED · passes without your change', tone: 'ember' }
+  }
+  if (outcome?.kind === 'unverified') {
+    return { text: `UNPROVEN · not checked: ${outcome.reason}`, tone: 'warn' }
+  }
+  if (outcome?.kind === 'refactor') {
+    return { text: 'refactor · not re-checked', tone: 'plain' }
+  }
+  return s.unproven.includes(current.module) ? { text: 'UNPROVEN · never failed', tone: 'warn' } : null
 }
 
 function fileName(path: string): string {
@@ -231,14 +280,22 @@ function lastRunOf(s: TddStats, nowMs: number): string | null {
     return `last run: ${fileName(first)}${files.length > 1 ? ` +${files.length - 1}` : ''} failed · not this module · ${ago}`
   }
   const module = last.module
-  const testPath = module === undefined ? undefined : s.unlocked[module]
-  const name = testPath !== undefined ? fileName(testPath) : module !== undefined ? `${module} test` : 'the tests'
-  const whose = module !== undefined && s.current !== null && module !== s.current.module ? ' · another module' : ''
+  const testPath = module === null ? undefined : s.unlocked[module]
+  const name = testPath !== undefined ? fileName(testPath) : module !== null ? `${module} test` : 'the tests'
+  const whose = module !== null && s.current !== null && module !== s.current.module ? ' · another module' : ''
   return `last run: ${name} ${last.outcome === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
 }
 
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
-export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = [], nowMs = 0, session?: string): BandView {
+export function bandView(
+  s: TddStats,
+  config: Pick<GuardConfig, 'layout' | 'layouts' | 'roots' | 'stack' | 'mode' | 'scope'>,
+  record: readonly Override[] = [],
+  nowMs = 0,
+  session?: string,
+  /** The git operation the guard stands down for, or ''. */
+  standingDown = '',
+): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
   const pending = record.find(o => o.status === 'pending') ?? null
@@ -249,15 +306,22 @@ export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stac
     const theirs = o.session !== undefined && session !== undefined && o.session !== session ? " · another session's" : ''
     return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}${theirs}` }]
   })
+  const chain = chainOf(s)
+  const guard = guardOf(s, config, watch, record, nowMs, standingDown)
+  const lastRun = lastRunOf(s, nowMs)
   return {
     watch,
     showProgress,
-    chain: chainOf(s),
+    chain,
     next: nextOf(s, watch, pending, open),
-    problems: problemsOf(s, config, watch, record),
     pending,
     overridden,
     open,
-    lastRun: lastRunOf(s, nowMs),
+    lastRun,
+    guard,
+    tokens: tokensOf(s, chain, nowMs),
+    verdict: verdictOf(s),
+    module: s.current === null ? null : moduleLabel(config, s.current.module),
+    idle: s.current === null && guard === null && pending === null && open.length === 0 && lastRun === null,
   }
 }

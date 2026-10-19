@@ -1,10 +1,15 @@
-# 2026-10-18 — The standard: what good looks like (DRAFT v0.4)
+# 2026-10-18 — The standard: what good looks like (DRAFT v0.5, frozen while the product catches up)
 
 > Drafted by Claude from the 2026-10-18 conversation, for Andres to edit until it sounds like him.
 > Lines marked **[today]** describe what dope-tdd already does; **[proposed]** is not built yet;
 > **[decide]** is an open question for Andres. v0.2 folded in the industry review of the same day and
 > Andres's answers to the v0.1 questions; v0.3, his answers to v0.2's; v0.4, a review of example
-> tests and of dope-tdd's own data.
+> tests and of dope-tdd's own data; v0.5, a verified second review and Andres's decisions on it.
+>
+> **Frozen.** Most of this is [proposed]. No new rules until the product makes the existing ones true.
+
+## The manifesto
+**[Andres writes this: one page, his own words. Everything below is the reference behind it.]**
 
 ## Why this exists
 Code changes. A product owner changes their mind, a bug turns up at 3 a.m., a feature grows. What
@@ -108,11 +113,16 @@ interrupted catch check; it names it to the user and records it. **[today: #89]*
 
 ## What the research says (2026-10-18)
 The industry review (sources in the research session's report) changes some of this draft:
-- **Process gates are contested; outcome gates are not.** The one controlled comparison of TDD and
-  non-TDD agent runs (Böckeler, Thoughtworks, on martinfowler.com) found no quality gain from
-  enforced red-green, at 3 to 8 times the tokens. Agents also faked the red step under TDD prompts.
-  It is one small study, judged by a model, on new code only, but it is the only one. Uncle Bob
-  reportedly gates on quality thresholds rather than on test-first (secondhand).
+- **Process gates are contested; outcome gates are not.** The only published evaluation of TDD with
+  agents (Böckeler, Thoughtworks, on martinfowler.com) found no benefit from enforced red-green on
+  small, new Python tasks with no collaborators. It was exploratory: two runs per side per batch, judged
+  by a model. TDD runs used 3 to 8 times the tokens, which is not 3 to 8 times the cost: the count
+  includes cache re-reads, as the author notes. Agents also faked the red step under TDD prompts. Uncle
+  Bob reportedly gates on quality thresholds rather than on test-first (secondhand). We say "the only
+  published evaluation found no benefit on small greenfield tasks", never "TDD does not help agents".
+- **Design before code.** The author's explanation for why non-TDD runs did better: they worked out
+  types, contracts and edge cases first, while TDD runs locked in the shape of their first test and
+  rarely revisited it. That argues for a design step before the first test, not against tests.
 - **Gaming is real and documented:** deleting or skipping tests, editing them to match, special-casing
   outputs, faking red (Beck, EvilGenie, Böckeler). Cheap file-change checks catch the blatant cases.
 - **Over-mocking is measured:** 36% of agent commits add mocks against 26% of others (Hora and Robbes,
@@ -129,6 +139,8 @@ guardrail it can be passed with a recorded reason. We do not claim test-first is
 correct code; the evidence does not support that, and the catch check proves the outcome either way.
 
 ## The loop
+0. **Design.** Before the first test, write down the contract: inputs, outputs, edge cases, errors.
+   The tests then follow a design instead of inventing one. **[taught, not checked]**
 1. **Red.** Write or change the test first, and see it fail for the right reason. **[today: enforced
    at the edit; see the decision above]**
 2. **Green.** Make it pass with the simplest change. **[today]**
@@ -144,6 +156,8 @@ correct code; the evidence does not support that, and the catch check proves the
      reasons. This is where humans step in.
    - **Strict mode,** for teams that want a refusal at the commit: off by default.
    - Agents can run this loop entirely on their own; humans read the receipt rather than watch.
+   - **The receipt is short** and sits where people already look: one summary line, then the detail.
+     A receipt nobody reads is accountability theatre.
 
 ## A good test (the rules)
 A test that breaks any of these is not good, whatever the coverage report says.
@@ -167,17 +181,31 @@ A test that breaks any of these is not good, whatever the coverage report says.
 8. **It tests behaviour, not internals.** A test that reaches into private state (`as any`, an
    `_underscored` field, a function the module does not export) breaks on a harmless refactor and
    proves nothing a user would notice. **[proposed]**
+9. **A commit is a behaviour change or a refactor, never both.** Mixing them hides which lines
+   changed what the code does. dope-tdd already knows which changes were refactors, so it can say so
+   at the commit (Beck, *Tidy First?*). **[proposed]**
+10. **It does not print to the console.** Stray output is noise or a hidden error; a test that passes
+    while printing is not self-validating (Zod's suite fails on console output). **[proposed]**
 
 Gaming is not blocked, it is shown. Every workaround goes on the receipt, where the human sees it.
 Blocking teaches the agent to game more cleverly; showing makes it pointless.
 
 ## A good test (the principles)
+- **F.I.R.S.T.** (Uncle Bob): Fast, Independent, Repeatable, Self-validating, Timely. Our rules map onto
+  it, and onto Beck's Test Desiderata.
 - It tests behaviour through the public interface, not the internals.
 - Its name reads as a line of the spec.
 - It covers the edges that matter: empty, boundary, error.
 - Someone who has never seen the code can read it and know what the code does.
 - **Mock only at the process boundary:** the network, the mail provider, the clock, the disk. Never
-  inside the unit. A temporary mock elsewhere carries a recorded reason (see rule 3).
+  inside the unit. A fake repository standing in for the database is at the boundary, so it is
+  allowed; mocking your own pure collaborators (a price calculator inside checkout) is not. A
+  temporary mock elsewhere carries a recorded reason (see rule 3).
+- **Deny the network by default** in the test runner, so no test passes or fails depending on the day.
+  **[proposed: recommended by `/tdd setup`, not detected]**
+- **Each test owns its data.** No shared fixtures that tests change.
+- **Arrange, Act, Assert,** with names in the form "when X, then Y". About seven statements per test is
+  a smell threshold, not a rule: a table of cases is still one concept.
 - **Avoid the named smells:** assertion roulette (many assertions, no telling which one failed), the
   mystery guest (setup hidden in helpers, so the reader cannot see what a case depends on), and the
   eager test (one test checking several behaviours). One behaviour per test, its setup in plain sight.
@@ -206,6 +234,21 @@ dope-tdd does not lint style. It makes refactoring safe, nudges at the right mom
 to people and their linters. **[proposed: report hard numbers on a change, such as size growth or
 code duplicated by it, as facts rather than refusals]**
 
+## The shape of a suite
+Our position, stated as ours rather than as a consensus: **a pyramid at the core, a thin component
+layer at the boundary, very few end-to-end tests.**
+- **Unit tests for the pure core:** domain logic and decisions, no network, disk or clock.
+- **Component tests where the code meets the world:** the API, the database, the configuration. They
+  catch wiring faults that unit tests cannot (dope-tdd itself was blind to its own repository on
+  2026-10-18 through a configuration fault, while every unit test passed).
+- **A handful of end-to-end tests,** in CI, outside dope-tdd's loop.
+
+This is Functional Core, Imperative Shell (Gary Bernhardt, 2012; Mark Seemann) and matches how
+library authors such as Zod and Vitest test. The best-known Node voices differ: Yoni Goldberg
+recommends mostly component tests (the diamond), Kent C. Dodds mostly integration (the trophy). We
+part from them because the catch check proves what it can rerun quickly, and fast tests beside the
+module are where agents change code most cheaply.
+
 ## Speed is part of good
 A slow suite is a reliability problem: if a fix takes 20 minutes of tests to ship, recovery takes at
 least 20 minutes. dope-tdd tracks and shows, on the receipt: time per test file, time per suite, and
@@ -223,7 +266,12 @@ written. Strict by default, never in the way of recovery.
   only integration, end-to-end, smoke or contract suites can show. dope-tdd is the inner loop; it sits
   beside those suites, never instead of them.
 - **Never lies.** No false green, no reassuring zeros. "Not watching" must look different from "all
-  good". **[proposed: today the band shows zeros when it cannot see the code or read the runner]**
+  good". When no edited file matches the layout, or a run cannot be read, dope-tdd says so loudly and
+  offers `/tdd setup`. **[proposed: today the band shows zeros when it cannot see the code or read the
+  runner]**
+- **No generic mutation tools.** We do not run Stryker or similar. The catch check is targeted
+  mutation: its mutant is the real change, undone, so it proves the test catches this change, fast
+  enough for the inner loop. **[decided v0.5]**
 
 ## Compliance
 Code coverage is not a security or compliance control: it shows code ran, nothing more. GDPR, HIPAA,
@@ -259,6 +307,9 @@ Only what dope-tdd can see, on the engineer's machine:
 - **Its own cost:** seconds and tokens per session.
 - **Lead time to merge:** from git and the PR, where available.
 - **What it caught:** MISSED tests strengthened, untested edits refused, workarounds shown.
+- **Override rate:** how often guardrails are passed, and with which kinds of reason. A high rate means
+  a rule is wrong or being gamed; both are worth knowing. Reasons can be written to sound plausible, so
+  the rate matters more than any single reason.
 
 These are our slice of the team's delivery measures (change failure rate, time to restore, lead time
 for changes). Deploys and incidents belong to the team's own tools; we say so rather than guess. That
@@ -272,6 +323,15 @@ measure it before we claim it.
 - **One plugin, many stacks:** the core is language-neutral; each stack is an adapter (how to run one
   test file, how to read its result, where tests live).
 
+## Direction: proof in CI
+The proof does not need Claude Code. After the commit warning and the receipt, the next step is a
+check that runs on every pull request: it reruns the catch check and verifies the receipt. **[proposed]**
+- It works for any agent and any human, not only Claude Code.
+- It fits teams whose agents work with no human watching: the PR is where proof is checked.
+- It turns the receipt from a claim into something a reviewer can verify.
+- It reduces our dependence on one host's plugin interface, which is young and could change, or be
+  matched by a built-in feature.
+
 ## Sources
 The standard draws on, and cites rather than copies:
 - Kent Beck, *Test-Driven Development: By Example*, and his *Test Desiderata*: twelve properties of a
@@ -284,8 +344,21 @@ The standard draws on, and cites rather than copies:
 - Gerard Meszaros, *xUnit Test Patterns* (xunitpatterns.com): the names of the test smells.
 - Martin Fowler, "Mocks Aren't Stubs": classical and mockist testing.
 - Kent C. Dodds, "Testing Implementation Details".
-- Birgitta Böckeler, "TDD in the agent loop" (martinfowler.com): the evidence that enforced
-  red-green alone did not improve agent output, which is why we enforce the outcome.
+- Birgitta Böckeler, "TDD in the agent loop" (martinfowler.com): the only published evaluation of
+  TDD with agents; exploratory, small greenfield tasks (see "What the research says").
+- Kent Beck, *Tidy First?* (2023): never mix tidying with behaviour changes (rule 9).
+- Gary Bernhardt, "Functional Core, Imperative Shell" (2012), and Mark Seemann: the architecture behind
+  our suite shape.
+- Robert C. Martin, F.I.R.S.T.
+- Reference code, linked rather than copied:
+  - Zod (MIT): `packages/zod/src/v4/classic/tests/` and its root `vitest.config.ts` (isolated files,
+    type checks, fail on console). Its maintainer writes tests with Claude and holds them to this bar,
+    the closest real example of our situation.
+  - Vitest (MIT): `test/unit/` (renamed from `test/core/`) beside `test/e2e/`.
+  - rmanguinho/clean-ts-api (GPL-3.0-or-later, link only): use-case and repository tests in
+    TypeScript, with a spy per repository interface. One valid style, not our rule.
+  - Yoni Goldberg, nodejs-testing-best-practices (no licence file, link only): test anatomy and data
+    isolation. Not a source for test-first: its section 1.4 argues against it.
 - Hora and Robbes, MSR 2026: agents add mocks in 36% of commits, against 26% for others.
 - Robert C. Martin, *Clean Code* and *Clean Architecture*; and John Ousterhout, *A Philosophy of
   Software Design*, the strongest case against TDD as a design method, which we answer: code is rarely
@@ -295,5 +368,7 @@ The standard draws on, and cites rather than copies:
 original.
 
 ## Open questions for Andres
-1. The standard's name, and whether it is published on its own, apart from the plugin.
-2. The first examples: approve, edit or replace each pair in the examples file.
+1. The manifesto, at the top: his own words, one page.
+2. The standard's name, and whether it is published on its own, apart from the plugin.
+3. The first examples: approve, edit or replace each pair in the examples file.
+4. Still open in the text: fixtures, how much testing is enough, naming, function size, comments.

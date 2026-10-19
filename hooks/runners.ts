@@ -774,6 +774,34 @@ export function namedTestFile(command: string, stack: StackName, root?: string):
   return null
 }
 
+const CODE_FILE = /\.(?:[cm]?[jt]sx?|py|gd|cs|java|kt|go|rb)$/i
+// Options whose value is a file the runner loads, not a file it tests (`--import ./tests/node/register.mjs`).
+const LOADS_A_FILE = /^(?:--import|--require|-r|--loader|--experimental-loader|--config|-c)$/
+
+/**
+ * Code files a test command names that are not tests by the stack's rule, absolute (2026-10-18). Seen live:
+ * `node --test tools/pr-check/check.spec-node.ts` named no test by the rule, so it read as an unnamed suite run and
+ * its red and green were credited to the current module. A run that names only such files is about them (runPlan.ts).
+ */
+export function namedOtherFiles(command: string, stack: StackName, root: string): string[] {
+  const rule = STACKS[stack].testFile
+  for (const { segment, cwd } of locatedSegments(command, root)) {
+    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+      continue
+    }
+    const tokens = [...segment.matchAll(TOKEN)].map(match => match[0])
+    return tokens.flatMap((token, index) => {
+      const previous = tokens[index - 1] ?? ''
+      const path = forwardSlashes(token)
+      if (token.startsWith('-') || token.includes('*') || LOADS_A_FILE.test(previous) || !CODE_FILE.test(path) || rule.test(path)) {
+        return []
+      }
+      return [/^(?:[A-Za-z]:)?\//.test(path) ? path : `${cwd}/${path.replace(/^\.\//, '')}`]
+    })
+  }
+  return []
+}
+
 /** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
 export function testRunLocation(command: string, root: string): string | null {
   for (const { segment, cwd } of locatedSegments(command, root)) {

@@ -54,6 +54,8 @@ export type RunFacts = {
   readonly ownTest: Readonly<Record<string, boolean>>
   /** The runner always runs the whole folder (runners.ts, runsWholeFolder). */
   readonly wholeFolder?: boolean
+  /** Code files the command names that are not tests by the stack's rule, absolute (runners.ts, namedOtherFiles). */
+  readonly namedOther?: readonly string[]
 }
 
 /** The red elsewhere of a whole-folder run that did not say which files failed. */
@@ -87,6 +89,10 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
   // The run is the current module's test, or a test that imports it: the band stays on the module being worked on.
   const keepsCurrent =
     current !== null && named !== undefined && (pathKey(current.testPath) === pathKey(named) || namedImports.includes(current.module))
+  // A run that names only files outside the layout (`node --test tools/x.spec-node.ts`) is about those files, unless
+  // one imports the current module. Seen live 2026-10-18: such a run gave the current module a red and a cycle it never had.
+  const outsideFiles = named === undefined ? (facts.namedOther ?? []) : []
+  const outside = outsideFiles.length > 0 && !(current !== null && namedImports.includes(current.module))
   if (target?.kind === 'test' && named !== undefined && !keepsCurrent) {
     // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
     const testPath = named
@@ -137,13 +143,21 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     if (facts.wholeFolder === true && failed.length === 0 && own !== undefined) {
       elsewhere = [UNNAMED_FAILURE]
     }
+    if (outside && own !== undefined) {
+      elsewhere = outsideFiles.map(path => relativePath(root, path))
+    }
   }
   // A green of another module's own test, when the band could not follow it there (that module is not unlocked) and
   // the test does not import the current module, says nothing about the current module (seen on dope-tdd, 2026-10-18).
   const otherGreen =
     outcome === 'pass' && target?.kind === 'test' && !keepsCurrent && targeted.current?.module !== target.module ? target.module : null
-  const countsForCurrent = otherGreen === null
-  let afterRun = otherGreen === null ? recordRun(targeted, outcome === 'pass', nowMs, elsewhere) : recordOtherPass(targeted, otherGreen, nowMs)
+  const outsideGreen = outcome === 'pass' && outside
+  const countsForCurrent = otherGreen === null && !outsideGreen
+  let afterRun = outsideGreen
+    ? recordOtherPass(targeted, null, nowMs)
+    : otherGreen === null
+      ? recordRun(targeted, outcome === 'pass', nowMs, elsewhere)
+      : recordOtherPass(targeted, otherGreen, nowMs)
   const ownCycleClosed = afterRun.cycles > s.cycles
   const carriedOn: string[] = []
   // #54: a whole-file run of the test behind a carried-over unlock, red or green, is the run its first edit waits for.
@@ -158,7 +172,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
       carriedOn.push(...carried)
     }
   }
-  if (outcome === 'pass' && (named !== undefined || !filtered)) {
+  if (outcome === 'pass' && !outsideGreen && (named !== undefined || !filtered)) {
     // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
     afterRun = closeCyclesForTest(afterRun, named ?? null, afterRun.current?.module, nowMs)
   }

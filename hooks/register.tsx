@@ -41,7 +41,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1796,7 +1796,12 @@ async function checkShell(
     // What the plan needs from disk, gathered first: the imports of the named test and of each failing one, and
     // whether each module those import has a test of its own (asked only for one not unlocked, as before #59).
     const named = namedTestFile(command, config.stack, start) ?? undefined
-    const namedImports = named === undefined ? [] : await importedModules($, root, config, named)
+    // Files outside the layout the command names (`node --test tools/x.spec-node.ts`): the run is about them (runPlan.ts).
+    const namedOther = named === undefined ? namedOtherFiles(command, config.stack, start) : []
+    const namedImports =
+      named !== undefined
+        ? await importedModules($, root, config, named)
+        : [...new Set((await Promise.all(namedOther.map(file => importedModules($, root, config, file)))).flat())]
     const failed = outcome === 'fail' ? failedTestPaths(root, runLocation, failedFilesIn(output)) : []
     const importsOf: Record<string, string[]> = {}
     const ownTest: Record<string, boolean> = {}
@@ -1808,7 +1813,7 @@ async function checkShell(
         }
       }
     }
-    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command) }
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther }
     let plan = null as RunPlan | null
     afterRun = await change($, s => {
       plan = applyRun(s, facts, root, config, nowMs)

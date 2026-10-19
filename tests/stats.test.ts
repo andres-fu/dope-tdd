@@ -632,6 +632,12 @@ describe('lastRun, the record each run leaves', () => {
     expect(recordOtherPass(touch(), 'utils/b', T0 + 5).lastRun).toEqual({ module: 'utils/b', outcome: 'pass', files: [], atMs: T0 + 5 })
   })
 
+  test('a green of a file outside the layout belongs to no module (2026-10-18)', () => {
+    const s = recordOtherPass(touch(), null, T0 + 5)
+    expect(s.lastRun).toEqual({ module: null, outcome: 'pass', files: [], atMs: T0 + 5 })
+    expect(s.events.at(-1)).toEqual({ atMs: T0 + 5, kind: 'pass' })
+  })
+
   test('a run that could not be read is the last run too', () => {
     expect(recordUnreadRun(touch(), T0 + 5).lastRun).toEqual({ module: MODULE, outcome: 'unread', files: [], atMs: T0 + 5 })
   })

@@ -46,3 +46,29 @@ describe('a kit run is read like any other test run', () => {
     expect((await runCommand($, 'tdd')).text).not.toMatch(/phase: RED/)
   })
 })
+
+// Seen live 2026-10-18: `node --test tools/pr-check/check.spec-node.ts`, a spec outside the layout, failed and then
+// passed while `reviewer` was the current module, and dope-tdd said "RED on reviewer", then "GREEN on reviewer, saw red".
+describe('a run of a file outside the layout is not the current module\'s', () => {
+  const OUTSIDE_FAIL = '✖ check (1.2ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 90.1\n'
+  const OUTSIDE_PASS = '✔ check (1.2ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 90.1\n'
+
+  test('its red is not this module\'s red, and its green closes no cycle', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+
+    world.bashFails = true
+    world.bashText = OUTSIDE_FAIL
+    const red = await runBash($, 'node --test tools/pr-check/check.spec-node.ts')
+    expect(red.context?.join(' ') ?? '').not.toMatch(/RED on utils\/formatDuration/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/phase: RED/)
+
+    world.bashFails = false
+    world.bashText = OUTSIDE_PASS
+    const green = await runBash($, 'node --test tools/pr-check/check.spec-node.ts')
+    expect(green.context?.join(' ') ?? '').not.toMatch(/GREEN on utils\/formatDuration/)
+    const status = (await runCommand($, 'tdd')).text
+    expect(status).toMatch(/^cycles: 0$/m)
+    expect(status).not.toMatch(/phase: GREEN/)
+  })
+})

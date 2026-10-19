@@ -282,8 +282,9 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
  * band cannot follow it, and the test does not import the current module. A pass in the totals, logged for the module
  * whose test ran; the current module's cycle stays as it was, so the run neither closes it nor checks it.
  */
-export function recordOtherPass(s: TddStats, module: string, nowMs: number): TddStats {
-  return logged({ ...s, passes: s.passes + 1, lastRun: { module, outcome: 'pass', files: [], atMs: nowMs } }, 'pass', nowMs, module)
+/** `module` null: a green of files outside the layout, which belongs to no module (runPlan.ts, 2026-10-18). */
+export function recordOtherPass(s: TddStats, module: string | null, nowMs: number): TddStats {
+  return logged({ ...s, passes: s.passes + 1, lastRun: { module, outcome: 'pass', files: [], atMs: nowMs } }, 'pass', nowMs, module ?? undefined)
 }
 
 /**

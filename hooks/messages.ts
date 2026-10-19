@@ -12,7 +12,9 @@ const LINE_ENDINGS_NOTE =
   ' Only its line endings differ from before the break (CRLF and LF: a shell edit on Windows, such as `sed -i`, can rewrite them); that does not change what the code does.'
 
 const plural = (count: number, word: string) => `${word}${count === 1 ? '' : 's'}`
-const indented = (lines: readonly string[]) => lines.map(line => `  ${line}`).join('\n')
+/** `runners'`, not `runners's`: a module name ending in s takes a bare apostrophe. */
+const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`)
+const indented =(lines: readonly string[]) => lines.map(line => `  ${line}`).join('\n')
 
 type Entry<F> = { readonly example: F; readonly say: (facts: F) => string }
 const entry = <F>(example: F, say: (facts: F) => string): Entry<F> => ({ example, say })
@@ -71,8 +73,8 @@ export const MESSAGES = {
   // The catch check covers the current module only, so a green says so.
   'note.ownTestToo': entry({ module: 'utils/a', other: 'utils/b', outcome: 'red' as 'red' | 'green' }, f =>
     f.outcome === 'red'
-      ? ` That test is ${f.other}'s own test too, so ${f.other} saw red as well.`
-      : ` That test is ${f.other}'s own test too, so ${f.other} went green as well; only ${f.module}'s change was checked.`),
+      ? ` That test is ${possessive(f.other)} own test too, so ${f.other} saw red as well.`
+      : ` That test is ${possessive(f.other)} own test too, so ${f.other} went green as well; only ${possessive(f.module)} change was checked.`),
   'workaround.assertionsRemoved': entry({ testPath: 'tests/utils/a.test.ts', before: 3, after: 1 }, f =>
     `dope-tdd: ${f.testPath} went from ${f.before} to ${f.after} ${plural(f.after, 'assertion')}. Recorded; say why in your reply.`),
   'workaround.commentedOut': entry({ sourcePath: 'src/utils/a.ts', lines: 4 }, f =>

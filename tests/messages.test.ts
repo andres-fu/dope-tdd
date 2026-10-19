@@ -18,6 +18,12 @@ describe('the message catalogue', () => {
     }
   })
 
+  test("a name ending in s takes a bare apostrophe: runners' own test, not runners's", () => {
+    expect(say('note.ownTestToo', { module: 'shell', other: 'runners', outcome: 'green' })).toBe(
+      " That test is runners' own test too, so runners went green as well; only shell's change was checked.",
+    )
+  })
+
   test('say renders one message from its facts', () => {
     expect(say('red.again', { module: 'runPlan' })).toBe(MESSAGES['red.again'].say({ module: 'runPlan' }))
   })

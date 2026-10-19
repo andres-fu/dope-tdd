@@ -123,7 +123,55 @@ export function commandSegments(command: string): string[] {
     current += char
   }
   segments.push(current)
-  return segments.map(segment => segment.trim()).filter(segment => segment !== '')
+  return segments
+    .map(segment => unwrapped(segment.trim()))
+    .flatMap(handedCommand)
+    .filter(segment => segment !== '' && segment !== '}')
+}
+
+// `bash -c "<command>"`: the shell runs the quoted command, so its segments are the command's (2026-10-19). A cd inside
+// it moves the segments after it here too, though the shell's own cd ends with it: rare, and only a location goes wrong.
+const SHELL_C = /^(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*?\s+-\w*c\s+(['"])([\s\S]*)\1$/
+
+function handedCommand(segment: string): string[] {
+  const handed = SHELL_C.exec(segment)
+  if (handed === null) {
+    return [segment]
+  }
+  const inner = handed[1] === '"' ? (handed[2] ?? '').replace(/\\(["\\$`])/g, '$1') : (handed[2] ?? '')
+  return commandSegments(inner)
+}
+
+// A value an option takes: a word, or a quoted string (`xvfb-run -s "-screen 0 1280x1024x24"`).
+const VALUE = String.raw`(?:"[^"]*"|'[^']*'|\S+)`
+// Commands that only run the command after them, with their own options first (2026-10-19): `timeout 60 node --test x`
+// is a node run, and went unseen while the wrapper was read as the command. `env`'s assignments stay: they are the
+// command's own environment, and the runner patterns already allow them. `command -v` looks a name up, so it is not one.
+// A brace group's `{` goes too; its `}` is dropped above.
+const WRAPPER = new RegExp(
+  '^(?:' +
+    [
+      String.raw`timeout(?:\s+(?:--?[\w-]+=\S+|-[sk]\s+\S+|--(?:signal|kill-after)\s+\S+|-\w+|--[\w-]+))*\s+\d+(?:\.\d+)?[smhd]?`,
+      String.raw`time(?:\s+-p)?`,
+      String.raw`nice(?:\s+(?:-n\s+-?\d+|-\d+|--adjustment=-?\d+))?`,
+      String.raw`env(?:\s+(?:-u\s+\S+|--unset=\S+|-i|-|--ignore-environment))*`,
+      String.raw`command(?!\s+-[vV]\b)(?:\s+-p)?`,
+      String.raw`exec(?:\s+(?:-[cl]+|-a\s+\S+))*`,
+      String.raw`xvfb-run(?:\s+(?:-[aA]|--auto-servernum|--auto-display|-[nsfep]\s+${VALUE}|--[\w-]+=${VALUE}))*`,
+      String.raw`stdbuf(?:\s+(?:-[ioe]\s*\S+|--(?:input|output|error)=\S+))*`,
+      String.raw`ionice(?:\s+(?:-[cnp]\s*\S+|-t|--ignore|--(?:class|classdata|pid)(?:=|\s+)\S+))*`,
+      String.raw`\{`,
+    ].join('|') +
+    String.raw`)\s+(?=\S)`,
+)
+
+/** A segment without the wrappers in front of it; one with nothing after its wrapper stays as written. */
+function unwrapped(segment: string): string {
+  let rest = segment
+  for (let found = WRAPPER.exec(rest); found !== null; found = WRAPPER.exec(rest)) {
+    rest = rest.slice(found[0].length)
+  }
+  return rest
 }
 
 export type LocatedSegment = { segment: string; cwd: string; vars: ShellVars }

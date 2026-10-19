@@ -97,7 +97,7 @@ const TARGETS = [
  */
 export function workspaceTarget(command: string): string | null {
   for (const segment of commandSegments(command).map(executedText)) {
-    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+    if (!runsTests(segment)) {
       continue
     }
     for (const pattern of TARGETS) {
@@ -253,7 +253,7 @@ function readThinnedNodeTest(text: string): RunOutcome {
 /** A segment of the command runs Node's built-in runner directly. */
 export function isNodeTestRun(command: string): boolean {
   const direct = commandOf(NODE_TEST)
-  return commandSegments(command).some(segment => direct.test(executedText(segment)))
+  return commandSegments(command).some(segment => direct.test(withoutInlineCode(executedText(segment))))
 }
 
 function nodeTestFailedFiles(output: string): string[] {
@@ -660,7 +660,7 @@ const HARMLESS = /^\s*(?:cd|echo|tail|head|grep|sort|uniq|wc|true)(?:\s|$)/
 /** Only test runs, cds and output filters: nothing in it writes source, so a change seen while it ran came from elsewhere. */
 export function isPureTestRun(command: string): boolean {
   const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
-  const runs = (segment: string) => RUNNERS.some(runner => runner.command.test(segment))
+  const runs = (segment: string) => runsTests(segment)
   return segments.some(runs) && segments.every(segment => runs(segment) || HARMLESS.test(segment))
 }
 
@@ -669,8 +669,22 @@ export function runsWholeFolder(command: string): boolean {
   return commandSegments(command).some(segment => PLUGIN_KIT_COMMAND.test(executedText(segment)))
 }
 
+// The quoted code handed to an interpreter (`node -e "..."`, `python -c "..."`) is text to that interpreter: a runner
+// named inside it does not run here (seen live, 2026-10-19: a probe quoting `node --test x` in node -e counted as a run).
+const INLINE_CODE = /(\s(?:-e|--eval|-p|--print|-c)\s+)(['"])(?:\\[\s\S]|(?!\2)[\s\S])*\2/g
+
+function withoutInlineCode(segment: string): string {
+  return segment.replace(INLINE_CODE, "$1''")
+}
+
+/** A segment that runs a known runner, with any inline code it hands an interpreter left out. */
+function runsTests(segment: string): boolean {
+  const text = withoutInlineCode(segment)
+  return RUNNERS.some(runner => runner.command.test(text))
+}
+
 export function isTestRun(command: string): boolean {
-  return commandSegments(command).some(segment => RUNNERS.some(runner => runner.command.test(executedText(segment))))
+  return commandSegments(command).some(segment => runsTests(executedText(segment)))
 }
 
 /** The first reader that recognises the output decides; readers that see nothing of theirs say unknown and pass. */
@@ -761,7 +775,7 @@ export function namedTestFile(command: string, stack: StackName, root?: string):
     return namedIn(command, stack)
   }
   for (const { segment, cwd } of locatedSegments(command, root)) {
-    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+    if (!runsTests(segment)) {
       continue
     }
     const named = namedIn(segment, stack)
@@ -786,7 +800,7 @@ const LOADS_A_FILE = /^(?:--import|--require|-r|--loader|--experimental-loader|-
 export function namedOtherFiles(command: string, stack: StackName, root: string): string[] {
   const rule = STACKS[stack].testFile
   for (const { segment, cwd } of locatedSegments(command, root)) {
-    if (!RUNNERS.some(runner => runner.command.test(segment))) {
+    if (!runsTests(segment)) {
       continue
     }
     const tokens = [...segment.matchAll(TOKEN)].map(match => match[0])
@@ -805,7 +819,7 @@ export function namedOtherFiles(command: string, stack: StackName, root: string)
 /** The directory the command's test run executes in, or null when no segment runs tests. ELSEWHERE when a `cd` went somewhere unseen. */
 export function testRunLocation(command: string, root: string): string | null {
   for (const { segment, cwd } of locatedSegments(command, root)) {
-    if (RUNNERS.some(runner => runner.command.test(executedText(segment)))) {
+    if (runsTests(executedText(segment))) {
       return cwd === ELSEWHERE ? ELSEWHERE : cwd
     }
   }

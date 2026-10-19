@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { applyRun, failedTestPaths, failingTestFiles } from '../hooks/runPlan'
+import { UNNAMED_FAILURE, applyRun, failedTestPaths, failingTestFiles } from '../hooks/runPlan'
 import type { RunFacts } from '../hooks/runPlan'
 import { INITIAL_STATS, recordRedFor } from '../hooks/stats'
 import type { TddStats } from '../types'
@@ -177,5 +177,23 @@ describe('applyRun', () => {
   test('a filtered green that names no file closes nothing', () => {
     const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }, 'utils/c', 0)
     expect(run(s, { outcome: 'pass', filtered: true }).state.modules['utils/c']?.phase).toBe('red')
+  })
+})
+
+// Seen live (2026-10-18): a kit run whose failed files could not be read marked the current module RED. A run of the
+// whole folder that names no failed file says only that something somewhere failed.
+describe('a whole-folder run that does not say which files failed', () => {
+  test('is a red elsewhere, not the current module’s red', () => {
+    const plan = run(workingOn('utils/a', A_TEST), { outcome: 'fail', wholeFolder: true, failed: [] })
+    expect(plan.state.phase).not.toBe('red')
+    expect(plan.elsewhere).toEqual([UNNAMED_FAILURE])
+  })
+
+  test('a run that is not whole-folder keeps the old reading: its red is the current module’s', () => {
+    expect(run(workingOn('utils/a', A_TEST), { outcome: 'fail', failed: [] }).state.phase).toBe('red')
+  })
+
+  test('a whole-folder run that does name the module’s test is its red', () => {
+    expect(run(workingOn('utils/a', A_TEST), { outcome: 'fail', wholeFolder: true, failed: ['tests/utils/a.test.ts'] }).state.phase).toBe('red')
   })
 })

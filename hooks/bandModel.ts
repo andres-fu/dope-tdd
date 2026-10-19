@@ -5,8 +5,10 @@ import type { Override, TddStats } from '../types'
 import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
 import { deciderLabel, openDebt, overrideLeft } from './overrides.ts'
+import { UNNAMED_FAILURE } from './runPlan.ts'
 import { isCodeFile } from './setup.ts'
 import { stackOf } from './stacks.ts'
+import { formatAgo } from './timeText.ts'
 
 /** The fixed folder a layout template starts with: `tests/{module}.test.{ext}` lives under `tests/`. */
 function fixedPrefix(template: string): string {
@@ -43,6 +45,8 @@ export type BandView = {
   overridden: Override | null
   /** Every override that still lets something through, whichever module is current: an open door has a sign on it. */
   open: { target: string; text: string }[]
+  /** The last test run in words, or null before any: which test, how it went, whose it was, when (2026-10-18). */
+  lastRun: string | null
 }
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
@@ -189,6 +193,37 @@ function problemsOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'scope'>, wa
     : problems
 }
 
+const RUN_KINDS: ReadonlySet<string> = new Set(['pass', 'fail', 'elsewhere'])
+
+function fileName(path: string): string {
+  return path.replace(/\\/g, '/').split('/').pop() ?? path
+}
+
+/**
+ * The last run in words, in place of a trail of ● and ✗ that said nothing a person could act on (2026-10-18): the test,
+ * how it went, and whose it was when it was not the current module's.
+ */
+function lastRunOf(s: TddStats, nowMs: number): string | null {
+  const last = [...s.events].reverse().find(event => RUN_KINDS.has(event.kind))
+  if (last === undefined) {
+    return null
+  }
+  const ago = formatAgo(nowMs - last.atMs).toLowerCase()
+  if (last.kind === 'elsewhere') {
+    const files = (last.detail ?? '').split(', ').filter(file => file !== '')
+    const first = files[0]
+    if (first === undefined || first === UNNAMED_FAILURE) {
+      return `last run: failed, the output did not say where · not this module · ${ago}`
+    }
+    return `last run: ${fileName(first)}${files.length > 1 ? ` +${files.length - 1}` : ''} failed · not this module · ${ago}`
+  }
+  const module = last.module
+  const testPath = module === undefined ? undefined : s.unlocked[module]
+  const name = testPath !== undefined ? fileName(testPath) : module !== undefined ? `${module} test` : 'the tests'
+  const whose = module !== undefined && s.current !== null && module !== s.current.module ? ' · another module' : ''
+  return `last run: ${name} ${last.kind === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
+}
+
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
 export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stack' | 'mode' | 'scope'>, record: readonly Override[] = [], nowMs = 0, session?: string): BandView {
   const watch = watchOf(s, config)
@@ -201,5 +236,15 @@ export function bandView(s: TddStats, config: Pick<GuardConfig, 'layout' | 'stac
     const theirs = o.session !== undefined && session !== undefined && o.session !== session ? " · another session's" : ''
     return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}${theirs}` }]
   })
-  return { watch, showProgress, chain: chainOf(s), next: nextOf(s, watch, pending, open), problems: problemsOf(s, config, watch, record), pending, overridden, open }
+  return {
+    watch,
+    showProgress,
+    chain: chainOf(s),
+    next: nextOf(s, watch, pending, open),
+    problems: problemsOf(s, config, watch, record),
+    pending,
+    overridden,
+    open,
+    lastRun: lastRunOf(s, nowMs),
+  }
 }

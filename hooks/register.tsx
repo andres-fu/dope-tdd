@@ -39,7 +39,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1819,7 +1819,7 @@ async function checkShell(
         }
       }
     }
-    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest }
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command) }
     let plan = null as RunPlan | null
     afterRun = await change($, s => {
       plan = applyRun(s, facts, root, config, nowMs)

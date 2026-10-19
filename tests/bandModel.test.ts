@@ -256,3 +256,31 @@ describe("another session's override on the band (2026-10-18)", () => {
     expect(bandView(INITIAL_STATS, CONFIG, [theirs], 0, 'A').open[0]?.text).toBe('timeText · spike · 1 edit left · approved by human')
   })
 })
+
+// The last run in words, in place of a trail of symbols (2026-10-18): which test, how it went, whose it was, when.
+describe('lastRun', () => {
+  const at = (kind: TddStats['events'][number]['kind'], module?: string, detail?: string) => ({ atMs: 0, kind, ...(module === undefined ? {} : { module }), ...(detail === undefined ? {} : { detail }) })
+  const lastRun = (events: TddStats['events'], over: Partial<TddStats> = {}) => bandView(on({ events, ...over }), CONFIG, [], 90_000).lastRun
+
+  test('no runs yet: nothing', () => {
+    expect(lastRun([at('touched', 'runPlan')])).toBeNull()
+  })
+
+  test("this module's test passed or failed", () => {
+    expect(lastRun([at('fail', 'runPlan'), at('pass', 'runPlan')])).toBe('last run: runPlan.test.ts passed · 1m ago')
+    expect(lastRun([at('fail', 'runPlan')])).toBe('last run: runPlan.test.ts failed · 1m ago')
+  })
+
+  test('another file failed: not this module', () => {
+    expect(lastRun([at('elsewhere', 'runPlan', 'tests/overrideFlow.test.tsx')])).toBe('last run: overrideFlow.test.tsx failed · not this module · 1m ago')
+    expect(lastRun([at('elsewhere', 'runPlan', 'tests/a.test.ts, tests/b.test.ts')])).toBe('last run: a.test.ts +1 failed · not this module · 1m ago')
+  })
+
+  test('a failure the output did not place', () => {
+    expect(lastRun([at('elsewhere', 'runPlan', 'a file the output did not name')])).toBe('last run: failed, the output did not say where · not this module · 1m ago')
+  })
+
+  test("another module's test passed", () => {
+    expect(lastRun([at('pass', 'stats')], { unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('last run: stats.test.ts passed · another module · 1m ago')
+  })
+})

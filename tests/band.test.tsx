@@ -86,7 +86,9 @@ describe('band content', () => {
     expect(await ui.find({ type: 'Text', text: 'WRITING 3M' })).toBeDefined()
   })
 
-  test('shows the run trail; session totals live in /tdd, never as calm zeros on the band', async ($, on) => {
+  // A trail of ● and ✗ said nothing a person could act on: which test, which module, when (2026-10-18). The last run, in
+  // words, does; the history stays in /tdd.
+  test('shows the last run in words, not a trail of symbols; session totals live in /tdd', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
     await runTests($, world, 'fail')
@@ -95,8 +97,8 @@ describe('band content', () => {
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: /GREEN/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /CYCLES|0 CAUGHT|0 BLOCKED/ })).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: '✗' }))?.props.color).toBe(ACCENT.ember)
-    expect((await ui.find({ type: 'Text', text: '●' }))?.props.color).toBe(ACCENT.pass)
+    expect(await ui.find({ type: 'Text', text: 'last run: formatDuration.test.ts passed · just now' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^[●✗]$/ })).toBeUndefined()
   })
 
   test('colors the phase: ember for red, functional green for green', async ($, on) => {
@@ -258,12 +260,14 @@ describe('band theming', () => {
 })
 
 describe('band honesty: whether dope-tdd is watching comes first (2026-10-18)', () => {
-  test('watching names where it looks', async ($, on) => {
+  // Where it looks never changes within a repo, so the band says only that it is watching; /tdd names the layout.
+  test('watching says so, and nothing more', async ($, on) => {
     const world = fakeEngine(on)
     await touchTest($, world, 'utils/formatDuration')
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
-    expect((await ui.find({ type: 'Text', text: '● WATCHING src/ · node' }))?.props.color).toBe(ACCENT.pass)
+    expect((await ui.find({ type: 'Text', text: '● WATCHING' }))?.props.color).toBe(ACCENT.pass)
+    expect(await ui.find({ type: 'Text', text: /WATCHING src\// })).toBeUndefined()
   })
 
   test('code edited outside every layout, with nothing guarded, says NOT WATCHING and how to fix it', async ($, on) => {

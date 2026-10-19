@@ -75,6 +75,11 @@ export type RunPlan = {
   readonly ownCycleClosed: boolean
   /** False for a green that is not about the current module: it must not close its cycle or start its catch check. */
   readonly countsForCurrent: boolean
+  /**
+   * The open module whose own test this run was, when the band stayed on the current module because the test imports
+   * it (2026-10-19): runners' own test imports shell, so its red read "RED on shell" alone. Null otherwise.
+   */
+  readonly ownTestOf: string | null
 }
 
 /** A read run, red or green, applied to the record. */
@@ -176,5 +181,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
     afterRun = closeCyclesForTest(afterRun, named ?? null, afterRun.current?.module, nowMs)
   }
-  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed, countsForCurrent }
+  const ownTestOf =
+    keepsCurrent && target?.kind === 'test' && target.module !== current?.module && afterRun.unlocked[target.module] !== undefined ? target.module : null
+  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed, countsForCurrent, ownTestOf }
 }

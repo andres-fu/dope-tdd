@@ -67,6 +67,12 @@ export const MESSAGES = {
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
+  // Appended to a RED or GREEN on the current module when the test that ran is another open module's own (2026-10-19).
+  // The catch check covers the current module only, so a green says so.
+  'note.ownTestToo': entry({ module: 'utils/a', other: 'utils/b', outcome: 'red' as 'red' | 'green' }, f =>
+    f.outcome === 'red'
+      ? ` That test is ${f.other}'s own test too, so ${f.other} saw red as well.`
+      : ` That test is ${f.other}'s own test too, so ${f.other} went green as well; only ${f.module}'s change was checked.`),
   'workaround.assertionsRemoved': entry({ testPath: 'tests/utils/a.test.ts', before: 3, after: 1 }, f =>
     `dope-tdd: ${f.testPath} went from ${f.before} to ${f.after} ${plural(f.after, 'assertion')}. Recorded; say why in your reply.`),
   'workaround.commentedOut': entry({ sourcePath: 'src/utils/a.ts', lines: 4 }, f =>

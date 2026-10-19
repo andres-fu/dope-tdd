@@ -38,6 +38,15 @@ describe('runAdvice', () => {
     expect(runAdvice(touched, recordRun(touched, true, at(1)))).toBe(say('green.neverRed', { module: MODULE }))
   })
 
+  // Seen live (2026-10-19): runners' own test imported shell, so its red was said only as "RED on shell".
+  test("a run through another open module's own test names that module too, red or green", () => {
+    const red = runAdvice(touched, recordRun(touched, false, at(1)), undefined, { ownTestOf: 'runners' })
+    expect(red).toBe(say('red.first', { module: MODULE }) + say('note.ownTestToo', { module: MODULE, other: 'runners', outcome: 'red' }))
+    const edited = recordSourceEdit(recordRun(touched, false, at(1)), MODULE, true, at(2))
+    const green = runAdvice(edited, recordRun(edited, true, at(3)), undefined, { ownTestOf: 'runners' })
+    expect(green).toBe(say('green.sawRed', { module: MODULE }) + say('note.ownTestToo', { module: MODULE, other: 'runners', outcome: 'green' }))
+  })
+
   test('says nothing after a pass that completes no cycle', () => {
     expect(runAdvice(INITIAL_STATS, recordRun(INITIAL_STATS, true, at(1)))).toBeNull()
   })

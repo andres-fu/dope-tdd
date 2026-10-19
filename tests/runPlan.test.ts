@@ -70,6 +70,22 @@ describe('applyRun', () => {
     expect(plan.redUnlocked).toEqual([])
   })
 
+  // Seen live (2026-10-19): tests/runners.test.ts imports hooks/shell, so its red read "RED on shell" and runners went unsaid.
+  test("the band stays, but a test that is an open module's own is named, so its module is said too", () => {
+    const s = { ...workingOn('utils/b', B_TEST), unlocked: { 'utils/a': A_TEST, 'utils/b': B_TEST } }
+    const red = run(s, { named: A_TEST, namedImports: ['utils/b'], importsOf: { [A_TEST]: ['utils/a', 'utils/b'] } })
+    expect(red.state.current?.module).toBe('utils/b')
+    expect(red.ownTestOf).toBe('utils/a')
+    expect(run(s, { outcome: 'pass', named: A_TEST, namedImports: ['utils/b'] }).ownTestOf).toBe('utils/a')
+  })
+
+  test('no module to name: its own test, a suite run, or a test of a module not open', () => {
+    const s = { ...workingOn('utils/b', B_TEST), unlocked: { 'utils/a': A_TEST, 'utils/b': B_TEST } }
+    expect(run(s, { named: B_TEST }).ownTestOf).toBeNull()
+    expect(run(s, {}).ownTestOf).toBeNull()
+    expect(run(workingOn('utils/b', B_TEST), { outcome: 'pass', named: A_TEST, namedImports: ['utils/b'] }).ownTestOf).toBeNull()
+  })
+
   test('another failed test file unlocks its module without making it current; a red there is elsewhere', () => {
     const plan = run(workingOn('utils/b', B_TEST), { failed: ['tests/utils/c.test.ts'] })
     expect(plan.redUnlocked).toEqual(['utils/c'])

@@ -5,6 +5,25 @@ export type SourceSnapshot = Readonly<Record<string, string>>
 // `git apply` is the agent's own edit arriving as a patch, so it is not here; `git stash list|show` only reads.
 const REWRITES_TREE = /^\s*git\s+(?:checkout|restore|stash(?!\s+(?:list|show)\b)|reset|switch|revert|merge|rebase|pull|cherry-pick|clean)\b/
 
+export type SavedState = 'uncommitted' | 'committed' | 'pushed'
+
+/**
+ * Where a module's work is, from `git status --porcelain=v2 --branch -- <source> <test>`: any entry line means its files
+ * differ from HEAD; clean and not ahead of an upstream means pushed. Behind the upstream is still pushed: the work left.
+ * Output without `# branch.oid`, which --branch always prints, is not a status: null, so nothing claims committed.
+ */
+export function savedStateOf(status: string): SavedState | null {
+  const lines = status.split(/\r?\n/).filter(line => line !== '')
+  if (!lines.some(line => line.startsWith('# branch.oid '))) {
+    return null
+  }
+  if (lines.some(line => !line.startsWith('# '))) {
+    return 'uncommitted'
+  }
+  const ahead = lines.map(line => /^# branch\.ab \+(\d+) /.exec(line)?.[1]).find(n => n !== undefined)
+  return ahead === '0' ? 'pushed' : 'committed'
+}
+
 export function parseNumstat(output: string): Record<string, string> {
   const entries = output
     .split(/\r?\n/)

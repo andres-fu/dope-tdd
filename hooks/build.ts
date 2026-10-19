@@ -17,3 +17,13 @@ export function buildLabel(gitLine: string | null, version: string | null): stri
   }
   return version === null ? 'build unknown' : `version ${version}`
 }
+
+/** The `version` of plugin.json, for an install with no .git to ask (a marketplace or cache copy); null when absent. */
+export function manifestVersion(manifest: string | null): string | null {
+  try {
+    const version: unknown = JSON.parse(manifest ?? '').version
+    return typeof version === 'string' && version !== '' ? version : null
+  } catch {
+    return null
+  }
+}

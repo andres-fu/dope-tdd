@@ -121,6 +121,19 @@ describe('one next step, always', () => {
     expect(next(on({ phase: 'green', ...catchOf({ kind: 'caught' }) }))).toBe('refactor while the test guards it, then commit')
   })
 
+  // A tester's band still said "then commit" after the PR was pushed (2026-10-19): the next step reads where the work is.
+  test('proven and committed: push it; proven and pushed: the next failing test', () => {
+    const proven = on({ phase: 'green', ...catchOf({ kind: 'caught' }) })
+    expect(bandView(proven, CONFIG, [], 0, undefined, '', { module: 'runPlan', state: 'uncommitted' }).next).toBe('refactor while the test guards it, then commit')
+    expect(bandView(proven, CONFIG, [], 0, undefined, '', { module: 'runPlan', state: 'committed' }).next).toBe('committed · push it, or refactor while the test guards it')
+    expect(bandView(proven, CONFIG, [], 0, undefined, '', { module: 'runPlan', state: 'pushed' }).next).toBe('committed and pushed · write the next failing test')
+  })
+
+  test("another module's saved state says nothing about this one", () => {
+    const proven = on({ phase: 'green', ...catchOf({ kind: 'caught' }) })
+    expect(bandView(proven, CONFIG, [], 0, undefined, '', { module: 'stats', state: 'pushed' }).next).toBe('refactor while the test guards it, then commit')
+  })
+
   test('missed: add an assertion that fails without the line it missed', () => {
     expect(next(on({ phase: 'green', ...catchOf({ kind: 'missed', slipped: ['+ return a + b'] }) }))).toBe(
       'add an assertion that fails without:  + return a + b',

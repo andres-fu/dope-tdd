@@ -2,7 +2,7 @@ import type { Elements, RenderSurface } from 'claude-code'
 
 import type { CurrentTest, Override, TddStats } from '../types'
 import { bandView } from './bandModel.ts'
-import type { Token } from './bandModel.ts'
+import type { Saved, Token } from './bandModel.ts'
 import type { GuardConfig } from './config.ts'
 import { moduleLabel } from './mirror.ts'
 import { ACCENT, ALARM_TEXT } from './theme.ts'
@@ -18,6 +18,8 @@ export type BandModel = {
   logo: string | null
   /** The git operation the guard stands down for, or '' when it is on. */
   standingDown: string
+  /** Whether the current module's work is committed or pushed, as git last said. */
+  saved?: Saved
   /** The repo's override record: a waiting request, and the open overrides, show on the band. */
   overrides: readonly Override[]
   onViewTest: () => unknown
@@ -68,7 +70,7 @@ function drawToken(el: AnyElements, token: Token) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config, model.overrides, nowMs, model.session, model.standingDown)
+  const view = bandView(s, config, model.overrides, nowMs, model.session, model.standingDown, model.saved ?? null)
 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={ACCENT.ember} paddingX={1}>

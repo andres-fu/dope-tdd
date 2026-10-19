@@ -220,6 +220,8 @@ declare module 'claude-code' {
       attended: boolean
       /** This session's id, read once at session start for the band; '' until read. */
       'session-id': string
+      /** Whether the current module's work is committed or pushed (bandModel.ts, Saved); '' module before git is asked. */
+      saved: { module: string; state: 'uncommitted' | 'committed' | 'pushed' }
     }
   }
 }

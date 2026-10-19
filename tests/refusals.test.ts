@@ -1,19 +1,54 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { OVERRIDE_HINT, lockedMessage } from '../hooks/refusals'
+import { OVERRIDE_HINT, lockedMessage, unblockSteps } from '../hooks/refusals'
 
 const CONFIG = { ...DEFAULT_CONFIG, layout: { name: 'custom', source: 'hooks/{module}.{ext}', test: 'tests/{module}.test.{ext}' } }
+const COMMAND = 'node --import ./tests/node/register.mjs --test tests/runPlan.test.ts'
 
 describe('lockedMessage: the cheap path first, the override last (2026-10-18)', () => {
   test('names the test to write, then pin, then the override request, in that order', () => {
     const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts')
     expect(message.startsWith('dope-tdd: write the failing test first. Touch tests/runPlan.test.ts')).toBe(true)
-    expect(message.endsWith(OVERRIDE_HINT)).toBe(true)
-    expect(OVERRIDE_HINT.indexOf('/dope-tdd:pin')).toBeLessThan(OVERRIDE_HINT.indexOf('mcp__dope-tdd__override_request'))
+    expect(message.indexOf('/dope-tdd:pin')).toBeLessThan(message.indexOf('mcp__dope-tdd__override_request'))
   })
 
   test('the override hint says a person decides and it is recorded', () => {
     expect(OVERRIDE_HINT).toMatch(/a person decides, and it is recorded/)
+  })
+})
+
+// The agent contract (2026-10-18): a refusal is a menu of exact next steps, not prose to interpret.
+describe('a refusal numbers the ways to unblock', () => {
+  test('each way on its own numbered line, the first with the exact command that runs the test', () => {
+    const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts', { command: COMMAND })
+    expect(message).toMatch(/\nUnblock by one of:\n/)
+    expect(message.split('\n')).toContain(`(1) write or edit tests/runPlan.test.ts so it fails, then run it: ${COMMAND}`)
+    expect(message).toMatch(/^\(2\) no test for this code yet: \/dope-tdd:pin pins what it does now$/m)
+    expect(message).toMatch(/^\(3\) neither fits: ask for an override with mcp__dope-tdd__override_request; a person decides, and it is recorded$/m)
+  })
+
+  test('with no runner found, the first way names the test without a command', () => {
+    expect(unblockSteps('tests/runPlan.test.ts', undefined, true)).toMatch(/^\(1\) write or edit tests\/runPlan\.test\.ts so it fails, then run it$/m)
+  })
+})
+
+describe('the override is offered once per module', () => {
+  test('a later refusal for the same module lists only the cheap ways', () => {
+    const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts', { command: COMMAND, overrideOffered: true })
+    expect(message).toMatch(/^\(2\) no test for this code yet/m)
+    expect(message).not.toMatch(/override_request/)
+    expect(message).not.toMatch(/^\(3\)/m)
+  })
+})
+
+describe('the refusal ends with the last run, in the band\'s own words', () => {
+  test('the line it is given closes the message', () => {
+    const message = lockedMessage(CONFIG, 'runPlan', undefined, 'ts', { lastRun: 'last run: summary.test.ts passed · 4m ago' })
+    expect(message.endsWith('\nlast run: summary.test.ts passed · 4m ago')).toBe(true)
+  })
+
+  test('no run yet, no line', () => {
+    expect(lockedMessage(CONFIG, 'runPlan', undefined, 'ts')).not.toMatch(/last run/)
   })
 })

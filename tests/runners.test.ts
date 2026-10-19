@@ -126,6 +126,24 @@ describe('a test run behind a wrapper command is still a test run', () => {
     expect(namedTestFile('env CI=1 python -m pytest tests/test_calc.py', 'python', 'C:/r')).toBe('C:/r/tests/test_calc.py')
   })
 
+  test('command, exec, xvfb-run, a brace group, and sh -c or bash -c', () => {
+    const run = 'node --import ./tests/node/register.mjs --test tests/build.test.ts'
+    expect(isTestRun(`command ${run}`)).toBe(true)
+    expect(isTestRun(`exec ${run}`)).toBe(true)
+    expect(isTestRun('xvfb-run -a npx vitest run src/a.test.ts')).toBe(true)
+    expect(isTestRun(`{ ${run}; }`)).toBe(true)
+    expect(isTestRun(`bash -c "${run}"`)).toBe(true)
+    expect(isTestRun(`sh -c '${run}'`)).toBe(true)
+  })
+
+  // Seen live (2026-10-19): a probe that only quoted a test command inside node -e counted as an unread run.
+  test('a test command quoted inside inline code is text, not a run', () => {
+    expect(isTestRun(`node --import ./tests/node/register.mjs -e "console.log(isTestRun('node --test tests/build.test.ts'))"`)).toBe(false)
+    expect(isTestRun(`node --eval 'run("npx vitest run")'`)).toBe(false)
+    expect(isTestRun(`python -c "print('pytest tests/')"`)).toBe(false)
+    expect(isTestRun('node --test "tests/**/*.test.ts"')).toBe(true)
+  })
+
   test('a wrapper around something else is not a test run', () => {
     expect(isTestRun('timeout 5 curl localhost:3000')).toBe(false)
     expect(isTestRun('env')).toBe(false)

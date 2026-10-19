@@ -62,6 +62,22 @@ describe('commandSegments', () => {
     expect(commandSegments('timeout --preserve-status -k 5 10s make')).toEqual(['make'])
   })
 
+  test('command, exec, xvfb-run, stdbuf and ionice are wrappers too', () => {
+    expect(commandSegments('command npm test; exec pytest -q')).toEqual(['npm test', 'pytest -q'])
+    expect(commandSegments('xvfb-run -a npx vitest run && xvfb-run --auto-servernum -s "-screen 0 1280x1024x24" npm test')).toEqual(['npx vitest run', 'npm test'])
+    expect(commandSegments('stdbuf -oL -eL npm test; ionice -c 2 -n 7 npm test')).toEqual(['npm test', 'npm test'])
+  })
+
+  test('a brace group is the commands inside it', () => {
+    expect(commandSegments('{ npm test; echo done; } | tail -5')).toEqual(['npm test', 'echo done', 'tail -5'])
+  })
+
+  test('sh -c and bash -c are the command they are handed, split as usual', () => {
+    expect(commandSegments('bash -c "cd app && npm test" | tail -5')).toEqual(['cd app', 'npm test', 'tail -5'])
+    expect(commandSegments("sh -c 'pytest -q'")).toEqual(['pytest -q'])
+    expect(commandSegments('bash -lc "echo \\"hi\\"; npm test"')).toEqual(['echo "hi"', 'npm test'])
+  })
+
   test('a wrapper with nothing after it stays as written', () => {
     expect(commandSegments('env; time')).toEqual(['env', 'time'])
     expect(commandSegments('timeout 60')).toEqual(['timeout 60'])

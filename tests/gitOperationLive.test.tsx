@@ -44,7 +44,7 @@ describe('the guard stands down while a git operation is in progress', () => {
 
     expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
     expect(world.baselineCalls).toBe(0)
-    expect((await runCommand($, 'tdd')).text).not.toMatch(/CAUGHT|caught 1/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/PROVEN|proven 1/)
   })
 
   test('when the operation ends the guard is back, and says so once', async ($, on) => {

@@ -24,7 +24,7 @@ function cycleLine(s: TddStats): string {
     return 'cycles: 0'
   }
   const testChanged = s.testChanged === 0 ? '' : `, test changed ${s.testChanged}`
-  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, never saw red ${s.neverSawRed}${testChanged})`
+  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, never failed ${s.neverSawRed}${testChanged})`
 }
 
 function runsLine(s: TddStats): string {
@@ -63,7 +63,8 @@ function catchLine(s: TddStats): string[] {
   const verdicts =
     s.caught + s.proven + s.missed + s.unverified === 0
       ? []
-      : [`catch check: caught ${s.caught} · proven ${s.proven} · missed ${s.missed} · unverified ${s.unverified}`]
+      : // The band's words (bandModel.ts catchWord): caught and proven are one fact to a reader, PROVEN.
+        [`catch check: proven ${s.caught + s.proven} · missed ${s.missed} · not checked ${s.unverified}`]
   // A refactor is a fact about the change, not a verdict on the test, so it never sits beside caught and proven.
   const refactors = s.refactors === 0 ? [] : [`refactors: ${s.refactors} (changed while green with the test untouched; not re-checked)`]
   return [...verdicts, ...refactors]
@@ -107,40 +108,43 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
   ].join('\n')
 }
 
+/** One glossary row: the word, then what it means, in two columns. */
+function word(name: string, meaning: string): string {
+  return `  ${name.padEnd(14)} ${meaning}`
+}
+
+// One verdict vocabulary (2026-10-18): the words the band and /tdd show now, and only those. CAUGHT, UNVERIFIED,
+// NEVER SAW RED, TEST CHANGED and the other band v2 words are retired; a glossary of words nobody sees misleads.
 export function formatGlossary(): string {
   return [
     'dope-tdd: what the words mean',
-    '  WATCHING       the edited code matches the layout and the test runs can be read: dope-tdd is guarding it',
-    '  NOT WATCHING   code was edited that no test layout pairs, and nothing is guarded yet: /tdd setup, or a layout in dope-tdd.json',
-    "  CAN'T READ RUNS test runs happened and none could be read: run one test file so its summary line is in the output",
-    '  UNWATCHED      code files edited outside the layout, beside guarded work: dope-tdd cannot check them',
-    '  NEXT           the one step to take now',
-    '  WRITING        a test was created or edited and has not run yet',
-    '  RED            the last run of that test failed: the bug or the missing behaviour is reproduced',
-    '  RED ELSEWHERE  the last run failed in other test files, not in this module\'s test',
-    '  GREEN          the last run passed',
-    '  SAW RED        this cycle\'s test failed before the code made it pass, so it can catch something',
-    '  NEVER SAW RED  the test went green without ever failing; it has proven nothing yet',
-    '  TEST CHANGED   the test was edited after red and the code was not; the green came from the test',
-    '  CAUGHT         with the change undone, the test fails: it guards this change',
-    '  PROVEN         the code was broken on purpose, the test went red, and the code is back as it was: the red was the check',
-    '  MISSED         with the change undone, the test still passes: it does not guard this change',
-    '  UNVERIFIED     the catch check could not run; /tdd has the reason',
-    '  REFACTOR       code changed while green with the test untouched; not re-checked',
-    '  UNGUARDED      a source file changed with no test touched first',
-    '  WORKAROUNDS    ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged',
-    '  BLOCKED        an edit was refused until the test is written',
-    '  PAUSED         /tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or /tdd resume; they stay debt',
-    '  OVERRIDE ASKED the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>',
-    '  UNPROVEN       green, but not proven by a test that failed first: the reason follows the word (never failed, not checked, the test changed)',
-    '  CHANGED        the code changed since it went green: run the test again before trusting the green',
-    '  STANDING DOWN  a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard waits until it ends',
-    '  WARN ONLY      the mode lets untested edits through, with a warning (dope-tdd.json)',
-    '  OBSERVING      the mode refuses nothing; dope-tdd only records (dope-tdd.json)',
-    '  OVERRIDE OPEN  an approved override that still lets edits through: what is left and who approved it; END closes it',
-    '  OVERRIDES OPEN overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt',
-    '  GIT REBASE     a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard stands down until it ends',
-    '  MODE           enforce denies, warn tells, observe only records (dope-tdd.json)',
-    "  DOPE           Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar",
+    'the band',
+    word('red ✓ green ✓', 'the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first'),
+    word('RED 4M', 'the test fails now, and how long since the cycle opened; it turns alarm red after 10 minutes'),
+    word('PROVEN', 'the test fails without your change (dope-tdd undid it, or you broke the code on purpose): it guards this change'),
+    word('MISSED', 'with your change undone the test still passes: it does not guard this change; strengthen the test'),
+    word('UNPROVEN', 'green, but not proven by a test that failed first: the reason follows the word (never failed, not checked, the test changed)'),
+    word('CHANGED', 'the code changed since it went green: run the test again before trusting the green'),
+    word('refactor', 'code changed while green with the test untouched; not re-checked'),
+    word('proving…', 'dope-tdd is running the test with your change undone'),
+    word('last run', 'which test ran last, how it went, and when; click it to open that test'),
+    word('next', 'the one step to take now'),
+    word('NOT WATCHING', 'code was edited that no test layout pairs, and nothing is guarded yet: /tdd setup, or a layout in dope-tdd.json'),
+    word("CAN'T READ RUNS", 'test runs happened and none could be read: run one test file so its summary line is in the output'),
+    word('PAUSED', '/tdd pause <minutes> <reason>: edits are not counted until it ends by itself, or /tdd resume; they stay debt'),
+    word('STANDING DOWN', 'a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard waits until it ends'),
+    word('WARN ONLY', 'the mode lets untested edits through, with a warning (dope-tdd.json)'),
+    word('OBSERVING', 'the mode refuses nothing; dope-tdd only records (dope-tdd.json)'),
+    word('OVERRIDE ASKED', 'the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>'),
+    word('OVERRIDE OPEN', 'an approved override that still lets edits through: what is left and who approved it; END closes it'),
+    '/tdd',
+    word('unguarded', 'a source file changed with no test touched first'),
+    word('blocked', 'an edit was refused until the test is written'),
+    word('never failed', 'cycles that went green without the test ever failing'),
+    word('not checked', 'greens the catch check could not run on; the agent was told why'),
+    word('workarounds', 'ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged'),
+    word('OVERRIDES OPEN', 'overrides not yet ended, and hotfixes or paused edits with no test yet: debt on the receipt'),
+    word('mode', 'enforce denies, warn tells, observe only records (dope-tdd.json)'),
+    word('DOPE', "Deny, Observe, Prove, Evidence. Motto: don't overdub, prove every bar"),
   ].join('\n')
 }

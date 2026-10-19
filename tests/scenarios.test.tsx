@@ -18,7 +18,7 @@ describe('scenario: fixing a bug in code that has no tests', () => {
     expect(red.text).toMatch(/phase: RED/)
     expect(allowed.deny).toBeUndefined()
     expect(green.text).toMatch(/phase: GREEN/)
-    expect(green.text).toMatch(/cycles: 1 \(avg .*never saw red 0\)/)
+    expect(green.text).toMatch(/cycles: 1 \(avg .*never failed 0\)/)
     expect(green.text).toMatch(/test-first: 1\/2 · unguarded 0 · blocked 1/)
   })
 })
@@ -31,7 +31,7 @@ describe('scenario: pinning behaviour before a refactor', () => {
     await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/never saw red 1/)
+    expect(status.text).toMatch(/never failed 1/)
   })
 
   test('breaking the code on purpose, then restoring it, proves the pin and clears the doubt', async ($, on) => {
@@ -44,7 +44,7 @@ describe('scenario: pinning behaviour before a refactor', () => {
     await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).toMatch(/cycles: 1 \(avg .*never saw red 0\)/)
+    expect(status.text).toMatch(/cycles: 1 \(avg .*never failed 0\)/)
     expect(status.text).toMatch(/test-first: 2\/2/)
   })
 })

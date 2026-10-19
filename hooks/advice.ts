@@ -171,8 +171,8 @@ function missedAdvice(module: string, sawRed: boolean, slipped?: readonly string
 
 function missedVerdict(module: string, sawRed: boolean): string {
   return sawRed
-    ? `dope-tdd: GREEN on ${module}, but its test does NOT catch the change: with your change undone it still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.`
-    : `dope-tdd: GREEN on ${module}. Its test has never failed, and it still passes with your change undone, so it has proven nothing yet. If the change was a fix, the test is missing an assertion for it; if it was a refactor, break the code on purpose and run again to prove the test.`
+    ? `dope-tdd: GREEN on ${module}, but MISSED: with your change undone its test still passes, so the test was changed to pass or the change did not matter. Fix the test before moving on.`
+    : `dope-tdd: GREEN on ${module}, MISSED: its test has never failed, and it still passes with your change undone, so it has proven nothing yet. If the change was a fix, the test is missing an assertion for it; if it was a refactor, break the code on purpose and run again to prove the test.`
 }
 
 function greenAdvice(
@@ -199,15 +199,15 @@ function greenAdvice(
     return `dope-tdd: GREEN on ${module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${check.lineEndings === true ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`
   }
   if (check?.kind === 'caught' && check.by !== undefined) {
-    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}, but its own test, ${check.own ?? 'its paired test'}, does not catch the change, but ${check.by} does: CAUGHT by ${check.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`
+    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}, but its own test, ${check.own ?? 'its paired test'}, does not catch the change, but ${check.by} does: PROVEN by ${check.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`
   }
   if (check?.kind === 'caught') {
     return sawRed
-      ? `dope-tdd: GREEN on ${module}, saw red, and its test catches the change. ${REFACTOR}`
-      : `dope-tdd: GREEN on ${module}, never saw red, but its test catches the change: with your change undone it fails. ${REFACTOR}`
+      ? `dope-tdd: GREEN on ${module}, saw red, and its test catches the change: PROVEN. ${REFACTOR}`
+      : `dope-tdd: GREEN on ${module}, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. ${REFACTOR}`
   }
   if (check?.kind === 'unverified') {
-    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}. Could not verify that its test catches the change (${check.reason}). ${REFACTOR}`
+    return `dope-tdd: GREEN on ${module}${sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${check.reason}). ${REFACTOR}`
   }
   if (testChanged) {
     return testChangedAdvice(module, sourcePath)
@@ -217,7 +217,7 @@ function greenAdvice(
   }
   return sawRed
     ? `dope-tdd: GREEN on ${module}, saw red. ${REFACTOR}`
-    : `dope-tdd: GREEN on ${module} but it never saw red. ${PROVE}`
+    : `dope-tdd: GREEN on ${module} but it never saw red: UNPROVEN. ${PROVE}`
 }
 
 export function runAdvice(before: TddStats, after: TddStats, check?: Check, context: RunContext = {}): string | null {

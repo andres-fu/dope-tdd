@@ -434,7 +434,7 @@ describe('one module at a time', () => {
 
     expect(result.context?.join(' ')).toMatch(/GREEN on utils\/b but it never saw red/)
     expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
-    expect(status.text).toMatch(/never saw red 1/)
+    expect(status.text).toMatch(/never failed 1/)
     expect(status.text).not.toMatch(/test changed/)
     // The whole suite passed, so A's test passed too: its red cycle closed, counted as its own cycle.
     expect(status.text).not.toMatch(/also open/)
@@ -445,7 +445,7 @@ describe('one module at a time', () => {
     await runBash($, 'npx vitest run tests/utils/a.test.ts')
     const later = await runCommand($, 'tdd')
 
-    expect(later.text).toMatch(/cycles: 2 \(avg .*never saw red 1\)/)
+    expect(later.text).toMatch(/cycles: 2 \(avg .*never failed 1\)/)
     expect(later.text).not.toMatch(/also open/)
   })
 
@@ -492,7 +492,7 @@ describe('a test changed after red', () => {
 
     expect(result.context?.join(' ')).not.toMatch(/the green came from the test/)
     expect(status.text).not.toMatch(/test changed/)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 })
 
@@ -925,7 +925,7 @@ describe('a red on the module\u2019s own test unlocks it', () => {
 
     expect(red.context?.join(' ')).toMatch(/utils\/formatDuration unlocked by a red run of its own test/)
     expect(allowed.deny).toBeUndefined()
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 
   test('a whole-suite run whose FAIL line names the module\u2019s test unlocks it too', async ($, on) => {

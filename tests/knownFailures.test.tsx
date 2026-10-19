@@ -35,7 +35,7 @@ describe('tests that were already failing', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/phase: GREEN/)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(green.context?.join(' ')).toMatch(/apart from 1 test that was already failing before your change: \S+ > old: breaks on windows/)
   })
 
@@ -86,7 +86,7 @@ describe('tests that were already failing', () => {
 
     expect(world.namesCalls).toBe(2)
     expect(status.text).toMatch(/phase: GREEN/)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 
   test('the run counts for the module whose test file it names, even when another module was touched last (seen on nanocoder)', async ($, on) => {

@@ -65,7 +65,7 @@ describe('a Godot project with gdUnit4, no config file', () => {
     expect(check?.[0]).toBe('C:/Godot/Godot_v4.exe')
     expect(check).toContain('--headless')
     expect(check).toContain('res://test/player_test.gd')
-    expect(green.text).toMatch(/caught 1/)
+    expect(green.text).toMatch(/proven 1/)
   })
 
   test('the Godot binary named in dope-tdd.json wins over the environment', async ($, on) => {
@@ -112,7 +112,7 @@ describe('a Python project with pytest, no config file', () => {
     const check = world.gitCalls.find(argv => argv.includes('pytest'))
     expect(check?.[0]).toBe(`${ROOT}/.venv/Scripts/python.exe`)
     expect(check?.slice(-1)).toEqual(['tests/pkg/test_calc.py'])
-    expect(green.text).toMatch(/caught 1/)
+    expect(green.text).toMatch(/proven 1/)
     expect(green.text).toMatch(/stack: python \(detected\)/)
   })
   test('pytest is experimental: by default its check never writes the source, and says how to allow it', async ($, on) => {
@@ -131,7 +131,7 @@ describe('a Python project with pytest, no config file', () => {
     expect(world.writes.filter(([path]) => path === `${ROOT}/src/pkg/calc.py`)).toEqual([])
     expect(world.gitCalls.some(argv => argv.includes('pytest'))).toBe(false)
     expect(green.context?.join(' ')).toMatch(/pytest is experimental, so its check would undo your change on disk; "catchCheck": true in dope-tdd.json allows it/)
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 })
 
@@ -164,7 +164,7 @@ describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
     const check = world.gitCalls.find(argv => argv[0] === 'dotnet')
     expect(check).toContain('--filter')
     expect(check).toContain('FullyQualifiedName~BeatDeckTest')
-    expect(green.text).toMatch(/caught 1/)
+    expect(green.text).toMatch(/proven 1/)
   })
 })
 
@@ -234,7 +234,7 @@ describe("a Node project tested with Node's built-in runner", () => {
     expect(red.text).toMatch(/phase: RED/)
     const check = world.gitCalls.find(argv => argv.includes('--test'))
     expect(check).toEqual(['node', '--test', 'tests/helpers.test.js'])
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 
   test('a check run that node --test crashed on is run once more, and the second run decides (#26)', async ($, on) => {
@@ -266,7 +266,7 @@ describe("a Node project tested with Node's built-in runner", () => {
     const status = await runCommand($, 'tdd')
 
     expect(checkRuns).toBe(2)
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
     expect(world.logs.join('\n')).toMatch(/node --test could not read its test process output; ran it once more/)
   })
 
@@ -290,8 +290,8 @@ describe("a Node project tested with Node's built-in runner", () => {
     await runBash($, 'node --test tests/helpers.test.js')
     const status = await runCommand($, 'tdd')
 
-    expect(status.text).not.toMatch(/caught 1/)
-    expect(status.text).toMatch(/unverified 1/)
+    expect(status.text).not.toMatch(/proven 1/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 
   test("the agent's own run that node --test crashed on is not a red, and the advice says what happened (#26)", async ($, on) => {
@@ -351,6 +351,6 @@ describe('a Node project tested with ava', () => {
 
     const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('ava/entrypoints/cli.js')))
     expect(check).toEqual(['node', `${ROOT}/node_modules/ava/entrypoints/cli.js`, 'src/utils/path.spec.ts'])
-    expect(status.text).toMatch(/caught 1/)
+    expect(status.text).toMatch(/proven 1/)
   })
 })

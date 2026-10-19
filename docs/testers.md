@@ -31,24 +31,24 @@ moment, and what you see:
 
 | Claude is about to... | Dope TDD... | You see |
 | --- | --- | --- |
-| Edit or write a source file whose module has no test | Refuses the call before it runs, and names the test to write, or to run and see fail, first | **BLOCKED**; Claude's reply says why |
-| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | **WRITING** |
-| Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED** |
-| Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **RED** or **GREEN**, with the count |
-| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **NEVER SAW RED** |
-| Go green after red | Holds the result. Undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads. With Vitest, Jest or ava in an ordinary git clone the undo happens in a throwaway copy inside `.git`, so your files are not touched; other runners, a linked worktree, or a copy that cannot reproduce the project undo on disk for one test run and restore. | **CAUGHT**, **MISSED**, or **unverified** with the reason |
+| Edit or write a source file whose module has no test | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it, (2) `/dope-tdd:pin` for untested code, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `blocked` |
+| Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
+| Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
+| Run the tests through the shell | Lets the run happen, then reads the runner's own summary line, not the exit code. A failure in another file is "red elsewhere", not red for this module. Output with no summary is "unread", never guessed. | **red ✓** / **green ✓**, and the last run in words: which test, how it went, when (click it to open that test) |
+| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **UNPROVEN · never failed** |
+| Go green after red | Holds the result. Undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads. With Vitest, Jest or ava in an ordinary git clone the undo happens in a throwaway copy inside `.git`, so your files are not touched; other runners, a linked worktree, or a copy that cannot reproduce the project undo on disk for one test run and restore. | **PROVEN**, **MISSED**, or **UNPROVEN · not checked:** with the reason |
 | Break the code on purpose, see red, put it back exactly, go green | The red was the proof. In a git checkout it then makes a few small changes to the file in a throwaway copy and names any the test did not notice | **PROVEN**, with the unnoticed changes listed |
 | Edit a module unlocked in an earlier session (up to 7 days) | Refuses the first edit until its test runs once this session, red or green, and says why; drops the carry-over if the test changed since | **NEEDS RUN** in `/tdd` |
-| Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **TEST CHANGED** |
-| Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **REFACTOR** |
-| Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed. A write outside the project (after a `cd`, also through a variable the command set) is not refused | the same words, or **unverified: change not captured** |
-| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard (`/tdd off` or the band) | Lets it through, counts it, and asks Claude to say why in its reply | **N WORKAROUNDS**, each one named |
-| Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down: nothing is refused, counted or checked, and no file is undone, until the operation ends. Claude is told when it starts and when it ends. | **GIT REBASE** (or the operation's name) |
+| Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
+| Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
+| Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed. A write outside the project (after a `cd`, also through a variable the command set) is not refused | the same words, or **UNPROVEN · not checked: change not captured** |
+| Add `.skip` or `.only` to a test, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard (`/tdd pause <minutes> <reason>`) | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
+| Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down: nothing is refused, counted or checked, and no file is undone, until the operation ends. Claude is told when it starts and when it ends. | **STANDING DOWN** · git rebase in progress (or the operation's name) |
 
 Every verdict is written into the tool result Claude reads, in the same
 call, so Claude cannot miss it and you can ask it what it saw.
 
-What it does **not** do: it never calls a model, never writes code or tests
+What it does **not** do: it never calls a model unless you turn on the model approver for overrides (`dope-tdd.json`), never writes code or tests
 for Claude, never runs anything but your own test file, and never changes a
 file except to undo and restore Claude's change during a catch check. If one
 of its own checks fails internally, the call goes through unobserved and it
@@ -108,7 +108,7 @@ without risking anything.
 
 What a good run looks like: Claude is refused when it tries to edit source
 first, writes a test, runs it and sees it fail (RED), fixes the code, sees
-it pass (GREEN), and the plugin reports `caught` after undoing the fix and
+it pass (GREEN), and the plugin reports **PROVEN** after undoing the fix and
 watching the test fail again. The `/tdd` output at the end is the receipt.
 
 ## How you know it is on, and working
@@ -118,12 +118,10 @@ watching the test fail again. The `/tdd` output at the end is the receipt.
    If `/tdd` is not a command, the plugin did not load: `/reload-plugins`,
    then `claude plugin validate .` in the clone, are the first things to try.
 2. **It is watching.** In the playground, ask Claude to change a source file
-   before any test exists. In a terminal the band shows **BLOCKED**; on every
-   surface Claude's reply says it was refused and what to write first, and
-   `/tdd` shows `blocked 1`. That first refusal is the handshake.
-3. **It is proving.** After a red-then-green cycle, `/tdd` shows `caught 1`,
-   or `missed`, or `unverified` with the reason. In a terminal the band says
-   **CAUGHT**.
+   before any test exists. On every surface Claude's reply says it was
+   refused and lists the ways past it, and `/tdd` shows `blocked 1`. That first refusal is the handshake.
+3. **It is proving.** After a red-then-green cycle, `/tdd` shows `proven 1`,
+   or `missed`, or `not checked` with the reason. The band says **PROVEN**.
 
 Where you see it, by surface:
 
@@ -198,12 +196,13 @@ Then give Claude a real bug or a small feature and watch the words.
   undone. Outside a git checkout the lock covers one session only, and the
   log says so. Giving each agent its own git worktree is still the calmest
   setup.
-- `/tdd off` pauses the guard for the current conversation and `/tdd on`
-  resumes it; `/clear` starts the next conversation with the guard on. A
-  pause is counted as a workaround, so it shows on the record.
+- There is no off switch. `/tdd pause <minutes> <reason>` pauses the guard
+  for a set time (two hours at most by default), ends by itself, and `/tdd
+  resume` ends it early. A pause is counted as a workaround, and edits made
+  during it stay on the receipt as debt.
 - During a git rebase, merge, cherry-pick, revert, `am` or bisect the guard
   stands down and says so. A bisect you forgot to reset keeps it standing
-  down; the band and `/tdd` show **GIT BISECT** until you run
+  down; the band shows **STANDING DOWN** · git bisect in progress until you run
   `git bisect reset`.
 - Claude Code cloud sessions do not load plugins, so the guard does not run
   there. Use the pull-request check (see the README) to prove the result of

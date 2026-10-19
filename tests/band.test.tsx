@@ -110,7 +110,7 @@ describe('band content', () => {
 
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: 'green ✓' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /CYCLES|0 CAUGHT|0 BLOCKED/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /CYCLES|0 PROVEN|0 BLOCKED/ })).toBeUndefined()
     expect(await ui.find({ type: 'Button', text: 'last run: formatDuration.test.ts passed · just now' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^[●✗]$/ })).toBeUndefined()
   })
@@ -428,35 +428,26 @@ describe('/tdd why', () => {
 
     const result = await $.command.run({ command: 'tdd', args: 'why' } as never)
 
+    // One verdict vocabulary (2026-10-18): the words the band shows now.
     for (const word of [
-      'WRITING',
-      'RED',
-      'RED ELSEWHERE',
-      'GREEN',
-      'SAW RED',
-      'NEVER SAW RED',
-      'TEST CHANGED',
-      'CAUGHT',
-      'MISSED',
-      'UNVERIFIED',
-      'REFACTOR',
-      'UNGUARDED',
-      'WORKAROUNDS',
-      'BLOCKED',
-      'PAUSED',
-      'MODE',
-      'WATCHING',
-      'NOT WATCHING',
+      "red ✓ green ✓",
+      "RED 4M",
+      "PROVEN",
+      "MISSED",
+      "UNPROVEN",
+      "CHANGED",
+      "refactor",
+      "proving…",
+      "last run",
+      "next",
+      "NOT WATCHING",
       "CAN'T READ RUNS",
-      'UNWATCHED',
-      'NEXT',
-      // Band v3 (2026-10-18)
-      'UNPROVEN',
-      'CHANGED',
-      'STANDING DOWN',
-      'WARN ONLY',
-      'OBSERVING',
-      'OVERRIDE ASKED',
+      "PAUSED",
+      "STANDING DOWN",
+      "WARN ONLY",
+      "OBSERVING",
+      "OVERRIDE ASKED",
+      "OVERRIDE OPEN",
     ]) {
       expect(result.text).toMatch(new RegExp(`^  ${word} `, 'm'))
     }

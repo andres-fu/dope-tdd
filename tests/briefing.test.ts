@@ -10,7 +10,7 @@ describe('briefingText', () => {
     expect(text).toMatch(/refused until that module's test was touched in this session, or run and seen failing/)
     expect(text).toMatch(/mirror \(src\/\{module\}\.\{ext\} ↔ tests\/\{module\}\.test\.\{ext\}\)/)
     expect(text).toMatch(/Run one test file at a time: `npx vitest run <test file>`/)
-    expect(text).toMatch(/CAUGHT means the test is real; MISSED means/)
+    expect(text).toMatch(/PROVEN means the test is real; MISSED means/)
     expect(text).toMatch(/say why in your reply/)
     expect(text).toMatch(/\/dope-tdd:pin skill: pin, prove, then change/)
   })

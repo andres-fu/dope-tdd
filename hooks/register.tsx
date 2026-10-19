@@ -52,7 +52,7 @@ import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
-import { countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
+import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
 import type { Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
@@ -355,7 +355,7 @@ async function reviewRequest($: EngineInterface, root: string, request: Override
   const s = await readStats($)
   const unlocked = request.module === null ? undefined : s.unlocked[request.module]
   const testPath = unlocked === undefined ? null : relativePath(root, unlocked)
-  const lastCatch = request.module !== null && s.lastCatch?.module === request.module ? s.lastCatch.outcome.kind.toUpperCase() : null
+  const lastCatch = request.module !== null && s.lastCatch?.module === request.module ? catchWord(s.lastCatch.outcome) : null
   const paths = [request.path, testPath].filter((path): path is string => path !== null)
   const diff = paths.length === 0 ? null : await gitQuiet($, root, ['diff', '--no-ext-diff', 'HEAD', '--', ...paths])
   const hunks = moduleHunks(diff === null || diff.exitCode !== 0 ? '' : diff.stdout, paths, 120)

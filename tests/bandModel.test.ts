@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandView, countsAsUnwatched, lastRunLine, lastRunTarget } from '../hooks/bandModel'
+import { bandView, catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from '../hooks/bandModel'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import type { Override } from '../hooks/overrides'
 import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
@@ -437,5 +437,20 @@ describe('lastRunTarget: the test file a click on the last run opens', () => {
   test('the band carries it beside the line it opens from', () => {
     expect(bandView(run('fail'), CONFIG).lastRunOpens).toBe(TEST)
     expect(bandView(run('unread'), CONFIG).lastRunOpens).toBeNull()
+  })
+})
+
+// One verdict vocabulary (2026-10-18): the band, /tdd, the agent and the model reviewer say a catch check's outcome
+// in the same words. CAUGHT (undone by dope-tdd) and PROVEN (broken by you) are one fact to a reader: PROVEN.
+describe('catchWord', () => {
+  test('caught and proven are both PROVEN', () => {
+    expect(catchWord({ kind: 'caught' })).toBe('PROVEN')
+    expect(catchWord({ kind: 'proven' })).toBe('PROVEN')
+  })
+
+  test('missed, not checked, and a refactor', () => {
+    expect(catchWord({ kind: 'missed' })).toBe('MISSED')
+    expect(catchWord({ kind: 'unverified', reason: 'timeout' })).toBe('UNPROVEN · not checked: timeout')
+    expect(catchWord({ kind: 'refactor' })).toBe('refactor · not re-checked')
   })
 })

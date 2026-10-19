@@ -26,6 +26,29 @@ export function gateShellWrites(
   return { locked, waiting }
 }
 
+export type ShellGateInput = {
+  /** The command writes the override record, which only dope-tdd writes (overrides.ts). */
+  readonly writesRecord: boolean
+  /** From gateShellWrites, after the approved overrides that cover them are taken out. */
+  readonly locked: readonly string[]
+  readonly waiting: readonly string[]
+  readonly paused: boolean
+}
+
+export type ShellGateVerdict = { kind: 'deny-record' } | { kind: 'refuse'; locked: string[]; waiting: string[] } | { kind: 'go' }
+
+/** The verdict on a shell command's writes before it runs (#59, 2026-10-18); register.tsx words the refusal and records it. */
+export function shellGate(input: ShellGateInput): ShellGateVerdict {
+  // The record is evidence of who approved what: refused even while paused, as an Edit to it is (fileGate.ts).
+  if (input.writesRecord) {
+    return { kind: 'deny-record' }
+  }
+  if (input.paused || (input.locked.length === 0 && input.waiting.length === 0)) {
+    return { kind: 'go' }
+  }
+  return { kind: 'refuse', locked: [...input.locked], waiting: [...new Set(input.waiting)] }
+}
+
 export type FailureJudgement = {
   readonly outcome: 'pass' | 'fail'
   /** The failing tests that were failing before the change, named to the agent when the run counts as green. */

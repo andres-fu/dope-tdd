@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { gateShellWrites, judgeFailures, shellReminders } from '../hooks/shellVerdict'
+import { gateShellWrites, judgeFailures, shellGate, shellReminders } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
 
 describe('gateShellWrites', () => {
@@ -149,5 +149,27 @@ describe('shellReminders', () => {
     expect(shellReminders({ ...none, carriedOn: [{ module: 'utils/d', testPath: 'C:/r/tests/utils/d.test.ts' }] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
       carriedOnAdvice('src/utils/d', 'tests/utils/d.test.ts', false),
     ])
+  })
+})
+
+// #59, the shell gate (2026-10-18): the verdict on a shell command's writes, before it runs, out of register.tsx.
+describe('shellGate', () => {
+  const none = { writesRecord: false, locked: [], waiting: [], paused: false }
+
+  test('a write to the override record is refused first, whatever else the command does', () => {
+    expect(shellGate({ ...none, writesRecord: true, locked: ['a'], paused: true })).toEqual({ kind: 'deny-record' })
+  })
+
+  test('locked or waiting modules refuse the command, each named once', () => {
+    expect(shellGate({ ...none, locked: ['a'], waiting: ['b', 'b'] })).toEqual({ kind: 'refuse', locked: ['a'], waiting: ['b'] })
+    expect(shellGate({ ...none, waiting: ['b'] })).toEqual({ kind: 'refuse', locked: [], waiting: ['b'] })
+  })
+
+  test('paused: the command goes through, on the record as debt', () => {
+    expect(shellGate({ ...none, locked: ['a'], waiting: ['b'], paused: true })).toEqual({ kind: 'go' })
+  })
+
+  test('nothing locked: it goes', () => {
+    expect(shellGate(none)).toEqual({ kind: 'go' })
   })
 })

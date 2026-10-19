@@ -479,6 +479,36 @@ describe('a test changed after red', () => {
     expect(await ui.find({ type: 'Text', text: "UNPROVEN · the test changed, the code didn't" })).toBeDefined()
   })
 
+  // Pin corrected (2026-10-18, VibeCast field test): with the pin skill in use, the same steps are a pin correction.
+  test('with the pin skill in use, the same steps are a corrected pin: its own line, no workaround, a break still owed', async ($, on) => {
+    const world = fakeEngine(on)
+    await $.skill.prompt({ skill: 'dope-tdd:pin', text: 'Pin the current behaviour…', frontmatter: {} } as never)
+    await touchTest($, world, 'money/formatCents')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'money/formatCents')
+
+    const result = await runTests($, world, 'pass')
+    const status = (await runCommand($, 'tdd')).text
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(result.context?.join(' ')).toMatch(/the pin was corrected after its red/)
+    expect(status).toMatch(/^pins corrected: 1 /m)
+    expect(status).not.toMatch(/workarounds/)
+    expect(status).toMatch(/pin corrected money\/formatCents/)
+    expect(await ui.find({ type: 'Text', text: 'UNPROVEN · pin corrected: prove it with a break' })).toBeDefined()
+  })
+
+  test('another skill does not count as pinning', async ($, on) => {
+    const world = fakeEngine(on)
+    await $.skill.prompt({ skill: 'simplify', text: 'Review…', frontmatter: {} } as never)
+    await touchTest($, world, 'money/formatCents')
+    await runTests($, world, 'fail')
+    await touchTest($, world, 'money/formatCents')
+    await runTests($, world, 'pass')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/workarounds: 1 \(test changed 1\)/)
+  })
+
   test('green with the test edited and the code changed too is checked, not flagged', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(`${ROOT}/src/money/formatCents.ts`, 'export const a = 1')

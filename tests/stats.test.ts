@@ -22,6 +22,7 @@ import {
   recordRun,
   recordSourceEdit,
   recordTestChanged,
+  recordPinSkill,
   recordTestTouch,
   recordUnreadRun,
   recordOtherPass,
@@ -650,5 +651,30 @@ describe('a test that does not lead opens no cycle', () => {
     expect(s.unlocked.kitRuns).toBe('C:/r/tests/kitRuns.test.tsx')
     expect(s.events.at(-1)).toMatchObject({ kind: 'touched', module: 'kitRuns' })
     expect(otherOpenModules(s)).toEqual([])
+  })
+})
+
+// Pin corrected (2026-10-18, from the VibeCast field test): fixing a pin that guessed today's behaviour wrongly looks,
+// on the record alone, exactly like a test bent to match a bug. The difference is the pin skill: with it in use this
+// session, the correction is said as what it is, on its own line and not as a workaround; without it, it stays
+// "test changed". Either way the pin still has to be proven by a deliberate break.
+describe('a pin corrected after red', () => {
+  const MOD = 'utils/a'
+  const red = () => recordRun(recordTestTouch(INITIAL_STATS, { module: MOD, testPath: 'C:/r/tests/utils/a.test.ts' }, T0), false, T0 + 1)
+
+  test('with the pin skill in use, it is a pin correction: its own count and event, not a workaround', () => {
+    const s = recordTestChanged(recordPinSkill(red(), T0 + 2), MOD, T0 + 3)
+    expect(s.pinning).toBe(true)
+    expect(s.pinsCorrected).toBe(1)
+    expect(s.workarounds).toBe(0)
+    expect(s.testChanged).toBe(0)
+    expect(s.events.at(-1)).toMatchObject({ kind: 'pin-corrected', module: MOD })
+  })
+
+  test('without the pin skill, it is still "test changed", counted as a workaround', () => {
+    const s = recordTestChanged(red(), MOD, T0 + 3)
+    expect(s.pinsCorrected).toBe(0)
+    expect(s.workarounds).toBe(1)
+    expect(s.events.at(-1)).toMatchObject({ kind: 'test-changed' })
   })
 })

@@ -167,3 +167,18 @@ describe('/tdd why explains every row /tdd prints, and the two words everything 
     expect(text).toMatch(/^ {2}touch +creating or editing a test file: it unlocks that test's module for this session/m)
   })
 })
+
+// Pin corrected (2026-10-18, from the VibeCast field test): fixing a pin that guessed today's behaviour wrongly looks,
+// on the record alone, exactly like a test bent to match a bug. The difference is the pin skill: with it in use this
+// session, the correction is said as what it is, on its own line and not as a workaround; without it, it stays
+// "test changed". Either way the pin still has to be proven by a deliberate break.
+describe('/tdd says pin corrections apart from workarounds', () => {
+  test('its own row and event words; the glossary explains it', () => {
+    const s = { ...INITIAL_STATS, pinsCorrected: 2, events: [{ atMs: T0, kind: 'pin-corrected', module: 'cover' }] as TddStats['events'] }
+    const text = formatStatus(s, T0)
+    expect(text).toMatch(/^pins corrected: 2 \(a pin that guessed today's behaviour wrongly, fixed while the pin skill was in use\)$/m)
+    expect(text).toMatch(/^JUST NOW: pin corrected cover$/m)
+    expect(text).not.toMatch(/workarounds/)
+    expect(formatGlossary()).toMatch(/^ {2}pins corrected +a pin fixed after its first red, with the code unchanged, while the pin skill was in use; it still needs a deliberate break to prove it/m)
+  })
+})

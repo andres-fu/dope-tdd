@@ -189,6 +189,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   mock.env(on, options.env ?? {})
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' }] }) as never)
   on('session.root', () => (world.rootFails ? { deny: 'the project root could not be read' } : { value: ROOT }))
+  // The engine's own answer to a skill: its prompt text, unchanged (dope-tdd only watches which skill ran).
+  on('skill.prompt', (_$, e) => ({ text: (e as { text: string }).text }))
   on('session.start', () => ({ cwd: ROOT }))
   on('session.model', () => ({ value: world.sessionModel }) as never)
   on('session.surfaces', () => ({ value: world.surfaces }) as never)

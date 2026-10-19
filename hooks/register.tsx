@@ -74,6 +74,7 @@ import {
   recordUnwatchedEdit,
   recordStaleUnlocks,
   recordTestChanged,
+  recordPinSkill,
   recordTestTouch,
   releaseCurrent,
   recordUnreadRun,
@@ -800,6 +801,8 @@ const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest',
 // worktree, where `.git` is a file, had no isolated check and no small changes, and nothing said so). From there the
 // runner walks up to the main checkout's node_modules; a test that is not green there falls back to the check in place.
 const CHECK_WORKTREE = 'dope-tdd/wt'
+/** dope-tdd's own pin skill, by its plugin-qualified name or its bare one. */
+const PIN_SKILL = /^(?:dope-tdd:)?pin$/
 /** More changed files than this and copying them costs more than the check is worth: the check runs in place. */
 const MAX_COPIED_FILES = 300
 /**
@@ -2421,6 +2424,16 @@ export const register: Register = on => {
         ...(guide === null ? [] : [{ id: 'dope-tdd:field-guide', text: guide, scope: 'session' as const }]),
       ],
     }
+  })
+
+  // Pin corrected (2026-10-18): the pin skill running, typed or called by the agent, is what tells a corrected pin from a
+  // test bent to match a bug. Watched only; the skill's prompt passes through unchanged.
+  on('skill.prompt', async ($, e, next) => {
+    if (PIN_SKILL.test(e.skill)) {
+      const nowMs = await $.clock.now()
+      await change($, s => recordPinSkill(s, nowMs))
+    }
+    return next(e)
   })
 
   on('tool.call', { tool: STATUS_TOOL }, async $ => ({ result: await currentStatus($) }) as ToolCallResult).catch(($, _e, next) => {

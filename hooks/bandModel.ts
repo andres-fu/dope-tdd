@@ -237,6 +237,10 @@ function verdictOf(s: TddStats): Token | null {
   if (changedSinceGreen(s, current.module)) {
     return { text: 'CHANGED', tone: 'warn' }
   }
+  if (s.lastCycle?.module === current.module && s.lastCycle.pinCorrected === true) {
+    // Pin corrected (2026-10-18): the expected fix while pinning, but the pin has proven nothing until a break.
+    return { text: 'UNPROVEN · pin corrected: prove it with a break', tone: 'warn' }
+  }
   if (s.lastCycle?.module === current.module && s.lastCycle.testChanged) {
     return { text: "UNPROVEN · the test changed, the code didn't", tone: 'warn' }
   }

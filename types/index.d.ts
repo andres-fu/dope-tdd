@@ -33,6 +33,10 @@ export type EventKind =
   | 'reset'
   /** #89: a problem found in another project, reported to its owner and never fixed from here. */
   | 'reported-elsewhere'
+  /** The pin skill ran this session (pin corrected, 2026-10-18). */
+  | 'pinning'
+  /** A pin fixed after its red, code unchanged, with the pin skill in use: not a workaround. */
+  | 'pin-corrected'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */
@@ -55,7 +59,7 @@ export type BeforeState = 'missing' | 'unreadable'
 
 export type CycleChange = { path: string; before: string | null; after: string; kind: ChangeKind; beforeState?: BeforeState }
 
-export type CycleVerdict = { module: string; sawRed: boolean; testChanged: boolean }
+export type CycleVerdict = { module: string; sawRed: boolean; testChanged: boolean; pinCorrected?: boolean }
 
 /** Held while the catch check has a source file reverted on disk. Expires, so a crash cannot leave it stuck. */
 export type CheckLock = { module: string; sinceMs: number }
@@ -108,6 +112,9 @@ export type TddStats = {
   testChangedAfterRed: boolean
   neverSawRed: number
   testChanged: number
+  /** The pin skill ran this session: a test changed after red then reads as a pin correction (2026-10-18). */
+  pinning: boolean
+  pinsCorrected: number
   /** Ways around the guard, on the record: total and by kind. */
   workarounds: number
   workaroundsBy: Readonly<Record<string, number>>

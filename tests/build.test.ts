@@ -16,6 +16,12 @@ describe('buildLabel', () => {
     expect(buildLabel('c3d4e5f|2026-10-19|wip: trying something', null)).toBe('c3d4e5f · 2026-10-19')
   })
 
+  // Both known (2026-10-19): a tester's install and a dev checkout compare at a glance, and a missed version bump shows.
+  test('a git checkout with a version in plugin.json: the version first, then the commit', () => {
+    expect(buildLabel('a6b93d4|2026-10-18|Merge pull request #99 from andres-fu/live-trial-fixes', '0.6.0')).toBe('version 0.6.0 · #99 · a6b93d4 · 2026-10-18')
+    expect(buildLabel('c3d4e5f|2026-10-19|wip: trying something', '0.6.0')).toBe('version 0.6.0 · c3d4e5f · 2026-10-19')
+  })
+
   test('not a git checkout: the version in plugin.json, or unknown', () => {
     expect(buildLabel(null, '0.6.0')).toBe('version 0.6.0')
     expect(buildLabel('', null)).toBe('build unknown')

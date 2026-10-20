@@ -99,12 +99,13 @@ export function writesFileNamed(command: string, name: string): boolean {
   const text = command.replace(/\\/g, '/')
   const exact = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?=$|[\s'"),;&|])`
   const file = String.raw`(?:^|[\s'"=(/])` + exact
+  // Case-insensitive: Windows and macOS file names ignore case, so another spelling is the same file (verified review A8).
   const onto = [
-    new RegExp(String.raw`(?:>>?|\btee\s+(?:-a\s+)?)\s*['"]?(?:[\w.~@-]*\/)*` + exact),
-    new RegExp(String.raw`\b(?:cp|mv)\b[^|;&\n]*` + file + String.raw`['"]?\s*(?:$|[;&|\n])`),
-    new RegExp(String.raw`\b(?:rm|truncate)\b[^|;&\n]*` + file),
+    new RegExp(String.raw`(?:>>?|\btee\s+(?:-a\s+)?)\s*['"]?(?:[\w.~@-]*\/)*` + exact, 'i'),
+    new RegExp(String.raw`\b(?:cp|mv)\b[^|;&\n]*` + file + String.raw`['"]?\s*(?:$|[;&|\n])`, 'i'),
+    new RegExp(String.raw`\b(?:rm|truncate)\b[^|;&\n]*` + file, 'i'),
   ]
-  const mentioned = new RegExp(file).test(text)
+  const mentioned = new RegExp(file, 'i').test(text)
   return onto.some(pattern => pattern.test(text)) || (mentioned && (IN_PLACE_SED.test(text) || POWERSHELL_WRITE.test(text) || SCRIPT_WRITE.test(text)))
 }
 

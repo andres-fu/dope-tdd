@@ -117,17 +117,6 @@ export function planRequest(args: {
       reply: 'dope-tdd: override denied: nobody is here to approve it. Stop and report what you needed and why; do not work around the guard.',
     }
   }
-  if (entry.decidedBy === 'hotfix rule') {
-    return {
-      entry,
-      pause,
-      notices: [
-        ...(pause ? [{ toast: true, text: `TDD guard paused for ${request.minutes ?? 0}m` }] : []),
-        { toast: true, text: `⚑ dope-tdd: hotfix override on ${label}: "${reason}". Recorded as debt until a test is written.` },
-      ],
-      reply: `dope-tdd: override approved (hotfix rule): ${request.scope} on ${label}. It is debt in ${OVERRIDES_FILE} until a test is written; end it with /tdd override end ${request.module ?? 'pause'} once one is.`,
-    }
-  }
   return {
     entry,
     pause,

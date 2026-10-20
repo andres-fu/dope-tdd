@@ -57,6 +57,22 @@ describe('catches the change', () => {
     expect(world.baselineCalls).toBe(1)
   })
 
+  // Verified review D9 (2026-10-20): the baseline was kept per module and test path, so after the test file changed its
+  // old green baseline was still trusted. A change to the test runs it again.
+  test('a baseline runs again once the test file has changed since it ran', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+    world.fileContents.set(TEST, "it('x', () => { expect(formatDuration(61)).toBe('1:01') })")
+    await runTests($, world, 'fail')
+    world.fileContents.set(SOURCE, 'export const a = 2')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'pass')
+
+    expect(world.baselineCalls).toBe(2)
+  })
+
   test('a test that still passes with the change undone is reported as missed, and the agent is told to fix the test', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
@@ -460,6 +476,8 @@ describe('finding the runner', () => {
   test('a runner hoisted to a parent directory is found, so a monorepo package gets checked', async ($, on) => {
     const world = fakeEngine(on)
     world.hasVitest = false
+    // The monorepo's top, where its .git is: the runner search goes no higher (verified review A15, 2026-10-20).
+    world.existingFiles.add(`${FIXTURE_DRIVE}work/.git`)
     world.existingFiles.add(`${FIXTURE_DRIVE}work/node_modules/vitest/vitest.mjs`)
     await fixUnderGuard($, world)
 

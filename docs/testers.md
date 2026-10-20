@@ -134,7 +134,7 @@ itself.
   changed files, a slow checkout, or a test that is not green in the copy,
   the green is UNPROVEN · not checked and says why; nothing is written to
   your files.
-- Godot, Java and .NET summary readers are provisional: they were written
+- The gdUnit4 (Godot), Maven and Gradle summary readers are provisional (the .NET one is read from real runs): they were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most
   valuable thing you can send. A run the reader cannot read shows as unread,

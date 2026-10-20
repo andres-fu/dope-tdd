@@ -30,6 +30,26 @@ describe('Python: pytest where it is set up, else unittest', () => {
     const { exists, read } = disk({ 'C:/calc/pyproject.toml': '' })
     expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read))?.kind).toBe('pytest')
   })
+
+  // Karl's round 3 (2026-10-19): requirements.txt was the only marker, so the catch check ran `python -m unittest` on a
+  // pytest file, found 0 tests, and every green was "not checked (baseline: no tests ran)".
+  test('a requirements file that lists pytest means pytest; one that does not, does not', async () => {
+    const listed = disk({ 'C:/calc/requirements.txt': 'fastapi==0.115.0\npytest==9.0.3\n' })
+    expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', listed.exists, listed.read)).toEqual({ kind: 'pytest', root: 'C:/calc', tool: 'python' })
+    const dev = disk({ 'C:/calc/requirements-dev.txt': 'pytest-cov>=5\n' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', dev.exists, dev.read))?.kind).toBe('pytest')
+    const without = disk({ 'C:/calc/requirements.txt': 'fastapi==0.115.0\n# pytest later\n' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', without.exists, without.read))?.kind).toBe('unittest')
+  })
+
+  test('with no marker at all, a test file written for pytest means pytest; one written for unittest keeps unittest', async () => {
+    const imports = disk({ 'C:/calc/tests/test_calc.py': 'import pytest\n\ndef test_add():\n    assert 1 + 1 == 2\n' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', imports.exists, imports.read))?.kind).toBe('pytest')
+    const bare = disk({ 'C:/calc/tests/test_calc.py': 'from calc import add\n\ndef test_add():\n    assert add(1, 1) == 2\n' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', bare.exists, bare.read))?.kind).toBe('pytest')
+    const classic = disk({ 'C:/calc/tests/test_calc.py': 'import unittest\n\nclass CalcTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(2, 2)\n' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', classic.exists, classic.read))?.kind).toBe('unittest')
+  })
 })
 
 const NODE_TEST_SCRIPT =JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } })

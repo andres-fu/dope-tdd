@@ -26,12 +26,9 @@ export async function findRunner(
   exists: (path: string) => Promise<boolean>,
   read?: (path: string) => Promise<string | null>,
 ): Promise<FoundRunner | null> {
-  const holds = async (path: string, text: RegExp | undefined): Promise<boolean> => {
-    if (text === undefined) {
-      return true
-    }
+  const holdsText = async (path: string, says: (text: string) => boolean): Promise<boolean> => {
     const found = read === undefined ? null : await read(path)
-    return found !== null && text.test(found)
+    return found !== null && says(found)
   }
   const candidates = runnersFor(stack, testPath)
   // First a runner installed in the test's own package (a monorepo that does not hoist): from the test's folder up to the root.
@@ -56,8 +53,14 @@ export async function findRunner(
         }
         return { kind: runner.kind, root, tool: fallbackTool(runner, root) }
       }
-      for (const marker of runner.markers) {
-        if ((await exists(`${dir}/${marker}`)) && (await holds(`${dir}/${marker}`, runner.markerText))) {
+      // A marker by its presence (or its text), a file that lists the runner, and, at the root, the test file itself.
+      const signs = [
+        ...runner.markers.map(marker => ({ path: `${dir}/${marker}`, says: (text: string) => runner.markerText?.test(text) ?? true, needsText: runner.markerText !== undefined })),
+        ...(runner.listedIn?.files ?? []).map(file => ({ path: `${dir}/${file}`, says: (text: string) => runner.listedIn?.text.test(text) === true, needsText: true })),
+        ...(runner.testFileSays === undefined || pathKey(dir) !== top ? [] : [{ path: testPath, says: runner.testFileSays, needsText: true }]),
+      ]
+      for (const { path: marker, says, needsText } of signs) {
+        if ((await exists(marker)) && (!needsText || (await holdsText(marker, says)))) {
           for (const candidate of runner.tools) {
             if (await exists(`${dir}/${candidate}`)) {
               return { kind: runner.kind, root: dir, tool: `${dir}/${candidate}` }
@@ -70,7 +73,7 @@ export async function findRunner(
             }
           }
           // The marker itself may name one: Node's own flags in the test script that found the runner.
-          const named = runner.launcherFrom === undefined || read === undefined ? undefined : await read(`${dir}/${marker}`)
+          const named = runner.launcherFrom === undefined || read === undefined ? undefined : await read(marker)
           const launcher = named === undefined || named === null ? undefined : runner.launcherFrom?.(named)
           // A .tsx or .jsx test this runner can load only through a JSX-capable loader the script does not pass: not its runner.
           if (runner.jsxLoader !== undefined && /\.[jt]sx$/.test(testPath) && !(launcher ?? []).some(arg => runner.jsxLoader?.test(arg))) {

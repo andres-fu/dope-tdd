@@ -222,7 +222,23 @@ describe('bash bypass', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/unguarded 0/)
-    expect(status.text).toMatch(/brought in by git, not guarded App \(git checkout main -- src\/App\.tsx\)/)
+    expect(status.text).toMatch(/brought in by git, not guarded App \(git checkout\)$/m)
+  })
+
+  // Verified review B1 (2026-10-20): the event kept 80 characters of the command, so a token in a remote URL went into
+  // /tdd, the session log and Claude Code's log. Only the git verb is kept now.
+  test('a token in the command never reaches the record or the log: only the git verb is kept', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'git pull https://me:ghp_s3cr3tt0k3n@github.com/acme/app main')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/brought in by git, not guarded App \(git pull\)$/m)
+    expect(status.text).not.toMatch(/ghp_s3cr3tt0k3n/)
+    expect(world.logs.join('\n')).not.toMatch(/ghp_s3cr3tt0k3n/)
   })
 
   test('a patch applied with git apply is an edit like any other', async ($, on) => {

@@ -29,6 +29,7 @@ export const INITIAL_STATS: TddStats = {
   redElsewhere: [],
   testChangedAfterRed: false,
   neverSawRed: 0,
+  guardFailures: 0,
   pinBroken: false,
   testChanged: 0,
   pinning: false,
@@ -113,6 +114,7 @@ export function normalizeStats(stored: unknown): TddStats {
     redElsewhere: strings(pick('redElsewhere', isStringList)),
     testChangedAfterRed: pick('testChangedAfterRed', isBoolean),
     neverSawRed: pick('neverSawRed', isNumber),
+    guardFailures: pick('guardFailures', isNumber),
     pinBroken: pick('pinBroken', isBoolean),
     testChanged: pick('testChanged', isNumber),
     pinning: pick('pinning', isBoolean),
@@ -353,6 +355,11 @@ export function recordPinSkill(s: TddStats, nowMs: number): TddStats {
 /** Code a git command brought in from elsewhere (gitChanges.ts, bringsInCode): one event per module, with the command. */
 export function recordGitIn(s: TddStats, modules: readonly string[], command: string, nowMs: number): TddStats {
   return modules.reduce((acc, module) => logged(acc, 'git-in', nowMs, module, command), s)
+}
+
+/** A guard that threw let a call through unguarded: counted, so the band and /tdd stop looking guarded (verified review A13). */
+export function recordGuardFailure(s: TddStats, guard: string, nowMs: number): TddStats {
+  return logged({ ...s, guardFailures: s.guardFailures + 1 }, 'guard-failed', nowMs, undefined, guard)
 }
 
 export function recordConfigChange(s: TddStats, detail: string, loosened: boolean, nowMs: number): TddStats {

@@ -231,7 +231,12 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
         ? { deny: 'timed out' }
         : { value: { exitCode: world.catchRun.exitCode, stdout: world.catchRun.text, stderr: '' } } as never
     }
-    const [, verb, ...rest] = e.argv
+    // Git's own options come before the subcommand (`-c core.hooksPath=…`, `--no-optional-locks`): skip them, as git does.
+    const args = e.argv.slice(1)
+    while (args[0] === '-c' || args[0] === '--no-optional-locks') {
+      args.splice(0, args[0] === '-c' ? 2 : 1)
+    }
+    const [verb, ...rest] = args
     const answer = (exitCode: number, stdout = '') => ({ value: { exitCode, stdout, stderr: '' } }) as never
     if (verb === 'hash-object') {
       if (world.gitUnavailable) {

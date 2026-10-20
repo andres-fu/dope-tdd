@@ -413,4 +413,18 @@ describe("Karl's Axiom backend: pytest with requirements.txt as the only marker"
     expect(waiting.deny).toMatch(/in an earlier session/)
     expect(edit.deny).toBeUndefined()
   })
+
+  // Verified review A4 (2026-10-20): with catchCheck off, a red whose output was cut still made the plugin start the
+  // venv python itself to read the names: the opt-in did not keep it from running the project's code.
+  test('with catchCheck off, a red with its names cut off is left as it is: the plugin starts no Python itself', async ($, on) => {
+    const world = fakeEngine(on)
+    axiomProject(world)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "mode": "enforce", "stack": "python", "layout": "package" }')
+    world.bashFails = true
+    world.bashText = '============================== 2 failed in 0.10s ==============================\n'
+
+    await runBash($, 'python -m pytest tests/test_api.py -q 2>&1 | tail -1')
+
+    expect(world.namesCalls).toBe(0)
+  })
 })

@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { SOURCE, editAt, fakeEngine, runBash, runCommand, test, touchTest } from './engine'
+import { ROOT, SOURCE, editAt, fakeEngine, runBash, runCommand, test, touchTest } from './engine'
 import type { FakeWorld } from './engine'
 
 /**
@@ -87,6 +87,22 @@ describe('tests that were already failing', () => {
     expect(world.namesCalls).toBe(2)
     expect(status.text).toMatch(/phase: GREEN/)
     expect(status.text).toMatch(/proven 1/)
+  })
+
+  // Verified review A4 (2026-10-20): observe mode "touches nothing", yet this re-run started the project's runner.
+  test('in observe mode output cut short is left as it is: the plugin runs nothing itself', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "mode": "observe" }')
+    const summaryOnly = (n: number) => `\n Test Files  1 failed (1)\n      Tests  ${n} failed | 4 passed (${n + 4})\n`
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    world.bashText = summaryOnly(2)
+    world.namesRun = failing('old: breaks on windows', 'new: formats months')
+
+    await runBash($, `${RUN} 2>&1 | tail -3`)
+
+    expect(world.namesCalls).toBe(0)
   })
 
   test('the run counts for the module whose test file it names, even when another module was touched last (seen on nanocoder)', async ($, on) => {

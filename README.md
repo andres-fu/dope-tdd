@@ -240,7 +240,8 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `mode`: `enforce` (default) denies a source edit until its test is
   touched; `warn` allows it, counts it as unguarded, and tells Claude what to
   write next; `observe` allows it, counts it, and says nothing: no advice,
-  no briefing, and no catch check, so nothing on disk is ever touched. Use it
+  no briefing, no catch check and no test run of its own, so nothing on disk
+  is ever touched and nothing of your project's is started. Use it
   for a baseline of how an agent works on its own before a team turns the
   guard on.
 - `scope`: when set, the mode applies only inside these paths and everything

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
+import { bringsInCode, changedPaths, gitVerb, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
 
 // `git status --porcelain=v2 --branch -- <source> <test>`: whether the module's work is committed, and pushed (2026-10-19).
 describe('savedStateOf', () => {
@@ -108,5 +108,17 @@ describe('bringsInCode', () => {
     for (const command of ['git status', 'git diff main -- api.py', 'git log', "sed -i 's/a/b/' api.py"]) {
       expect(bringsInCode(command)).toBe(false)
     }
+  })
+})
+
+// Verified review B1 (2026-10-20): what the record keeps of a git command is its verb, never its arguments, where a
+// token in a remote URL can sit.
+describe('gitVerb', () => {
+  test('the git subcommand, and the stash action, from the first git segment; nothing else', () => {
+    expect(gitVerb('git pull https://me:ghp_x@github.com/acme/app main')).toBe('git pull')
+    expect(gitVerb('cd app && git checkout main -- src/a.ts')).toBe('git checkout')
+    expect(gitVerb('git stash pop')).toBe('git stash pop')
+    expect(gitVerb('git -c http.extraheader=AUTH fetch origin')).toBe('git fetch')
+    expect(gitVerb('npm test')).toBe('git')
   })
 })

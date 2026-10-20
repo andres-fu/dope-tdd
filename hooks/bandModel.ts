@@ -189,6 +189,11 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
  * watches, because silence is the signal. The first that applies wins.
  */
 function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string): Guard {
+  // First: while a guard is throwing, nothing else the band says is true (verified review A13).
+  if (s.guardFailures > 0) {
+    const calls = `${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'}`
+    return { word: 'GUARD FAILING', detail: `${calls} went through unguarded after an internal error · see the log` }
+  }
   if (standingDown !== '') {
     return { word: 'STANDING DOWN', detail: `git ${standingDown} in progress · back when it ends` }
   }

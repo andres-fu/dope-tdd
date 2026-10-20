@@ -51,6 +51,31 @@ function onlyLeftTheDiff(was: string | undefined, now: string | undefined, mtime
   return was.slice(was.lastIndexOf(':') + 1) === String(mtimeNow)
 }
 
+/**
+ * What the record keeps of a git command: `git <subcommand>`, and the action for `git stash`. Never its arguments,
+ * where a token in a remote URL can sit (verified review B1, 2026-10-20: 80 characters of the command were kept).
+ */
+export function gitVerb(command: string): string {
+  for (const segment of commandSegments(command)) {
+    const words = segment.trim().split(/\s+/)
+    if (words[0] !== 'git') {
+      continue
+    }
+    // Skip git's own options before the subcommand (`-c key=value`, `-C dir`, `--no-pager`).
+    let i = 1
+    while (i < words.length && (words[i] ?? '').startsWith('-')) {
+      i += words[i] === '-c' || words[i] === '-C' ? 2 : 1
+    }
+    const verb = words[i]
+    if (verb === undefined) {
+      return 'git'
+    }
+    const action = verb === 'stash' && words[i + 1] !== undefined && /^[a-z]+$/.test(words[i + 1] ?? '') ? ` ${words[i + 1]}` : ''
+    return `git ${verb}${action}`
+  }
+  return 'git'
+}
+
 export function isRevertCommand(command: string): boolean {
   return commandSegments(command).some(segment => REWRITES_TREE.test(segment))
 }

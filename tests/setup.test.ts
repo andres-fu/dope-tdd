@@ -49,6 +49,26 @@ describe('inferLayout', () => {
     expect(src.layout.name).toBe('mirror')
     expect(src.reason).toBe('no test files found, assuming the default')
   })
+
+  // Karl's Axiom backend (2026-10-19): api.py at the root, a React app in klq-frontend, and the app's package.json at
+  // the root too. The marker said node and suggested roots ["klq-frontend"], which would guard the app and not api.py.
+  test('a package.json at the root whose code all sits in a nested package does not outvote Python at the root', () => {
+    const inferred = inferLayout({
+      files: ['api.py', 'axiom_supabase.py', 'klq-frontend/src/App.tsx', 'klq-frontend/src/main.tsx', 'klq-frontend/src/lib/a.ts'],
+      packageDirs: ['', 'klq-frontend'],
+      rootEntries: ['package.json', 'api.py', 'axiom_supabase.py', 'klq-frontend'],
+    })
+    expect(inferred.stack).toBe('python')
+    expect(inferred.stackReason).toBe('2 python files at the root; the node code sits only under klq-frontend')
+    expect(inferred.roots).toEqual([])
+    // With #131's layout pick, setup suggests all of Karl's hand-written config.
+    expect(suggestedConfig(DEFAULT_CONFIG, inferred)).toEqual({ stack: 'python', layout: 'package' })
+    // Node code at the root itself keeps the marker's word, and so does a nested app with no other stack at the root.
+    const atRoot = inferLayout({ files: ['api.py', 'vite.config.ts', 'klq-frontend/src/App.tsx'], packageDirs: ['', 'klq-frontend'], rootEntries: ['package.json', 'api.py', 'vite.config.ts', 'klq-frontend'] })
+    expect(atRoot.stack).toBe('node')
+    const onlyNode = inferLayout({ files: ['web/src/App.tsx'], packageDirs: ['', 'web'], rootEntries: ['package.json', 'web'] })
+    expect(onlyNode.stack).toBe('node')
+  })
 })
 
 describe('suggestedConfig and formatSetup', () => {

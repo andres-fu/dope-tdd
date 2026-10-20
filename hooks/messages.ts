@@ -35,8 +35,10 @@ export const MESSAGES = {
     'Why: the earlier proof counts only while the test still runs, and a run now shows where things stand before your change. No test edit is needed.'),
   'carry.onGreen': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.testPath} ran green this session, so the unlock of ${f.sourcePath} carried over from an earlier session is active again. Edit away; your next green is checked as usual.`),
+  // The guard knows only that the source was not edited: a fixture or helper changed this session can be the cause
+  // (seen 2026-10-19: a golden entry added minutes earlier was called "already there").
   'carry.onRed': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
-    `dope-tdd: ${f.testPath} ran red this session, before any edit, so the unlock of ${f.sourcePath} carried over from an earlier session is active again. Those failures were already there: they are not from your change.`),
+    `dope-tdd: ${f.testPath} ran red this session, before any edit to ${f.sourcePath}, so its unlock carried over from an earlier session is active again. Those failures are not from a change to ${f.sourcePath}: they were already there, or come from a change elsewhere this session (a fixture, a helper, another module).`),
   // Appended to the ordinary refusal when the module had a carried-over unlock dropped because its test changed.
   'note.staleUnlock': entry({ testPath: 'tests/utils/a.test.ts', ageMs: 26 * 3_600_000 }, f =>
     ` ${f.testPath} unlocked it ${formatAgo(f.ageMs)} in an earlier session, but that test has changed since (a checkout, a merge, or an edit this guard did not see), so the earlier unlock no longer counts.`),

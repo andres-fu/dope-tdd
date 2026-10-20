@@ -48,6 +48,12 @@ export async function findRunner(
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
     for (const runner of candidates) {
       if (runner.markers.length === 0) {
+        // No marker to find (dotnet, unittest): a program in the repo still wins over the one on PATH, such as a venv's python.
+        for (const candidate of runner.tools) {
+          if (await exists(`${root}/${candidate}`)) {
+            return { kind: runner.kind, root, tool: `${root}/${candidate}` }
+          }
+        }
         return { kind: runner.kind, root, tool: fallbackTool(runner, root) }
       }
       for (const marker of runner.markers) {

@@ -13,7 +13,7 @@ import type { StackName } from './stacks.ts'
  * replaced the first time a real run is on record.
  */
 
-export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'node-test' | 'pytest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet' | 'plugin-kit'
+export type RunnerKind = 'vitest' | 'jest' | 'ava' | 'node-test' | 'pytest' | 'unittest' | 'gdunit4' | 'maven' | 'gradle' | 'dotnet' | 'plugin-kit'
 
 /** `launcher` replaces the program when the project names one through its lockfile (`uv run python`). */
 export type RunnerOptions = { godot?: string | null; launcher?: readonly string[] }
@@ -67,6 +67,8 @@ const NODE_SCRIPT = String.raw`(?:npm|pnpm|yarn|bun)${PM_FLAGS}\s+(?:run\s+)?tes
 const WORKSPACE_RUN = String.raw`(?:(?:npx|pnpm(?:\s+exec)?|yarn)\s+)?(?:turbo(?:\s+run)?\s+test(?::[\w-]+)?(?=\s|$)|nx\s+(?:test(?=\s|$)|run\s+[\w@/.-]+:test(?::[\w-]+)?(?=\s|$)|run-many\s+[^;&|\n]*?(?:-t|--targets?)[=\s]+test(?=[\s,]|$))|lerna\s+run\s+test(?=\s|$))`
 // A Python launcher, with its own flags before the program: `uv run --group test python -m pytest`, `poetry run -q pytest`.
 const PY_LAUNCHER = String.raw`(?:(?:uv|poetry|pdm|pipenv|hatch)\s+run(?:\s+-[^\s;&|]+(?:\s+(?!-|python|py\b|pytest)[^\s;&|]+)?)*\s+)?`
+// Python's own runner (2026-10-19): `python -m unittest`, with no program of its own to call directly.
+const UNITTEST = String.raw`${PY_LAUNCHER}${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+unittest(?=\s|$)`
 const PYTEST = String.raw`${PY_LAUNCHER}(?:${PATHED}(?:python3?|py)(?:\.exe)?(?:\s+-\S+)*\s+-m\s+pytest|${PATHED}pytest(?:\.exe)?)(?=\s|$)`
 const GDUNIT = String.raw`${PATHED}runtest(?:\.cmd|\.sh)?(?=\s|$)|${PATHED}[Gg]odot[\w.-]*\s+[^;&|\n]*?GdUnitCmdTool\.gd`
 const JAVA = String.raw`${PATHED}(?:mvnw?(?:\.cmd)?|gradlew?(?:\.bat)?)\s+[^;&|\n]*?\btest\b`
@@ -288,6 +290,43 @@ function readPytest(output: string): RunOutcome {
 
 function pytestFailedFiles(output: string): string[] {
   return unique([...stripAnsi(output).matchAll(PYTEST_FAILED_FILE)].flatMap(match => (match[1] === undefined ? [] : [forwardSlashes(match[1])])))
+}
+
+// --- unittest: tests/fixtures/runnerOutputs.ts holds the real output these were written from. Its report goes to stderr:
+// `Ran N tests in Xs`, a blank line, then `OK` or `FAILED (failures=1, errors=1)`, each with an optional `(skipped=1)`.
+const UNITTEST_RAN = /^Ran (\d+) tests? in [\d.]+s\s*$/m
+const UNITTEST_RESULT = /^Ran \d+ tests? in [\d.]+s\s*\r?\n\s*\r?\n(OK|FAILED|NO TESTS RAN)\b(?:\s*\(([^)]*)\))?/m
+// Each failure's header, and the traceback under it up to the next header or the closing rule.
+const UNITTEST_BLOCK = /^(?:FAIL|ERROR): [^\n]*\r?\n-{20,}\r?\n([\s\S]*?)(?=^={20,}\r?$|^-{20,}\r?$)/gm
+const UNITTEST_FRAME = /^\s*File "([^"]+\.py)", line \d+/gm
+
+function readUnittest(output: string): RunOutcome {
+  const text = stripAnsi(output)
+  const result = UNITTEST_RESULT.exec(text)
+  if (result === null) {
+    return 'unknown'
+  }
+  if (result[1] === 'FAILED') {
+    return 'fail'
+  }
+  if (result[1] === 'NO TESTS RAN') {
+    return 'none'
+  }
+  const ran = Number(UNITTEST_RAN.exec(text)?.[1] ?? 0)
+  const skipped = Number(/\bskipped=(\d+)/.exec(result[2] ?? '')?.[1] ?? 0)
+  // Only skips: nothing ran that could have failed.
+  return ran > skipped ? 'pass' : 'none'
+}
+
+/** The test file of each failure: the traceback's first frame in a test file, so the loader's own frame is passed over. */
+function unittestFailedFiles(output: string): string[] {
+  const rule = STACKS.python.testFile
+  return unique(
+    [...stripAnsi(output).matchAll(UNITTEST_BLOCK)].flatMap(block => {
+      const frame = [...(block[1] ?? '').matchAll(UNITTEST_FRAME)].map(match => forwardSlashes(match[1] ?? '')).find(path => rule.test(path))
+      return frame === undefined ? [] : [frame]
+    }),
+  )
 }
 
 // --- gdUnit4: the console reporter's format strings (GdUnitConsoleTestReporter.gd); provisional until a real run is on record.
@@ -540,6 +579,24 @@ export const RUNNERS: readonly Runner[] = [
     provisional: false,
   },
   {
+    // After pytest: a project that shows pytest's markers gets pytest, which runs unittest tests too; one with none of
+    // them runs Python's own unittest, which every Python has.
+    kind: 'unittest',
+    describe: testPath => `python -m unittest ${testPath}`,
+    alsoFor: [],
+    exts: ['py'],
+    stack: 'python',
+    markers: [],
+    tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
+    fallback: 'python',
+    fallbackPosix: 'python3',
+    command: commandOf(UNITTEST),
+    argv: (_root, testPath, tool, options) => [...(options.launcher ?? [tool]), '-m', 'unittest', testPath],
+    read: readUnittest,
+    failedFiles: unittestFailedFiles,
+    provisional: false,
+  },
+  {
     kind: 'gdunit4',
     describe: testPath => `addons/gdUnit4/runtest.sh -a res://${forwardSlashes(testPath)}` + '  (runtest.cmd on Windows)',
     alsoFor: [],
@@ -725,6 +782,8 @@ const FAILED_COUNTS: readonly RegExp[] = [
   /^=*\s*(\d+) failed\b[^\n]*\bin\s+[\d.]+s\b/m,
   /\bFailed:\s+(\d+),/,
   /^.{0,4}pass \d+\r?\n.{0,4}fail (\d+)\r?\n/m,
+  /^FAILED \([^)]*\bfailures=(\d+)/m,
+  /^FAILED \([^)]*\berrors=(\d+)/m,
 ]
 
 /** The failed count from the runner's summary, or null when it prints none: more than the names read means output was cut. */
@@ -749,6 +808,16 @@ export function failedFilesIn(output: string): string[] {
 
 const TOKEN = /[\w./\\:*-]+/g
 
+/** `tests.test_calc.CalcTest` → `tests/test_calc.py`: the path up to the first part named like a test file. */
+function dottedTestFile(token: string): string | null {
+  if (!/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(token)) {
+    return null
+  }
+  const parts = token.split('.')
+  const at = parts.findIndex(part => /^test_\w*$|^\w+_test$/.test(part))
+  return at === -1 ? null : `${parts.slice(0, at + 1).join('/')}.py`
+}
+
 function namedIn(text: string, stack: StackName): string | null {
   const rule = STACKS[stack].testFile
   for (const match of text.matchAll(TOKEN)) {
@@ -759,6 +828,11 @@ function namedIn(text: string, stack: StackName): string | null {
     }
     if (rule.test(forwardSlashes(token))) {
       return token
+    }
+    // unittest names a module, not a file: `tests.test_calc`, or down to `tests.test_calc.CalcTest.test_add`.
+    const dotted = stack === 'python' ? dottedTestFile(token) : null
+    if (dotted !== null) {
+      return dotted
     }
   }
   return null

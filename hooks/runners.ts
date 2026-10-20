@@ -734,10 +734,15 @@ function withoutInlineCode(segment: string): string {
   return segment.replace(INLINE_CODE, "$1''")
 }
 
+// A runner asked its version, its help or its test list runs nothing: `python -m pytest --version` counted as a run
+// with no summary to read, and stayed unread in the counts (Karl's Python trial, 2026-10-19). Short `-v`/`-V` are
+// left out on purpose: pytest's -v is verbose, not a version.
+const RUNS_NOTHING = /\s(?:--version|--help|-h|--collect-only|--co)(?=\s|$)/
+
 /** A segment that runs a known runner, with any inline code it hands an interpreter left out. */
 function runsTests(segment: string): boolean {
   const text = withoutInlineCode(segment)
-  return RUNNERS.some(runner => runner.command.test(text))
+  return !RUNS_NOTHING.test(text) && RUNNERS.some(runner => runner.command.test(text))
 }
 
 export function isTestRun(command: string): boolean {

@@ -227,6 +227,20 @@ describe('recognising a test run in a shell command', () => {
     expect(isTestRun('dotnet build')).toBe(false)
   })
 
+  test('asking a runner its version, its help or its test list runs no test (Karl, Python trial, 2026-10-19)', () => {
+    expect(isTestRun('python -m pytest --version')).toBe(false)
+    expect(isTestRun('pytest -h')).toBe(false)
+    expect(isTestRun('python -m pytest --collect-only -q tests')).toBe(false)
+    expect(isTestRun('pytest --co')).toBe(false)
+    expect(isTestRun('python -m unittest --help')).toBe(false)
+    expect(isTestRun('npx vitest --version')).toBe(false)
+    expect(isTestRun('npx jest --help')).toBe(false)
+    expect(isTestRun('dotnet test --help')).toBe(false)
+    // A version check beside a real run leaves the run a run, and pytest's -v is verbose, not a version.
+    expect(isTestRun('pytest --version && pytest tests/test_calc.py')).toBe(true)
+    expect(isTestRun('python -m pytest -v tests/test_calc.py')).toBe(true)
+  })
+
   test('a heredoc written to a file is data: the commands it quotes never ran (seen writing a PR body, 2026-10-09)', () => {
     const body = "cat > body.md <<'EOF'\nTo re-check:\nnpx vitest run server/a.test.ts\ndotnet test --filter Foo\nEOF\ngh pr create --body-file body.md"
     expect(isTestRun(body)).toBe(false)

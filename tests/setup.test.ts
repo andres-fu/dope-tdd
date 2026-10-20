@@ -35,6 +35,20 @@ describe('inferLayout', () => {
     expect(inferred.layout.name).toBe('mirror')
     expect(inferred.testFiles).toBe(2)
   })
+
+  // Karl's Axiom backend (2026-10-19): with no tests yet, Python's default mirror layout covers only src/, so a
+  // root-level api.py paired with no test and an edit to it would have gone through unguarded.
+  test('with no test files, the layout that covers the code is chosen over a default that covers none of it', () => {
+    const flat = inferLayout({ files: ['api.py', 'axiom_supabase.py', 'lib/util.py'], packageDirs: [], rootEntries: ['requirements.txt', 'api.py', 'lib'] })
+    expect(flat.stack).toBe('python')
+    expect(flat.layout.name).toBe('package')
+    expect(flat.reason).toBe('no test files found; package covers 3 of 3 code files, mirror covers 0')
+    expect(suggestedConfig(DEFAULT_CONFIG, flat)).toEqual({ stack: 'python', layout: 'package' })
+    // Code under src/ is covered by the default, which stays.
+    const src = inferLayout({ files: ['src/pkg/calc.py'], packageDirs: [], rootEntries: ['pyproject.toml', 'src'] })
+    expect(src.layout.name).toBe('mirror')
+    expect(src.reason).toBe('no test files found, assuming the default')
+  })
 })
 
 describe('suggestedConfig and formatSetup', () => {

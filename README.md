@@ -56,9 +56,10 @@ paste into a pull request.
 
 There is no off switch. When test-first does not fit, the agent asks for an
 override with a reason (`mcp__dope-tdd__override_request`) and stops; you
-decide with `/tdd approve` or `/tdd deny <why>`, or the band's buttons. A
-hotfix always passes and stays debt until a test is written. With nobody
-there to approve, the agent is denied and reports instead. You can pause
+decide with `/tdd approve` or `/tdd deny <why>`, or the band's buttons. The
+agent never approves itself, a hotfix included: an approved hotfix stays
+debt until a test is written. With nobody there to approve, the agent is
+denied and reports instead. You can pause
 the guard yourself with `/tdd pause <minutes> <reason>` (at most two hours);
 it comes back on by itself, or with `/tdd resume`, and tells you what was
 edited meanwhile. `/tdd override end <module|pause>` ends an override.

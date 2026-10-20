@@ -63,7 +63,19 @@ describe('inferLayout', () => {
     expect(inferred.roots).toEqual([])
     // With #131's layout pick, setup suggests all of Karl's hand-written config.
     expect(suggestedConfig(DEFAULT_CONFIG, inferred)).toEqual({ stack: 'python', layout: 'package' })
-    // Node code at the root itself keeps the marker's word, and so does a nested app with no other stack at the root.
+    // Karl's round 3: one stray Sidebar.jsx at the root no longer outvotes the Python there; the reason says it was weighed.
+    const stray = inferLayout({
+      files: ['api.py', 'axiom_supabase.py', 'db.py', 'Sidebar.jsx', 'klq-frontend/src/App.tsx', 'klq-frontend/src/Sidebar.jsx'],
+      packageDirs: ['', 'klq-frontend'],
+      rootEntries: ['package.json', 'requirements.txt', 'api.py', 'axiom_supabase.py', 'db.py', 'Sidebar.jsx', 'klq-frontend'],
+    })
+    expect(stray.stack).toBe('python')
+    expect(stray.stackReason).toBe('3 python files at the root against 1 node file outside klq-frontend (Sidebar.jsx)')
+    expect(suggestedConfig(DEFAULT_CONFIG, stray)).toEqual({ stack: 'python', layout: 'package' })
+    // With no nested package, the root package.json is the root's own: a couple of Python scripts beside it stay node.
+    const flatNode = inferLayout({ files: ['index.js', 'a.py', 'b.py'], packageDirs: [''], rootEntries: ['package.json', 'index.js', 'a.py', 'b.py'] })
+    expect(flatNode.stack).toBe('node')
+    // Node code at the root as plentiful as the other stack's keeps the marker's word, and so does a nested app with no other stack at the root.
     const atRoot = inferLayout({ files: ['api.py', 'vite.config.ts', 'klq-frontend/src/App.tsx'], packageDirs: ['', 'klq-frontend'], rootEntries: ['package.json', 'api.py', 'vite.config.ts', 'klq-frontend'] })
     expect(atRoot.stack).toBe('node')
     const onlyNode = inferLayout({ files: ['web/src/App.tsx'], packageDirs: ['', 'web'], rootEntries: ['package.json', 'web'] })

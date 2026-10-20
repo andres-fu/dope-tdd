@@ -71,6 +71,9 @@ export const MESSAGES = {
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
+  // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).
+  'note.errorsOnly': entry<Module>({ module: 'utils/a' }, f =>
+    ` Every failure in this run is an error, not a failed assertion (an import, a collection or a compile that broke), so it does not prove the test of ${f.module} can fail. Fix the error, then break the code on purpose and run again.`),
   // Appended to a RED or GREEN on the current module when the test that ran is another open module's own (2026-10-19).
   // The catch check covers the current module only, so a green says so.
   'note.ownTestToo': entry({ module: 'utils/a', other: 'utils/b', outcome: 'red' as 'red' | 'green' }, f =>

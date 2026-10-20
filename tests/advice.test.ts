@@ -42,6 +42,17 @@ describe('runAdvice', () => {
     expect(runAdvice(broken, recordRun(broken, true, at(3)))).toBe(say('green.pinBreakProven', { module: MODULE }))
   })
 
+  // A pin's first red proves it only when a test failed on an assertion (2026-10-19): an import or collection error
+  // says nothing about whether the test can fail, so the red says so and the pin stays unproven.
+  test('a red of errors only after a pin went green says it proves nothing yet', () => {
+    const pinned = recordRun(touched, true, at(1))
+    const crashed = recordRun(pinned, false, at(2), [], { errorsOnly: true })
+    expect(runAdvice(pinned, crashed, undefined, { errorsOnly: true })).toBe(say('red.first', { module: MODULE }) + say('note.errorsOnly', { module: MODULE }))
+    // The same red on a module with no unproven pin needs no note.
+    const red = recordRun(touched, false, at(1), [], { errorsOnly: true })
+    expect(runAdvice(touched, red, undefined, { errorsOnly: true })).toBe(say('red.first', { module: MODULE }))
+  })
+
   test('after a green that never saw red, says so and how to prove the test', () => {
     expect(runAdvice(touched, recordRun(touched, true, at(1)))).toBe(say('green.neverRed', { module: MODULE }))
   })

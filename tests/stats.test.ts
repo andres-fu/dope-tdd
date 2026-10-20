@@ -350,6 +350,21 @@ describe('proving a pin later', () => {
     expect(red.pinBroken).toBe(true)
     expect(restored.pinBroken).toBe(false)
   })
+
+  test('a red of errors only (an import, a collection) does not prove the pin; a later red that fails an assertion does', () => {
+    const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
+    const touched = recordTestTouch(INITIAL_STATS, { module: 'text/wrapLines', testPath: 'tests/text/wrapLines.test.ts' }, at(0))
+    const pinned = recordRun(touched, true, at(1))
+    const crashed = recordRun(pinned, false, at(2), [], { errorsOnly: true })
+
+    expect(crashed.phase).toBe('red')
+    expect(crashed.neverSawRed).toBe(1)
+    expect(crashed.unproven).toContain('text/wrapLines')
+    expect(crashed.pinBroken).toBe(false)
+    const failed = recordRun(crashed, false, at(3))
+    expect(failed.unproven).not.toContain('text/wrapLines')
+    expect(failed.pinBroken).toBe(true)
+  })
 })
 
 describe('corrupted stored state', () => {

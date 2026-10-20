@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, locatedSegments, writableText } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, cwdAfter, locatedSegments, writableText } from '../hooks/shell'
 
 // The heredoc false positive (2026-10-18): a data heredoc's body is text and writes nothing; a body fed to an
 // interpreter or a shell is code, and its writes are real.
@@ -114,5 +114,20 @@ describe('locatedSegments', () => {
     expect(locatedSegments('cd $SOMEWHERE && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
     expect(locatedSegments('cd "$(mktemp -d)" && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
     expect(locatedSegments('cd %TEMP% && ls', 'C:/work')[1]?.cwd).toBe(ELSEWHERE)
+  })
+})
+
+// Verified review D7 (2026-10-20): only `cd` moved the shell, so a PowerShell session that changed folder another way
+// resolved later relative paths against the root, and `cd -Path sub` went to a folder named "-Path sub".
+describe('cwdAfter: every way a shell changes folder', () => {
+  test('PowerShell and bash spellings move it, with or without -Path', () => {
+    for (const command of ['Set-Location sub', 'sl sub', 'pushd sub', 'Push-Location sub', 'cd -Path sub', 'Set-Location -LiteralPath sub', 'chdir sub']) {
+      expect(cwdAfter(command, 'C:/r')).toBe('C:/r/sub')
+    }
+  })
+
+  test('cd keeps working as before', () => {
+    expect(cwdAfter('cd sub', 'C:/r')).toBe('C:/r/sub')
+    expect(cwdAfter('cd sub && cd ..', 'C:/r')).toBe('C:/r')
   })
 })

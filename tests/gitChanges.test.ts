@@ -98,6 +98,13 @@ describe('bringsInCode', () => {
     }
   })
 
+  // Verified review D3 (2026-10-20): a branch or tag with a dot read as a file restore, so the switch went unsaid.
+  test('a dotted branch or tag is a switch, not a file: only a letter extension makes a file', () => {
+    expect(bringsInCode('git checkout v2.0')).toBe(true)
+    expect(bringsInCode('git checkout release.1')).toBe(true)
+    expect(bringsInCode('git checkout main.py')).toBe(false)
+  })
+
   test('code from another branch, a commit, a stash or a remote is brought in', () => {
     for (const command of ['git checkout main -- api.py', 'git checkout feature/x', 'git restore --source=main api.py', 'git restore -s HEAD~2 api.py', 'git switch main', 'git stash pop', 'git stash apply stash@{1}', 'git reset --hard HEAD~1', 'git pull', 'git merge main', 'git cherry-pick abc123', 'git revert abc123', 'cd app && git checkout main -- src/a.ts']) {
       expect(bringsInCode(command)).toBe(true)

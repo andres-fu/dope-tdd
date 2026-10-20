@@ -279,7 +279,8 @@ export function cwdAfter(command: string, start: string): string {
 }
 
 function movedBy(cwd: string, segment: string, vars: ShellVars): string {
-  const cd = /^cd(?:\s+(.*))?$/.exec(segment.trim())
+  // Every way a shell changes folder, PowerShell's included, with its -Path or -LiteralPath (verified review D7).
+  const cd = /^(?:cd|chdir|pushd|sl|set-location|push-location)(?:\s+(?:-(?:path|literalpath)\s+)?(.*))?$/i.exec(segment.trim())
   if (cd === null) {
     return cwd
   }

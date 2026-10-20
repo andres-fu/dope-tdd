@@ -60,7 +60,8 @@ export function isRevertCommand(command: string): boolean {
 const BACK_TO_HEAD = [
   /^\s*git\s+restore\b(?![^\n]*\s(?:--source\b|-s\b|-s\S))/,
   /^\s*git\s+checkout\s+(?:HEAD\s+)?--\s/,
-  /^\s*git\s+checkout\s+[^\s-][^\s]*\.\w+\s*$/,
+  // A letter extension (`main.py`), never a digit one: `v2.0` and `release.1` are tags and branches (verified review D3).
+  /^\s*git\s+checkout\s+[^\s-][^\s]*\.[A-Za-z]\w*\s*$/,
   /^\s*git\s+reset\s+--hard(?:\s+HEAD)?\s*$/,
   /^\s*git\s+stash(?:\s+push\b[^\n]*)?\s*$/,
   /^\s*git\s+clean\b/,

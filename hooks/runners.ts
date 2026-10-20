@@ -32,6 +32,10 @@ export type Runner = {
   markers: readonly string[]
   /** Text a marker must hold to count, when its presence alone says nothing: every Node project has a package.json. */
   markerText?: RegExp
+  /** Files that say the runner lives there only when they list it, such as a requirements file naming pytest. */
+  listedIn?: { readonly files: readonly string[]; readonly text: RegExp }
+  /** The test file itself says it is written for this runner, when nothing at the root does (2026-10-19). */
+  testFileSays?: (text: string) => boolean
   /** Programs to run it with, relative to the runner root, first found wins; otherwise `fallback` on PATH. */
   tools: readonly string[]
   fallback: string
@@ -563,6 +567,14 @@ export const RUNNERS: readonly Runner[] = [
     exts: ['py'],
     stack: 'python',
     markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
+    // Karl's round 3 (2026-10-19): requirements.txt was the only marker, so the catch check ran unittest on a pytest
+    // file, found 0 tests, and every green went unchecked. A requirements file or Pipfile that lists pytest says pytest.
+    listedIn: {
+      files: ['requirements.txt', 'requirements-dev.txt', 'requirements-test.txt', 'requirements/dev.txt', 'requirements/test.txt', 'Pipfile'],
+      text: /^\s*["']?pytest\b/m,
+    },
+    // With no marker at all: a test that imports pytest, or plain test functions with no unittest, is a pytest test.
+    testFileSays: text => /^\s*(?:import|from)\s+pytest\b/m.test(text) || (/^def test_/m.test(text) && !/\bunittest\b/.test(text)),
     tools: ['.venv/Scripts/python.exe', '.venv/bin/python', 'venv/Scripts/python.exe', 'venv/bin/python'],
     fallback: 'python',
     fallbackPosix: 'python3',

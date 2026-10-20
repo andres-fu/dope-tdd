@@ -29,6 +29,7 @@ export const INITIAL_STATS: TddStats = {
   redElsewhere: [],
   testChangedAfterRed: false,
   neverSawRed: 0,
+  pinBroken: false,
   testChanged: 0,
   pinning: false,
   pinsCorrected: 0,
@@ -112,6 +113,7 @@ export function normalizeStats(stored: unknown): TddStats {
     redElsewhere: strings(pick('redElsewhere', isStringList)),
     testChangedAfterRed: pick('testChangedAfterRed', isBoolean),
     neverSawRed: pick('neverSawRed', isNumber),
+    pinBroken: pick('pinBroken', isBoolean),
     testChanged: pick('testChanged', isNumber),
     pinning: pick('pinning', isBoolean),
     pinsCorrected: pick('pinsCorrected', isNumber),
@@ -251,6 +253,7 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
       sawRed: true,
       redElsewhere: [],
       neverSawRed: provesPin ? s.neverSawRed - 1 : s.neverSawRed,
+      pinBroken: provesPin || s.pinBroken,
       unproven: provesPin ? s.unproven.filter(entry => entry !== module) : s.unproven,
     }
     if (module === undefined || prev === null) {
@@ -275,6 +278,7 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
     cycles: completesCycle ? s.cycles + 1 : s.cycles,
     cycleMsTotal: completesCycle ? s.cycleMsTotal + (nowMs - (cycleStart ?? nowMs)) : s.cycleMsTotal,
     neverSawRed: greenFirst ? s.neverSawRed + 1 : s.neverSawRed,
+    pinBroken: false,
     unproven: greenFirst && module !== undefined ? [...s.unproven, module] : s.unproven,
     lastCycle: completesCycle && module !== undefined ? { module, sawRed, testChanged: false } : s.lastCycle,
   }

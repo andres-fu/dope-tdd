@@ -34,6 +34,14 @@ describe('runAdvice', () => {
     expect(runAdvice(edited, recordRun(edited, true, at(3)))).toBe(say('green.sawRed', { module: MODULE }))
   })
 
+  // Karl's Python trial (2026-10-19): a pin broken on purpose, red, then green again was told only "saw red", while
+  // the briefing calls exactly that PROVEN, and the counts had already stopped calling it never failed.
+  test('after a pin went green, then red, then green again, says the pin is PROVEN', () => {
+    const pinned = recordRun(touched, true, at(1))
+    const broken = recordRun(pinned, false, at(2))
+    expect(runAdvice(broken, recordRun(broken, true, at(3)))).toBe(say('green.pinBreakProven', { module: MODULE }))
+  })
+
   test('after a green that never saw red, says so and how to prove the test', () => {
     expect(runAdvice(touched, recordRun(touched, true, at(1)))).toBe(say('green.neverRed', { module: MODULE }))
   })

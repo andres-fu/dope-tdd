@@ -345,6 +345,10 @@ describe('proving a pin later', () => {
     expect(red.neverSawRed).toBe(0)
     expect(restored.neverSawRed).toBe(0)
     expect(restored.cycles).toBe(2)
+    // The red that proves the pin is remembered until the next green, which says PROVEN (Karl's Python trial, 2026-10-19).
+    expect(pinned.pinBroken).toBe(false)
+    expect(red.pinBroken).toBe(true)
+    expect(restored.pinBroken).toBe(false)
   })
 })
 

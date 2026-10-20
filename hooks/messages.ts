@@ -130,6 +130,7 @@ export const MESSAGES = {
       : `dope-tdd: GREEN on ${f.module}, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. ${REFACTOR}`),
   'green.notChecked': entry({ module: 'utils/a', sawRed: true, reason: 'timeout' }, f =>
     `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${f.reason}). ${REFACTOR}`),
+  'green.pinBreakProven': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. ${REFACTOR}`),
   'green.sawRed': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red. ${REFACTOR}`),
   'green.neverRed': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module} but it never saw red: UNPROVEN. ${PROVE}`),
 } as const

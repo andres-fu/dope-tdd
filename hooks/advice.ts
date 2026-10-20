@@ -108,6 +108,8 @@ function greenAdvice(
   sourcePath: string,
   /** The pin skill is in use this session: a test changed after red is a pin correction (2026-10-18). */
   pinning = false,
+  /** This red proved a module that went green first: a pin broken on purpose and put back (2026-10-19). */
+  pinBroken = false,
 ): string | null {
   if (check === 'refactor') {
     return say('green.refactor', { module })
@@ -144,7 +146,7 @@ function greenAdvice(
   if (!cycleCompleted) {
     return null
   }
-  return say(sawRed ? 'green.sawRed' : 'green.neverRed', { module })
+  return say(pinBroken ? 'green.pinBreakProven' : sawRed ? 'green.sawRed' : 'green.neverRed', { module })
 }
 
 export function runAdvice(before: TddStats, after: TddStats, check?: Check, context: RunContext = {}): string | null {
@@ -162,7 +164,7 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
   const line = red
     ? say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
-    : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning)
+    : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
   const other = context.ownTestOf
   return line === null || other === undefined ? line : line + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
 }

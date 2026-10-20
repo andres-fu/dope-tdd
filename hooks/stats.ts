@@ -355,6 +355,11 @@ export function recordGitIn(s: TddStats, modules: readonly string[], command: st
   return modules.reduce((acc, module) => logged(acc, 'git-in', nowMs, module, command), s)
 }
 
+/** A test touched with only comments or blank lines changed: on the record, never a workaround (decided 2026-10-20). */
+export function recordCommentTouch(s: TddStats, module: string, nowMs: number): TddStats {
+  return logged(s, 'comment-touch', nowMs, module)
+}
+
 export function recordConfigChange(s: TddStats, detail: string, loosened: boolean, nowMs: number): TddStats {
   return logged(loosened ? countWorkaround(s, 'config') : s, 'config', nowMs, undefined, detail)
 }

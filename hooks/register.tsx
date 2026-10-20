@@ -23,6 +23,7 @@ import {
   carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
+  commentsOnlyAdvice,
   hollowAdvice,
   importAdvice,
   hollowTouchAdvice,
@@ -43,7 +44,6 @@ import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
-import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
 import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
@@ -66,6 +66,7 @@ import {
   recordBlocked,
   recordCarryWait,
   recordCatch,
+  recordCommentTouch,
   recordConfigChange,
   recordGitIn,
   recordImportUnlock,
@@ -543,8 +544,6 @@ function detectRunner($: EngineInterface, root: string, config: GuardConfig, tes
 let sharedLockUnavailableSaid = false
 /** Module and test pairs whose baseline (the check's own command, nothing reverted) was green in this load. */
 const baselined = new Set<string>()
-/** Each root's upstream (else origin) remote URL, or null, read once for the field guide. */
-const remotesByRoot = new Map<string, string | null>()
 /** Each root's real location, every symbolic link followed, or null when it cannot be resolved; asked once per root. */
 const realRoots = new Map<string, string | null>()
 /** How many folders up a path not written yet is followed to one that exists. */
@@ -1335,6 +1334,11 @@ async function noteTestEdit(
     if (signal.kind === 'skipped') {
       await change($, s => recordWorkaround(s, 'skipped', module, `+${signal.added}`, nowMs))
       lines.push(skippedAdvice(relativePath(root, path), signal.added))
+    } else if (signal.kind === 'comments-only') {
+      // Still unlocks: a comment can be an honest note of what is about to be tested. Said and on the record, but no
+      // workaround (decided 2026-10-20, verified review A12).
+      await change($, s => recordCommentTouch(s, module, nowMs))
+      lines.push(commentsOnlyAdvice(relativePath(root, path), module))
     } else {
       await change($, s => recordWorkaround(s, 'assertion-removed', module, `${signal.before} → ${signal.after}`, nowMs))
       lines.push(assertionsRemovedAdvice(relativePath(root, path), signal.before, signal.after))
@@ -2244,38 +2248,6 @@ async function coverShellWrites($: EngineInterface, root: string, locked: readon
   return covered.stillLocked
 }
 
-/** This repository's field guide as a briefing section, or null when there is none. Never fails the prompt. */
-async function fieldGuide($: EngineInterface, root: string): Promise<string | null> {
-  try {
-    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-    if (home === undefined || home === '') {
-      return null
-    }
-    // The remote does not move within a session: asked once per root, not on every prompt.
-    let remote = remotesByRoot.get(root)
-    if (remote === undefined) {
-      remote = null
-      for (const name of ['upstream', 'origin']) {
-        const answer = await gitQuiet($, root, ['config', '--get', `remote.${name}.url`])
-        if (answer !== null && answer.exitCode === 0 && answer.stdout.trim() !== '') {
-          remote = answer.stdout.trim()
-          break
-        }
-      }
-      remotesByRoot.set(root, remote)
-    }
-    const key = guideKey(remote, root)
-    const path = guidePath(home, key)
-    if (!(await $.fs.exists(path))) {
-      return null
-    }
-    const text = await $.fs.read(path)
-    return typeof text === 'string' && text.trim() !== '' ? guideSection(key, text) : null
-  } catch {
-    return null
-  }
-}
-
 /** The session's record, left under the user's home when it ends; DOPE_TDD_LOG=off keeps it in memory. */
 async function writeSessionLog($: EngineInterface, sessionId: string, reason: string): Promise<void> {
   if ((await $.env.get('DOPE_TDD_LOG')) === 'off') {
@@ -2448,14 +2420,8 @@ export const register: Register = on => {
       return composed
     }
     const text = briefingText(config, await briefingCommand($, root, config))
-    const guide = await fieldGuide($, root)
-    return {
-      sections: [
-        ...composed.sections,
-        { id: 'dope-tdd:briefing', text, scope: 'session' as const },
-        ...(guide === null ? [] : [{ id: 'dope-tdd:field-guide', text: guide, scope: 'session' as const }]),
-      ],
-    }
+    // Only the briefing: field guides from ~/.dope-tdd/guides were cut on 2026-10-20 (verified review B7).
+    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })
 
   // Pin corrected (2026-10-18): the pin skill running, typed or called by the agent, is what tells a corrected pin from a

@@ -37,6 +37,8 @@ export type EventKind =
   | 'pinning'
   /** A pin fixed after its red, code unchanged, with the pin skill in use: not a workaround. */
   | 'pin-corrected'
+  /** A test touched with only comments or blank lines changed: it unlocks, and is on the record (decided 2026-10-20). */
+  | 'comment-touch'
   /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
   | 'git-in'
 

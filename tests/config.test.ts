@@ -94,6 +94,14 @@ describe('describeConfig', () => {
     expect(broken[0]).toBe('mode: enforce')
     expect(broken.at(-1)).toMatch(/^config: dope-tdd\.json: .*\(using defaults\)$/)
   })
+
+  // Decided 2026-10-20 (verified review G3): the model approver is experimental, and the one thing sent off the machine.
+  test('a model approver is shown as experimental, with where requests go', () => {
+    expect(describeConfig(parseConfig('{"overrides":{"approver":"model"}}'))).toContain(
+      'approver: model (experimental): override requests and the module\'s diff go to the model API',
+    )
+    expect(describeConfig(parseConfig('{}')).some(line => line.startsWith('approver'))).toBe(false)
+  })
 })
 
 describe('pause in dope-tdd.json (override v1, 2026-10-18)', () => {

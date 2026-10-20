@@ -360,25 +360,25 @@ describe('lastRun', () => {
   })
 
   test("this module's test passed or failed", () => {
-    expect(lastRun(record('pass'))).toBe('last run: runPlan.test.ts passed · 1m ago')
-    expect(lastRun(record('fail'))).toBe('last run: runPlan.test.ts failed · 1m ago')
+    expect(lastRun(record('pass'))).toBe('last run: runPlan.test.ts passed · 1min ago')
+    expect(lastRun(record('fail'))).toBe('last run: runPlan.test.ts failed · 1min ago')
   })
 
   test('another file failed: not this module', () => {
-    expect(lastRun(record('elsewhere', 'runPlan', ['tests/overrideFlow.test.tsx']))).toBe('last run: overrideFlow.test.tsx failed · not this module · 1m ago')
-    expect(lastRun(record('elsewhere', 'runPlan', ['tests/a.test.ts', 'tests/b.test.ts']))).toBe('last run: a.test.ts +1 failed · not this module · 1m ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['tests/overrideFlow.test.tsx']))).toBe('last run: overrideFlow.test.tsx failed · not this module · 1min ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['tests/a.test.ts', 'tests/b.test.ts']))).toBe('last run: a.test.ts +1 failed · not this module · 1min ago')
   })
 
   test('a failure the output did not place', () => {
-    expect(lastRun(record('elsewhere', 'runPlan', ['a file the output did not name']))).toBe('last run: failed, the output did not say where · not this module · 1m ago')
+    expect(lastRun(record('elsewhere', 'runPlan', ['a file the output did not name']))).toBe('last run: failed, the output did not say where · not this module · 1min ago')
   })
 
   test("another module's test passed", () => {
-    expect(lastRun(record('pass', 'stats'), { unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('last run: stats.test.ts passed · another module · 1m ago')
+    expect(lastRun(record('pass', 'stats'), { unlocked: { runPlan: TEST, stats: 'C:/r/tests/stats.test.ts' } })).toBe('last run: stats.test.ts passed · another module · 1min ago')
   })
 
   test('a run that could not be read is the last run, said plainly, never an older run in its place', () => {
-    expect(lastRun(record('unread'))).toBe('last run: not read · the output had no summary line · 1m ago')
+    expect(lastRun(record('unread'))).toBe('last run: not read · the output had no summary line · 1min ago')
   })
 })
 
@@ -411,7 +411,7 @@ describe('lastRunLine is the band\'s own last-run line', () => {
   test('the same text the band shows, from the same record', () => {
     const s = on({ lastRun: { module: 'runPlan', outcome: 'fail', files: [], atMs: 0 } })
     expect(lastRunLine(s, 60_000)).toBe(bandView(s, CONFIG, [], 60_000).lastRun)
-    expect(lastRunLine(s, 60_000)).toBe('last run: runPlan.test.ts failed · 1m ago')
+    expect(lastRunLine(s, 60_000)).toBe('last run: runPlan.test.ts failed · 1min ago')
   })
 })
 

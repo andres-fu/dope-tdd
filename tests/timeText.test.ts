@@ -5,7 +5,7 @@ import { formatAgo, formatSpan } from '../hooks/timeText'
 describe('time text', () => {
   test('formatAgo reads as a short relative time', () => {
     expect(formatAgo(20_000)).toBe('JUST NOW')
-    expect(formatAgo(2 * 60_000)).toBe('2M AGO')
+    expect(formatAgo(2 * 60_000)).toBe('2MIN AGO')
     expect(formatAgo(3 * 3_600_000)).toBe('3H AGO')
     expect(formatAgo(2 * 86_400_000)).toBe('2D AGO')
   })

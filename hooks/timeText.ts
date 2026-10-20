@@ -8,7 +8,8 @@ export function formatAgo(elapsedMs: number): string {
     return 'JUST NOW'
   }
   if (elapsedMs < HOUR) {
-    return `${Math.floor(elapsedMs / MINUTE)}M AGO`
+    // MIN, not M: "6M AGO" read as six months (Karl's round 3, 2026-10-19).
+    return `${Math.floor(elapsedMs / MINUTE)}MIN AGO`
   }
   if (elapsedMs < DAY) {
     return `${Math.floor(elapsedMs / HOUR)}H AGO`

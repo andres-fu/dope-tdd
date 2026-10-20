@@ -25,7 +25,7 @@ describe('formatStatus', () => {
     expect(text).toMatch(/phase: RED/)
     expect(text).toMatch(/module: utils\/a/)
     expect(text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
-    expect(text).toMatch(/^1M AGO: touched utils\/a$/m)
+    expect(text).toMatch(/^1MIN AGO: touched utils\/a$/m)
     expect(text).toMatch(/^JUST NOW: paused$/m)
   })
 })

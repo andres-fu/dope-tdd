@@ -4,8 +4,12 @@ import { pathKey } from './mirror.ts'
 
 const EVENT_LOG_LENGTH = 50
 const CURRENT_EXPIRY_MS = 15 * 60_000
-/** Longer than the catch check's hardest budget (a minute) plus the restore; a lock older than this is a crash, not a check. */
-export const CHECK_LOCK_TTL_MS = 2 * 60_000
+/**
+ * Longer than the longest check: a baseline and a run of up to a minute each, each run twice by the node --test retry,
+ * plus the restore. A lock older than this is a crash, not a check (verified review A9: two minutes could expire while
+ * a file was still reverted, once the lock covered the baseline too).
+ */
+export const CHECK_LOCK_TTL_MS = 5 * 60_000
 
 export const FRESH_MODULE: ModuleState = {
   phase: 'idle',

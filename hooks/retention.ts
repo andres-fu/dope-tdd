@@ -13,6 +13,34 @@ export const PRUNED_FOLDERS: readonly string[] = ['sessions']
 
 const NAMED = 3
 
+/** A short, stable hash of a repository's full path, so two repositories with the same folder name keep apart. */
+function rootTag(root: string): string {
+  const normalized = root.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+  let hash = 0x811c9dc5
+  for (let i = 0; i < normalized.length; i++) {
+    hash = Math.imul(hash ^ normalized.charCodeAt(i), 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+/**
+ * Where a change that could not be put back is kept: `~/.dope-tdd/kept/<repo>-<hash>/<path>`, or the temp folder when
+ * there is no home folder, and null when there is neither. Never inside the repository, where `git add -A` would
+ * take it, and never shared by two repositories that only share a folder name (verified review A11, 2026-10-20).
+ */
+export function keptPathFor(where: { home: string | undefined; temp: string | undefined; root: string; relative: string }): string | null {
+  const clean = (dir: string) => dir.replace(/\\/g, '/').replace(/\/$/, '')
+  const repo = clean(where.root).split('/').pop() || 'repo'
+  const folder = `${repo}-${rootTag(where.root)}/${where.relative}`
+  if (where.home !== undefined && where.home !== '') {
+    return `${clean(where.home)}/.dope-tdd/kept/${folder}`
+  }
+  if (where.temp !== undefined && where.temp !== '') {
+    return `${clean(where.temp)}/dope-tdd-kept/${folder}`
+  }
+  return null
+}
+
 /** What to tell the user about changes kept aside, named relative to `~/.dope-tdd/kept`; null when there are none. */
 export function keptNotice(paths: readonly string[]): string | null {
   if (paths.length === 0) {

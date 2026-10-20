@@ -78,7 +78,7 @@ describe('one catch-check lock across sessions', () => {
     expect(world.fileContents.get(SOURCE)).toBe('export const a = 1')
   })
 
-  test('outside a git checkout the check still runs, on this session\u2019s lock alone, and the log says so once', async ($, on) => {
+  test('outside a git checkout the check still runs, on a lock kept in the plugin store, and the log says so once', async ($, on) => {
     const world = fakeEngine(on)
     world.gitUnavailable = true
     await fixUnderGuard($, world)
@@ -87,6 +87,36 @@ describe('one catch-check lock across sessions', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/proven 1/)
-    expect(world.logs.filter(line => /covers this session only/.test(line)).length).toBe(1)
+    expect(world.logs.filter(line => /kept in the plugin store only/.test(line)).length).toBe(1)
+  })
+
+  // Verified review A10 (2026-10-20): outside git nothing in the store said a check was running, so another session's
+  // end or start "repaired" a file this session had reverted for its check. The store now says so, best effort.
+  test('outside a git checkout the store still shows the check while it runs, and another session waits for it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.gitUnavailable = true
+    await fixUnderGuard($, world)
+    let seenWhileReverted: unknown
+    world.onCatchRun = () => {
+      seenWhileReverted = world.store.get(MIRROR)
+    }
+
+    await runTests($, world, 'pass')
+
+    expect(seenWhileReverted).toMatchObject({ module: 'utils/formatDuration' })
+    expect(world.store.has(MIRROR)).toBe(false)
+  })
+
+  test('outside a git checkout, while another session checks, a test run waits for it and nothing is reverted', async ($, on) => {
+    const world = fakeEngine(on)
+    world.gitUnavailable = true
+    await fixUnderGuard($, world)
+    world.store.set(MIRROR, { module: 'utils/other', sinceMs: T0, sha: 'store:another-session' })
+    const before = world.writes.length
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.writes.slice(before).filter(([path]) => path === SOURCE)).toEqual([])
+    expect(result.deny).toMatch(/verifying that the test for utils\/other catches the change; retry in a moment/)
   })
 })

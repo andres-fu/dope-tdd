@@ -288,6 +288,13 @@ describe('the catch-check lock', () => {
     expect(isChecking(held, T0 + CHECK_LOCK_TTL_MS)).toBe(false)
     expect(acquireCheck(held, 'utils/b', T0 + CHECK_LOCK_TTL_MS).checking).toEqual({ module: 'utils/b', sinceMs: T0 + CHECK_LOCK_TTL_MS })
   })
+
+  // Verified review A9 (2026-10-20): the lock now covers the baseline too. Baseline and check run up to a minute each
+  // (catchCheck.ts) and node --test may run each once more (#26): four minutes, plus spawns. A lock that expires sooner
+  // lets another check, or a gate, take a file that is still reverted.
+  test('outlasts the longest check: a baseline and a run of a minute each, each run twice', () => {
+    expect(isChecking(acquireCheck(INITIAL_STATS, 'utils/a', T0), T0 + 4 * 60_000 + 30_000)).toBe(true)
+  })
 })
 
 describe('event log and housekeeping', () => {

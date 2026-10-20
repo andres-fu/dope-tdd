@@ -739,6 +739,16 @@ function withoutInlineCode(segment: string): string {
 // left out on purpose: pytest's -v is verbose, not a version.
 const RUNS_NOTHING = /\s(?:--version|--help|-h|--collect-only|--co)(?=\s|$)/
 
+const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|-m|--testNamePattern|--filter|--grep|--match)(?:[\s=]|$)/
+// `python -m pytest`: that -m names the module Python runs, before any of the runner's own flags (Karl's round 3,
+// 2026-10-19: read as pytest's marker filter, every python -m run counted as filtered).
+const PYTHON_MODULE = /((?:^|[\s/\\])(?:python3?|py)(?:\.exe)?(?:\s+-[XW]\s+\S+|\s+-(?!m(?:\s|$))\S+)*)\s+-m\s+\S+/g
+
+/** The run is filtered to some tests by name, marker or pattern, so it ran only part of the file. */
+export function filtersTests(command: string): boolean {
+  return TEST_FILTER.test(command.replace(PYTHON_MODULE, '$1'))
+}
+
 /** A segment that runs a known runner, with any inline code it hands an interpreter left out. */
 function runsTests(segment: string): boolean {
   const text = withoutInlineCode(segment)

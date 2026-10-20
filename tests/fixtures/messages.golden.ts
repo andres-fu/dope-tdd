@@ -36,5 +36,6 @@ export const GOLDEN: Record<string, string> = {
   "green.caught": "dope-tdd: GREEN on utils/a, saw red, and its test catches the change: PROVEN. Now refactor with the test untouched, or write the next failing test.",
   "green.notChecked": "dope-tdd: GREEN on utils/a, saw red. UNPROVEN: not checked (timeout). Now refactor with the test untouched, or write the next failing test.",
   "green.sawRed": "dope-tdd: GREEN on utils/a, saw red. Now refactor with the test untouched, or write the next failing test.",
+  "green.pinBreakProven": "dope-tdd: GREEN on utils/a, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. Now refactor with the test untouched, or write the next failing test.",
   "green.neverRed": "dope-tdd: GREEN on utils/a but it never saw red: UNPROVEN. Break the code on purpose and run again to prove the test can fail.",
 }

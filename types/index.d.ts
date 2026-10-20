@@ -111,6 +111,8 @@ export type TddStats = {
   redElsewhere: readonly string[]
   testChangedAfterRed: boolean
   neverSawRed: number
+  /** The current red proved a module that went green first: the next green says PROVEN. */
+  pinBroken: boolean
   testChanged: number
   /** The pin skill ran this session: a test changed after red then reads as a pin correction (2026-10-18). */
   pinning: boolean

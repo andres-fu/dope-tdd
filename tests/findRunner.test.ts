@@ -17,6 +17,17 @@ describe('Python: pytest where it is set up, else unittest', () => {
     expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({ kind: 'unittest', root: 'C:/calc', tool: 'python' })
   })
 
+  // Verified review A15 (2026-10-20): the search walked above the repository with no bound, so a .venv or a marker in a
+  // folder above it could become the program the check runs. It stops at the repository's top, or at the root outside git.
+  test('a runner above the repository is never used; one hoisted to the repository top still is', async () => {
+    const above = disk({ 'C:/work/package.json': '{}', 'C:/work/node_modules/vitest/vitest.mjs': '', 'C:/work/app/.git': '' })
+    expect(await findRunner('C:/work/app', 'node', 'C:/work/app/tests/a.test.ts', above.exists, above.read)).toBeNull()
+    const noGit = disk({ 'C:/work/package.json': '{}', 'C:/work/node_modules/vitest/vitest.mjs': '' })
+    expect(await findRunner('C:/work/app', 'node', 'C:/work/app/tests/a.test.ts', noGit.exists, noGit.read)).toBeNull()
+    const hoisted = disk({ 'C:/mono/.git': '', 'C:/mono/package.json': '{}', 'C:/mono/node_modules/vitest/vitest.mjs': '' })
+    expect((await findRunner('C:/mono/packages/app', 'node', 'C:/mono/packages/app/tests/a.test.ts', hoisted.exists, hoisted.read))?.root).toBe('C:/mono')
+  })
+
   test("no pytest marker but a venv at the root: unittest through the venv's python", async () => {
     const { exists, read } = disk({ 'C:/calc/.venv/Scripts/python.exe': '' })
     expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({

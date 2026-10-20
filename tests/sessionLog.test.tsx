@@ -150,3 +150,18 @@ describe('every session leaves its receipt on this machine', () => {
     await expect(end($)).resolves.toMatchObject({ sessionId: 'sess-1' })
   })
 })
+
+// Verified review B4 and E2 (2026-10-20): the store kept every unlock key forever and had no version to migrate by.
+describe('the plugin store stays small and says its version', () => {
+  test('at session start, unlock keys with nothing fresh are deleted, a fresh one is kept, and the store version is set', async ($, on) => {
+    const fresh = { 'utils/a': { testPath: `${ROOT}/tests/utils/a.test.ts`, atMs: T0 - 60_000 } }
+    const old = { 'utils/b': { testPath: `${FIXTURE_DRIVE}gone/tests/utils/b.test.ts`, atMs: T0 - 30 * 24 * 60 * 60_000 } }
+    const world = fakeEngine(on, { store: { [`unlocks:${ROOT}`]: fresh, [`unlocks:${FIXTURE_DRIVE}gone`]: old } })
+
+    await startSession($)
+
+    expect(world.store.has(`unlocks:${ROOT}`)).toBe(true)
+    expect(world.store.has(`unlocks:${FIXTURE_DRIVE}gone`)).toBe(false)
+    expect(world.store.get('store-version')).toBe(1)
+  })
+})

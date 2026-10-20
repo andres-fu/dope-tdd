@@ -136,7 +136,7 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
   const testFiles = files.filter(file => isTestFileIn(stack, file))
   const fallback = defaultLayoutOf(stack)
   if (testFiles.length === 0) {
-    return { stack: stack.name, stackReason, layout: fallback, roots: [], testFiles: 0, reason: 'no test files found, assuming the default' }
+    return { stack: stack.name, stackReason, ...coveringLayout(files, stack, fallback), roots: [], testFiles: 0 }
   }
   // Under a name-paired layout a test pairs with any code file of that basename, wherever it sits.
   const sourceNames = new Set(files.filter(file => !isTestFileIn(stack, file)).map(file => baseName(file).replace(/\.[^.]+$/, '')))
@@ -168,6 +168,28 @@ function presetInference(survey: Survey, stack: Stack, stackReason: string): Inf
   }
   const reason = `${best.pairs} of ${testFiles.length} test file${testFiles.length === 1 ? '' : 's'} pair with a source under ${best.layout.name}`
   return { stack: stack.name, stackReason, layout: best.layout, roots: [], testFiles: testFiles.length, reason }
+}
+
+/**
+ * With no tests to read a layout from, the default stays unless it leaves code out that another preset covers: Python's
+ * default only covers src/, so a root-level api.py paired with nothing and went unguarded (Karl's Axiom backend,
+ * 2026-10-19). Ties keep the earlier preset, so the default wins any tie and package beats colocated and flat.
+ */
+function coveringLayout(files: readonly string[], stack: Stack, fallback: Layout): { layout: Layout; reason: string } {
+  const code = files.filter(file => isCodeFileIn(stack, file) && !isTestFileIn(stack, file))
+  const covered = (layout: Layout) => code.filter(file => classifyPath('R:', `R:/${file}`, { layout, roots: [], stack: stack.name }).kind === 'source').length
+  const fallbackCount = covered(fallback)
+  const best = Object.values(stack.layouts).reduce(
+    (winner, layout) => {
+      const count = covered(layout)
+      return count > winner.count ? { layout, count } : winner
+    },
+    { layout: fallback, count: fallbackCount },
+  )
+  if (best.layout === fallback) {
+    return { layout: fallback, reason: 'no test files found, assuming the default' }
+  }
+  return { layout: best.layout, reason: `no test files found; ${best.layout.name} covers ${best.count} of ${code.length} code files, ${fallback.name} covers ${fallbackCount}` }
 }
 
 /** `named` is the stack the config pins, when it does; otherwise the survey decides. */

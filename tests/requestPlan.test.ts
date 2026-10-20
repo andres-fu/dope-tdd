@@ -85,11 +85,9 @@ describe('planRequest: the decision, the record entry, and what is said', () => 
     expect(reply).toBe('dope-tdd: override denied: nobody is here to approve it. Stop and report what you needed and why; do not work around the guard.')
   })
 
-  test('a hotfix passes as debt', () => {
-    const { entry, notices, reply } = plan({ request: ask({ kind: 'hotfix' }), present: false })
-    expect(entry).toMatchObject({ status: 'approved', decidedBy: 'hotfix rule' })
-    expect(notices).toEqual([{ toast: true, text: `⚑ dope-tdd: hotfix override on runPlan: "${REASON}". Recorded as debt until a test is written.` }])
-    expect(reply).toBe('dope-tdd: override approved (hotfix rule): change on runPlan. It is debt in dope-tdd.overrides.json until a test is written; end it with /tdd override end runPlan once one is.')
+  test('a hotfix waits for a person like any request, and with nobody there it is denied (verified review A5)', () => {
+    expect(plan({ request: ask({ kind: 'hotfix' }) }).entry).toMatchObject({ status: 'pending', decidedBy: null })
+    expect(plan({ request: ask({ kind: 'hotfix' }), present: false }).entry).toMatchObject({ status: 'denied', decidedBy: 'unattended' })
   })
 
   test("a person's own pause pauses now", () => {
@@ -153,7 +151,7 @@ const pauseEntry = (over: Partial<Override> = {}): Override => ({
   ...plan({ request: ask({ by: 'human', scope: 'pause', kind: 'other', module: null, path: null, minutes: 30, reason: PAUSE_REASON }) }).entry,
   ...over,
 })
-const approvedChange = (over: Partial<Override> = {}): Override => ({ ...plan({ present: false, request: ask({ kind: 'hotfix' }) }).entry, ...over })
+const approvedChange = (over: Partial<Override> = {}): Override => ({ ...plan({ request: ask({ kind: 'hotfix' }) }).entry, status: 'approved', decidedBy: 'human', decidedAtMs: T0, ...over })
 
 describe('planExpiry: a pause whose minutes ran out', () => {
   test('ends at its own end time, resumes the guard, and says what happened while it was on', () => {

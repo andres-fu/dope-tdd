@@ -99,8 +99,12 @@ describe('decideAtRequest: no agent approves its own exception', () => {
     expect(decideAtRequest(ask(), false)).toEqual({ status: 'denied', decidedBy: 'unattended' })
   })
 
-  test('a hotfix always passes, attended or not, and is recorded as debt', () => {
-    expect(decideAtRequest(ask({ kind: 'hotfix', scope: 'change' }), false)).toEqual({ status: 'approved', decidedBy: 'hotfix rule' })
+  // A hotfix used to pass by rule, so an agent approved itself by picking the word, a pause of the whole guard
+  // included (verified review A5, 2026-10-20). An agent's approval never counts as a person's: a hotfix waits too.
+  test('a hotfix is never approved by rule: a person decides it, and with nobody there it is denied', () => {
+    expect(decideAtRequest(ask({ kind: 'hotfix', scope: 'change' }), true)).toEqual({ status: 'pending', decidedBy: null })
+    expect(decideAtRequest(ask({ kind: 'hotfix', scope: 'change' }), false)).toEqual({ status: 'denied', decidedBy: 'unattended' })
+    expect(decideAtRequest(ask({ kind: 'hotfix', scope: 'pause', module: null, path: null, minutes: 30 }), false)).toEqual({ status: 'denied', decidedBy: 'unattended' })
   })
 
   test('a person asking is the approver', () => {

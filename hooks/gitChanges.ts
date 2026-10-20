@@ -51,6 +51,27 @@ function onlyLeftTheDiff(was: string | undefined, now: string | undefined, mtime
   return was.slice(was.lastIndexOf(':') + 1) === String(mtimeNow)
 }
 
+const CD_ONLY = /^\s*cd(?:\s|$)/
+
+/**
+ * Every segment runs git (cds aside): only such a command may change a file git manages, such as the override record a
+ * pull brings in. A git segment beside anything else proves nothing about what the rest wrote (verified review A6).
+ */
+export function isGitOnly(command: string): boolean {
+  const segments = commandSegments(command).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
+  return segments.length > 0 && segments.every(segment => /^\s*git\s/.test(segment))
+}
+
+/**
+ * A command that rewrites the tree with git and does nothing else that could write: every segment is a git rewrite,
+ * a cd, or one `quiet` says cannot write (a test run). Only then are the changes it leaves not the agent's; a git
+ * segment beside a script once hid the script's writes (verified review A7, 2026-10-20).
+ */
+export function isRevertOnly(command: string, quiet: (segment: string) => boolean): boolean {
+  const segments = commandSegments(command).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
+  return segments.some(segment => REWRITES_TREE.test(segment)) && segments.every(segment => REWRITES_TREE.test(segment) || quiet(segment))
+}
+
 export function isRevertCommand(command: string): boolean {
   return commandSegments(command).some(segment => REWRITES_TREE.test(segment))
 }

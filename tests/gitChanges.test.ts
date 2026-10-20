@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
+import { bringsInCode, changedPaths, isGitOnly, isRevertCommand, isRevertOnly, parseNumstat, savedStateOf } from '../hooks/gitChanges'
 
 // `git status --porcelain=v2 --branch -- <source> <test>`: whether the module's work is committed, and pushed (2026-10-19).
 describe('savedStateOf', () => {
@@ -114,6 +114,38 @@ describe('bringsInCode', () => {
   test('commands that are not tree rewrites bring nothing in', () => {
     for (const command of ['git status', 'git diff main -- api.py', 'git log', "sed -i 's/a/b/' api.py"]) {
       expect(bringsInCode(command)).toBe(false)
+    }
+  })
+})
+
+// Verified review A6 (2026-10-20): the override record's backstop stood down for any command with a git segment.
+describe('isGitOnly', () => {
+  test('a command made of git alone, after cds, is git only', () => {
+    for (const command of ['git pull', 'git checkout main && git pull --rebase', 'cd app && git merge main']) {
+      expect(isGitOnly(command)).toBe(true)
+    }
+  })
+
+  test('git beside anything else is not', () => {
+    for (const command of ['node forge.js; git status', 'git status && node forge.js', "echo '{}' > x.json | git add x.json", 'npm test']) {
+      expect(isGitOnly(command)).toBe(false)
+    }
+  })
+})
+
+// Verified review A7 (2026-10-20): one git rewrite segment emptied the change list for the whole command, so
+// `python fix.py; git restore x` counted nothing. Only a command of git rewrites, cds and quiet segments is skipped.
+describe('isRevertOnly', () => {
+  const quiet = (segment: string) => /^\s*(?:pytest|npm test)\b/.test(segment)
+  test('git rewrites, with cds and quiet segments beside them, are a revert only', () => {
+    for (const command of ['git restore src/a.py', 'git stash && pytest', 'cd app && git checkout -- src/a.ts && npm test']) {
+      expect(isRevertOnly(command, quiet)).toBe(true)
+    }
+  })
+
+  test('a revert beside anything that could write is not, and neither is no revert at all', () => {
+    for (const command of ['python /tmp/fix.py; git restore README.md', 'git restore a && node gen.js', 'pytest', 'git status']) {
+      expect(isRevertOnly(command, quiet)).toBe(false)
     }
   })
 })

@@ -566,12 +566,15 @@ export const RUNNERS: readonly Runner[] = [
     alsoFor: [],
     exts: ['py'],
     stack: 'python',
-    markers: ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'conftest.py', 'tests/conftest.py'],
+    // pytest's own files say pytest by being there.
+    markers: ['pytest.ini', 'conftest.py', 'tests/conftest.py'],
     // Karl's round 3 (2026-10-19): requirements.txt was the only marker, so the catch check ran unittest on a pytest
     // file, found 0 tests, and every green went unchecked. A requirements file or Pipfile that lists pytest says pytest.
+    // A general Python config file says it only when it mentions pytest: any pyproject.toml once meant pytest, and a
+    // unittest-only project then got a check that could not start (verified review D5, 2026-10-20).
     listedIn: {
-      files: ['requirements.txt', 'requirements-dev.txt', 'requirements-test.txt', 'requirements/dev.txt', 'requirements/test.txt', 'Pipfile'],
-      text: /^\s*["']?pytest\b/m,
+      files: ['pyproject.toml', 'setup.cfg', 'tox.ini', 'setup.py', 'requirements.txt', 'requirements-dev.txt', 'requirements-test.txt', 'requirements/dev.txt', 'requirements/test.txt', 'Pipfile'],
+      text: /^\s*["']?pytest\b|\[tool\.pytest|\[tool:pytest\]|\[pytest\]|["']pytest\b/m,
     },
     // With no marker at all: a test that imports pytest, or plain test functions with no unittest, is a pytest test.
     testFileSays: text => /^\s*(?:import|from)\s+pytest\b/m.test(text) || (/^def test_/m.test(text) && !/\bunittest\b/.test(text)),

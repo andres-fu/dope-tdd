@@ -17,6 +17,17 @@ describe('Python: pytest where it is set up, else unittest', () => {
     expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({ kind: 'unittest', root: 'C:/calc', tool: 'python' })
   })
 
+  // Verified review A15 (2026-10-20): the search walked above the repository with no bound, so a .venv or a marker in a
+  // folder above it could become the program the check runs. It stops at the repository's top, or at the root outside git.
+  test('a runner above the repository is never used; one hoisted to the repository top still is', async () => {
+    const above = disk({ 'C:/work/package.json': '{}', 'C:/work/node_modules/vitest/vitest.mjs': '', 'C:/work/app/.git': '' })
+    expect(await findRunner('C:/work/app', 'node', 'C:/work/app/tests/a.test.ts', above.exists, above.read)).toBeNull()
+    const noGit = disk({ 'C:/work/package.json': '{}', 'C:/work/node_modules/vitest/vitest.mjs': '' })
+    expect(await findRunner('C:/work/app', 'node', 'C:/work/app/tests/a.test.ts', noGit.exists, noGit.read)).toBeNull()
+    const hoisted = disk({ 'C:/mono/.git': '', 'C:/mono/package.json': '{}', 'C:/mono/node_modules/vitest/vitest.mjs': '' })
+    expect((await findRunner('C:/mono/packages/app', 'node', 'C:/mono/packages/app/tests/a.test.ts', hoisted.exists, hoisted.read))?.root).toBe('C:/mono')
+  })
+
   test("no pytest marker but a venv at the root: unittest through the venv's python", async () => {
     const { exists, read } = disk({ 'C:/calc/.venv/Scripts/python.exe': '' })
     expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({
@@ -26,9 +37,28 @@ describe('Python: pytest where it is set up, else unittest', () => {
     })
   })
 
-  test('a pytest marker still means pytest', async () => {
-    const { exists, read } = disk({ 'C:/calc/pyproject.toml': '' })
-    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read))?.kind).toBe('pytest')
+  test("pytest's own config files mean pytest by their presence alone", async () => {
+    for (const marker of ['pytest.ini', 'conftest.py', 'tests/conftest.py']) {
+      const { exists, read } = disk({ [`C:/calc/${marker}`]: '' })
+      expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read))?.kind).toBe('pytest')
+    }
+  })
+
+  // Verified review D5 (2026-10-20): any pyproject.toml, setup.cfg, tox.ini or setup.py meant pytest, so a unittest-only
+  // project got `python -m pytest`, which failed to start. Those files now mean pytest only when they mention it.
+  test('a general Python config file means pytest only when it mentions pytest', async () => {
+    const unittestFile = 'import unittest\n\nclass CalcTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(2, 2)\n'
+    const bare = disk({ 'C:/calc/pyproject.toml': '[project]\nname = "calc"\n', 'C:/calc/tests/test_calc.py': unittestFile })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', bare.exists, bare.read))?.kind).toBe('unittest')
+    for (const [file, text] of [
+      ['pyproject.toml', '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'],
+      ['pyproject.toml', '[project.optional-dependencies]\ntest = [\n  "pytest>=8",\n]\n'],
+      ['setup.cfg', '[tool:pytest]\naddopts = -q\n'],
+      ['tox.ini', '[pytest]\naddopts = -q\n'],
+    ] as const) {
+      const { exists, read } = disk({ [`C:/calc/${file}`]: text, 'C:/calc/tests/test_calc.py': unittestFile })
+      expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read))?.kind).toBe('pytest')
+    }
   })
 
   // Karl's round 3 (2026-10-19): requirements.txt was the only marker, so the catch check ran `python -m unittest` on a

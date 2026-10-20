@@ -133,10 +133,10 @@ describe('the mitigations', () => {
     expect(world.toasts.at(-1)).toMatch(/a repeat request needs a person/)
   })
 
-  test('a hotfix skips the model and passes as debt', async ($, on) => {
+  test('a hotfix skips the model and waits for a person', async ($, on) => {
     const world = fakeEngine(on)
     withModel(world)
-    expect((await ask($, { kind: 'hotfix', reason: 'null check for the prod crash in #301, the test comes in the follow-up' })).result).toMatch(/hotfix rule/)
+    expect((await ask($, { kind: 'hotfix', reason: 'null check for the prod crash in #301, the test comes in the follow-up' })).result).toMatch(/waiting for a person/)
     expect(world.modelCalls).toEqual([])
   })
 

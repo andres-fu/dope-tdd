@@ -1,6 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 
 import { FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { keptPathFor } from '../hooks/retention'
 import { storeRoot } from '../hooks/unlocks'
 
 /** A home folder on the fixture drive, so it resolves the same way the root does on any host. */
@@ -9,7 +10,9 @@ const HOME_DIR = `${FIXTURE_DRIVE}Users/tester`
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
 // With no home folder a kept change goes to the temp folder, never beside the file in the repository (verified review A11).
 const TEMP_DIR = `${FIXTURE_DRIVE}Temp`
-const KEPT = `${TEMP_DIR}/dope-tdd-kept/throughline-5b9d2550/src/utils/formatDuration.ts`
+// The folder name carries a hash of the root, which differs between the Windows and the POSIX fixture root in CI.
+const KEPT = keptPathFor({ home: undefined, temp: TEMP_DIR, root: ROOT, relative: 'src/utils/formatDuration.ts' }) ?? ''
+const KEPT_HOME = keptPathFor({ home: HOME_DIR, temp: undefined, root: ROOT, relative: 'src/utils/formatDuration.ts' }) ?? ''
 
 describe('catches the change', () => {
   test('at green: puts the source back, runs only that test, expects it to fail, restores the source', async ($, on) => {
@@ -653,7 +656,7 @@ describe('the catch check stays out of the way', () => {
   // Verified review A11 (2026-10-20): a second kept copy of the same file overwrote the first, the only copy of that work.
   test('a second change kept aside for the same file never overwrites the first', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
-    const first = `${HOME_DIR}/.dope-tdd/kept/throughline-5b9d2550/src/utils/formatDuration.ts`
+    const first = KEPT_HOME
     world.fileContents.set(first, 'export const kept = "the first one"')
     await fixUnderGuard($, world)
     world.onCatchRun = () => {
@@ -677,8 +680,8 @@ describe('the catch check stays out of the way', () => {
     await runTests($, world, 'pass')
 
     const kept = world.writes.find(([, text]) => text === 'export const b = 1')
-    expect(kept?.[0]).toBe(`${HOME_DIR}/.dope-tdd/kept/throughline-5b9d2550/src/utils/formatDuration.ts`)
-    expect(world.toasts.some(t => t.includes(`your change is in ${HOME_DIR}/.dope-tdd/kept/throughline-5b9d2550/src/utils/formatDuration.ts`))).toBe(true)
+    expect(kept?.[0]).toBe(KEPT_HOME)
+    expect(world.toasts.some(t => t.includes(`your change is in ${KEPT_HOME}`))).toBe(true)
   })
 
   test('a change that could not even be kept aside is never written into the log: source text stays out of logs', async ($, on) => {

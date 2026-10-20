@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -704,5 +704,25 @@ describe('a red where every failure is an error, not a failed assertion', () => 
     expect(failedOnlyOnErrors(PYTEST_PASS)).toBe(false)
     expect(failedOnlyOnErrors(UNITTEST_PASS)).toBe(false)
     expect(failedOnlyOnErrors('something went wrong')).toBe(false)
+  })
+})
+
+// Karl's round 3 (2026-10-19): pytest's -m picks tests by marker, but the -m in `python -m pytest` is Python's. Every
+// `python -m` run read as filtered, so its red unlocked nothing and it never released a carried-over unlock.
+describe('a run filtered to some tests', () => {
+  test('the -m that names the module Python runs is not a filter', () => {
+    expect(filtersTests('python -m pytest tests/test_api.py -q')).toBe(false)
+    expect(filtersTests('python3 -m unittest tests.test_calc')).toBe(false)
+    expect(filtersTests('.venv/Scripts/python.exe -m pytest tests/test_api.py')).toBe(false)
+    expect(filtersTests('uv run python -X dev -m pytest')).toBe(false)
+    expect(filtersTests('npx vitest run tests/a.test.ts')).toBe(false)
+  })
+
+  test('a name, marker or pattern filter is one, after python -m too', () => {
+    expect(filtersTests('python -m pytest -k add tests/test_calc.py')).toBe(true)
+    expect(filtersTests('python -m pytest -m slow tests/test_calc.py')).toBe(true)
+    expect(filtersTests('pytest -m slow')).toBe(true)
+    expect(filtersTests('npx vitest run -t name')).toBe(true)
+    expect(filtersTests('dotnet test --filter FullyQualifiedName~Foo')).toBe(true)
   })
 })

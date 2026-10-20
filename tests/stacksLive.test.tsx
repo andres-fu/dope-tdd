@@ -2,7 +2,7 @@ import { describe, expect } from 'claude-code/testing'
 
 import { OVERRIDE_HINT } from '../hooks/refusals'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
+import { MINUTE, ROOT, T0, editAt, startSession, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS, UNITTEST_FAIL, UNITTEST_PASS } from './fixtures/runnerOutputs'
 
@@ -383,5 +383,34 @@ describe('a Node project tested with ava', () => {
     const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('ava/entrypoints/cli.js')))
     expect(check).toEqual(['node', `${ROOT}/node_modules/ava/entrypoints/cli.js`, 'src/utils/path.spec.ts'])
     expect(status.text).toMatch(/proven 1/)
+  })
+})
+
+// Karl's Axiom backend, round 3 (2026-10-19): api.py at the root, tests/test_api.py in pytest style, requirements.txt
+// the only Python marker, and the package layout set in dope-tdd.json.
+function axiomProject(world: FakeWorld) {
+  world.hasVitest = false
+  world.existingFiles.add(`${ROOT}/requirements.txt`)
+  world.fileContents.set(`${ROOT}/requirements.txt`, 'fastapi==0.115.0\npytest==9.0.3\n')
+  world.fileContents.set(`${ROOT}/dope-tdd.json`, '{ "mode": "enforce", "stack": "python", "layout": "package", "catchCheck": true }')
+  world.fileContents.set(`${ROOT}/api.py`, 'def fuse(a, b):\n    return a + b\n')
+  world.existingFiles.add(`${ROOT}/tests/test_api.py`)
+}
+const AXIOM_FAIL = PYTEST_FAIL.replace(/tests[\/]test_other\.py/g, 'tests/test_api.py')
+
+describe("Karl's Axiom backend: pytest with requirements.txt as the only marker", () => {
+  test('a pytest run of the test behind a carried-over unlock is the run its first edit waits for', async ($, on) => {
+    const world = fakeEngine(on, { store: { [`unlocks:${ROOT}`]: { api: { testPath: `${ROOT}/tests/test_api.py`, atMs: T0 - 6 * MINUTE } } } })
+    axiomProject(world)
+
+    await startSession($)
+    const waiting = await editAt($, 'api.py')
+    world.bashText = AXIOM_FAIL
+    world.bashFails = true
+    await runBash($, 'python -m pytest tests/test_api.py -q')
+    const edit = await editAt($, 'api.py')
+
+    expect(waiting.deny).toMatch(/in an earlier session/)
+    expect(edit.deny).toBeUndefined()
   })
 })

@@ -41,7 +41,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -2074,12 +2074,6 @@ async function releaseStaleCurrent($: EngineInterface, root: string, config: Gua
 }
 
 // -t / --testNamePattern / -k / --filter / --grep: a run of some tests by name, not the whole suite.
-const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|-m|--testNamePattern|--filter|--grep|--match)(?:[\s=]|$)/
-
-function filtersTests(command: string): boolean {
-  return TEST_FILTER.test(command)
-}
-
 /** The module's own test file exists, in any of the stack's extensions: a test that imports the module does not stand in for it. */
 async function hasOwnTest($: EngineInterface, root: string, config: GuardConfig, module: string): Promise<boolean> {
   for (const ext of stackOf(config.stack).exts) {

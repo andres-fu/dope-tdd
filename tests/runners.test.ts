@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -674,5 +674,35 @@ describe('namedOtherFiles: files a test command names that are not tests by the 
     expect(namedOtherFiles('node --import ./tests/node/register.mjs --test tests/a.test.ts', 'node', 'C:/r')).toEqual([])
     expect(namedOtherFiles('npm test', 'node', 'C:/r')).toEqual([])
     expect(namedOtherFiles('ls tools/x.ts', 'node', 'C:/r')).toEqual([])
+  })
+})
+
+// A pin proves itself on its first red, so that red must be a test failing on what it checks. One where nothing got as
+// far as an assertion (an import that broke, a file that would not collect or compile) proves nothing (2026-10-19).
+describe('a red where every failure is an error, not a failed assertion', () => {
+  test('a collection, import, load or compile error is errors only', () => {
+    expect(failedOnlyOnErrors(PYTEST_COLLECTION_ERROR_QUIET)).toBe(true)
+    expect(failedOnlyOnErrors(UNITTEST_IMPORT_ERROR)).toBe(true)
+    expect(failedOnlyOnErrors(UNITTEST_ERROR_SKIP)).toBe(true)
+    expect(failedOnlyOnErrors(NODE_TEST_REAL_LOAD_ERROR)).toBe(true)
+    expect(failedOnlyOnErrors(MAVEN_COMPILE_ERROR)).toBe(true)
+  })
+
+  test('a failed assertion, alone or beside an error, is not', () => {
+    expect(failedOnlyOnErrors(PYTEST_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(PYTEST_REAL_DAPR_RED)).toBe(false)
+    expect(failedOnlyOnErrors(PYTEST_MIXED_SUMMARY)).toBe(false)
+    expect(failedOnlyOnErrors(UNITTEST_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(NODE_TEST_REAL_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(NODE_TEST_REAL_TAP_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(MAVEN_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(AVA_REAL_FAIL)).toBe(false)
+    expect(failedOnlyOnErrors(DOTNET_REAL_FAIL)).toBe(false)
+  })
+
+  test('a pass, or output it cannot read, is not', () => {
+    expect(failedOnlyOnErrors(PYTEST_PASS)).toBe(false)
+    expect(failedOnlyOnErrors(UNITTEST_PASS)).toBe(false)
+    expect(failedOnlyOnErrors('something went wrong')).toBe(false)
   })
 })

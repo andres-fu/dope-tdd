@@ -223,13 +223,14 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
  * `elsewhere` names the test files that failed when none of them was the current
  * module's own test: the suite is red, the module is not. Its phase does not move.
  */
-export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[] = []): TddStats {
+/** `errorsOnly`: the red never reached an assertion (an import, a collection, a compile), so it proves no pin. */
+export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[] = [], options: { errorsOnly?: boolean } = {}): TddStats {
   const red = !passed && elsewhere.length > 0 ? 'elsewhere' : passed ? 'pass' : 'fail'
   const lastRun: LastRun = { module: s.current?.module ?? null, outcome: red, files: red === 'elsewhere' ? [...elsewhere] : [], atMs: nowMs }
-  return { ...runOutcome(s, passed, nowMs, elsewhere), lastRun }
+  return { ...runOutcome(s, passed, nowMs, elsewhere, options.errorsOnly === true), lastRun }
 }
 
-function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[]): TddStats {
+function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[], errorsOnly: boolean): TddStats {
   if (!passed && elsewhere.length > 0) {
     return logged(
       { ...s, fails: s.fails + 1, redElsewhere: elsewhere },
@@ -244,7 +245,8 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
   const prev = module === undefined ? null : moduleState(s, module)
 
   if (!passed) {
-    const provesPin = module !== undefined && s.unproven.includes(module)
+    // A test that broke before checking anything (a flaky import, a missing package) has not shown it can fail on the code.
+    const provesPin = module !== undefined && s.unproven.includes(module) && !errorsOnly
     const base: TddStats = {
       ...s,
       phase: 'red',

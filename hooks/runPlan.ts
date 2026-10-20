@@ -56,6 +56,8 @@ export type RunFacts = {
   readonly wholeFolder?: boolean
   /** Code files the command names that are not tests by the stack's rule, absolute (runners.ts, namedOtherFiles). */
   readonly namedOther?: readonly string[]
+  /** The red never reached an assertion (runners.ts, failedOnlyOnErrors): it proves no pin. */
+  readonly errorsOnly?: boolean
 }
 
 /** The red elsewhere of a whole-folder run that did not say which files failed. */
@@ -161,7 +163,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
   let afterRun = outsideGreen
     ? recordOtherPass(targeted, null, nowMs)
     : otherGreen === null
-      ? recordRun(targeted, outcome === 'pass', nowMs, elsewhere)
+      ? recordRun(targeted, outcome === 'pass', nowMs, elsewhere, { errorsOnly: facts.errorsOnly === true })
       : recordOtherPass(targeted, otherGreen, nowMs)
   const ownCycleClosed = afterRun.cycles > s.cycles
   const carriedOn: string[] = []

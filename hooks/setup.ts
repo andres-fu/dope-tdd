@@ -30,10 +30,39 @@ export function isCodeFile(path: string, stack?: Stack): boolean {
   return stack === undefined ? isCodeFileAny(path) : isCodeFileIn(stack, path)
 }
 
+/**
+ * A package.json at the root can belong to an app in a subfolder: all its code sits in nested packages, while another
+ * stack's code sits at the root itself (Karl's Axiom backend, 2026-10-19: api.py at the root, React in klq-frontend).
+ * Then the root's own code decides, since one dope-tdd.json guards one stack. Null when node code is at the root too.
+ */
+function nodeOnlyNested(survey: Survey): { stack: StackName; reason: string } | null {
+  const nested = survey.packageDirs.filter(dir => dir !== '')
+  const nodeFiles = survey.files.filter(file => isCodeFileIn(STACKS.node, file))
+  const inNested = (file: string) => nested.some(dir => file.startsWith(`${dir}/`))
+  if (nodeFiles.length === 0 || !nodeFiles.every(inNested)) {
+    return null
+  }
+  const atRoot = Object.values(STACKS)
+    .filter(stack => stack.name !== 'node')
+    .map(stack => ({ stack, count: survey.files.filter(file => !file.includes('/') && isCodeFileIn(stack, file)).length }))
+    .reduce((best, entry) => (entry.count > best.count ? entry : best), { stack: STACKS.node, count: 0 })
+  if (atRoot.count === 0) {
+    return null
+  }
+  const where = [...new Set(nodeFiles.map(file => nested.find(dir => file.startsWith(`${dir}/`))))].join(', ')
+  return { stack: atRoot.stack.name, reason: `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} at the root; the node code sits only under ${where}` }
+}
+
 /** The stack a survey points at: a marker at the root first, then whichever stack owns most of the code files, then Node. */
 export function inferStack(survey: Survey): { stack: StackName; reason: string } {
   const entries = survey.rootEntries ?? []
   const marked = detectStackFrom(entries)
+  if (marked === 'node') {
+    const rooted = nodeOnlyNested(survey)
+    if (rooted !== null) {
+      return rooted
+    }
+  }
   if (marked !== null) {
     return { stack: marked, reason: `${stackMarker(entries, marked) ?? 'a marker'} at the root` }
   }

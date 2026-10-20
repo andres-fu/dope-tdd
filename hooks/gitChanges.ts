@@ -54,3 +54,23 @@ function onlyLeftTheDiff(was: string | undefined, now: string | undefined, mtime
 export function isRevertCommand(command: string): boolean {
   return commandSegments(command).some(segment => REWRITES_TREE.test(segment))
 }
+
+// Rewrites that only put files back as they are at HEAD: what they write was already there, so nothing comes in.
+// `git checkout api.py` with one argument that names a file is a restore; one that names a branch is a switch.
+const BACK_TO_HEAD = [
+  /^\s*git\s+restore\b(?![^\n]*\s(?:--source\b|-s\b|-s\S))/,
+  /^\s*git\s+checkout\s+(?:HEAD\s+)?--\s/,
+  /^\s*git\s+checkout\s+[^\s-][^\s]*\.\w+\s*$/,
+  /^\s*git\s+reset\s+--hard(?:\s+HEAD)?\s*$/,
+  /^\s*git\s+stash(?:\s+push\b[^\n]*)?\s*$/,
+  /^\s*git\s+clean\b/,
+]
+
+/**
+ * A git command that writes code from somewhere other than this checkout's HEAD: another branch, a commit, a stash or
+ * a remote. The guard does not charge it to the agent (isRevertCommand), but says it, so it never goes by unseen
+ * (Karl's trial, 2026-10-19: a git restore logged nothing, which is right only for code put back to HEAD).
+ */
+export function bringsInCode(command: string): boolean {
+  return commandSegments(command).some(segment => REWRITES_TREE.test(segment) && !BACK_TO_HEAD.some(shape => shape.test(segment)))
+}

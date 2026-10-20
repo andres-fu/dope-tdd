@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { changedPaths, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
+import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from '../hooks/gitChanges'
 
 // `git status --porcelain=v2 --branch -- <source> <test>`: whether the module's work is committed, and pushed (2026-10-19).
 describe('savedStateOf', () => {
@@ -86,5 +86,27 @@ describe('isRevertCommand', () => {
     expect(isRevertCommand('git apply fix.patch')).toBe(false)
     expect(isRevertCommand('git stash list')).toBe(false)
     expect(isRevertCommand('git stash show -p')).toBe(false)
+  })
+})
+
+// Karl's trial (2026-10-19): git restore logged nothing, which is right for code put back to HEAD. But git can also
+// write code from another branch, a stash or a commit, and that went by just as silently: it is now said.
+describe('bringsInCode', () => {
+  test('putting a file back as it is at HEAD brings nothing in', () => {
+    for (const command of ['git restore src/a.ts', 'git restore --staged --worktree api.py', 'git checkout -- api.py', 'git checkout HEAD -- api.py', 'git checkout api.py', 'git reset --hard', 'git reset --hard HEAD', 'git stash', 'git stash push -m wip', 'git clean -fd']) {
+      expect(bringsInCode(command)).toBe(false)
+    }
+  })
+
+  test('code from another branch, a commit, a stash or a remote is brought in', () => {
+    for (const command of ['git checkout main -- api.py', 'git checkout feature/x', 'git restore --source=main api.py', 'git restore -s HEAD~2 api.py', 'git switch main', 'git stash pop', 'git stash apply stash@{1}', 'git reset --hard HEAD~1', 'git pull', 'git merge main', 'git cherry-pick abc123', 'git revert abc123', 'cd app && git checkout main -- src/a.ts']) {
+      expect(bringsInCode(command)).toBe(true)
+    }
+  })
+
+  test('commands that are not tree rewrites bring nothing in', () => {
+    for (const command of ['git status', 'git diff main -- api.py', 'git log', "sed -i 's/a/b/' api.py"]) {
+      expect(bringsInCode(command)).toBe(false)
+    }
   })
 })

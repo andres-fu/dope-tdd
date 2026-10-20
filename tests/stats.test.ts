@@ -15,6 +15,7 @@ import {
   recordCatch,
   recordChange,
   recordConfigChange,
+  recordGitIn,
   recordCarriedRun,
   recordCarryWait,
   recordImporter,
@@ -695,5 +696,17 @@ describe('a pin corrected after red', () => {
     expect(s.pinsCorrected).toBe(0)
     expect(s.workarounds).toBe(1)
     expect(s.events.at(-1)).toMatchObject({ kind: 'test-changed' })
+  })
+})
+
+describe('code brought in by git', () => {
+  test('is logged per module with the command, and changes nothing else', () => {
+    const s = recordGitIn(INITIAL_STATS, ['api', 'utils/a'], 'git checkout main -- api.py src/utils/a.py', 5)
+    expect(s.events.map(e => [e.kind, e.module, e.detail])).toEqual([
+      ['git-in', 'api', 'git checkout main -- api.py src/utils/a.py'],
+      ['git-in', 'utils/a', 'git checkout main -- api.py src/utils/a.py'],
+    ])
+    // Only the log moves: the events and when the last one was.
+    expect({ ...s, events: [], lastEventMs: null }).toEqual({ ...INITIAL_STATS, events: [], lastEventMs: null })
   })
 })

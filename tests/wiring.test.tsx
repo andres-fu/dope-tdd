@@ -210,6 +210,19 @@ describe('bash bypass', () => {
     expect(status.text).not.toMatch(/brought in by git/)
   })
 
+  // Verified review A7 (2026-10-20): a git restore beside a script hid the script's writes; now they count.
+  test('a script beside a git restore still has its writes counted', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'python /tmp/fix.py; git restore README.md')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 1/)
+  })
+
   // Karl's trial (2026-10-19): code git writes from another branch, commit or stash is not the agent's edit, but it is
   // said on the record instead of going by unseen.
   test('code git brings in from another branch is not an edit, and is on the record', async ($, on) => {

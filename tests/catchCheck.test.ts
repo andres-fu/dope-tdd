@@ -59,6 +59,15 @@ describe('catchOutcome', () => {
     expect(catchOutcome({ stdout: '', stderr: '', exitCode: 0 })).toEqual({ kind: 'unverified', reason: 'no runner summary' })
   })
 
+  // Verified review D5 (2026-10-20): a check whose runner was missing said only "no runner summary"; the shell path
+  // already named the missing module, the check did not.
+  test('a runner that never started says why, as the shell reading does', () => {
+    expect(catchOutcome({ stdout: '', stderr: 'C:\\Python314\\python.exe: No module named pytest', exitCode: 1 })).toEqual({
+      kind: 'unverified',
+      reason: 'the runner did not start: No module named pytest',
+    })
+  })
+
   test('node --test crashing on its child process output is unverified, never caught, and says why (#26)', () => {
     // The crash names the file as one failed test: read as a red, it was a CAUGHT no assertion earned.
     expect(catchOutcome({ stdout: NODE_TEST_REAL_IPC_CRASH, stderr: '', exitCode: 1 }, 'test/sources/youtube.test.js')).toEqual({

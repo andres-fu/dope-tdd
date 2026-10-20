@@ -44,19 +44,25 @@ function nodeOnlyNested(survey: Survey): { stack: StackName; reason: string } | 
   if (nodeFiles.length === 0 || nested.length === 0) {
     return null
   }
+  // The other stack's code anywhere outside the nested packages, not only at the root itself: a FastAPI app keeps its
+  // code in app/ (verified review D4, 2026-10-20).
   const atRoot = Object.values(STACKS)
     .filter(stack => stack.name !== 'node')
-    .map(stack => ({ stack, count: survey.files.filter(file => !file.includes('/') && isCodeFileIn(stack, file)).length }))
-    .reduce((best, entry) => (entry.count > best.count ? entry : best), { stack: STACKS.node, count: 0 })
+    .map(stack => {
+      const files = survey.files.filter(file => !inNested(file) && isCodeFileIn(stack, file))
+      return { stack, count: files.length, flat: files.every(file => !file.includes('/')) }
+    })
+    .reduce((best, entry) => (entry.count > best.count ? entry : best), { stack: STACKS.node, count: 0, flat: true })
   if (atRoot.count === 0 || atRoot.count <= outside.length) {
     return null
   }
   const where = [...new Set(nodeFiles.filter(inNested).map(file => nested.find(dir => file.startsWith(`${dir}/`))))].join(', ')
+  const counted = `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} ${atRoot.flat ? 'at the root' : `outside ${where}`}`
   if (outside.length > 0) {
     const named = outside.slice(0, 3).join(', ') + (outside.length > 3 ? ', ...' : '')
-    return { stack: atRoot.stack.name, reason: `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} at the root against ${outside.length} node file${outside.length === 1 ? '' : 's'} outside ${where} (${named})` }
+    return { stack: atRoot.stack.name, reason: `${counted} against ${outside.length} node file${outside.length === 1 ? '' : 's'} outside ${where} (${named})` }
   }
-  return { stack: atRoot.stack.name, reason: `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} at the root; the node code sits only under ${where}` }
+  return { stack: atRoot.stack.name, reason: `${counted}; the node code sits only under ${where}` }
 }
 
 /** The stack a survey points at: a marker at the root first, then whichever stack owns most of the code files, then Node. */

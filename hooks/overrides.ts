@@ -55,16 +55,14 @@ export function checkRequest(request: OverrideRequest, limits: OverrideLimits): 
 }
 
 /**
- * Who decides, at the moment of asking. A person asking is the approver. A hotfix always passes, so the guard is never
- * in the way of recovery, and is debt until a test is written. An agent waits for a person, and with nobody there it
- * is denied: it stops and reports rather than approving itself.
+ * Who decides, at the moment of asking. A person asking is the approver. An agent waits for a person, and with nobody
+ * there it is denied: it stops and reports rather than approving itself. A hotfix waits too: it once passed by rule,
+ * so an agent approved itself, a pause of the whole guard included, by choosing the word (verified review A5,
+ * 2026-10-20). An agent's approval never counts as a person's. "hotfix rule" stays a Decider for older records.
  */
 export function decideAtRequest(request: OverrideRequest, attended: boolean): { status: OverrideStatus; decidedBy: Decider | null } {
   if (request.by === 'human') {
     return { status: 'approved', decidedBy: 'human' }
-  }
-  if (request.kind === 'hotfix') {
-    return { status: 'approved', decidedBy: 'hotfix rule' }
   }
   return attended ? { status: 'pending', decidedBy: null } : { status: 'denied', decidedBy: 'unattended' }
 }

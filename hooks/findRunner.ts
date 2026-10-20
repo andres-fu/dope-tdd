@@ -42,7 +42,18 @@ export async function findRunner(
       }
     }
   }
+  // The walk stops at the repository's top (the nearest folder with a .git), or at the root outside git: a monorepo
+  // hoists its runner to its top, but a program in a folder above the repository is nobody's to run (verified review
+  // A15, 2026-10-20: the walk had no bound).
+  let repoTop = root
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
+    if (await exists(`${dir}/.git`)) {
+      repoTop = dir
+      break
+    }
+  }
+  const topKey = pathKey(repoTop)
+  for (let dir: string | null = root; dir !== null; dir = pathKey(dir) === topKey ? null : parentDir(dir)) {
     for (const runner of candidates) {
       if (runner.markers.length === 0) {
         // No marker to find (dotnet, unittest): a program in the repo still wins over the one on PATH, such as a venv's python.

@@ -134,7 +134,7 @@ no dangling red. Before: blocked 1, a third file of duplicate tests, "also open:
 
 ## 2026-10-09 — The A/B launcher's first run, and what it caught
 
-`tools/pool/ab.mjs` ran the same slugify task in two worktrees at once (observe and enforce, Sonnet,
+`dope-tdd-pool/ab.mjs` ran the same slugify task in two worktrees at once (observe and enforce, Sonnet,
 under a minute each, $0.15 and $0.17 at list price) and wrote one ledger line per leg to
 `~/.dope-tdd/pool/ledger.jsonl`. Both legs: test-first 1/1, blocked 0, the same two files touched;
 enforce caught 1 on io. Two findings:
@@ -150,7 +150,7 @@ enforce caught 1 on io. Two findings:
 ## 2026-10-09 — A/B on both of Adam's repos: the same pattern twice
 
 Two real bugs found by scouts and checked by hand, each run observe vs enforce from the latest main
-(`tools/pool/ab.mjs --ref`), Sonnet, nothing committed:
+(`dope-tdd-pool/ab.mjs --ref`), Sonnet, nothing committed:
 - DungeonLobby, `RoomManager.updateToken` resizes a token past the map edge (addToken and moveToken
   refuse it). Observe: fixed, 86/86 green, never saw red 1. Enforce: red first, fixed, caught 1.
   $0.18 vs $0.20, 9 vs 10 turns.
@@ -198,7 +198,7 @@ real file for the length of a test run.
 
 ## 2026-10-10 — First open-source A/B: dapr-agents #885 and nanocoder #1689
 
-Bugs found by tools/pool/find-bugs.mjs, verified against the code by one agent (2 of 6 shortlisted were GO).
+Bugs found by dope-tdd-pool/find-bugs.mjs, verified against the code by one agent (2 of 6 shortlisted were GO).
 - dapr-agents (Python, uv): both legs fixed it and added tests; the enforce agent saw 3 of 4 new tests red
   first. Dope TDD read NONE of the runs: the real ones were `uv run --group test python -m pytest`, and the
   pytest pattern took no flags between `run` and the program; the "unread" runs were failed attempts

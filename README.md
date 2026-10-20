@@ -43,8 +43,9 @@ with what you see on each surface, is in `docs/testers.md`.
 `/dope-tdd:pin` is a skill that walks an agent through changing untested
 code: pin what it does today, prove the pins by breaking the code on
 purpose, then change it. The band says PROVEN when the proof is in. One break
-proves one behaviour, so in a git checkout Dope TDD then also makes a few small
-changes to the file in a throwaway copy and names any the pins did not notice.
+proves one behaviour, so in a git checkout with a Node runner Dope TDD then
+also makes a few small changes to the file in a throwaway copy and names any
+the pins did not notice.
 A restore that differs only in line endings (a Windows shell edit can rewrite
 CRLF as LF) still counts as the code being back.
 
@@ -55,9 +56,10 @@ paste into a pull request.
 
 There is no off switch. When test-first does not fit, the agent asks for an
 override with a reason (`mcp__dope-tdd__override_request`) and stops; you
-decide with `/tdd approve` or `/tdd deny <why>`, or the band's buttons. A
-hotfix always passes and stays debt until a test is written. With nobody
-there to approve, the agent is denied and reports instead. You can pause
+decide with `/tdd approve` or `/tdd deny <why>`, or the band's buttons. The
+agent never approves itself, a hotfix included: an approved hotfix stays
+debt until a test is written. With nobody there to approve, the agent is
+denied and reports instead. You can pause
 the guard yourself with `/tdd pause <minutes> <reason>` (at most two hours);
 it comes back on by itself, or with `/tdd resume`, and tells you what was
 edited meanwhile. `/tdd override end <module|pause>` ends an override.
@@ -75,8 +77,15 @@ From GitHub:
 
 ```bash
 claude plugin marketplace add andres-fu/dope-tdd
-claude plugin install dope-tdd@dope-tdd
+claude plugin install dope-tdd@dope-tdd --scope project
 ```
+
+We recommend `--scope project`, run inside the repository you want guarded.
+It turns Dope TDD on for that project only, in `.claude/settings.json`,
+which you commit so your team gets the same guard. Use `--scope local` to
+keep it to yourself in that one repository. The default, `--scope user`, turns
+it on in every project you open on this machine, and its memory (unlocks,
+session logs) then spans all of them.
 
 Or from a clone, which loads the folder in place so edits apply live:
 
@@ -115,6 +124,9 @@ project, which is gdUnit4's own rule. The project's root files say which it is
 ```
 
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
+One `dope-tdd.json` guards one stack: in a repository with a Python backend
+and a React frontend, pick the stack you want guarded and list the other
+half in `exempt` (`"exempt": ["frontend/**"]`).
 A folder whose tests sit differently from the rest names its own layout, with
 templates that start inside the folder:
 
@@ -139,7 +151,7 @@ UNPROVEN · not checked, and says why.
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
 | Node | Vitest, Jest, ava from `node_modules`; Node's built-in runner (`node --test <file>`) when a `test` script in `package.json` runs `node --test` | from real output (`node --test`: spec and TAP reporters) | `mirror`, `colocated`, `__tests__`, `flat` |
-| Python (experimental) | pytest, through the project's venv when there is one; Python's own `unittest` when the project shows no sign of pytest | from real output | `mirror`, `package`, `colocated`, `flat` |
+| Python (experimental) | pytest, through the project's venv when there is one, when a pytest config, a requirements file or Pipfile that lists pytest, or a test written for pytest says so; Python's own `unittest` otherwise | from real output | `mirror`, `package`, `colocated`, `flat` |
 | Godot 4 (experimental) | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
 | Java (experimental) | Maven, Gradle | provisional | `maven` |
 | .NET (experimental) | `dotnet test` | from real output | `dotnet` |
@@ -165,6 +177,20 @@ knows no language by name.
 through fixing a bug test-first, pinning behaviour before a refactor, and
 watching the guard stop a shortcut. It doubles as the plugin's live test
 fixture.
+
+Three things to ask Claude once it's installed, in your own project or in
+`playground/`:
+
+1. "Fix Bug 1 from BUGS.md." (`formatCents` prints `$-12.50` for a refund.)
+   Dope TDD refuses the fix until a test for it exists and has failed, then
+   proves the test catches the fix.
+2. "Make wrapLines readable without changing its behaviour. Pin the current
+   behaviour with a test first, and prove the test can fail before you
+   refactor." Claude uses `/dope-tdd:pin` to pin today's behaviour, proves
+   the pins, then refactors under them.
+3. "Show me where this session stands." Claude runs `/tdd` and reads back
+   the state: which modules are open, which tests are PROVEN or UNPROVEN, and
+   any workarounds on the record.
 
 ## How it decides
 
@@ -262,8 +288,9 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `pause`: `false` locks `/tdd pause` out for the repo; `{ "maxMinutes": 30 }`
   sets a shorter limit. The limit can only be tightened below two hours,
   and allowing longer pauses is recorded as a loosening.
-- `overrides`: `{ "approver": "model" }` gives the approver's role to a
-  reviewer model instead of you, for agents running on their own. It has
+- `overrides` (experimental): `{ "approver": "model" }` gives the approver's role to a
+  reviewer model instead of you, for agents running on their own. It is the
+  one thing Dope TDD sends off your machine (see What Dope TDD sends). It has
   no tools, sees the request as data and the module's hunks only, answers
   APPROVE, DENY or ESCALATE, and anything else, a failed call, or a repeat
   on the same module goes to you (or is denied when nobody is there).
@@ -301,23 +328,54 @@ receipt to one file on your machine, `~/.dope-tdd/sessions/<date>-<session>.json
 It never goes in the repository and never leaves your computer. Set
 `DOPE_TDD_LOG=off` to keep nothing.
 
+## What Dope TDD runs
+
+Dope TDD is a Claude Code mod. Like every plugin's hooks, the programs it
+starts run as you, **outside Claude Code's permission rules, PreToolUse hooks
+and sandbox** ([plugin security](https://code.claude.com/docs/en/plugins/security)):
+your allow and deny rules for Bash do not apply to them. This is what it
+starts, and when:
+
+| When | What it runs | Where |
+| --- | --- | --- |
+| A module's own test goes green, in `warn` or `enforce` (the catch check) | Node: the runner from your `node_modules` (Vitest, Jest, ava), or `node --test` with the flags your `package.json` test script passes (`--import`, `--require`, `--env-file`, ...), on that one test file | A throwaway git worktree in `.git/dope-tdd/wt` |
+| The same, on an experimental stack, only with `"catchCheck": true` | pytest or `unittest` through your `.venv` python, or `uv run` / `poetry run` / `pdm run` / `pipenv run` when a lockfile names one, else `python`; `mvnw`, `gradlew`, `mvn`, `gradle`; `dotnet test`; the Godot binary named in `dope-tdd.json` | Your project folder, with your change undone for one run |
+| A red run whose output was cut short, so not every failing test was named, in `warn` or `enforce` (Node; another stack only with `"catchCheck": true`) | The same one-file command, once, to read all the names | Your project folder |
+| Around shell commands, edits and checks | `git`: `diff`, `ls-files`, `status`, `rev-parse`, `worktree add`/`remove`, `update-ref`, `hash-object` | Your repository. `worktree add` runs with hooks off (`core.hooksPath` at a folder that does not exist), so none of your git hooks run |
+| At session start | `node -e` to delete its own session logs older than 30 days | `~/.dope-tdd/sessions/` |
+
+Every run it starts has `CI=1` set and stops after 60 seconds at most. Your
+runners can reach the network on their own: `uv run` may sync your
+environment, Maven and Gradle wrappers download, `dotnet test` restores
+packages. `claude plugin validate .` lists what the mod calls
+(`$.process.run`, `$.fs.write`, `$.model.complete`).
+
+For admins: Claude Code's [mods admin page](https://code.claude.com/docs/en/plugins/mods/admin)
+shows how to keep user mods from loading (`allowManagedModsOnly`) or to refuse
+a mod that calls `$.process.run`. Dope TDD calls it for the runs above.
+
+## What Dope TDD sends
+
+Nothing of its own: no network requests, no telemetry. The one exception is
+opt-in and experimental. With `"overrides": { "approver": "model" }`, each
+override request the agent makes goes to the model API through the session's
+own client, the same API Claude Code already talks to. It sends the request
+and its reason, earlier override reasons for that module, and up to 120 lines
+of the uncommitted diff of that module and its test. Lines that are only a
+comment are left out, but code lines and comments at the end of a code line go
+as they are.
+
 ## What Dope TDD stores
 
-Dope TDD sends nothing off your machine: no network requests, no telemetry.
-The one exception is opt-in: with `"overrides": { "approver": "model" }`, each
-override request the agent makes, and the uncommitted hunks of that one
-module and its test (comments removed), go to the model API through the
-session's own client, the same API Claude Code already talks to.
-It runs `git` and your own test command locally. Everything below lives under
-your user account.
+Everything below lives under your user account.
 
 To prove a test can fail, it reverts your change, reruns the test and puts the
 change back, so it holds a copy of the source file it is checking:
 
 | What | Where | Holds | Kept |
 |---|---|---|---|
-| Session state | Claude Code's plugin state, in memory | Before and after text of each file with an open change, counters, module and test names | Until the change is judged or the session ends |
-| Catch-check journal | Claude Code's plugin store | Before and after text of the file being checked, so an interrupted check can put it back | Removed when the check ends; one left behind is settled and removed at the next session start in that project, never from another |
+| Session state | Claude Code's plugin state, held for the session. Claude Code lets any installed plugin read another's state | Before and after text of each file with an open change, counters, module and test names | Until the change is judged or the session ends |
+| Catch-check journal | Claude Code's plugin store: a plain JSON file under `~/.claude/plugins/store/`. Only an in-place check writes one | Before and after text of the file being checked, so an interrupted check can put it back | Removed when the check ends; one left behind is settled and removed at the next session start in that project, never from another |
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |

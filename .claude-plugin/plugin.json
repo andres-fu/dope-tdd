@@ -8,6 +8,9 @@
   },
   "homepage": "https://github.com/andres-fu/dope-tdd",
   "repository": "https://github.com/andres-fu/dope-tdd",
+  "documentationUrl": "https://github.com/andres-fu/dope-tdd#readme",
+  "supportUrl": "https://github.com/andres-fu/dope-tdd/issues",
+  "privacyPolicyUrl": "https://github.com/andres-fu/dope-tdd#what-dope-tdd-sends",
   "license": "MIT",
   "keywords": ["tdd", "testing", "test-first", "vitest", "jest", "mod"],
   "types": "./types/index.d.ts"

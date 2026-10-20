@@ -31,8 +31,9 @@ export type GateVerdict =
   | { kind: 'go'; locked: boolean; spend: string | null; unwatched: boolean }
 
 export function gateWrite(input: GateInput): GateVerdict {
-  // The record is evidence of who approved what: only dope-tdd writes it, whatever the mode.
-  if (input.relativePath === OVERRIDES_FILE) {
+  // The record is evidence of who approved what: only dope-tdd writes it, whatever the mode. Any spelling of its name,
+  // since Windows and macOS file names ignore case (verified review A8).
+  if (input.relativePath.toLowerCase() === OVERRIDES_FILE.toLowerCase()) {
     return { kind: 'deny-record' }
   }
   if (input.policy === 'exempt') {

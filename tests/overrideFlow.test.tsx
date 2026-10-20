@@ -104,11 +104,14 @@ describe('the agent asks, a person decides', () => {
     expect(record(world).overrides[0]).toMatchObject({ status: 'denied', decidedBy: 'unattended' })
   })
 
-  test('a hotfix passes at once, is told to the person, and is debt until ended', async ($, on) => {
+  // Verified review A5 (2026-10-20): a hotfix no longer passes by rule; a person approves it like any request.
+  test('a hotfix waits for a person; once approved it lets the edit through and is debt until ended', async ($, on) => {
     const world = fakeEngine(on)
     const asked = await ask($, { kind: 'hotfix', reason: 'null check for the prod crash in #301, the test comes in the follow-up' })
-    expect(asked.result).toMatch(/approved/)
-    expect(world.toasts.join(' ')).toMatch(/hotfix/)
+    expect(asked.result).toMatch(/waiting for a person/)
+    expect(world.toasts.join(' ')).toMatch(/hotfix on calculateDuration|override needs you/)
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeDefined()
+    await tdd($, 'approve')
     expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeUndefined()
     expect((await runCommand($, 'tdd')).text).toMatch(/DEBT: no test yet/)
   })
@@ -213,6 +216,28 @@ describe("the record is only dope-tdd's to write, from the shell too", () => {
     expect(world.fileContents.get(RECORD)).toBe(before)
     expect(JSON.stringify(result)).toMatch(/put dope-tdd.overrides.json back/)
     expect((await runCommand($, 'tdd')).text).toMatch(/override record edited 1/)
+  })
+
+  // Verified review A6 (2026-10-20): any `git` segment switched the backstop off, so `node forge.js; git status`
+  // rewrote the record unnoticed. Only a command made of git alone may change it (a pull, a checkout, a merge).
+  test('a git segment beside another command does not switch the backstop off', async ($, on) => {
+    const world = fakeEngine(on)
+    await ask($, { kind: 'spike' })
+    const before = world.fileContents.get(RECORD)
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    await runBash($, 'node scripts/tidy.mjs; git status')
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe(before)
+    expect((await runCommand($, 'tdd')).text).toMatch(/override record edited 1/)
+  })
+
+  test('a git command alone may change the record: a pull brings in other people\'s overrides', async ($, on) => {
+    const world = fakeEngine(on)
+    await ask($, { kind: 'spike' })
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    await runBash($, 'git pull')
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe('{"overrides":[]}')
   })
 
   test('a record a script created from nothing is emptied, so it approves nothing', async ($, on) => {

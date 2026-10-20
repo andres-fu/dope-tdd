@@ -1,7 +1,7 @@
 import type { CatchOutcome } from '../types'
 import { failedFilesIn, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
 import type { RunnerKind, RunnerOptions } from './runners.ts'
-import { stripAnsi } from './runOutcome.ts'
+import { runnerDidNotStart, stripAnsi } from './runOutcome.ts'
 
 export type { RunnerKind, RunnerOptions } from './runners.ts'
 export type RunResult = { stdout: string; stderr: string; exitCode: number }
@@ -83,7 +83,9 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string, kno
     return { kind: 'unverified', reason: 'no tests ran' }
   }
   if (outcome === 'unknown') {
-    return { kind: 'unverified', reason: 'no runner summary' }
+    // Named when the output says so, as the shell reading does (verified review D5, 2026-10-20).
+    const notStarted = runnerDidNotStart(output)
+    return { kind: 'unverified', reason: notStarted === null ? 'no runner summary' : `the runner did not start: ${notStarted}` }
   }
   // Only tests that were failing before the change failed: nothing that checks this change went red.
   if (outcome === 'fail' && known.length > 0) {

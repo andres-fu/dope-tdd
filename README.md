@@ -124,6 +124,9 @@ project, which is gdUnit4's own rule. The project's root files say which it is
 ```
 
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
+One `dope-tdd.json` guards one stack: in a repository with a Python backend
+and a React frontend, pick the stack you want guarded and list the other
+half in `exempt` (`"exempt": ["frontend/**"]`).
 A folder whose tests sit differently from the rest names its own layout, with
 templates that start inside the folder:
 

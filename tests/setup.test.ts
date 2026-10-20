@@ -63,6 +63,15 @@ describe('inferLayout', () => {
     expect(inferred.roots).toEqual([])
     // With #131's layout pick, setup suggests all of Karl's hand-written config.
     expect(suggestedConfig(DEFAULT_CONFIG, inferred)).toEqual({ stack: 'python', layout: 'package' })
+    // Verified review D4 (2026-10-20): only Python files at the root itself were counted, so the common FastAPI layout,
+    // app/main.py and app/routers/, still read as node beside a frontend and a root package.json.
+    const fastapi = inferLayout({
+      files: ['app/main.py', 'app/routers/items.py', 'vite.config.ts', 'frontend/src/App.tsx', 'frontend/src/main.tsx'],
+      packageDirs: ['', 'frontend'],
+      rootEntries: ['package.json', 'pyproject.toml', 'app', 'frontend', 'vite.config.ts'],
+    })
+    expect(fastapi.stack).toBe('python')
+    expect(fastapi.stackReason).toBe('2 python files outside frontend against 1 node file outside frontend (vite.config.ts)')
     // Karl's round 3: one stray Sidebar.jsx at the root no longer outvotes the Python there; the reason says it was weighed.
     const stray = inferLayout({
       files: ['api.py', 'axiom_supabase.py', 'db.py', 'Sidebar.jsx', 'klq-frontend/src/App.tsx', 'klq-frontend/src/Sidebar.jsx'],

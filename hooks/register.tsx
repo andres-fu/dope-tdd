@@ -41,7 +41,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1840,6 +1840,7 @@ async function checkShell(
         ? await importedModules($, root, config, named)
         : [...new Set((await Promise.all(namedOther.map(file => importedModules($, root, config, file)))).flat())]
     const failed = outcome === 'fail' ? failedTestPaths(root, runLocation, failedFilesIn(output)) : []
+    const errorsOnly = outcome === 'fail' && failedOnlyOnErrors(output)
     const importsOf: Record<string, string[]> = {}
     const ownTest: Record<string, boolean> = {}
     for (const testFile of outcome === 'fail' ? failingTestFiles(root, config, failed, named) : []) {
@@ -1850,7 +1851,7 @@ async function checkShell(
         }
       }
     }
-    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther }
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther, errorsOnly }
     let plan = null as RunPlan | null
     afterRun = await change($, s => {
       plan = applyRun(s, facts, root, config, nowMs)
@@ -1889,7 +1890,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, errorsOnly: outcome === 'fail' && failedOnlyOnErrors(output), ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
 
   const reminders = shellReminders(
     {

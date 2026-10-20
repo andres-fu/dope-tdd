@@ -807,6 +807,32 @@ export function failedTestsIn(output: string): string[] {
   return unique(FAILED_TEST_NAMES.flatMap(pattern => [...text.matchAll(pattern)].flatMap(match => (match[1] === undefined ? [] : [match[1].trim()]))))
 }
 
+// The shape of a red that never reached an assertion, by runner (tests/fixtures/runnerOutputs.ts has each):
+const ERRORS_ONLY: readonly ((text: string) => boolean)[] = [
+  // pytest: a file that would not collect, or a summary of errors with no failed test in it
+  text => /\berrors? during collection\b/.test(text) || (/^=*\s*(?:\d+ \w+, )*\d+ errors? in [\d.]+s\b/m.test(text) && !/\b\d+ failed\b/.test(text)),
+  // unittest: `FAILED (errors=1)` with no failures= count
+  text => /^FAILED \((?![^)]*failures=)[^)]*errors=\d+/m.test(text),
+  // node --test: every entry under `failing tests:` is a whole file, which is how a file that would not load fails
+  text => {
+    const block = text.split(/✖ failing tests:/)[1]
+    const entries = block === undefined ? [] : [...block.matchAll(/^✖ (.+?) \([\d.]+m?s\)\s*$/gm)].map(match => match[1] ?? '')
+    return entries.length > 0 && entries.every(name => /\.[cm]?[jt]sx?$/.test(name))
+  },
+  // Maven: the build stopped at compiling, before any test ran
+  text => /\bCOMPILATION ERROR\b/.test(text) && !/\bTests run:/.test(text),
+]
+
+/**
+ * A red where nothing failed on what a test checks: an import that broke, a file that would not collect, load or compile.
+ * False for a pass, for any failed assertion, and for output it cannot read. A pin's first red proves the pin only
+ * when a test failed on an assertion (2026-10-19, after Karl's trial: a flaky or broken environment proved pins too).
+ */
+export function failedOnlyOnErrors(output: string): boolean {
+  const text = withoutTaskPrefixes(stripAnsi(output))
+  return ERRORS_ONLY.some(shape => shape(text))
+}
+
 export function failedFilesIn(output: string): string[] {
   return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }

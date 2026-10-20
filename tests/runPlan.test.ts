@@ -241,3 +241,14 @@ describe('a run of files outside the layout is not the current module\'s', () =>
     expect(plan.state.phase).toBe('red')
   })
 })
+
+// A pin's first red proves it only when a test failed on an assertion (2026-10-19): one of errors only leaves it unproven.
+describe('a red of errors only', () => {
+  test('is red, but leaves a pin that went green first unproven', () => {
+    const pinned: TddStats = { ...workingOn('utils/a', A_TEST), unproven: ['utils/a'], neverSawRed: 1 }
+    const crashed = run(pinned, { outcome: 'fail', named: A_TEST, failed: ['tests/utils/a.test.ts'], errorsOnly: true })
+    expect(crashed.state.phase).toBe('red')
+    expect(crashed.state.unproven).toEqual(['utils/a'])
+    expect(run(pinned, { outcome: 'fail', named: A_TEST, failed: ['tests/utils/a.test.ts'] }).state.unproven).toEqual([])
+  })
+})

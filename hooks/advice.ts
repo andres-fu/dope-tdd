@@ -17,6 +17,8 @@ export type RunContext = {
   cycleCompleted?: boolean
   /** The open module whose own test this run was, when the band stayed on the current one (runPlan.ts, ownTestOf). */
   ownTestOf?: string
+  /** The red never reached an assertion (runners.ts, failedOnlyOnErrors). */
+  errorsOnly?: boolean
 }
 
 function defaultSource(module: string): string {
@@ -165,6 +167,8 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   const line = red
     ? say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
     : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
+  const errorsNote = red && context.errorsOnly === true && before.unproven.includes(id) ? say('note.errorsOnly', { module }) : ''
   const other = context.ownTestOf
-  return line === null || other === undefined ? line : line + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
+  const said = line === null ? null : line + errorsNote
+  return said === null || other === undefined ? said : said + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
 }

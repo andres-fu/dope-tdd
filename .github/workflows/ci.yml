@@ -1,9 +1,8 @@
 # The two checks the mods docs name, on both platforms the plugin claims:
 # `claude plugin validate` reads the manifest and the hooks module the way the
 # engine will; `claude plugin test` runs tests/ with no session, sign-in or
-# network. Validation is not --strict because the manifest omits `version` on
-# purpose (git-hosted marketplace: the commit is the version, so every push
-# reaches testers as an update); strict mode would fail on that alone.
+# network. Validation is --strict: the manifest sets `version` (since 0.2.1), so
+# testers get an update only when a release bumps it.
 name: ci
 
 # Cost (Actions minutes are billed on a private repository; macOS counts 10x, Windows 2x):
@@ -38,7 +37,7 @@ jobs:
       - name: Claude Code version
         run: claude --version
       - name: Validate the plugin the way the engine reads it
-        run: claude plugin validate .
+        run: claude plugin validate --strict .
       - name: Run the plugin's tests
         shell: bash
         run: claude plugin test . | tee test-output.txt

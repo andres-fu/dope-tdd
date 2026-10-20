@@ -4,7 +4,7 @@ import { OVERRIDE_HINT } from '../hooks/refusals'
 
 import { ROOT, editAt, fakeEngine, runBash, runCommand, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
-import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
+import { DOTNET_FAIL, DOTNET_PASS, GDUNIT_FAIL, GDUNIT_PASS, NODE_TEST_REAL_FAIL, NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_PASS, PYTEST_FAIL, PYTEST_PASS, UNITTEST_FAIL, UNITTEST_PASS } from './fixtures/runnerOutputs'
 
 /** The project's own files at the root, which is how the guard learns the stack without a config file. */
 function godotProject(world: FakeWorld) {
@@ -132,6 +132,37 @@ describe('a Python project with pytest, no config file', () => {
     expect(world.gitCalls.some(argv => argv.includes('pytest'))).toBe(false)
     expect(green.context?.join(' ')).toMatch(/pytest is experimental, so its check would undo your change on disk; "catchCheck": true in dope-tdd.json allows it/)
     expect(status.text).toMatch(/not checked 1/)
+  })
+})
+
+// 2026-10-19: a Python project with no sign of pytest, tested with the standard library's unittest.
+describe('a Python project with unittest, no pytest', () => {
+  test('a dotted-module run goes red then green, and the venv python runs the catch check through unittest', async ($, on) => {
+    const world = fakeEngine(on)
+    world.hasVitest = false
+    world.existingFiles.add(`${ROOT}/requirements.txt`)
+    world.existingFiles.add(`${ROOT}/.venv/Scripts/python.exe`)
+    world.fileContents.set(`${ROOT}/src/pkg/calc.py`, 'def add(a, b):\n    return a + b\n')
+    allowInPlaceCheck(world)
+    const ownFailure = UNITTEST_FAIL.replace(/C:\\work\\utfix\\tests\\test_calc\.py/g, `${ROOT}/tests/pkg/test_calc.py`)
+
+    await writeAt($, 'tests/pkg/test_calc.py', 'import unittest\nfrom pkg.calc import add\n\nclass CalcTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 2), 4)\n')
+    world.bashText = ownFailure
+    await runBash($, 'python -m unittest tests.pkg.test_calc')
+    const red = await runCommand($, 'tdd')
+    const allowed = await editAt($, 'src/pkg/calc.py')
+    world.bashText = UNITTEST_PASS
+    world.catchRun = { text: ownFailure, exitCode: 1 }
+    await runBash($, 'python -m unittest tests.pkg.test_calc')
+    const green = await runCommand($, 'tdd')
+
+    expect(red.text).toMatch(/phase: RED/)
+    expect(red.text).toMatch(/module: pkg\/calc/)
+    expect(allowed.deny).toBeUndefined()
+    const check = world.gitCalls.find(argv => argv.includes('unittest'))
+    expect(check?.slice(0, 3)).toEqual([`${ROOT}/.venv/Scripts/python.exe`, '-m', 'unittest'])
+    expect(check?.slice(-1)).toEqual(['tests/pkg/test_calc.py'])
+    expect(green.text).toMatch(/proven 1/)
   })
 })
 

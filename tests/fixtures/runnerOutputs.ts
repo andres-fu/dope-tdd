@@ -105,6 +105,103 @@ FAILED tests/test_other.py::test_add_wrong - assert 3 == 4
 ========================= 1 failed, 2 passed in 0.12s =========================
 `
 
+// --- unittest on Python 3.14.2, Windows, 2026-10-19 (real; the scratch folder renamed C:\work\utfix). Its report goes to
+// stderr. `python -m unittest tests/test_calc.py`, and the same pass through `discover -s tests -t .`.
+export const UNITTEST_PASS = String.raw`..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+`
+
+// `python -m unittest -v tests.test_calc` (real).
+export const UNITTEST_PASS_VERBOSE = String.raw`test_add (tests.test_calc.CalcTest.test_add) ... ok
+test_add_negative (tests.test_calc.CalcTest.test_add_negative) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+`
+
+// `python -m unittest tests/test_calc.py` with the code broken: two failing assertions (real).
+export const UNITTEST_FAIL = String.raw`FF
+======================================================================
+FAIL: test_add (tests.test_calc.CalcTest.test_add)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\work\utfix\tests\test_calc.py", line 6, in test_add
+    self.assertEqual(add(2, 2), 4)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: 0 != 4
+
+======================================================================
+FAIL: test_add_negative (tests.test_calc.CalcTest.test_add_negative)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\work\utfix\tests\test_calc.py", line 9, in test_add_negative
+    self.assertEqual(add(-1, -1), -2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: 0 != -2
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.003s
+
+FAILED (failures=2)
+`
+
+// A test that raises, beside a skipped one (real).
+export const UNITTEST_ERROR_SKIP = String.raw`Es
+======================================================================
+ERROR: test_boom (tests.test_err.E.test_boom)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\work\utfix\tests\test_err.py", line 5, in test_boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (errors=1, skipped=1)
+`
+
+// A test module that fails to import: unittest reports a _FailedTest, and the loader's own frame comes first (real).
+export const UNITTEST_IMPORT_ERROR = String.raw`E
+======================================================================
+ERROR: test_broken (unittest.loader._FailedTest.test_broken)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_broken
+Traceback (most recent call last):
+  File "C:\Python314\Lib\unittest\loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+  File "C:\work\utfix\tests\test_broken.py", line 1, in <module>
+    import nosuchmodule
+ModuleNotFoundError: No module named 'nosuchmodule'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)
+`
+
+// An empty test file; exit code 5 (real).
+export const UNITTEST_NONE = String.raw`
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+NO TESTS RAN
+`
+
+// Every test skipped: OK, but nothing ran that could fail (real).
+export const UNITTEST_SKIP_ONLY = String.raw`s
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK (skipped=1)
+`
+
 // --- gdUnit4: PROVISIONAL, reconstructed from GdUnitConsoleTestReporter.gd (master, 2026-10-08): the per-test status
 // lines, the per-suite "Statistics:" line, then "Overall Summary:", "Executed test suites/cases" and the time.
 export const GDUNIT_PASS = String.raw`--------------------------------------------------------------------------------------------------

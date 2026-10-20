@@ -139,7 +139,7 @@ UNPROVEN · not checked, and says why.
 | Stack | Runner for the catch check | Summary reader | Layout presets |
 | --- | --- | --- | --- |
 | Node | Vitest, Jest, ava from `node_modules`; Node's built-in runner (`node --test <file>`) when a `test` script in `package.json` runs `node --test` | from real output (`node --test`: spec and TAP reporters) | `mirror`, `colocated`, `__tests__`, `flat` |
-| Python (experimental) | pytest, through the project's venv when there is one | from real output | `mirror`, `package`, `colocated`, `flat` |
+| Python (experimental) | pytest, through the project's venv when there is one; Python's own `unittest` when the project shows no sign of pytest | from real output | `mirror`, `package`, `colocated`, `flat` |
 | Godot 4 (experimental) | gdUnit4 for GDScript, headless, on `godot` in `dope-tdd.json`, else `GODOT_BIN`, else PATH (reader provisional); `dotnet test` for C# (read from a real Roadhouse run) | mixed | `godot`, `godot-src`, `godot-pascal`, `godot-flat`, `godot-csharp` |
 | Java (experimental) | Maven, Gradle | provisional | `maven` |
 | .NET (experimental) | `dotnet test` | from real output | `dotnet` |
@@ -256,7 +256,7 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `catchCheck`: `false` turns the catch check off, for a repo whose dev
   server, `tsc --watch` or test watcher would rebuild on every revert. A
   green then stops at GREEN; turning it off is recorded as a loosening.
-  `true` also lets an experimental runner (pytest, gdUnit4, Maven, Gradle,
+  `true` also lets an experimental runner (pytest, unittest, gdUnit4, Maven, Gradle,
   `dotnet test`) check in place, as described next.
 - `pause`: `false` locks `/tdd pause` out for the repo; `{ "maxMinutes": 30 }`
   sets a shorter limit. The limit can only be tightened below two hours,

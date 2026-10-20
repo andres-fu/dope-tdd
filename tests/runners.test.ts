@@ -38,7 +38,59 @@ import {
   PYTEST_NONE,
   PYTEST_PASS,
   PYTEST_PASS_QUIET,
+  UNITTEST_ERROR_SKIP,
+  UNITTEST_FAIL,
+  UNITTEST_IMPORT_ERROR,
+  UNITTEST_NONE,
+  UNITTEST_PASS,
+  UNITTEST_PASS_VERBOSE,
+  UNITTEST_SKIP_ONLY,
 } from './fixtures/runnerOutputs'
+
+// Python's own unittest (2026-10-19): a Python project with few tests often has no pytest, and its runs went unseen.
+describe('unittest, read from real output (Python 3.14)', () => {
+  test('its runs are test runs: a file, a dotted module, discover, a venv python, a launcher', () => {
+    expect(isTestRun('python -m unittest tests/test_calc.py')).toBe(true)
+    expect(isTestRun('python3 -m unittest -v tests.test_calc')).toBe(true)
+    expect(isTestRun('py -m unittest discover -s tests -t .')).toBe(true)
+    expect(isTestRun('.venv/Scripts/python.exe -m unittest')).toBe(true)
+    expect(isTestRun('.venv/bin/python -m unittest tests.test_calc.CalcTest.test_add')).toBe(true)
+    expect(isTestRun('uv run python -m unittest')).toBe(true)
+  })
+
+  test('a mention, or another module named like it, is not a run', () => {
+    expect(isTestRun('pip install unittest-xml-reporting')).toBe(false)
+    expect(isTestRun('python -m unittestx')).toBe(false)
+    expect(isTestRun('grep -r "python -m unittest" docs')).toBe(false)
+  })
+
+  test('OK is green, verbose or not; FAILED is red, for failures, errors or a module that failed to import', () => {
+    expect(readRun(UNITTEST_PASS)).toBe('pass')
+    expect(readRun(UNITTEST_PASS_VERBOSE)).toBe('pass')
+    expect(readRun(UNITTEST_FAIL)).toBe('fail')
+    expect(readRun(UNITTEST_ERROR_SKIP)).toBe('fail')
+    expect(readRun(UNITTEST_IMPORT_ERROR)).toBe('fail')
+  })
+
+  test('no tests ran, or only skips, is no run', () => {
+    expect(readRun(UNITTEST_NONE)).toBe('none')
+    expect(readRun(UNITTEST_SKIP_ONLY)).toBe('none')
+  })
+
+  test('names the failed test files from the traceback, not the loader, with forward slashes', () => {
+    expect(failedFilesIn(UNITTEST_FAIL)).toEqual(['C:/work/utfix/tests/test_calc.py'])
+    expect(failedFilesIn(UNITTEST_ERROR_SKIP)).toEqual(['C:/work/utfix/tests/test_err.py'])
+    expect(failedFilesIn(UNITTEST_IMPORT_ERROR)).toEqual(['C:/work/utfix/tests/test_broken.py'])
+    expect(failedCountIn(UNITTEST_FAIL)).toBe(2)
+  })
+
+  test('the test file a command names: a path, or a dotted module turned into one', () => {
+    expect(namedTestFile('python -m unittest tests/test_calc.py', 'python')).toBe('tests/test_calc.py')
+    expect(namedTestFile('python -m unittest tests.test_calc', 'python')).toBe('tests/test_calc.py')
+    expect(namedTestFile('python -m unittest tests.test_calc.CalcTest.test_add', 'python')).toBe('tests/test_calc.py')
+    expect(namedTestFile('python -m unittest discover -s tests', 'python')).toBeNull()
+  })
+})
 
 describe('pytest, read from real output', () => {
   test('a pass, quiet or not', () => {
@@ -200,6 +252,18 @@ describe('the test file a command names, by the stack', () => {
     expect(namedTestFile('mvn -Dtest=FooTest test', 'java')).toBe(null)
     expect(namedTestFile('npx vitest run tests/a.test.ts', 'node')).toBe('tests/a.test.ts')
     expect(namedTestFile('npx vitest run', 'node')).toBe(null)
+  })
+})
+
+describe('the command that runs one unittest file (2026-10-19)', () => {
+  test("unittest runs the file through the venv python when one was found, and a reviewer's receipt says the same", () => {
+    expect(runnerArgv('C:/work', 'unittest', 'tests/test_calc.py', 'C:/work/.venv/Scripts/python.exe')).toEqual([
+      'C:/work/.venv/Scripts/python.exe',
+      '-m',
+      'unittest',
+      'tests/test_calc.py',
+    ])
+    expect(runnerNamed('unittest').describe('tests/test_calc.py')).toBe('python -m unittest tests/test_calc.py')
   })
 })
 

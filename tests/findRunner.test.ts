@@ -10,7 +10,29 @@ function disk(files: Record<string, string>) {
   }
 }
 
-const NODE_TEST_SCRIPT = JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } })
+// Python's own unittest (2026-10-19): the catch check's runner for a project with no sign of pytest.
+describe('Python: pytest where it is set up, else unittest', () => {
+  test('no pytest marker: unittest, through the python on PATH', async () => {
+    const { exists, read } = disk({ 'C:/calc/pkg/calc.py': '' })
+    expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({ kind: 'unittest', root: 'C:/calc', tool: 'python' })
+  })
+
+  test("no pytest marker but a venv at the root: unittest through the venv's python", async () => {
+    const { exists, read } = disk({ 'C:/calc/.venv/Scripts/python.exe': '' })
+    expect(await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read)).toEqual({
+      kind: 'unittest',
+      root: 'C:/calc',
+      tool: 'C:/calc/.venv/Scripts/python.exe',
+    })
+  })
+
+  test('a pytest marker still means pytest', async () => {
+    const { exists, read } = disk({ 'C:/calc/pyproject.toml': '' })
+    expect((await findRunner('C:/calc', 'python', 'C:/calc/tests/test_calc.py', exists, read))?.kind).toBe('pytest')
+  })
+})
+
+const NODE_TEST_SCRIPT =JSON.stringify({ scripts: { test: 'node --test "test/**/*.test.js"' } })
 
 describe("Node's built-in runner, found through the package's test script", () => {
   test('a package whose test script runs node --test runs its tests through node on PATH', async () => {

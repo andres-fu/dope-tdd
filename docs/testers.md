@@ -133,7 +133,7 @@ itself.
   or a linked worktree) and never touch your files, except with more than 300
   changed files, or when the test is not green in the copy: then they check on
   disk the same way.
-- Godot, Java and .NET summary readers are provisional: they were written
+- The gdUnit4 (Godot), Maven and Gradle summary readers are provisional (the .NET one is read from real runs): they were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most
   valuable thing you can send. A run the reader cannot read shows as unread,

@@ -152,6 +152,12 @@ describe('writesFileNamed: any write to one named file, whatever its extension (
     }
   })
 
+  // Verified review A8 (2026-10-20): Windows and macOS file names ignore case, so another spelling is the same file.
+  test('another spelling of its name is the same file', () => {
+    expect(writesFileNamed(`echo '{}' > DOPE-TDD.Overrides.JSON`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path Dope-Tdd.Overrides.Json -Value '{}'`, RECORD)).toBe(true)
+  })
+
   test('an in-place sed, a PowerShell write or a script write that names it', () => {
     expect(writesFileNamed(`sed -i 's/denied/approved/' ${RECORD}`, RECORD)).toBe(true)
     expect(writesFileNamed(`Set-Content -Path ${RECORD} -Value '{}'`, RECORD)).toBe(true)

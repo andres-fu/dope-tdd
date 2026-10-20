@@ -39,6 +39,16 @@ export function legacyUnlockKey(root: string): string {
   return `unlocks:${root}`
 }
 
+/**
+ * The unlock keys in the store that hold no fresh unlock, to delete: a folder that no longer exists, or an old spelling
+ * of a root, would otherwise stay forever (verified review B4, 2026-10-20: 36 keys on one machine, 17 for gone folders).
+ */
+export function staleUnlockKeys(store: Readonly<Record<string, unknown>>, nowMs: number): string[] {
+  return Object.entries(store)
+    .filter(([key, value]) => key.startsWith('unlocks:') && Object.keys(freshUnlocks(value, nowMs)).length === 0)
+    .map(([key]) => key)
+}
+
 export function freshUnlocks(stored: unknown, nowMs: number): Record<string, StoredUnlock> {
   if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
     return {}

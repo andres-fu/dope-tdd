@@ -36,7 +36,7 @@ import {
   unreadRunAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { bringsInCode, changedPaths, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
@@ -88,7 +88,7 @@ import {
   togglePause,
 } from './stats.ts'
 import { formatGlossary, formatStatus } from './summary.ts'
-import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import type { LockedFacts } from './refusals.ts'
@@ -130,8 +130,6 @@ const savedAtom = atom({ plugin: 'dope-tdd', key: 'saved' } as const, { module: 
 const attended = atom({ plugin: 'dope-tdd', key: 'attended' } as const, true)
 const OVERRIDE_TOOL = /^mcp__dope-tdd__override_request$/
 const RECORD_DENY = `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an override with mcp__dope-tdd__override_request; a person decides it with /tdd approve or /tdd deny.`
-// Git may change the record: a pull, a checkout or a merge brings in other people's overrides.
-const RUNS_GIT = /(?:^|[;&|(]\s*)git\s/
 /** Which dope-tdd is running (build.ts): read once at session start, shown first in /tdd and kept in the session log. */
 const buildAtom = atom({ plugin: 'dope-tdd', key: 'build' } as const, '')
 /**
@@ -844,6 +842,15 @@ function listed(answer: { exitCode: number; stdout: string } | null): string[] |
  * a watcher or a parallel agent never sees a revert. The test must first pass there as the code stands; anything the
  * worktree cannot reproduce returns null, and the check runs in place instead. The worktree is always removed.
  */
+/**
+ * The test file's content as part of a baseline's key: a green baseline once stayed trusted after the test changed,
+ * as it was kept per module and test path only (verified review D9, 2026-10-20).
+ */
+async function testFingerprint($: EngineInterface, testPath: string): Promise<string> {
+  const text = await readWhole($, testPath)
+  return text === null ? 'missing' : contentHash(text)
+}
+
 async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
   const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
   const gitDir = await gitDirOf($, root)
@@ -894,7 +901,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     const cwd = runIn === root ? wt : `${wt}/${relativePath(root, runIn)}`
     const budget = timeBudgetMs(greenRunMs)
     // The test must pass in the worktree as the code stands, or the worktree is not the user's project.
-    const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+    const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}|${await testFingerprint($, `${runIn}/${relativeTest}`)}`
     if (check.fresh === true || !baselined.has(baselineKey)) {
       await $.fs.write(inTree, after)
       let base: CatchOutcome
@@ -1110,7 +1117,7 @@ async function checkAgainst(
 
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
   // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.
-  const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+  const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}|${await testFingerprint($, testPath)}`
   if (fresh || !baselined.has(baselineKey)) {
     let base: CatchOutcome
     try {
@@ -1741,9 +1748,12 @@ async function checkShell(
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
-  const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
+  // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
+  // does not hide what the script wrote (verified review A7).
+  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment))
+  const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (before !== null && after !== null && bringsInCode(command)) {
+  if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
     const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       const line = command.trim().split(/\r?\n/)[0] ?? ''
@@ -2045,12 +2055,35 @@ async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
 }
 
 /** What a session starts from: an interrupted check repaired, the unlocks remembered in the store, the config read. */
+/** The store's layout version, so a later release can migrate what it finds instead of guessing (verified review E2). */
+const STORE_VERSION = 1
+
+/**
+ * At session start: unlock keys that hold nothing fresh are deleted, a folder long gone or an old spelling of a root
+ * (verified review B4, 2026-10-20), and the store says its layout version. Best effort: never fails a session start.
+ */
+async function tidyStore($: EngineInterface, nowMs: number): Promise<void> {
+  try {
+    const keys = (await $.store.keys()).filter(key => key.startsWith('unlocks:'))
+    const entries = Object.fromEntries(await Promise.all(keys.map(async key => [key, await $.store.get(key)] as const)))
+    for (const key of staleUnlockKeys(entries, nowMs)) {
+      await $.store.delete(key)
+    }
+    if ((await $.store.get('store-version')) !== STORE_VERSION) {
+      await $.store.set('store-version', STORE_VERSION)
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not tidy the plugin store: ${String(error)}`)
+  }
+}
+
 async function seedFromStore($: EngineInterface): Promise<void> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   await ensureRepaired($, root, nowMs)
   await reportJournalsElsewhere($, root, nowMs)
   await pruneOldFiles($, nowMs)
+  await tidyStore($, nowMs)
   await seedRememberedUnlocks($)
   await releaseStaleCurrent($, root, await loadConfig($, root))
 }
@@ -2217,7 +2250,9 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
  * forged record approves nothing.
  */
 async function keepRecord($: EngineInterface, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
-  if (RUNS_GIT.test(command)) {
+  // Git may change the record (a pull, a checkout or a merge brings in other people's overrides), but only a command
+  // made of git alone: a git segment beside a script proves nothing about what the script wrote (verified review A6).
+  if (isGitOnly(command)) {
     return run()
   }
   const root = await $.session.root()

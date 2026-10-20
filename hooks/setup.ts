@@ -39,17 +39,23 @@ function nodeOnlyNested(survey: Survey): { stack: StackName; reason: string } | 
   const nested = survey.packageDirs.filter(dir => dir !== '')
   const nodeFiles = survey.files.filter(file => isCodeFileIn(STACKS.node, file))
   const inNested = (file: string) => nested.some(dir => file.startsWith(`${dir}/`))
-  if (nodeFiles.length === 0 || !nodeFiles.every(inNested)) {
+  // Node code outside the nested packages (a stray Sidebar.jsx, a config file) is weighed, not a veto (Karl, round 3).
+  const outside = nodeFiles.filter(file => !inNested(file))
+  if (nodeFiles.length === 0 || nested.length === 0) {
     return null
   }
   const atRoot = Object.values(STACKS)
     .filter(stack => stack.name !== 'node')
     .map(stack => ({ stack, count: survey.files.filter(file => !file.includes('/') && isCodeFileIn(stack, file)).length }))
     .reduce((best, entry) => (entry.count > best.count ? entry : best), { stack: STACKS.node, count: 0 })
-  if (atRoot.count === 0) {
+  if (atRoot.count === 0 || atRoot.count <= outside.length) {
     return null
   }
-  const where = [...new Set(nodeFiles.map(file => nested.find(dir => file.startsWith(`${dir}/`))))].join(', ')
+  const where = [...new Set(nodeFiles.filter(inNested).map(file => nested.find(dir => file.startsWith(`${dir}/`))))].join(', ')
+  if (outside.length > 0) {
+    const named = outside.slice(0, 3).join(', ') + (outside.length > 3 ? ', ...' : '')
+    return { stack: atRoot.stack.name, reason: `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} at the root against ${outside.length} node file${outside.length === 1 ? '' : 's'} outside ${where} (${named})` }
+  }
   return { stack: atRoot.stack.name, reason: `${atRoot.count} ${atRoot.stack.name} file${atRoot.count === 1 ? '' : 's'} at the root; the node code sits only under ${where}` }
 }
 

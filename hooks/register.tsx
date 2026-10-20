@@ -87,7 +87,7 @@ import {
   togglePause,
 } from './stats.ts'
 import { formatGlossary, formatStatus } from './summary.ts'
-import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import type { LockedFacts } from './refusals.ts'
@@ -843,6 +843,15 @@ function listed(answer: { exitCode: number; stdout: string } | null): string[] |
  * a watcher or a parallel agent never sees a revert. The test must first pass there as the code stands; anything the
  * worktree cannot reproduce returns null, and the check runs in place instead. The worktree is always removed.
  */
+/**
+ * The test file's content as part of a baseline's key: a green baseline once stayed trusted after the test changed,
+ * as it was kept per module and test path only (verified review D9, 2026-10-20).
+ */
+async function testFingerprint($: EngineInterface, testPath: string): Promise<string> {
+  const text = await readWhole($, testPath)
+  return text === null ? 'missing' : contentHash(text)
+}
+
 async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
   const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
   const gitDir = await gitDirOf($, root)
@@ -893,7 +902,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     const cwd = runIn === root ? wt : `${wt}/${relativePath(root, runIn)}`
     const budget = timeBudgetMs(greenRunMs)
     // The test must pass in the worktree as the code stands, or the worktree is not the user's project.
-    const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+    const baselineKey = `wt|${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}|${await testFingerprint($, `${runIn}/${relativeTest}`)}`
     if (check.fresh === true || !baselined.has(baselineKey)) {
       await $.fs.write(inTree, after)
       let base: CatchOutcome
@@ -1109,7 +1118,7 @@ async function checkAgainst(
 
   // The baseline, once per module and test in a session: the check's own command, on the code as it stands, must be
   // green. Otherwise a red with the change undone could come from the command (cwd, env, config), not from the change.
-  const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}`
+  const baselineKey = `${storeRoot(root)}|${module}|${relativeTest.toLowerCase()}|${await testFingerprint($, testPath)}`
   if (fresh || !baselined.has(baselineKey)) {
     let base: CatchOutcome
     try {
@@ -2042,12 +2051,35 @@ async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
 }
 
 /** What a session starts from: an interrupted check repaired, the unlocks remembered in the store, the config read. */
+/** The store's layout version, so a later release can migrate what it finds instead of guessing (verified review E2). */
+const STORE_VERSION = 1
+
+/**
+ * At session start: unlock keys that hold nothing fresh are deleted, a folder long gone or an old spelling of a root
+ * (verified review B4, 2026-10-20), and the store says its layout version. Best effort: never fails a session start.
+ */
+async function tidyStore($: EngineInterface, nowMs: number): Promise<void> {
+  try {
+    const keys = (await $.store.keys()).filter(key => key.startsWith('unlocks:'))
+    const entries = Object.fromEntries(await Promise.all(keys.map(async key => [key, await $.store.get(key)] as const)))
+    for (const key of staleUnlockKeys(entries, nowMs)) {
+      await $.store.delete(key)
+    }
+    if ((await $.store.get('store-version')) !== STORE_VERSION) {
+      await $.store.set('store-version', STORE_VERSION)
+    }
+  } catch (error) {
+    $.ui.log(`dope-tdd: could not tidy the plugin store: ${String(error)}`)
+  }
+}
+
 async function seedFromStore($: EngineInterface): Promise<void> {
   const root = await $.session.root()
   const nowMs = await $.clock.now()
   await ensureRepaired($, root, nowMs)
   await reportJournalsElsewhere($, root, nowMs)
   await pruneOldFiles($, nowMs)
+  await tidyStore($, nowMs)
   await seedRememberedUnlocks($)
   await releaseStaleCurrent($, root, await loadConfig($, root))
 }

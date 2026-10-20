@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { UNLOCK_TTL_MS, contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, storeRoot, unlockEntry, unlockKey } from '../hooks/unlocks'
+import { UNLOCK_TTL_MS, contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from '../hooks/unlocks'
 
 describe('store keys', () => {
   test('one spelling of the root, whatever Windows handed the session', () => {
@@ -111,5 +111,23 @@ describe('unlockEntry (#54)', () => {
   // Without a hash a later session keeps the unlock (still pending a run) instead of dropping it on a guess.
   test('an unreadable test is stored without a hash', () => {
     expect(unlockEntry('tests/a.test.ts', 7, null)).toEqual({ testPath: 'tests/a.test.ts', atMs: 7 })
+  })
+})
+
+// Verified review B4 (2026-10-20): unlock keys were never removed (36 on one machine, 17 for folders that no longer
+// exist, some under an old spelling). A key that holds no fresh unlock has nothing left to remember.
+describe('staleUnlockKeys', () => {
+  test('the unlock keys holding nothing fresh, and only unlock keys', () => {
+    const now = 100 * UNLOCK_TTL_MS
+    const fresh = { testPath: 'C:/a/tests/x.test.ts', atMs: now - 1_000 }
+    const old = { testPath: 'C:/b/tests/y.test.ts', atMs: now - UNLOCK_TTL_MS - 1 }
+    const store = {
+      'unlocks:c:/a': { x: fresh, y: old },
+      'unlocks:c:/gone': { y: old },
+      'unlocks:C:\gone': { y: old },
+      'unlocks:c:/empty': {},
+      'catch-journal:c:/a:x': { files: [] },
+    }
+    expect(staleUnlockKeys(store, now).sort()).toEqual(['unlocks:C:\gone', 'unlocks:c:/empty', 'unlocks:c:/gone'])
   })
 })

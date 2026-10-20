@@ -21,6 +21,8 @@ describe('gateWrite', () => {
   test('the override record is only dope-tdd’s to write, whatever else is true', () => {
     expect(gateWrite(source({ relativePath: 'dope-tdd.overrides.json', kind: 'other', policy: null }))).toEqual({ kind: 'deny-record' })
     expect(gateWrite(source({ relativePath: 'dope-tdd.overrides.json', paused: true, policy: 'exempt' }))).toEqual({ kind: 'deny-record' })
+    // Verified review A8 (2026-10-20): Windows and macOS file names ignore case, so another spelling is the same file.
+    expect(gateWrite(source({ relativePath: 'DOPE-TDD.Overrides.JSON', kind: 'other', policy: null }))).toEqual({ kind: 'deny-record' })
   })
 
   test('an exempt file goes through untouched by the guard', () => {

@@ -35,7 +35,7 @@ import {
   unreadRunAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { bringsInCode, changedPaths, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
@@ -129,8 +129,6 @@ const savedAtom = atom({ plugin: 'dope-tdd', key: 'saved' } as const, { module: 
 const attended = atom({ plugin: 'dope-tdd', key: 'attended' } as const, true)
 const OVERRIDE_TOOL = /^mcp__dope-tdd__override_request$/
 const RECORD_DENY = `dope-tdd keeps this record (${OVERRIDES_FILE}). Ask for an override with mcp__dope-tdd__override_request; a person decides it with /tdd approve or /tdd deny.`
-// Git may change the record: a pull, a checkout or a merge brings in other people's overrides.
-const RUNS_GIT = /(?:^|[;&|(]\s*)git\s/
 /** Which dope-tdd is running (build.ts): read once at session start, shown first in /tdd and kept in the session log. */
 const buildAtom = atom({ plugin: 'dope-tdd', key: 'build' } as const, '')
 /**
@@ -1737,9 +1735,12 @@ async function checkShell(
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
-  const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
+  // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
+  // does not hide what the script wrote (verified review A7).
+  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment))
+  const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (before !== null && after !== null && bringsInCode(command)) {
+  if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
     const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       const line = command.trim().split(/\r?\n/)[0] ?? ''
@@ -2213,7 +2214,9 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
  * forged record approves nothing.
  */
 async function keepRecord($: EngineInterface, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
-  if (RUNS_GIT.test(command)) {
+  // Git may change the record (a pull, a checkout or a merge brings in other people's overrides), but only a command
+  // made of git alone: a git segment beside a script proves nothing about what the script wrote (verified review A6).
+  if (isGitOnly(command)) {
     return run()
   }
   const root = await $.session.root()

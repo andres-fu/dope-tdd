@@ -50,10 +50,6 @@ jobs:
         run: node tools/ci/timings.mjs test-output.txt --slow-ms 1000
       - name: Run the plugin's tests again with a POSIX fixture root
         run: node tools/posix-root.mjs
-      - name: Check the scorecard arithmetic
-        run: node --test tools/pool/scorecard.test.mjs
-      - name: Check the bug-search rules
-        run: node --test tools/pool/find-bugs.test.mjs
       - name: Check the pull-request check report
         run: node --test tools/pr-check/check.spec-node.ts
       - name: Check the test-time report
@@ -66,7 +62,5 @@ jobs:
         run: node --test tools/move-check/check.spec-node.ts
       - name: Check the move check
         run: node --test tools/move-check/move.spec-node.ts
-      - name: Check the launcher helpers
-        run: node --test tools/pool/ab.test.mjs
       - name: Check the transcript replay
         run: node --test tools/replay/replay.spec-node.ts

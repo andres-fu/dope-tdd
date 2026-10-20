@@ -207,6 +207,22 @@ describe('bash bypass', () => {
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/unguarded 0/)
+    expect(status.text).not.toMatch(/brought in by git/)
+  })
+
+  // Karl's trial (2026-10-19): code git writes from another branch, commit or stash is not the agent's edit, but it is
+  // said on the record instead of going by unseen.
+  test('code git brings in from another branch is not an edit, and is on the record', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runBash($, 'git checkout main -- src/App.tsx')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(status.text).toMatch(/brought in by git, not guarded App \(git checkout main -- src\/App\.tsx\)/)
   })
 
   test('a patch applied with git apply is an edit like any other', async ($, on) => {

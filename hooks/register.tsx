@@ -35,7 +35,7 @@ import {
   unreadRunAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { changedPaths, isRevertCommand, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { bringsInCode, changedPaths, isRevertCommand, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
@@ -67,6 +67,7 @@ import {
   recordCarryWait,
   recordCatch,
   recordConfigChange,
+  recordGitIn,
   recordImportUnlock,
   recordImporter,
   recordKnownFailures,
@@ -1737,6 +1738,16 @@ async function checkShell(
   const nowMs = await $.clock.now()
 
   const seen = before === null || after === null || isRevertCommand(command) ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
+  // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
+  if (before !== null && after !== null && bringsInCode(command)) {
+    const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
+    if (brought.length > 0) {
+      const line = command.trim().split(/\r?\n/)[0] ?? ''
+      const detail = line.length > 80 ? `${line.slice(0, 79)}…` : line
+      await change($, s => recordGitIn(s, [...new Set(brought.map(({ module }) => module))], detail, nowMs))
+      $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
+    }
+  }
   // A command that cannot have written source (Claude Code held it read-only, or it is only test runs and filters):
   // what changed while it ran was another editor or session, so it is said and never charged to the agent.
   const cannotWrite = result.isReadOnly === true || isPureTestRun(command)

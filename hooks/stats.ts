@@ -348,6 +348,11 @@ export function recordPinSkill(s: TddStats, nowMs: number): TddStats {
 }
 
 /** A config edit is always logged; only one that loosens the guard counts as a workaround. */
+/** Code a git command brought in from elsewhere (gitChanges.ts, bringsInCode): one event per module, with the command. */
+export function recordGitIn(s: TddStats, modules: readonly string[], command: string, nowMs: number): TddStats {
+  return modules.reduce((acc, module) => logged(acc, 'git-in', nowMs, module, command), s)
+}
+
 export function recordConfigChange(s: TddStats, detail: string, loosened: boolean, nowMs: number): TddStats {
   return logged(loosened ? countWorkaround(s, 'config') : s, 'config', nowMs, undefined, detail)
 }

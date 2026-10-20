@@ -37,6 +37,8 @@ export type EventKind =
   | 'pinning'
   /** A pin fixed after its red, code unchanged, with the pin skill in use: not a workaround. */
   | 'pin-corrected'
+  /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
+  | 'git-in'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */

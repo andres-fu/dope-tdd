@@ -323,6 +323,11 @@ start). If the file changed under it, your file is left alone and the change
 is kept in `~/.dope-tdd/kept/<repo>-<hash>/` (the temp folder when there is
 no home folder), never inside the repository.
 
+The check runs for the current module only. When a whole-suite green also
+closes another module's red cycle, that module's fix was never checked: it
+counts as not checked, and `/tdd` names it (`not checked utils/other`). Run
+that module's own test to check it.
+
 A test that fails only on an error (an import, a collection or a compile that
 broke) has checked nothing. Such a red unlocks the module but does not prove
 a pin, and Claude is told no assertion ran. A check run that fails that way

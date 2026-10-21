@@ -1140,6 +1140,26 @@ describe('the catch check in a worktree, never in your files', () => {
   })
 })
 
+// Debt `arch2 5`: two modules changed, one suite run, and only the current one was checked; the other's change sat
+// in the record with no line anywhere.
+describe('a change the catch check did not reach is named', () => {
+  test('a full-suite green checks the current module; another module changed since its red is named as not checked', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/src/utils/other.ts`, 'export const a = 1')
+    await touchTest($, world, 'utils/other')
+    await runTests($, world, 'fail')
+    await editAt($, 'src/utils/other.ts')
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/catch check: proven 1 · missed 0 · not checked 1/)
+    expect(status.text).toMatch(/: not checked utils\/other \(a suite green closed it; the catch check ran for the current module only\)$/m)
+  })
+})
+
 describe('a green that closes other modules leaves the current module\'s story alone (#41)', () => {
   test('a later full-suite green does not tell a module that saw red and was caught that it never saw red, and a stale open module is not a cycle', async ($, on) => {
     const world = fakeEngine(on)

@@ -462,7 +462,13 @@ export function closeCyclesForTest(s: TddStats, testPath: string | null, except:
     if (!state.sawRed || (exceptTest !== undefined && norm(exceptTest) === norm(path))) {
       return closed
     }
-    return { ...closed, cycles: closed.cycles + 1, cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs) }
+    const counted = { ...closed, cycles: closed.cycles + 1, cycleMsTotal: closed.cycleMsTotal + (nowMs - state.cycleStartMs) }
+    // The catch check runs for the current module only: a fix here was never checked, and is said so (debt `arch2 5`).
+    if (counted.changes[module]?.kind !== 'fix') {
+      return counted
+    }
+    const unchecked = { ...counted, changes: without(counted.changes, module), unverified: counted.unverified + 1 }
+    return logged(unchecked, 'unverified', nowMs, module, 'a suite green closed it; the catch check ran for the current module only')
   }, s)
 }
 

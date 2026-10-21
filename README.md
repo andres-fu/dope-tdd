@@ -137,8 +137,9 @@ templates that start inside the folder:
 Here `dashboard/src/lib/a.ts` pairs with `dashboard/src/lib/a.test.ts`, a
 refusal names that file, and everything outside `dashboard/` keeps the main
 layout. The deepest folder wins; `roots` do not apply inside one.
-Not sure? `/tdd setup` reads the repo and shows the stack and layout it finds
-with the JSON to use; `/tdd setup write` saves it.
+Not sure? `/tdd setup` reads the repo and shows the stack and layout it finds,
+the command a test runs with (`test command: python -m pytest <test file>`),
+and the JSON to use; `/tdd setup write` saves it.
 
 ## Languages
 
@@ -221,6 +222,14 @@ Three things to ask Claude once it's installed, in your own project or in
 - After every shell command, `git diff` under `src/` and `tests/` is the
   source of truth: source files changed without a test touched count as
   unguarded, and tests written through the shell count as touched.
+- Git putting files back to a saved state (`git restore`, `git checkout --
+  <file>`, `git reset --hard`, `git stash`) is not an edit: nothing is counted.
+  Git bringing code in from elsewhere (`git checkout main -- <file>`, `git
+  pull`, `git merge`, `git stash pop`, `git cherry-pick`) is not counted as
+  Claude's edit either, but `/tdd` records it as **brought in by git, not
+  guarded**, with the git verb only (the arguments can hold a token).
+  Commands that only read beside it (`cat`, `sha256sum`, `git status`) do not
+  change that.
 - The project must be a git repository; without one the shell backstop
   records nothing.
 - While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
@@ -313,6 +322,11 @@ mid-check, the change is put back on the way out (or at the next session
 start). If the file changed under it, your file is left alone and the change
 is kept in `~/.dope-tdd/kept/<repo>-<hash>/` (the temp folder when there is
 no home folder), never inside the repository.
+
+A test that fails only on an error (an import, a collection or a compile that
+broke) has checked nothing. Such a red unlocks the module but does not prove
+a pin, and Claude is told no assertion ran. A check run that fails that way
+is UNPROVEN · not checked, never PROVEN.
 
 A new file has no old code to put back. In that throwaway copy (Node, a git
 clone) the check makes up to four small changes to it instead, one at a time:

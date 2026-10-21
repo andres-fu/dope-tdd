@@ -56,8 +56,8 @@ Later, `claude plugin update dope-tdd@dope-tdd` pulls the newest version, and
 
 ## Point it at your project
 
-Run `/tdd setup` before the first edit. It reads where your tests live and
-proposes a `dope-tdd.json`. Out of the box Dope TDD pairs `src/<module>.ts`
+Run `/tdd setup` before the first edit. It reads where your tests live,
+names the command your tests run with, and proposes a `dope-tdd.json`. Out of the box Dope TDD pairs `src/<module>.ts`
 with `tests/<module>.test.ts`; co-located tests, `__tests__/` folders and
 per-package roots work once the layout is set. Skip this and a project laid
 out differently gets refusals that name the wrong test, or a band that says
@@ -200,6 +200,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
 | Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
 | Run the tests through the shell | Reads the runner's own summary line, not the exit code. A failure in another file, or a run of a file outside the layout, is not this module's. Output with no summary is unread, never guessed. | **red ✓** / **green ✓**, and the last run in words |
+| Run the test and see it fail on an error, not an assertion (an import, a collection, a compile) | Counts it as red, but not as proof: no assertion ran. A catch check that fails this way is not proof either | **RED**, and Claude is told no assertion ran; a check gives **UNPROVEN · not checked** |
 | Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **UNPROVEN · never failed** |
 | Go green after red | Holds the result, undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads | **PROVEN**, **MISSED**, or **UNPROVEN · not checked:** with the reason |
 | Break the code on purpose, see red, put it back exactly, go green | The red was the proof. In a git checkout it then makes a few small changes in a throwaway copy and names any the test did not notice | **PROVEN**, with the unnoticed changes listed |
@@ -207,6 +208,8 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
 | Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
 | Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **UNPROVEN · not checked: change not captured** |
+| Put a file back with git (`git restore`, `git checkout -- <file>`, `git stash`) | Nothing: code put back to a saved state is not an edit | no change |
+| Bring code in with git (`git checkout main -- <file>`, `git pull`, `git stash pop`) | Does not count it as Claude's edit, but records it, with the git verb only | `brought in by git, not guarded` in `/tdd` |
 | Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
 | Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down until the operation ends; Claude is told when it starts and ends | **STANDING DOWN** · git rebase in progress |
 

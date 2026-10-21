@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from '../hooks/catchCheck'
-import { NODE_TEST_REAL_IPC_CRASH } from './fixtures/runnerOutputs'
+import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
   test('a timeout is a timeout; anything else is a runner that could not start, with its message', () => {
@@ -74,6 +74,18 @@ describe('catchOutcome', () => {
       kind: 'unverified',
       reason: 'node --test could not read its test process output (a Node bug when a test prints non-ASCII text)',
     })
+  })
+
+  // The catch-check decision (2026-10-08) counts a load error as no tests run. Vitest says so in its summary; pytest,
+  // unittest and node --test report an error count instead, which read as a red and earned a PROVEN no assertion ran for.
+  test('a run with the change undone that failed only on errors is unverified, never caught', () => {
+    for (const stdout of [PYTEST_COLLECTION_ERROR_QUIET, UNITTEST_IMPORT_ERROR, NODE_TEST_REAL_LOAD_ERROR]) {
+      expect(catchOutcome({ stdout, stderr: '', exitCode: 1 })).toEqual({
+        kind: 'unverified',
+        reason: 'with the change undone the test could not run (an import, a collection or a compile error), so no assertion was checked',
+      })
+    }
+    expect(catchOutcome({ stdout: PYTEST_FAIL, stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
   })
 
   test('reads a coloured summary', () => {

@@ -1,5 +1,5 @@
 import type { CatchOutcome } from '../types'
-import { failedFilesIn, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
+import { failedFilesIn, failedOnlyOnErrors, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
 import type { RunnerKind, RunnerOptions } from './runners.ts'
 import { runnerDidNotStart, stripAnsi } from './runOutcome.ts'
 
@@ -86,6 +86,11 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string, kno
     // Named when the output says so, as the shell reading does (verified review D5, 2026-10-20).
     const notStarted = runnerDidNotStart(output)
     return { kind: 'unverified', reason: notStarted === null ? 'no runner summary' : `the runner did not start: ${notStarted}` }
+  }
+  // A load error is no tests run (the catch-check decision, 2026-10-08). Vitest says so; pytest, unittest and node --test
+  // print an error count that reads as a red, which earned a PROVEN no assertion ran for (#132, 2026-10-21).
+  if (outcome === 'fail' && failedOnlyOnErrors(output)) {
+    return { kind: 'unverified', reason: 'with the change undone the test could not run (an import, a collection or a compile error), so no assertion was checked' }
   }
   // Only tests that were failing before the change failed: nothing that checks this change went red.
   if (outcome === 'fail' && known.length > 0) {

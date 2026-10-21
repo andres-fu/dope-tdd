@@ -195,6 +195,7 @@ describe('/tdd setup', () => {
     expect(result.text).toMatch(/  src\/utils\/a\.test\.ts ↔ src\/utils\/a\.ts/)
     expect(result.text).toMatch(/current dope-tdd\.json: none \(mirror by default\)/)
     expect(result.text).toMatch(/"layout": "colocated"/)
+    expect(result.text).toMatch(/^test command: npx vitest run <test file>$/m)
     expect(world.writes).toEqual([])
   })
 

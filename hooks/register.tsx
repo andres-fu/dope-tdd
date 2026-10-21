@@ -1335,7 +1335,9 @@ async function setupText($: EngineInterface, root: string, write: boolean, nowMs
   const existing = await readWhole($, configPath)
   const current = parseConfig(existing, await detectStack($, root))
   const inferred = inferLayout(survey, current.stackSource === 'config' ? current.stack : undefined)
-  const text = formatSetup(current, inferred, survey, existing !== null)
+  // The runner under the detected config, which is what saving it gives (Karl's round 4: setup never named one).
+  const testCommand = await briefingCommand($, root, { ...current, stack: inferred.stack, layout: inferred.layout, roots: inferred.roots })
+  const text = formatSetup(current, inferred, survey, existing !== null, testCommand ?? undefined)
   if (!write) {
     return text
   }

@@ -311,3 +311,7 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
   in **a session opened in that folder**: dope-tdd guards only its own session's project, so editing
   agent-os from a dope-tdd session would be unguarded. The night shift's text to start the spec from
   is dope-tdd commit 57a898f (`tools/night-shift/`).
+- agent-os went **public** 2026-10-21 (free Actions minutes). Its principal review runs only on
+  same-repo PRs, so forks can't reach the token or get approved. But its merge-authority decision says
+  to revisit everything if the repo goes public: anyone can now file issues that agents read. The
+  night-shift spec must take only `ready`-labelled issues and treat issue text as data.

@@ -306,7 +306,7 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
   goes back into `docs/testers/rounds/`, and each mismatch becomes a GitHub issue.
 - Guardrails done (#161 and the ruleset). **Now: agent-os.** dope-tdd guards it, and the night
   shift goes in as its first spec. Then the rest of the operating layer there (queue, room, log).
-- agent-os is cloned at `C:\Users\fuent\agent-os`. It already has an active "Main" ruleset, its gates
+- agent-os has a local working copy beside dope-tdd. It already has an active "Main" ruleset, its gates
   and principal review run green, and the `CLAUDE_CODE_OAUTH_TOKEN` secret is set. agent-os work runs
   in **a session opened in that folder**: dope-tdd guards only its own session's project, so editing
   agent-os from a dope-tdd session would be unguarded. The night shift's text to start the spec from

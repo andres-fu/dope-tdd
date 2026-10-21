@@ -541,6 +541,17 @@ by `tests/node/kit.test.mjs`), so the same files also run in
 only through the live tests, which no one file pairs with. #59 keeps moving
 their decisions into pure modules that are guarded.
 
+### Branches
+
+Work on a branch and open a pull request; nothing lands on `main` directly.
+In this repository Claude Code is held to that by a hook in
+`.claude/settings.json`: `tools/guard/branch-guard.ts` refuses `git commit`,
+`merge`, `cherry-pick`, `revert`, `rebase`, `am` and `push` while on `main`,
+and any push aimed at `main` from another branch (its tests:
+`node --test tools/guard/branch-guard.spec-node.ts`). The hook reads the
+command's text, so a spelling it misses still meets GitHub's branch protection
+on `main`, which is what actually enforces the rule.
+
 ### The loop
 
 While working, run only the one test file you are changing, as above. A full

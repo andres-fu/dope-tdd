@@ -2,7 +2,7 @@
 name: Tester report
 about: What happened when you tried Dope TDD
 title: "[tester] "
-labels: tester
+labels: source:tester
 ---
 
 **Setup**

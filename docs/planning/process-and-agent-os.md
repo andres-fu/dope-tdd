@@ -142,6 +142,96 @@ That part, if we want it, is ours to build or buy (third-party research running)
 Security rule for any bridge: **anyone who can post in a bridged channel effectively has shell
 access.** Tight allowlists, no bypass modes, and treat chat as untrusted input (agent-os lesson L-0008).
 
+## The CEO dashboard (your goal, 2026-10-21)
+
+What you want: one place to see how every agent on the team is doing, read their chats, and jump in
+when you can, without paying for anything. Sharpened 2026-10-21:
+
+1. **A team chat room:** each agent shown as a person (name, role, avatar), posting in one channel,
+   with you reading along and jumping in.
+2. **A daily log:** each day's sessions and conversations kept, for tracking and spotting patterns.
+
+Not needed: another app to *run* agents in parallel. The Claude desktop app already does that.
+Note: Claude Code already saves every session's transcript locally, so a daily log can be built from
+those files even if the chat tool keeps no history.
+
+Leads from a Gemini search (your PDF), **unverified until checked against each tool's own repo**:
+
+- **Desktop apps, one worktree per agent:** Orca, Pane, Emdash and Nimbalyst (free, Windows and Mac
+  per Gemini). Conductor itself is paid and Mac only.
+- **Chat between you and agents:** agentchattr (a local chat server, `@claude` tags),
+  snedea/claude-agent-chat, xhluca/agent-talk and PatilShreyas/claude-code-session-bridge.
+- **What we already have:** the Claude desktop app's Code tab (this one), with parallel sessions,
+  worktrees, split view and Remote Control on the phone.
+
+Visibly wrong in Gemini's answer:
+- its dashboard code loads Tailwind from a URL that isn't a script;
+- "agent confidence %" gauges would be numbers the agents make up about themselves;
+- it calls REA (your fork) a viral 285K-star project.
+
+**Verified 2026-10-21** (each README read in full, GitHub API for licence and activity):
+
+| Tool | Free? | Windows | Team chat room (1) | Daily log (2) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| **agentchattr** (bcurts) | yes, MIT | native (first-class) | **yes**: agents as named, coloured, role-tagged personas with avatars in shared channels; `@mentions` wake them; decision buttons; a loop guard on agent-to-agent chat | timestamped JSONL under `./data`, date dividers, export; no search, but per-day files are easy to build | runs your own `claude` subscription; agents must be started through its launchers to be woken; **don't use its skip-permissions launchers or `--allow-network`**; last release 2026-07 |
+| Nimbalyst | yes, MIT (personal) | native | no | best: search and resume sessions, a kanban of sessions, iPhone approvals | analytics on by default (opt out) |
+| Pane | yes, AGPL plus extra terms | native | partial: one orchestrator chat that can message every agent | no | adds a skill and an MCP server to `~/.claude` by default |
+| Orca | yes, MIT | native | no | scrollback only | best for running agents side by side, which we already have; telemetry on by default; the API reports 100k stars, which is odd for its age |
+| Emdash | yes, Apache-2.0 | native | no | local SQLite | Gemini cited the wrong site (superset.sh is a different, Mac-only product) |
+| agent-talk | yes, MIT | not stated | no human room | a history skill | messages go through a relay; encryption unaudited |
+| session-bridge | free | **no** | no | no | stale |
+| snedea/claude-agent-chat | needs an API key | not stated | debate bots, not your agents | Docker | abandoned |
+| Conductor | free tier, Pro $50/month | **Mac only** | no | no | not an option on Windows |
+
+~~Verdict: trial agentchattr.~~ **Decided 2026-10-21: build our own small team room** inside agent-os
+(TypeScript, test-first, guarded by dope-tdd), borrowing agentchattr's good ideas (it's MIT, so we can
+read and reuse its source with the notice; no reverse engineering needed). Smallest version that
+meets both needs:
+- one local web page: a channel where each agent shows as a person (name, role, avatar), and you can
+  post into it;
+- agents post through one small MCP tool (`room_post`), so Claude desktop sessions, night-shift runs
+  and subagents can all join;
+- every message is appended to `log/YYYY-MM-DD.jsonl`, and the morning brief reads that file: that's
+  the daily log;
+- later, if needed: `@mention` wake-ups through Claude Code's own cross-session messaging, decision
+  buttons, a loop guard.
+
+Order unchanged: guardrails, then the night shift, then the room.
+
+Also found 2026-10-21: **dope-tdd's repo is public** (agent-os's notes say private), so agent-os can
+turn on its dope-tdd catch-check job without sharing anything.
+
+## Night shift: the Kaizen loop (your goal, 2026-10-21; design proposed)
+
+Goal: work keeps moving and improving while you sleep; you're woken only for something urgent.
+
+What exists (checked 2026-10-21):
+- **Local scheduled tasks** (desktop app): fresh session per run, on your PC, so dope-tdd guards it.
+  Runs only while the app is open and the PC is awake (keep-awake stops idle sleep; a closed lid
+  still sleeps).
+- **Cloud routines** (schedule or GitHub events): run with the PC off, but plugins don't load in the
+  cloud (lesson L-0005), so no dope-tdd. Only committed CLAUDE.md, repo hooks and CI apply.
+- **Push notifications** to your phone through Remote Control: the "urgent only" channel.
+
+Design:
+1. **Night shift** (local, for example 1 a.m.): take the smallest open issue labelled `ready`; fix
+   it test-first in a worktree; open a PR with `Fixes #N`; CI and the principal-engineer review
+   decide (ordinary PRs auto-merge, protected paths wait for you). Stuck: `BLOCKED: <why>` on the
+   issue, label `needs-human`, stop. Push to your phone only when main is broken, there's a security
+   problem, or data could be lost. Write the day's log entry.
+2. **Morning brief** (7 a.m.): merged, waiting on you, lessons proposed, usage spent. It doubles as
+   the daily log; the chat room can show it live later.
+3. **Weekly Kaizen pass:** group issues by label; an area with 3 or more becomes a guardrail or lesson.
+
+Must exist before it runs unattended:
+- branch protection and required CI on dope-tdd;
+- the hook that blocks commits on main;
+- issue labels (`ready`, `needs-human`, area, stack);
+- a cap of 1 or 2 PRs a night, and a turn or usage budget;
+- releases are never touched by the night shift.
+
+Revised order: guardrails, then the night shift, then the chat room to watch it.
+
 ## Recommendations (proposed 2026-10-21)
 
 **Stack: TypeScript on Node, run directly with no build step, tests on `node --test`.**

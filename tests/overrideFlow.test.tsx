@@ -332,7 +332,7 @@ describe('session-owned overrides, the build, and plain toasts (2026-10-18)', ()
     const world = fakeEngine(on)
     world.pluginGit = 'a6b93d4|2026-10-18|Merge pull request #99 from andres-fu/live-trial-fixes'
     await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
-    expect((await runCommand($, 'tdd')).text.split('\n')[0]).toBe('#99 · a6b93d4 · 2026-10-18')
+    expect((await runCommand($, 'tdd')).text?.split('\n')[0]).toBe('#99 · a6b93d4 · 2026-10-18')
   })
 
   test('the receipt names the build too, so a reviewer knows which rules applied', async ($, on) => {

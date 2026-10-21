@@ -14,8 +14,9 @@ Status: **agreed** (you said yes), **proposed** (my suggestion, not decided yet)
 | **Operating the team** | a work queue (issues, board), a runner (night shift), a room you watch, a daily log | **missing: this is what makes agent-os do the work** |
 
 agent-os today is a rulebook and checks: you are the one running the team. Everything designed today
-is the missing bottom layer, and it belongs **in agent-os**, not in dope-tdd. Proposed:
-- move the night shift from dope-tdd (#163) into agent-os as its first runner piece;
+is the missing bottom layer, and it belongs **in agent-os**, not in dope-tdd. **Decided 2026-10-21:**
+- the night shift moves out of dope-tdd (#163 closed unmerged) into agent-os, as a spec first
+  (agent-os's own loop: idea, then a spec the stakeholder approves, then a plan, then code);
 - agent-os's first real project is agent-os itself: build the operating layer there, test-first,
   guarded by dope-tdd;
 - dope-tdd keeps its own small backlog and is run by the agent-os night shift like any other project.
@@ -40,7 +41,8 @@ use a PreToolUse hook. Only hooks, CI and GitHub settings actually stop anything
 | Harden first, then start Agent OS | agreed |
 | Branch protection on `main` (PR plus both CI checks, no force push or deletion, no bypass) | **done**: ruleset 25573409, applied 2026-10-21 |
 | Build our own small team room instead of adopting agentchattr | agreed |
-| Night shift v1 opens PRs but never merges; you review in the morning | proposed |
+| Night shift v1 opens PRs but never merges; you review in the morning | proposed; moving to agent-os as a spec |
+| The operating layer (queue, runner, room, log) is built in agent-os, with agent-os as its own first project, guarded by dope-tdd | agreed |
 
 ## Misses we saw (why we're doing this)
 
@@ -302,5 +304,5 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
   every release, not only when a script happens to be written.
 - Karl's reply and round-5 script: `docs/testers/rounds/round-5-karl.md`. Ready to send; his report
   goes back into `docs/testers/rounds/`, and each mismatch becomes a GitHub issue.
-- Guardrails done (#161 and the ruleset). **Now: the night shift.** Then the team room, then
-  dope-tdd adopts the agent-os template.
+- Guardrails done (#161 and the ruleset). **Now: agent-os.** dope-tdd guards it, and the night
+  shift goes in as its first spec. Then the rest of the operating layer there (queue, room, log).

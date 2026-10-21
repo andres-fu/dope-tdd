@@ -569,6 +569,19 @@ describe('closeCyclesForTest: what a run closes for other modules (#41)', () => 
     expect(closed.neverSawRed).toBe(s.neverSawRed)
   })
 
+  // Debt `arch2 5`: the catch check runs for the current module only, so a fix in another module that this green
+  // closes was never checked. It is counted as not checked and logged for that module, never left silent.
+  test('a red cycle closed with a fix the check did not reach counts as not checked, logged for its module', () => {
+    const s = recordChange(open('utils/other', true)(INITIAL_STATS), 'utils/other', 'C:/w/src/utils/other.ts', 'a', 'b')
+    const closed = closeCyclesForTest({ ...s, current: null }, null, undefined, T0 + 60_000)
+    expect(closed.unverified).toBe(s.unverified + 1)
+    expect(closed.changes['utils/other']).toBeUndefined()
+    expect(closed.events.at(-1)).toEqual({ atMs: T0 + 60_000, kind: 'unverified', module: 'utils/other', detail: 'a suite green closed it; the catch check ran for the current module only' })
+    // Without a change there is nothing to check: closing stays quiet.
+    const quiet = closeCyclesForTest({ ...open('utils/red', true)(INITIAL_STATS), current: null }, null, undefined, T0 + 60_000)
+    expect(quiet.unverified).toBe(0)
+  })
+
   test('a cycle that never saw red closes without counting: the run was not about that module', () => {
     const s = open('utils/stale', false)(INITIAL_STATS)
     const closed = closeCyclesForTest({ ...s, current: null }, null, undefined, T0 + 60 * 60_000)

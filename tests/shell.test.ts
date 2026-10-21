@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, cwdAfter, locatedSegments, writableText } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, cwdAfter, isPureRead, locatedSegments, writableText } from '../hooks/shell'
 
 // The heredoc false positive (2026-10-18): a data heredoc's body is text and writes nothing; a body fed to an
 // interpreter or a shell is code, and its writes are real.
@@ -129,5 +129,21 @@ describe('cwdAfter: every way a shell changes folder', () => {
   test('cd keeps working as before', () => {
     expect(cwdAfter('cd sub', 'C:/r')).toBe('C:/r/sub')
     expect(cwdAfter('cd sub && cd ..', 'C:/r')).toBe('C:/r')
+  })
+})
+
+describe('isPureRead', () => {
+  // Karl's round 4 (2026-10-20): a hash beside a git checkout read as a possible write, so git's code was charged
+  // to the agent. Hashing a file only reads it.
+  test('hashing a file only reads it', () => {
+    for (const command of ['sha256sum api.py', 'sha1sum a b', 'md5sum api.py', 'shasum -a 256 api.py', 'cksum api.py', 'Get-FileHash api.py']) {
+      expect(isPureRead(command)).toBe(true)
+    }
+  })
+
+  test('a hash written to a file, or a command that writes, is not a read', () => {
+    for (const command of ['sha256sum api.py > sums.txt', 'sha256sum -c sums.txt; sed -i s/a/b/ api.py', 'cp a b']) {
+      expect(isPureRead(command)).toBe(false)
+    }
   })
 })

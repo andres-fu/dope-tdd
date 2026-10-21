@@ -63,7 +63,9 @@ describe('the catch check counts in the band\'s words', () => {
 
   test('a green that never failed is counted as never failed', () => {
     const s = { ...INITIAL_STATS, cycles: 2, cycleMsTotal: 120_000, neverSawRed: 1 }
-    expect(formatStatus(s, T0)).toMatch(/^cycles: 2 \(avg 1M, never failed 1\)$/m)
+    // Count first (Karl's round 4, 2026-10-20): "never failed 1" read as a sentence fragment.
+    expect(formatStatus(s, T0)).toMatch(/^cycles: 2 \(avg 1MIN, 1 never failed\)$/m)
+    expect(formatStatus({ ...s, testChanged: 1 }, T0)).toMatch(/^cycles: 2 \(avg 1MIN, 1 never failed, 1 test changed\)$/m)
   })
 })
 

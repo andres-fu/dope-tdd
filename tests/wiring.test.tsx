@@ -238,6 +238,22 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/brought in by git, not guarded App \(git checkout main -- src\/App\.tsx\)/)
   })
 
+  // Karl's round 4 (2026-10-20): reads beside the checkout made it the agent's edit, since only test runs were quiet.
+  test('code git brings in beside commands that only read is still not an edit', async ($, on) => {
+    const world = fakeEngine(on)
+    world.numstat = '3\t3\tsrc/App.tsx\n'
+    world.onBash = () => {
+      world.numstat = ''
+      world.testModifiedAt += 5000
+    }
+
+    await runBash($, 'git checkout main -- src/App.tsx; sha256sum src/App.tsx; git status --short')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(status.text).toMatch(/brought in by git, not guarded App/)
+  })
+
   test('a patch applied with git apply is an edit like any other', async ($, on) => {
     const world = fakeEngine(on)
     world.onBash = () => {
@@ -463,7 +479,7 @@ describe('one module at a time', () => {
 
     expect(result.context?.join(' ')).toMatch(/GREEN on utils\/b but it never saw red/)
     expect(result.context?.join(' ')).not.toMatch(/green came from the test/)
-    expect(status.text).toMatch(/never failed 1/)
+    expect(status.text).toMatch(/1 never failed/)
     expect(status.text).not.toMatch(/test changed/)
     // The whole suite passed, so A's test passed too: its red cycle closed, counted as its own cycle.
     expect(status.text).not.toMatch(/also open/)
@@ -474,7 +490,7 @@ describe('one module at a time', () => {
     await runBash($, 'npx vitest run tests/utils/a.test.ts')
     const later = await runCommand($, 'tdd')
 
-    expect(later.text).toMatch(/cycles: 2 \(avg .*never failed 1\)/)
+    expect(later.text).toMatch(/cycles: 2 \(avg .*, 1 never failed\)/)
     expect(later.text).not.toMatch(/also open/)
   })
 

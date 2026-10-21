@@ -1782,8 +1782,9 @@ async function checkShell(
   const nowMs = await $.clock.now()
 
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
-  // does not hide what the script wrote (verified review A7).
-  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment))
+  // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
+  // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
+  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment) || isPureRead(segment))
   const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
   if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
@@ -2221,10 +2222,30 @@ async function lockedFacts($: EngineInterface, root: string, config: GuardConfig
   return { ...(command === null ? {} : { command }), testExists: await $.fs.exists(testPath), lastRun: lastRunLine(s, nowMs) }
 }
 
-/** The command with a placeholder, for the briefing: the layout's own test extension picks the runner. */
+/** The test file the briefing reads its runner from, by root and stack: one git call a session, not one a prompt. */
+const briefingSamples = new Map<string, string | null>()
+
+/**
+ * One of the project's own test files, or null. Karl's round 4 (2026-10-20): a made-up `example.py` could not say
+ * `import pytest`, so a project that says pytest only in its tests was briefed `python -m unittest`.
+ */
+async function sampleTestFile($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
+  const key = `${root}\n${config.stack}`
+  if (briefingSamples.has(key)) {
+    return briefingSamples.get(key) ?? null
+  }
+  const listed = await runGit($, root, ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
+  const paths = (listed ?? '').split(/\r?\n/).filter(path => path !== '')
+  const sample = changedOfKind(root, paths, 'test', config)[0]?.path ?? null
+  briefingSamples.set(key, sample)
+  return sample
+}
+
+/** The command with a placeholder, for the briefing: a real test file picks the runner, else the layout's own extension. */
 async function briefingCommand($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
   const ext = config.layout.displayExt ?? stackOf(config.stack).exts[0] ?? 'ts'
-  const runner = await detectRunner($, root, config, `${root}/example.${ext}`)
+  const sample = await sampleTestFile($, root, config)
+  const runner = await detectRunner($, root, config, `${root}/${sample ?? `example.${ext}`}`)
   return runner === null ? null : runnerNamed(runner.kind).describe('<test file>', runner.launcher)
 }
 

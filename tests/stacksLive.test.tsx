@@ -166,6 +166,39 @@ describe('a Python project with unittest, no pytest', () => {
   })
 })
 
+// Karl's round 4 (2026-10-20): the briefing asked for the runner of a made-up `example.py`, so a project that says
+// pytest only in its tests was told `python -m unittest` while every hint said pytest. It now reads a real test file.
+describe('the briefing names the runner the project\'s own tests point at', () => {
+  async function briefing($: Parameters<Parameters<typeof test>[1]>[0]): Promise<string> {
+    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Bash'], outputStyle: null, traits: [] })) as { sections: { id: string; text: string }[] }
+    return composed.sections.find(section => section.id === 'dope-tdd:briefing')?.text ?? ''
+  }
+
+  function pythonTests(world: FakeWorld, testText: string) {
+    world.hasVitest = false
+    world.existingFiles.add(`${ROOT}/requirements.txt`)
+    world.fileContents.set(`${ROOT}/src/pkg/calc.py`, 'def add(a, b):\n    return a + b\n')
+    world.fileContents.set(`${ROOT}/tests/pkg/test_calc.py`, testText)
+    world.untracked = 'src/pkg/calc.py\ntests/pkg/test_calc.py\n'
+  }
+
+  test('a test that imports pytest makes it pytest', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonTests(world, 'import pytest\nfrom pkg.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
+    await startSession($)
+
+    expect(await briefing($)).toMatch(/Run one test file at a time: `python -m pytest <test file>`/)
+  })
+
+  test('a unittest test keeps it unittest', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonTests(world, 'import unittest\n\nclass CalcTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(1, 1)\n')
+    await startSession($)
+
+    expect(await briefing($)).toMatch(/Run one test file at a time: `python -m unittest <test file>`/)
+  })
+})
+
 describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
   test('the deny names the C# test, the catch check runs through dotnet test with a filter, and the fix is caught', async ($, on) => {
     const world = fakeEngine(on)

@@ -3,6 +3,23 @@
 Started 2026-10-21. One place for everything we're discussing, so we can weigh it and pick an order.
 Status: **agreed** (you said yes), **proposed** (my suggestion, not decided yet), **open** (a question for you), **done**.
 
+## The big picture (2026-10-21)
+
+| Layer | What it is | Status |
+| --- | --- | --- |
+| Engine | the Claude model | done (Anthropic) |
+| Harness | Claude Code: sessions, worktrees, scheduled tasks, phone access | done (Anthropic) |
+| Rules and roles | agent-os: charter, 7 roles, skills, CI gates, principal review, lessons, decisions | done, v0.1 |
+| Enforcement | dope-tdd (test-first in every session), CI gates, branch guard, ruleset | mostly done |
+| **Operating the team** | a work queue (issues, board), a runner (night shift), a room you watch, a daily log | **missing: this is what makes agent-os do the work** |
+
+agent-os today is a rulebook and checks: you are the one running the team. Everything designed today
+is the missing bottom layer, and it belongs **in agent-os**, not in dope-tdd. Proposed:
+- move the night shift from dope-tdd (#163) into agent-os as its first runner piece;
+- agent-os's first real project is agent-os itself: build the operating layer there, test-first,
+  guarded by dope-tdd;
+- dope-tdd keeps its own small backlog and is run by the agent-os night shift like any other project.
+
 ## Goal
 
 Harden how we build dope-tdd with automated guardrails, keep it simple, then use dope-tdd

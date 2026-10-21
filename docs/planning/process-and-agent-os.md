@@ -15,7 +15,7 @@ Status: **agreed** (you said yes), **proposed** (my suggestion, not decided yet)
 
 agent-os today is a rulebook and checks: you are the one running the team. Everything designed today
 is the missing bottom layer, and it belongs **in agent-os**, not in dope-tdd. **Decided 2026-10-21:**
-- the night shift moves out of dope-tdd (#163 closed unmerged) into agent-os, as a spec first
+- the night shift moves out of dope-tdd (#163 merged it here first; removed again in #164) into agent-os, as a spec first
   (agent-os's own loop: idea, then a spec the stakeholder approves, then a plan, then code);
 - agent-os's first real project is agent-os itself: build the operating layer there, test-first,
   guarded by dope-tdd;
@@ -306,3 +306,8 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
   goes back into `docs/testers/rounds/`, and each mismatch becomes a GitHub issue.
 - Guardrails done (#161 and the ruleset). **Now: agent-os.** dope-tdd guards it, and the night
   shift goes in as its first spec. Then the rest of the operating layer there (queue, room, log).
+- agent-os is cloned at `C:\Users\fuent\agent-os`. It already has an active "Main" ruleset, its gates
+  and principal review run green, and the `CLAUDE_CODE_OAUTH_TOKEN` secret is set. agent-os work runs
+  in **a session opened in that folder**: dope-tdd guards only its own session's project, so editing
+  agent-os from a dope-tdd session would be unguarded. The night shift's text to start the spec from
+  is dope-tdd commit 57a898f (`tools/night-shift/`).

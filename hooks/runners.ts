@@ -752,7 +752,8 @@ function withoutInlineCode(segment: string): string {
 // A runner asked its version, its help or its test list runs nothing: `python -m pytest --version` counted as a run
 // with no summary to read, and stayed unread in the counts (Karl's Python trial, 2026-10-19). Short `-v`/`-V` are
 // left out on purpose: pytest's -v is verbose, not a version.
-const RUNS_NOTHING = /\s(?:--version|--help|-h|--collect-only|--co)(?=\s|$)/
+// pytest's fixture and marker listings too (verified review D6, 2026-10-20).
+const RUNS_NOTHING = /\s(?:--version|--help|-h|--collect-only|--co|--fixtures|--fixtures-per-test|--markers)(?=\s|$)/
 
 const TEST_FILTER = /(?:^|\s)(?:-t|-k|-g|-m|--testNamePattern|--filter|--grep|--match)(?:[\s=]|$)/
 // `python -m pytest`: that -m names the module Python runs, before any of the runner's own flags (Karl's round 3,

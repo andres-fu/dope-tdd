@@ -227,6 +227,13 @@ describe('recognising a test run in a shell command', () => {
     expect(isTestRun('dotnet build')).toBe(false)
   })
 
+  // Verified review D6 (2026-10-20): pytest's listing flags print no summary, so they became unread runs.
+  test("pytest's fixture and marker listings run no test either", () => {
+    expect(isTestRun('python -m pytest --fixtures tests')).toBe(false)
+    expect(isTestRun('pytest --fixtures-per-test tests/test_api.py')).toBe(false)
+    expect(isTestRun('pytest --markers')).toBe(false)
+  })
+
   test('asking a runner its version, its help or its test list runs no test (Karl, Python trial, 2026-10-19)', () => {
     expect(isTestRun('python -m pytest --version')).toBe(false)
     expect(isTestRun('pytest -h')).toBe(false)

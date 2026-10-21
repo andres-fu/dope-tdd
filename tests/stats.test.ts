@@ -14,6 +14,7 @@ import {
   recordBlocked,
   recordCatch,
   recordChange,
+  recordCommentTouch,
   recordConfigChange,
   recordGuardFailure,
   recordGitIn,
@@ -288,6 +289,13 @@ describe('the catch-check lock', () => {
     expect(isChecking(held, T0 + CHECK_LOCK_TTL_MS - 1)).toBe(true)
     expect(isChecking(held, T0 + CHECK_LOCK_TTL_MS)).toBe(false)
     expect(acquireCheck(held, 'utils/b', T0 + CHECK_LOCK_TTL_MS).checking).toEqual({ module: 'utils/b', sinceMs: T0 + CHECK_LOCK_TTL_MS })
+  })
+
+  // Verified review A9 (2026-10-20): the lock now covers the baseline too. Baseline and check run up to a minute each
+  // (catchCheck.ts) and node --test may run each once more (#26): four minutes, plus spawns. A lock that expires sooner
+  // lets another check, or a gate, take a file that is still reverted.
+  test('outlasts the longest check: a baseline and a run of a minute each, each run twice', () => {
+    expect(isChecking(acquireCheck(INITIAL_STATS, 'utils/a', T0), T0 + 4 * 60_000 + 30_000)).toBe(true)
   })
 })
 
@@ -720,5 +728,14 @@ describe('a guard that failed', () => {
     expect(INITIAL_STATS.guardFailures).toBe(0)
     expect(twice.guardFailures).toBe(2)
     expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['guard-failed', 'Bash'], ['guard-failed', 'Edit']])
+  })
+})
+
+// Decided 2026-10-20 (verified review A12): a comments-only touch is on the record, never counted as a workaround.
+describe('a test touched with comments only', () => {
+  test('is an event for the module, and no workaround', () => {
+    const s = recordCommentTouch(INITIAL_STATS, 'utils/a', 5)
+    expect(s.events.map(e => [e.kind, e.module])).toEqual([['comment-touch', 'utils/a']])
+    expect(s.workarounds).toBe(0)
   })
 })

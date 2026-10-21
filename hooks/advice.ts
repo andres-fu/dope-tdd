@@ -65,6 +65,10 @@ export function importAdvice(testPath: string, modules: readonly string[]): stri
   return say('touch.imports', { testPath, modules })
 }
 
+export function commentsOnlyAdvice(testPath: string, module: string): string {
+  return say('touch.commentsOnly', { testPath, module })
+}
+
 export function hollowAdvice(testPath: string): string {
   return say('test.noAssertion', { testPath })
 }

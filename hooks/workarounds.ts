@@ -18,6 +18,19 @@ const COMMENT_OR_BLANK = /^(?:\/\/|\/\*|\*|\*\/|$)/
 export type TestEditSignal =
   | { kind: 'skipped'; added: number }
   | { kind: 'assertion-removed'; before: number; after: number }
+  /** Only comments or blank lines changed: it still unlocks, and is said, but is no workaround (decided 2026-10-20). */
+  | { kind: 'comments-only' }
+
+// A comment in any stack the guard reads tests in: JS/TS, C#, Java, GDScript and Python.
+const ANY_COMMENT_OR_BLANK = /^(?:\/\/|\/\*|\*|\*\/|#|$)/
+
+function testLines(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => !ANY_COMMENT_OR_BLANK.test(line))
+    .join('\n')
+}
 
 function count(pattern: RegExp, text: string): number {
   return [...text.matchAll(pattern)].length
@@ -36,9 +49,11 @@ export function testEditSignals(before: string, after: string): TestEditSignal[]
   const skipsAdded = skipMarkers(after) - skipMarkers(before)
   const assertionsBefore = assertionCalls(before)
   const assertionsAfter = assertionCalls(after)
+  const commentsOnly = before !== after && testLines(before) === testLines(after)
   return [
     ...(skipsAdded > 0 ? [{ kind: 'skipped', added: skipsAdded } as const] : []),
     ...(assertionsAfter < assertionsBefore ? [{ kind: 'assertion-removed', before: assertionsBefore, after: assertionsAfter } as const] : []),
+    ...(commentsOnly ? [{ kind: 'comments-only' } as const] : []),
   ]
 }
 

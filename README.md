@@ -301,13 +301,18 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 
 With Vitest, Jest, ava or `node --test` in a git checkout (a clone or a linked
 worktree), the catch check undoes your change in a throwaway copy inside the
-checkout's git directory and never writes your files. Otherwise (a copy that
-cannot reproduce the project, or
-an experimental runner with `"catchCheck": true`) it writes the old code
-into your file for the length of one test run, then puts your change back. If the session ends mid-check, the
-change is put back on the way out (or at the next session start). If the
-file changed under it, your file is left alone and the change is kept in
-`~/.dope-tdd/kept/<repo>/`, never inside the repository.
+checkout's git directory and never writes your files. If that copy cannot be
+made or cannot run the test (more than 300 changed files, a slow checkout,
+a test that is not green there), the green is UNPROVEN · not checked, and
+says why; it never falls back to your file. Outside a git checkout, or with
+an experimental runner and `"catchCheck": true`, it writes the old code into
+your file for the length of one test run, then puts your change back. The
+file is compared again just before that, so a save from your editor in the
+meantime stops the check instead of being overwritten. If the session ends
+mid-check, the change is put back on the way out (or at the next session
+start). If the file changed under it, your file is left alone and the change
+is kept in `~/.dope-tdd/kept/<repo>-<hash>/` (the temp folder when there is
+no home folder), never inside the repository.
 
 A new file has no old code to put back. In that throwaway copy (Node, a git
 clone) the check makes up to four small changes to it instead, one at a time:
@@ -381,7 +386,6 @@ change back, so it holds a copy of the source file it is checking:
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
 | Session log | `~/.dope-tdd/sessions/` | Counts and the status receipt (module and test names), the repository folder name, no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
-| Field guide | `~/.dope-tdd/guides/` | Rules you write; Dope TDD only reads it | You own it |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 
 Files matched by `exempt` in `dope-tdd.json` are not captured. The 30-day

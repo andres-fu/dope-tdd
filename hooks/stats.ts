@@ -4,8 +4,12 @@ import { pathKey } from './mirror.ts'
 
 const EVENT_LOG_LENGTH = 50
 const CURRENT_EXPIRY_MS = 15 * 60_000
-/** Longer than the catch check's hardest budget (a minute) plus the restore; a lock older than this is a crash, not a check. */
-export const CHECK_LOCK_TTL_MS = 2 * 60_000
+/**
+ * Longer than the longest check: a baseline and a run of up to a minute each, each run twice by the node --test retry,
+ * plus the restore. A lock older than this is a crash, not a check (verified review A9: two minutes could expire while
+ * a file was still reverted, once the lock covered the baseline too).
+ */
+export const CHECK_LOCK_TTL_MS = 5 * 60_000
 
 export const FRESH_MODULE: ModuleState = {
   phase: 'idle',
@@ -360,6 +364,11 @@ export function recordGitIn(s: TddStats, modules: readonly string[], command: st
 /** A guard that threw let a call through unguarded: counted, so the band and /tdd stop looking guarded (verified review A13). */
 export function recordGuardFailure(s: TddStats, guard: string, nowMs: number): TddStats {
   return logged({ ...s, guardFailures: s.guardFailures + 1 }, 'guard-failed', nowMs, undefined, guard)
+}
+
+/** A test touched with only comments or blank lines changed: on the record, never a workaround (decided 2026-10-20). */
+export function recordCommentTouch(s: TddStats, module: string, nowMs: number): TddStats {
+  return logged(s, 'comment-touch', nowMs, module)
 }
 
 export function recordConfigChange(s: TddStats, detail: string, loosened: boolean, nowMs: number): TddStats {

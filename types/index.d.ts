@@ -39,6 +39,8 @@ export type EventKind =
   | 'pin-corrected'
   /** A guard threw and let the call through unguarded (verified review A13). */
   | 'guard-failed'
+  /** A test touched with only comments or blank lines changed: it unlocks, and is on the record (decided 2026-10-20). */
+  | 'comment-touch'
   /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
   | 'git-in'
 

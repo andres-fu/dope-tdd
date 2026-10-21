@@ -34,6 +34,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'pin-corrected': 'pin corrected',
   pinning: 'pin skill in use',
   'git-in': 'brought in by git, not guarded',
+  'comment-touch': 'touched, comments only',
 }
 
 // Pin corrected (2026-10-18): a fixed pin is not a workaround, so it is said on its own line, never under workarounds.

@@ -46,6 +46,9 @@ export const MESSAGES = {
     `dope-tdd: ${f.module} unlocked by a red run of its own test. Fix ${f.sourcePath}, run again, and the fix will be checked.`),
   'touch.unchanged': entry({ testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.testPath} was re-saved unchanged. A touch that changes nothing proves nothing. Recorded; say why in your reply.`),
+  // Decided 2026-10-20 (verified review A12): a comment in a test still unlocks, said and on the record, not a workaround.
+  'touch.commentsOnly': entry({ testPath: 'tests/utils/a.test.ts', module: 'utils/a' }, f =>
+    `dope-tdd: ${f.testPath} changed only comments or blank lines, so no test changed. It still unlocks ${f.module}; the touch is on the record as comments only, not as a workaround.`),
   'touch.imports': entry({ testPath: 'tests/utils/a.test.ts', modules: ['utils/b', 'utils/c'] as readonly string[] }, f => {
     const one = f.modules.length === 1
     return `dope-tdd: ${f.testPath} imports ${f.modules.join(', ')}, so it is the test for ${one ? 'that module' : 'those modules'} too: ${one ? 'it is' : 'they are'} unlocked, and ${one ? 'its' : 'their'} catch check runs this file.`

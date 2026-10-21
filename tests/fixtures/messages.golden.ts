@@ -11,6 +11,7 @@ export const GOLDEN: Record<string, string> = {
   "note.staleUnlock": " tests/utils/a.test.ts unlocked it 1D AGO in an earlier session, but that test has changed since (a checkout, a merge, or an edit this guard did not see), so the earlier unlock no longer counts.",
   "red.unlocked": "dope-tdd: utils/a unlocked by a red run of its own test. Fix src/utils/a, run again, and the fix will be checked.",
   "touch.unchanged": "dope-tdd: tests/utils/a.test.ts was re-saved unchanged. A touch that changes nothing proves nothing. Recorded; say why in your reply.",
+  "touch.commentsOnly": "dope-tdd: tests/utils/a.test.ts changed only comments or blank lines, so no test changed. It still unlocks utils/a; the touch is on the record as comments only, not as a workaround.",
   "touch.imports": "dope-tdd: tests/utils/a.test.ts imports utils/b, utils/c, so it is the test for those modules too: they are unlocked, and their catch check runs this file.",
   "test.noAssertion": "dope-tdd: tests/utils/a.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.",
   "edit.unguarded": "dope-tdd: src/utils/a was edited with no test touched first. Write tests/utils/a.test.ts next and see it fail.",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS, RETENTION_MS } from '../hooks/retention'
+import { isExpired, keptNotice, keptPathFor, pruneArgv, PRUNED_FOLDERS, RETENTION_MS } from '../hooks/retention'
 import { journalEntry, journalFiles } from '../hooks/checkJournal'
 
 const DAY = 24 * 60 * 60_000
@@ -48,5 +48,22 @@ describe('what dope-tdd keeps on this machine, and for how long', () => {
     const entry = journalEntry([{ path: 'a.ts', before: 'a', after: 'b' }], 123)
     expect(entry).toEqual({ files: [{ path: 'a.ts', before: 'a', after: 'b' }], atMs: 123 })
     expect(journalFiles(entry)).toHaveLength(1)
+  })
+})
+
+// Verified review A11 (2026-10-20): a kept copy went next to its file, inside the repository, when HOME was unset (the
+// README says never), and two repositories with the same folder name overwrote each other's kept copies.
+describe('where a kept change goes', () => {
+  test('under home, in a folder named for the repository and a short hash of its full path', () => {
+    const a = keptPathFor({ home: 'C:/Users/me', temp: undefined, root: 'C:/work/app', relative: 'src/a.ts' })
+    const b = keptPathFor({ home: 'C:/Users/me', temp: undefined, root: 'D:/clients/app', relative: 'src/a.ts' })
+    expect(a).toMatch(/^C:\/Users\/me\/\.dope-tdd\/kept\/app-[0-9a-f]{8}\/src\/a\.ts$/)
+    expect(b).toMatch(/^C:\/Users\/me\/\.dope-tdd\/kept\/app-[0-9a-f]{8}\/src\/a\.ts$/)
+    expect(a).not.toBe(b)
+  })
+
+  test('with no home folder it goes to the temp folder; with neither there is nowhere, and never inside the repository', () => {
+    expect(keptPathFor({ home: undefined, temp: 'C:/Temp', root: 'C:/work/app', relative: 'src/a.ts' })).toMatch(/^C:\/Temp\/dope-tdd-kept\/app-[0-9a-f]{8}\/src\/a\.ts$/)
+    expect(keptPathFor({ home: '', temp: '', root: 'C:/work/app', relative: 'src/a.ts' })).toBeNull()
   })
 })

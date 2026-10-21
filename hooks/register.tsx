@@ -23,6 +23,7 @@ import {
   carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
+  commentsOnlyAdvice,
   hollowAdvice,
   importAdvice,
   hollowTouchAdvice,
@@ -43,7 +44,6 @@ import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
-import { guideKey, guidePath, guideSection } from './fieldGuide.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
 import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
@@ -66,6 +66,7 @@ import {
   recordBlocked,
   recordCarryWait,
   recordCatch,
+  recordCommentTouch,
   recordConfigChange,
   recordGuardFailure,
   recordGitIn,
@@ -97,7 +98,7 @@ import { planDecision, planEnd, planExpiry, planRequest, planResume, planShellCo
 import { gateWrite } from './fileGate.ts'
 import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
-import { isExpired, keptNotice, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
+import { isExpired, keptNotice, keptPathFor, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
 import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
@@ -108,7 +109,6 @@ const LAST_RUN_PANE = 'dope-tdd-last-run'
 const STATUS_TOOL = /^mcp__dope-tdd__status$/
 const MAX_SOURCE_CHARS = 10_000
 /** Where a change left alone after a check is kept, next to its source, named in the toast. */
-const KEPT_SUFFIX = '.dope-tdd.kept'
 const SURVEY_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', 'out', '.next', '.cache', 'target', 'vendor'])
 const SURVEY_DEPTH = 6
 const SURVEY_CAP = 5_000
@@ -542,16 +542,15 @@ function detectRunner($: EngineInterface, root: string, config: GuardConfig, tes
 let sharedLockUnavailableSaid = false
 /** Module and test pairs whose baseline (the check's own command, nothing reverted) was green in this load. */
 const baselined = new Set<string>()
-/** Each root's upstream (else origin) remote URL, or null, read once for the field guide. */
-const remotesByRoot = new Map<string, string | null>()
 /** Each root's real location, every symbolic link followed, or null when it cannot be resolved; asked once per root. */
 const realRoots = new Map<string, string | null>()
 /** How many folders up a path not written yet is followed to one that exists. */
 const MAX_RESOLVE_DEPTH = 64
 
-async function gitQuiet($: EngineInterface, root: string, args: string[], stdin?: string): Promise<{ exitCode: number; stdout: string } | null> {
+async function gitQuiet($: EngineInterface, root: string, args: string[], stdin?: string, timeoutMs?: number): Promise<{ exitCode: number; stdout: string } | null> {
   try {
-    const run = await $.process.run(['git', ...args], stdin === undefined ? { cwd: root } : { cwd: root, stdin })
+    // The engine stops a run after 30 s by default; a caller that needs longer (a worktree on a big checkout) says so.
+    const run = await $.process.run(['git', ...args], { cwd: root, ...(stdin === undefined ? {} : { stdin }), ...(timeoutMs === undefined ? {} : { timeoutMs }) })
     return { exitCode: run.exitCode, stdout: run.stdout }
   } catch {
     return null
@@ -561,7 +560,24 @@ async function gitQuiet($: EngineInterface, root: string, args: string[], stdin?
 async function acquireSharedLock($: EngineInterface, root: string, module: string, nowMs: number): Promise<SharedLock> {
   const hashed = await gitQuiet($, root, ['hash-object', '-w', '--stdin'], JSON.stringify({ module, sinceMs: nowMs }))
   if (hashed === null || hashed.exitCode !== 0) {
-    return { kind: 'unavailable' }
+    // Not a git checkout: the plugin store alone says a check is running, so another session waits for it and its end
+    // or start does not "repair" a file this check reverted (verified review A10). Best effort: a store read then write
+    // is not atomic across sessions, as a git compare-and-swap is.
+    const existing = parseLock(JSON.stringify((await $.store.get(sharedLockKey(root))) ?? null))
+    if (existing !== null && nowMs - existing.sinceMs < CHECK_LOCK_TTL_MS) {
+      return { kind: 'busy', module: existing.module }
+    }
+    if (!sharedLockUnavailableSaid) {
+      sharedLockUnavailableSaid = true
+      $.ui.log('dope-tdd: not a git checkout, so the catch-check lock is kept in the plugin store only, best effort across sessions')
+    }
+    const token = `store:${nowMs}`
+    try {
+      await $.store.set(sharedLockKey(root), { module, sinceMs: nowMs, sha: token })
+    } catch (error) {
+      $.ui.log(`dope-tdd: could not record the check lock in the store: ${String(error)}`)
+    }
+    return { kind: 'acquired', sha: token }
   }
   const sha = hashed.stdout.trim()
   const create = async () => (await gitQuiet($, root, ['update-ref', SHARED_LOCK_REF, sha, '']))?.exitCode === 0
@@ -661,13 +677,18 @@ async function forget($: EngineInterface, key: string): Promise<void> {
 
 /**
  * A change that will not be written back is kept, so no text is ever only in the log: under
- * `~/.dope-tdd/kept/<repo>/<path>`, outside the repository where `git add -A` would take it; next to its
- * file only when there is no home folder to name.
+ * `~/.dope-tdd/kept/<repo>-<hash>/<path>` (retention.ts, keptPathFor), never inside the repository. A second kept
+ * copy of the same file gets the time added, so it never overwrites the first (verified review A11).
  */
 async function keepAside($: EngineInterface, root: string, path: string, text: string): Promise<string | null> {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-  const repo = root.replace(/\\/g, '/').replace(/\/$/, '').split('/').pop() ?? 'repo'
-  const kept = home === undefined || home === '' ? `${path}${KEPT_SUFFIX}` : `${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd/kept/${repo}/${relativePath(root, path)}`
+  const temp = (await $.env.get('TMPDIR')) ?? (await $.env.get('TEMP')) ?? (await $.env.get('TMP'))
+  const place = keptPathFor({ home, temp, root, relative: relativePath(root, path) })
+  if (place === null) {
+    $.ui.log(`dope-tdd: no home or temp folder to keep ${relativePath(root, path)} in; your change is still in the journal`)
+    return null
+  }
+  const kept = (await $.fs.exists(place)) ? `${place}.${await $.clock.now()}` : place
   try {
     await $.fs.write(kept, text)
     return kept
@@ -806,6 +827,8 @@ async function checkRun($: EngineInterface, argv: string[], init: Parameters<Eng
   return $.process.run(argv, init)
 }
 
+/** How long `git worktree add` may take: a checkout of a large repository on Windows can pass the 30 s default. */
+const WORKTREE_TIMEOUT_MS = 120_000
 /** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
 const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
 // Inside the checkout's own git directory, so watchers and `git status` never see it: `.git/dope-tdd/wt` in a clone,
@@ -882,9 +905,10 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
   const sharedSha = shared.kind === 'acquired' ? shared.sha : null
   try {
     await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+    // Checking out a large repository can take longer than the engine's 30 s default (verified review A3).
     // No hooks: `worktree add` runs the repository's post-checkout hook, a program nobody asked the check to run.
     // core.hooksPath points at a folder that does not exist, so git finds none (verified review A16, 2026-10-20).
-    const added = await gitQuiet($, root, ['-c', `core.hooksPath=${gitDir}/dope-tdd/no-hooks`, 'worktree', 'add', '--detach', wt, 'HEAD'])
+    const added = await gitQuiet($, root, ['-c', `core.hooksPath=${gitDir}/dope-tdd/no-hooks`, 'worktree', 'add', '--detach', wt, 'HEAD'], undefined, WORKTREE_TIMEOUT_MS)
     if (added === null || added.exitCode !== 0) {
       return null
     }
@@ -1118,12 +1142,36 @@ async function checkAgainst(
     return { kind: 'unverified', reason: experimentalCheckReason(runner.kind) }
   }
 
-  // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files.
+  // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files. When
+  // the copy cannot be made or cannot run the test, the check says so; it once fell back to rewriting the user's real
+  // file, silently, while the README promised it never would (verified review A2, 2026-10-20).
   if (ISOLATED_RUNNERS.has(runner.kind) && (await gitDirOf($, root)) !== null) {
     const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh }))?.[0]
-    if (isolated !== undefined) {
-      await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
-      return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
+    if (isolated === undefined) {
+      return { kind: 'unverified', reason: 'the throwaway copy could not run the test, so your file was left alone; see the log' }
+    }
+    await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
+    return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
+  }
+
+  // The lock first, then the baseline, then the journal: a check that loses the lock never touches another check's
+  // journal, and the lock covers the baseline too, so the Edit gate holds the file while it runs (verified review A1).
+  // The lock's time is when this check starts, not when the run that asked for it did (review #7).
+  const lockedAt = await $.clock.now()
+  const locked = await change($, state => acquireCheck(state, module, lockedAt))
+  if (locked.checking?.module !== module || locked.checking.sinceMs !== lockedAt) {
+    return { kind: 'unverified', reason: 'another check was running' }
+  }
+  const shared = await acquireSharedLock($, root, module, lockedAt)
+  if (shared.kind === 'busy') {
+    await change($, releaseCheck)
+    return { kind: 'unverified', reason: `another session was checking ${shared.module}` }
+  }
+  const sharedSha = shared.kind === 'acquired' ? shared.sha : null
+  const releaseAll = async () => {
+    await change($, releaseCheck)
+    if (sharedSha !== null) {
+      await releaseSharedLock($, root, sharedSha)
     }
   }
 
@@ -1139,33 +1187,17 @@ async function checkAgainst(
       base = catchOutcome(runFailure(error))
     }
     if (base.kind !== 'missed') {
+      await releaseAll()
       return { kind: 'unverified', reason: base.kind === 'unverified' ? `baseline: ${base.reason}` : "the test is red under the check's own command before anything is reverted" }
     }
     baselined.add(baselineKey)
   }
 
-  // The lock first, then the journal: a check that loses the lock never touches another check's journal.
-  // The lock's time is when this check starts, not when the run that asked for it did (review #7).
-  const lockedAt = await $.clock.now()
-  const locked = await change($, state => acquireCheck(state, module, lockedAt))
-  if (locked.checking?.module !== module || locked.checking.sinceMs !== lockedAt) {
-    return { kind: 'unverified', reason: 'another check was running' }
-  }
-  const shared = await acquireSharedLock($, root, module, lockedAt)
-  if (shared.kind === 'busy') {
-    await change($, releaseCheck)
-    return { kind: 'unverified', reason: `another session was checking ${shared.module}` }
-  }
-  if (shared.kind === 'unavailable' && !sharedLockUnavailableSaid) {
-    sharedLockUnavailableSaid = true
-    $.ui.log('dope-tdd: not a git checkout, so the catch-check lock covers this session only')
-  }
-  const sharedSha = shared.kind === 'acquired' ? shared.sha : null
-  const releaseAll = async () => {
-    await change($, releaseCheck)
-    if (sharedSha !== null) {
-      await releaseSharedLock($, root, sharedSha)
-    }
+  // Compared again just before the revert: the first comparison came before a baseline of up to a minute, and a save
+  // from the user's editor in that window was overwritten by the revert, then by the restore (verified review A1).
+  if ((await readWhole($, path)) !== after) {
+    await releaseAll()
+    return { kind: 'unverified', reason: 'changed outside' }
   }
   const journalKey = journalKeyFor(root, module)
   try {
@@ -1353,6 +1385,11 @@ async function noteTestEdit(
     if (signal.kind === 'skipped') {
       await change($, s => recordWorkaround(s, 'skipped', module, `+${signal.added}`, nowMs))
       lines.push(skippedAdvice(relativePath(root, path), signal.added))
+    } else if (signal.kind === 'comments-only') {
+      // Still unlocks: a comment can be an honest note of what is about to be tested. Said and on the record, but no
+      // workaround (decided 2026-10-20, verified review A12).
+      await change($, s => recordCommentTouch(s, module, nowMs))
+      lines.push(commentsOnlyAdvice(relativePath(root, path), module))
     } else {
       await change($, s => recordWorkaround(s, 'assertion-removed', module, `${signal.before} → ${signal.after}`, nowMs))
       lines.push(assertionsRemovedAdvice(relativePath(root, path), signal.before, signal.after))
@@ -2292,38 +2329,6 @@ async function coverShellWrites($: EngineInterface, root: string, locked: readon
   return covered.stillLocked
 }
 
-/** This repository's field guide as a briefing section, or null when there is none. Never fails the prompt. */
-async function fieldGuide($: EngineInterface, root: string): Promise<string | null> {
-  try {
-    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-    if (home === undefined || home === '') {
-      return null
-    }
-    // The remote does not move within a session: asked once per root, not on every prompt.
-    let remote = remotesByRoot.get(root)
-    if (remote === undefined) {
-      remote = null
-      for (const name of ['upstream', 'origin']) {
-        const answer = await gitQuiet($, root, ['config', '--get', `remote.${name}.url`])
-        if (answer !== null && answer.exitCode === 0 && answer.stdout.trim() !== '') {
-          remote = answer.stdout.trim()
-          break
-        }
-      }
-      remotesByRoot.set(root, remote)
-    }
-    const key = guideKey(remote, root)
-    const path = guidePath(home, key)
-    if (!(await $.fs.exists(path))) {
-      return null
-    }
-    const text = await $.fs.read(path)
-    return typeof text === 'string' && text.trim() !== '' ? guideSection(key, text) : null
-  } catch {
-    return null
-  }
-}
-
 /** The session's record, left under the user's home when it ends; DOPE_TDD_LOG=off keeps it in memory. */
 async function writeSessionLog($: EngineInterface, sessionId: string, reason: string): Promise<void> {
   if ((await $.env.get('DOPE_TDD_LOG')) === 'off') {
@@ -2496,14 +2501,8 @@ export const register: Register = on => {
       return composed
     }
     const text = briefingText(config, await briefingCommand($, root, config))
-    const guide = await fieldGuide($, root)
-    return {
-      sections: [
-        ...composed.sections,
-        { id: 'dope-tdd:briefing', text, scope: 'session' as const },
-        ...(guide === null ? [] : [{ id: 'dope-tdd:field-guide', text: guide, scope: 'session' as const }]),
-      ],
-    }
+    // Only the briefing: field guides from ~/.dope-tdd/guides were cut on 2026-10-20 (verified review B7).
+    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })
 
   // Pin corrected (2026-10-18): the pin skill running, typed or called by the agent, is what tells a corrected pin from a

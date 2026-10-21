@@ -179,6 +179,16 @@ describe('band v3: one guard word, only when the guard is not simply enforcing',
     expect(guard(on({}))).toBeNull()
   })
 
+  // Verified review A13 (2026-10-20): a guard that threw let calls through with one toast, and the band went on looking
+  // like it was guarding. It comes first: nothing else the band says is true while the guard is not running.
+  test('a guard that failed, before anything else', () => {
+    expect(guard(on({ guardFailures: 2, paused: true }), {}, { standingDown: 'rebase' })).toEqual({
+      word: 'GUARD FAILING',
+      detail: '2 calls went through unguarded after an internal error · see the log',
+    })
+    expect(guard(on({ guardFailures: 1 }))).toEqual({ word: 'GUARD FAILING', detail: '1 call went through unguarded after an internal error · see the log' })
+  })
+
   test('a git operation in progress', () => {
     expect(guard(on({}), {}, { standingDown: 'rebase' })).toEqual({ word: 'STANDING DOWN', detail: 'git rebase in progress · back when it ends' })
   })

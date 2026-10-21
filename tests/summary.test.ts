@@ -15,6 +15,11 @@ describe('formatStatus', () => {
     expect(text).toMatch(/^recent events: none yet$/m)
   })
 
+  // Verified review A13 (2026-10-20): /tdd said "guard: ON" while calls went through unguarded after internal errors.
+  test('a guard that failed says so on its own line, with how many calls went through', () => {
+    expect(formatStatus({ ...INITIAL_STATS, guardFailures: 3 }, T0)).toMatch(/^guard: FAILING \(3 calls went through unguarded after an internal error; see the log\)$/m)
+  })
+
   test('reports pause, phase, counts and recent events with relative times', () => {
     let s = recordTestTouch(INITIAL_STATS, { module: 'utils/a', testPath: 'C:/w/tests/utils/a.test.ts' }, T0)
     s = recordRun(s, false, T0 + 5_000)

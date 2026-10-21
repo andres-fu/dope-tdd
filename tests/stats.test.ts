@@ -16,6 +16,7 @@ import {
   recordChange,
   recordCommentTouch,
   recordConfigChange,
+  recordGuardFailure,
   recordGitIn,
   recordCarriedRun,
   recordCarryWait,
@@ -716,6 +717,17 @@ describe('code brought in by git', () => {
     ])
     // Only the log moves: the events and when the last one was.
     expect({ ...s, events: [], lastEventMs: null }).toEqual({ ...INITIAL_STATS, events: [], lastEventMs: null })
+  })
+})
+
+// Verified review A13 (2026-10-20): every call a failed guard let through is counted and on the record.
+describe('a guard that failed', () => {
+  test('is counted, and logged with which guard it was', () => {
+    const once = recordGuardFailure(INITIAL_STATS, 'Bash', 5)
+    const twice = recordGuardFailure(once, 'Edit', 6)
+    expect(INITIAL_STATS.guardFailures).toBe(0)
+    expect(twice.guardFailures).toBe(2)
+    expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['guard-failed', 'Bash'], ['guard-failed', 'Edit']])
   })
 })
 

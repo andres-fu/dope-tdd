@@ -266,7 +266,8 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 - `mode`: `enforce` (default) denies a source edit until its test is
   touched; `warn` allows it, counts it as unguarded, and tells Claude what to
   write next; `observe` allows it, counts it, and says nothing: no advice,
-  no briefing, and no catch check, so nothing on disk is ever touched. Use it
+  no briefing, no catch check and no test run of its own, so nothing on disk
+  is ever touched and nothing of your project's is started. Use it
   for a baseline of how an agent works on its own before a team turns the
   guard on.
 - `scope`: when set, the mode applies only inside these paths and everything
@@ -344,8 +345,8 @@ starts, and when:
 | --- | --- | --- |
 | A module's own test goes green, in `warn` or `enforce` (the catch check) | Node: the runner from your `node_modules` (Vitest, Jest, ava), or `node --test` with the flags your `package.json` test script passes (`--import`, `--require`, `--env-file`, ...), on that one test file | A throwaway git worktree in `.git/dope-tdd/wt` |
 | The same, on an experimental stack, only with `"catchCheck": true` | pytest or `unittest` through your `.venv` python, or `uv run` / `poetry run` / `pdm run` / `pipenv run` when a lockfile names one, else `python`; `mvnw`, `gradlew`, `mvn`, `gradle`; `dotnet test`; the Godot binary named in `dope-tdd.json` | Your project folder, with your change undone for one run |
-| A red run whose output was cut short, so not every failing test was named | The same one-file command, once, to read all the names | Your project folder |
-| Around shell commands, edits and checks | `git`: `diff`, `ls-files`, `status`, `rev-parse`, `worktree add`/`remove`, `update-ref`, `hash-object` | Your repository. `worktree add` runs your repository's `post-checkout` hook, as git does |
+| A red run whose output was cut short, so not every failing test was named, in `warn` or `enforce` (Node; another stack only with `"catchCheck": true`) | The same one-file command, once, to read all the names | Your project folder |
+| Around shell commands, edits and checks | `git`: `diff`, `ls-files`, `status`, `rev-parse`, `worktree add`/`remove`, `update-ref`, `hash-object` | Your repository. `worktree add` runs with hooks off (`core.hooksPath` at a folder that does not exist), so none of your git hooks run |
 | At session start | `node -e` to delete its own session logs older than 30 days | `~/.dope-tdd/sessions/` |
 
 Every run it starts has `CI=1` set and stops after 60 seconds at most. Your

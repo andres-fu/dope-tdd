@@ -36,7 +36,7 @@ import {
   unreadRunAdvice,
 } from './advice.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { bringsInCode, changedPaths, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
@@ -68,6 +68,7 @@ import {
   recordCatch,
   recordCommentTouch,
   recordConfigChange,
+  recordGuardFailure,
   recordGitIn,
   recordImportUnlock,
   recordImporter,
@@ -758,6 +759,12 @@ function reportGuardFailure($: EngineInterface, name: string, error: { readonly 
   try {
     const why = error.message === undefined ? error.kind : `${error.kind}: ${error.message}`
     $.ui.log(`dope-tdd: the ${name} guard failed (${why}) and let the call through`)
+    // Counted, so the band and /tdd say GUARD FAILING instead of looking guarded (verified review A13). Best effort:
+    // the state may be what failed, and this handler must never throw.
+    void (async () => {
+      const nowMs = await $.clock.now()
+      await change($, s => recordGuardFailure(s, name, nowMs))
+    })().catch(() => {})
     if (!guardFailureToasted) {
       guardFailureToasted = true
       toast($, 'dope-tdd hit an internal error and let a call through; see the log')
@@ -795,7 +802,9 @@ async function oneTestCommand(
 async function allFailingNames($: EngineInterface, root: string, config: GuardConfig, testPath: string): Promise<string[]> {
   try {
     const command = await oneTestCommand($, root, config, testPath)
-    if (command === null) {
+    // The same opt-in as the catch check: observe mode starts nothing, and an experimental runner (the venv python,
+    // mvnw, a Godot binary) runs only with "catchCheck": true (verified review A4, 2026-10-20).
+    if (command === null || config.mode === 'observe' || (!ISOLATED_RUNNERS.has(command.runner.kind) && config.catchCheck !== true)) {
       return []
     }
     const run = await $.process.run(command.argv, { cwd: command.runIn, env: { CI: '1', DOPE_TDD_NAMES: '1' }, timeoutMs: 60_000 })
@@ -897,7 +906,9 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
   try {
     await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
     // Checking out a large repository can take longer than the engine's 30 s default (verified review A3).
-    const added = await gitQuiet($, root, ['worktree', 'add', '--detach', wt, 'HEAD'], undefined, WORKTREE_TIMEOUT_MS)
+    // No hooks: `worktree add` runs the repository's post-checkout hook, a program nobody asked the check to run.
+    // core.hooksPath points at a folder that does not exist, so git finds none (verified review A16, 2026-10-20).
+    const added = await gitQuiet($, root, ['-c', `core.hooksPath=${gitDir}/dope-tdd/no-hooks`, 'worktree', 'add', '--detach', wt, 'HEAD'], undefined, WORKTREE_TIMEOUT_MS)
     if (added === null || added.exitCode !== 0) {
       return null
     }
@@ -1418,7 +1429,9 @@ async function noteSaved($: EngineInterface, root: string): Promise<void> {
     return
   }
   const config = await loadConfig($, root)
-  const status = await gitQuiet($, root, ['status', '--porcelain=v2', '--branch', '--', `${sourcePathFor(config, module)}.*`, relativePath(root, testPath)])
+  // --no-optional-locks: status otherwise refreshes the index and takes .git/index.lock, which can make the user's own
+  // git command fail while it runs (verified review A14).
+  const status = await gitQuiet($, root, ['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '--', `${sourcePathFor(config, module)}.*`, relativePath(root, testPath)])
   const state = status === null || status.exitCode !== 0 ? null : savedStateOf(status.stdout)
   if (state !== null) {
     await update($, savedAtom, () => ({ module, state }))
@@ -1789,8 +1802,8 @@ async function checkShell(
   if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
     const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
-      const line = command.trim().split(/\r?\n/)[0] ?? ''
-      const detail = line.length > 80 ? `${line.slice(0, 79)}…` : line
+      // The verb only: the arguments can hold a token in a remote URL (verified review B1).
+      const detail = gitVerb(command)
       await change($, s => recordGitIn(s, [...new Set(brought.map(({ module }) => module))], detail, nowMs))
       $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
     }

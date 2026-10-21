@@ -742,6 +742,22 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(1)
   })
 
+  // Debt `review` (2026-10-16): a check that found another session's lock ran nothing, yet the record counted it.
+  test('a check that finds another session holding the lock runs nothing, and the record does not count it', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
+    gitRepo(world)
+    world.refs.set('refs/worktree/dope-tdd-check', 'held')
+    world.objects.set('held', JSON.stringify({ module: 'utils/other', sinceMs: T0 }))
+    await fixUnderGuard($, world)
+
+    const green = await runTests($, world, 'pass')
+    await $.session.end({ reason: 'other', sessionId: 'busy', resume: { id: 'busy' } } as never)
+
+    expect(green.context?.join(' ')).toMatch(/another session was checking utils\/other/)
+    const record = world.writes.find(([path]) => path.includes('/.dope-tdd/sessions/'))
+    expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(0)
+  })
+
   // Field test on VibeCast (2026-10-18): in a linked worktree `.git` is a file, so `.git/HEAD` never exists and both
   // the isolated check and the small changes to a new file were skipped without a word. The desktop app runs every
   // side session in a linked worktree. The throwaway copy now lives in the worktree's own git directory.

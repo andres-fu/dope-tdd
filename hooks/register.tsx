@@ -965,6 +965,8 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
         outcomes.push(catchOutcome(runFailure(error)))
       }
     }
+    // Counted here, once the test ran in the worktree: a check that found the lock busy ran nothing (debt `review`).
+    await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
     return outcomes
   } catch (error) {
     $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); checking in place`)
@@ -1013,7 +1015,6 @@ async function newFileCheck(
   if (outcomes === null) {
     return null
   }
-  await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
   const caught = mutants.filter((_, k) => outcomes[k]?.kind === 'caught').length
   const survived = mutants.filter((_, k) => outcomes[k]?.kind === 'missed').map(mutant => mutant.change)
   const mutation = { tried: mutants.length, caught, survived }
@@ -1150,7 +1151,6 @@ async function checkAgainst(
     if (isolated === undefined) {
       return { kind: 'unverified', reason: 'the throwaway copy could not run the test, so your file was left alone; see the log' }
     }
-    await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
     return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
   }
 

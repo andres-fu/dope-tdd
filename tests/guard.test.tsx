@@ -1,6 +1,5 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On } from 'claude-code'
 
 import { ROOT, fakeEngine, test } from './engine'
 
@@ -17,10 +16,6 @@ const BAND = {
     view: {},
   },
 } as const
-
-function answerAsEngine(on: On, _bashFails: { value: boolean }) {
-  fakeEngine(on)
-}
 
 async function editAt($: Engine, root: string, relative: string) {
   return $.tool.call({
@@ -45,7 +40,7 @@ async function runBash($: Engine, command: string) {
 
 describe('guard', () => {
   test('blocks a src edit whose mirrored test was not touched', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT
 
     const result = await editAt($, root, 'src/utils/formatDuration.ts')
@@ -55,7 +50,7 @@ describe('guard', () => {
   })
 
   test('allows a src edit after its mirrored test was edited', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT
 
     await editAt($, root, 'tests/utils/formatDuration.test.ts')
@@ -65,7 +60,7 @@ describe('guard', () => {
   })
 
   test('accepts a .tsx test mirroring a .tsx source written fresh', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT
 
     await writeAt($, root, 'tests/components/StatsCard.test.tsx')
@@ -75,7 +70,7 @@ describe('guard', () => {
   })
 
   test('accepts Windows-style backslash paths', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT.replace(/\//g, '\\')
 
     await $.tool.call({
@@ -95,7 +90,7 @@ describe('guard', () => {
   })
 
   test('never blocks files outside src/', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT
 
     const docs = await editAt($, root, 'docs/decisions/note.md')
@@ -106,7 +101,7 @@ describe('guard', () => {
   })
 
   test('a test for one module does not unlock another', async ($, on) => {
-    answerAsEngine(on, { value: false })
+    fakeEngine(on)
     const root = ROOT
 
     await editAt($, root, 'tests/utils/formatDuration.test.ts')

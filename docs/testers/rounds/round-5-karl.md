@@ -57,8 +57,10 @@ is fine). Expect the line
 afterwards the way you did in round 4.
 
 **Step 4: #134, the restore half (not covered yet by either of us).** Change `api.py` without staging
-it, then run `git restore api.py`. Expect no message and no edit charged in `/tdd`. Check the hash
-changed back, so we know the restore really ran this time.
+it, then run `git restore api.py`. The edit counts as usual; expect the restore itself to add no
+message and nothing new in `/tdd`. Check the hash changed back, so we know the restore really ran this
+time. (If step 3's checkout left main's `api.py` staged, run `git restore --staged api.py` first, as
+you did in round 4.)
 
 **Step 5: #132 on its real path.** This is the one that matters:
 1. Unlock `api` the usual way (touch the test).

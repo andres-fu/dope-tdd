@@ -39,8 +39,14 @@ function guardedZero(tokens: readonly Token[], index: number): boolean {
   const same = (texts: readonly string[]) => texts.length === operand.length && texts.every((text, k) => text === operand[k])
   const negated = tokens[start - 2 - operand.length]?.text === '!' && same(before(operand.length))
   const equalsZero = before(2)[1] === '0' && ['===', '=='].includes(before(2)[0] ?? '') && same(before(operand.length + 2).slice(0, operand.length))
-  return negated || equalsZero
+  // The guard must be the whole left side of the ||: after `z &&` it binds to z, and after `a.` it is about `a.b`, so
+  // neither covers 0 for the operand (review #10). The token before it must start an expression.
+  const guardLength = negated ? operand.length + 1 : operand.length + 2
+  const opens = tokens[start - 2 - guardLength]?.text
+  return (negated || equalsZero) && (opens === undefined || EXPRESSION_STARTS.has(opens))
 }
+
+const EXPRESSION_STARTS = new Set(['(', '||', '=', 'return', ',', '?', ':', '{', ';', '=>', '['])
 
 type Candidate = { line: number; start: number; end: number; replacement: string; change: string }
 

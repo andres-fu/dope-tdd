@@ -398,7 +398,7 @@ change back, so it holds a copy of the source file it is checking:
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts and the status receipt (module and test names), the repository folder name, no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts and the status receipt (module and test names), the repository folder name (in a linked worktree, the main checkout's), no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 

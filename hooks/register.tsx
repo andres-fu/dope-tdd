@@ -2369,7 +2369,7 @@ async function writeSessionLog($: EngineInterface, sessionId: string, reason: st
   const config = await loadConfig($, root)
   const nowMs = await $.clock.now()
   const build = (await read($, buildAtom)) || undefined
-  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs, ...(build === undefined ? {} : { build }) }, formatStatus(s, nowMs, config, build))
+  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs, gitDir: await gitDirOf($, root), ...(build === undefined ? {} : { build }) }, formatStatus(s, nowMs, config, build))
   await $.fs.write(sessionLogPath(home, nowMs, sessionId), `${JSON.stringify(record, null, 2)}
 `)
 }

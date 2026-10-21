@@ -51,6 +51,11 @@ describe('mutantsOf: small changes a test of new code should notice (#27)', () =
     expect(changes('if (!length || length <= 1) stop()')).toContain('line 1: `<=` → `<`')
     // After && the guard does not take 0 for it: `!0 && 0 <= 0` is true, `!0 && 0 < 0` is not.
     expect(changes('if (!length && length <= 0) stop()')).toContain('line 1: `<=` → `<`')
+    // Review #10: the guard must be the whole left side of the ||. After `z &&` it binds to z (false z, 0 x: `<=` and
+    // `<` differ), and `a.b === 0` guards a.b, not b. Both are still mutated.
+    expect(changes('if (z && !x || x <= 0) stop()')).toContain('line 1: `<=` → `<`')
+    expect(changes('if (a.b === 0 || b <= 0) stop()')).toContain('line 1: `<=` → `<`')
+    expect(changes('const empty = !x || x <= 0')).not.toContain('line 1: `<=` → `<`')
   })
 })
 

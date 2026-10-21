@@ -35,8 +35,18 @@ export type SessionRecord = {
   receipt: string
 }
 
-/** `build`: which dope-tdd guarded the session (build.ts), so a receipt says which rules applied. */
-export type SessionMeta = { sessionId: string; reason: string; root: string; endedAtMs: number; build?: string }
+/**
+ * `build`: which dope-tdd guarded the session (build.ts), so a receipt says which rules applied. `gitDir`: the
+ * checkout's git directory, which in a linked worktree names the main checkout.
+ */
+export type SessionMeta = { sessionId: string; reason: string; root: string; endedAtMs: number; build?: string; gitDir?: string | null }
+
+/** The repository's folder name: a linked worktree's git dir is `<main>/.git/worktrees/<name>`, so it names `<main>` (debt `log`). */
+function repoName(root: string, gitDir: string | null | undefined): string {
+  const main = gitDir?.replace(/\\/g, '/').match(/^(.*)\/\.git\/worktrees\/[^/]+\/?$/)?.[1]
+  const folder = main ?? root
+  return folder.slice(folder.lastIndexOf('/') + 1)
+}
 
 export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMeta, receipt: string): SessionRecord {
   const root = meta.root.replace(/\\/g, '/').replace(/\/$/, '')
@@ -45,7 +55,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     sessionId: meta.sessionId,
     endedAt: new Date(meta.endedAtMs).toISOString(),
     reason: meta.reason,
-    repo: root.slice(root.lastIndexOf('/') + 1),
+    repo: repoName(root, meta.gitDir),
     mode: config.mode,
     stack: config.stack,
     layout: config.layout.name,

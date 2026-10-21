@@ -99,6 +99,21 @@ describe('every session leaves its receipt on this machine', () => {
     expect(logged(world)[0]?.[1]).not.toContain(ROOT)
   })
 
+  // Debt `log`: a session in a linked worktree was filed under the worktree's folder (`PR-live-log`), not the repository.
+  test('in a linked worktree the record names the main checkout\'s folder, still never a path', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    world.fileContents.set(`${ROOT}/.git`, `gitdir: ${FIXTURE_DRIVE}code/dope-tdd/.git/worktrees/throughline\n`)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    await end($)
+    const text = logged(world)[0]?.[1] ?? '{}'
+
+    expect((JSON.parse(text) as Record<string, unknown>).repo).toBe('dope-tdd')
+    expect(text).not.toContain(`${FIXTURE_DRIVE}code`)
+  })
+
   test('the record says how long the catch check took in all, so its share of a run can be measured', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME } })
     await fixUnderGuard($, world)

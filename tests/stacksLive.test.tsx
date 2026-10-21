@@ -35,8 +35,8 @@ describe('a Godot project with gdUnit4, no config file', () => {
     const addon = await editAt($, 'addons/gdUnit4/src/core/GdUnitSettings.gd')
     const status = await runCommand($, 'tdd')
 
-    expect(blocked.deny.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
-    expect(blocked.deny.split('\n')).toContain(OVERRIDE_HINT)
+    expect(blocked.deny?.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch test/player_test.gd, or run it and see it fail, before editing player. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
+    expect(blocked.deny?.split('\n')).toContain(OVERRIDE_HINT)
     expect(addon.deny).toBeUndefined()
     expect(status.text).toMatch(/stack: godot \(detected\)/)
     expect(status.text).toMatch(/exempt: addons\/\*\*/)
@@ -104,8 +104,8 @@ describe('a Python project with pytest, no config file', () => {
     await runBash($, 'python -m pytest tests/pkg/test_calc.py')
     const green = await runCommand($, 'tdd')
 
-    expect(blocked.deny.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
-    expect(blocked.deny.split('\n')).toContain(OVERRIDE_HINT)
+    expect(blocked.deny?.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch tests/pkg/test_calc.py, or run it and see it fail, before editing src/pkg/calc. That test path is a guess from the default layout; if this project keeps its tests elsewhere, ask the user to run /tdd setup.')
+    expect(blocked.deny?.split('\n')).toContain(OVERRIDE_HINT)
     expect(touched.context?.join(' ')).toMatch(/pkg\/calc unlocked/)
     expect(red.text).toMatch(/phase: RED/)
     expect(allowed.deny).toBeUndefined()
@@ -169,8 +169,8 @@ describe('a Python project with unittest, no pytest', () => {
 // Karl's round 4 (2026-10-20): the briefing asked for the runner of a made-up `example.py`, so a project that says
 // pytest only in its tests was told `python -m unittest` while every hint said pytest. It now reads a real test file.
 describe('the briefing names the runner the project\'s own tests point at', () => {
-  async function briefing($: Parameters<Parameters<typeof test>[1]>[0]): Promise<string> {
-    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Bash'], outputStyle: null, traits: [] })) as { sections: { id: string; text: string }[] }
+  async function briefing($: Parameters<typeof runCommand>[0]): Promise<string> {
+    const composed = (await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Bash'], outputStyle: null, traits: [] }))
     return composed.sections.find(section => section.id === 'dope-tdd:briefing')?.text ?? ''
   }
 
@@ -219,8 +219,8 @@ describe('a Godot .NET project with gdUnit4 in C#, paired by name', () => {
     await runBash($, 'dotnet test --filter FullyQualifiedName~BeatDeckTest')
     const green = await runCommand($, 'tdd')
 
-    expect(blocked.deny.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch test/BeatDeckTest.cs, or run it and see it fail, before editing BeatDeck.')
-    expect(blocked.deny.split('\n')).toContain(OVERRIDE_HINT)
+    expect(blocked.deny?.split('\n')[0]).toBe('dope-tdd: write the failing test first. Touch test/BeatDeckTest.cs, or run it and see it fail, before editing BeatDeck.')
+    expect(blocked.deny?.split('\n')).toContain(OVERRIDE_HINT)
     expect(touched.context?.join(' ')).toMatch(/BeatDeck unlocked/)
     expect(red.text).toMatch(/phase: RED/)
     expect(red.text).toMatch(/module: BeatDeck/)

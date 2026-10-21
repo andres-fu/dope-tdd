@@ -305,6 +305,13 @@ export function describeStack(config: GuardConfig): string {
   return `stack: ${config.stack} (${how})`
 }
 
+const ESCAPES: Readonly<Record<string, string>> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' }
+
+/** A control character shown escaped: values from the file reach /tdd and the agent, and must not make lines there (arch2 10). */
+function escapeControls(line: string): string {
+  return line.replace(/[\u0000-\u001f\u007f]/g, char => ESCAPES[char] ?? `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+}
+
 export function describeConfig(config: GuardConfig): string[] {
   const scope = config.scope.length === 0 ? '' : ` in ${config.scope.join(', ')}`
   return [
@@ -320,7 +327,7 @@ export function describeConfig(config: GuardConfig): string[] {
     // Experimental, and the one thing sent off the machine (decided 2026-10-20, verified review G3).
     ...(approverOf(config).approver === 'model' ? ["approver: model (experimental): override requests and the module's diff go to the model API"] : []),
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),
-  ]
+  ].map(escapeControls)
 }
 
 const MODE_STRENGTH: Readonly<Record<GuardMode, number>> = { enforce: 2, warn: 1, observe: 0 }
@@ -386,5 +393,5 @@ export function describeConfigChange(before: GuardConfig, after: GuardConfig): s
     ...(approverOf(before).approver === approverOf(after).approver ? [] : [`approver ${approverOf(before).approver} → ${approverOf(after).approver}`]),
     ...(after.error !== null && before.error !== after.error ? [`now invalid: ${after.error}`] : []),
   ]
-  return parts.length === 0 ? null : parts.join('; ')
+  return parts.length === 0 ? null : escapeControls(parts.join('; '))
 }

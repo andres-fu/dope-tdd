@@ -629,6 +629,20 @@ describe('PROVEN: break, red, restore, green', () => {
 })
 
 describe('the catch check stays out of the way', () => {
+  // Verified review A14 (2026-10-20): `git status` refreshes the index and takes .git/index.lock unless told not to,
+  // so the plugin's own status call could make the user's next git command fail.
+  test('every git status the plugin runs leaves the index lock alone', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    await runTests($, world, 'pass')
+
+    await runBash($, 'git log --oneline -3')
+
+    const statuses = world.gitCalls.filter(argv => argv[0] === 'git' && argv.includes('status'))
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(statuses.every(argv => argv[1] === '--no-optional-locks')).toBe(true)
+  })
+
   test('"catchCheck": false in dope-tdd.json: a green is never reverted or re-run, and the status says the check is off', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"catchCheck":false}')
@@ -716,7 +730,10 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(world.writes).toContainEqual([`${WT}/src/utils/formatDuration.ts`, 'export const a = 1'])
     const check = world.gitCalls.findIndex((argv, i) => argv.some(arg => arg.includes('vitest.mjs')) && world.runCwds[i] === WT)
     expect(check).toBeGreaterThan(-1)
-    expect(world.gitCalls.some(argv => argv.join(' ').startsWith('git worktree add --detach'))).toBe(true)
+    // Verified review A16 (2026-10-20): `worktree add` runs the repository's post-checkout hook; the check runs none.
+    const add = world.gitCalls.find(argv => argv.includes('worktree') && argv.includes('add'))
+    expect(add?.slice(0, 3)).toEqual(['git', '-c', `core.hooksPath=${ROOT}/.git/dope-tdd/no-hooks`])
+    expect(add?.slice(3, 6)).toEqual(['worktree', 'add', '--detach'])
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     expect(status.text).toMatch(/proven 1/)

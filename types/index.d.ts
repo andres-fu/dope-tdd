@@ -37,6 +37,8 @@ export type EventKind =
   | 'pinning'
   /** A pin fixed after its red, code unchanged, with the pin skill in use: not a workaround. */
   | 'pin-corrected'
+  /** A guard threw and let the call through unguarded (verified review A13). */
+  | 'guard-failed'
   /** A test touched with only comments or blank lines changed: it unlocks, and is on the record (decided 2026-10-20). */
   | 'comment-touch'
   /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
@@ -115,6 +117,8 @@ export type TddStats = {
   redElsewhere: readonly string[]
   testChangedAfterRed: boolean
   neverSawRed: number
+  /** Calls a guard let through unguarded after an internal error, this session. */
+  guardFailures: number
   /** The current red proved a module that went green first: the next green says PROVEN. */
   pinBroken: boolean
   testChanged: number

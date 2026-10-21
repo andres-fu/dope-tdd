@@ -117,7 +117,14 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
   const label: Label = module => (config === undefined ? module : moduleLabel(config, module))
   return [
     build ?? 'dope-tdd',
-    `guard: ${s.paused ? 'PAUSED' : 'ON'}`,
+    // A guard that threw let calls through: "ON" would not be true (verified review A13).
+    `guard: ${
+      s.guardFailures > 0
+        ? `FAILING (${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'} went through unguarded after an internal error; see the log)`
+        : s.paused
+          ? 'PAUSED'
+          : 'ON'
+    }`,
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),
     `module: ${s.current === null ? 'none' : label(s.current.module)}`,

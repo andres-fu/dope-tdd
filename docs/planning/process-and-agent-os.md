@@ -3,6 +3,23 @@
 Started 2026-10-21. One place for everything we're discussing, so we can weigh it and pick an order.
 Status: **agreed** (you said yes), **proposed** (my suggestion, not decided yet), **open** (a question for you), **done**.
 
+## The big picture (2026-10-21)
+
+| Layer | What it is | Status |
+| --- | --- | --- |
+| Engine | the Claude model | done (Anthropic) |
+| Harness | Claude Code: sessions, worktrees, scheduled tasks, phone access | done (Anthropic) |
+| Rules and roles | agent-os: charter, 7 roles, skills, CI gates, principal review, lessons, decisions | done, v0.1 |
+| Enforcement | dope-tdd (test-first in every session), CI gates, branch guard, ruleset | mostly done |
+| **Operating the team** | a work queue (issues, board), a runner (night shift), a room you watch, a daily log | **missing: this is what makes agent-os do the work** |
+
+agent-os today is a rulebook and checks: you are the one running the team. Everything designed today
+is the missing bottom layer, and it belongs **in agent-os**, not in dope-tdd. Proposed:
+- move the night shift from dope-tdd (#163) into agent-os as its first runner piece;
+- agent-os's first real project is agent-os itself: build the operating layer there, test-first,
+  guarded by dope-tdd;
+- dope-tdd keeps its own small backlog and is run by the agent-os night shift like any other project.
+
 ## Goal
 
 Harden how we build dope-tdd with automated guardrails, keep it simple, then use dope-tdd
@@ -18,9 +35,12 @@ use a PreToolUse hook. Only hooks, CI and GitHub settings actually stop anything
 | --- | --- |
 | Behaviour changes update README and docs/testers.md in the same PR | agreed (saved as a working rule; #154 caught the docs up) |
 | Version bumps go out last, before we tell testers | agreed (0.2.3 is the release; it merged early, see the misses below) |
-| Every bug becomes a GitHub issue; the fix PR says `Fixes #N` | agreed |
+| Every bug becomes a GitHub issue; the fix PR says `Fixes #N` | **done**: labels, bug and PR templates (#161); #160 closed itself on merge. Bugs only: a feature's PR says why it has no issue |
 | Keep it simple: a few high-level rules, enforced by checks | agreed |
 | Harden first, then start Agent OS | agreed |
+| Branch protection on `main` (PR plus both CI checks, no force push or deletion, no bypass) | **done**: ruleset 25573409, applied 2026-10-21 |
+| Build our own small team room instead of adopting agentchattr | agreed |
+| Night shift v1 opens PRs but never merges; you review in the morning | proposed |
 
 ## Misses we saw (why we're doing this)
 
@@ -37,7 +57,7 @@ use a PreToolUse hook. Only hooks, CI and GitHub settings actually stop anything
 
 | # | Item | Build or adopt | Status |
 | --- | --- | --- | --- |
-| 1 | Branch guard: block `git commit` and `git push` on main (PreToolUse hook reading the branch from the hook's `cwd`), plus GitHub branch protection on main | build (hook, ~20 lines of node) and a GitHub setting | proposed; branch protection is your call |
+| 1 | Branch guard: block `git commit` and `git push` on main (PreToolUse hook reading the branch from the hook's `cwd`), plus GitHub branch protection on main | build (hook) and a GitHub setting | **done**: hook in #161, ruleset on main |
 | 2 | Command guard: block known-bad commands on this machine (bare `python`, `python3`) and warn on test output filtered in a way that hides the summary | build (same hook script) | proposed |
 | 3 | Repo CLAUDE.md: about 8 rules, only what checks can't enforce | build | proposed (draft rules are below) |
 | 4 | CI: a PR touching hooks or messages must touch README or testers.md, or say "docs: none needed" | build (small GitHub Action) | proposed |
@@ -45,7 +65,9 @@ use a PreToolUse hook. Only hooks, CI and GitHub settings actually stop anything
 | 6 | Release workflow: one button that checks main is green, bumps, tags, drafts the tester note and pulls the installed copy | build | proposed |
 | 7 | New-user smoke test: fresh home folder, `claude plugin validate --strict`, `claude -p --output-format stream-json` checking `plugin_errors`, `/tdd setup` and one red-green cycle on a Node and a Python sample | build from built-in parts; `claude plugin eval` for scored runs | proposed; CI needs an API key secret (open question) |
 | 8 | Fast single-file test run: `npm run t -- <file>` that always prints the summary line | build | proposed |
-| 9 | Issues: a small label set (area, stack, source, kind), an issue template, and a pattern query before each release (3+ issues in one area means add a guardrail) | build with `gh` (no plugin needed) | agreed in principle |
+| 9 | Issues: a small label set (area, stack, source, kind), an issue template, and a pattern query before each release (3+ issues in one area means add a guardrail) | build with `gh` (no plugin needed) | **done** except the pattern query (labels and templates in #161) |
+| 13 | CI: a PR that changes code for a bug must name its issue (`Fixes #N`); other PRs say why there's none | build | proposed |
+| 14 | GitHub as the Scrum board: issues for stories and tasks too (not only bugs), sub-issues for tasks, a milestone per sprint or release, a free GitHub Project board (Backlog, Ready, In progress, Review, Done, with an Iteration field). agent-os's product-manager role owns the backlog; the night shift takes from Ready. Docs stay in `docs/` (reviewed in PRs), not the wiki | adopt GitHub features (free) | proposed 2026-10-21; if agreed, reopen #162 as the night shift's story |
 | 10 | Cross-stack checks: one test table that runs every runner's sample output through each shared rule; parallel agents per stack for bigger sweeps | build (table); adopt the built-in Workflow tool and subagents with worktrees | proposed |
 | 11 | Tester rounds: a fixed scenario script (the same as #7) plus free exploration; reports saved in the repo, not Downloads | process | proposed |
 | 12 | `/ship` skill: refuses on main, runs the checks, writes the PR description from output it saw | build, or adopt commit-commands and add our checks around it | proposed (see plugins) |
@@ -266,9 +288,8 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
 
 - Agent OS stack: recommendation is TypeScript on Node (see Recommendations). Your call.
 - Chat: staged plan in Recommendations. Your call on the trials and on a Team plan (needed for Claude Tag).
-- How should dope-tdd's privacy be handled so agent-os can use its catch-check action (share the repo, or make it public)?
+- dope-tdd is public, so agent-os can turn on its catch-check job: when?
 - An API key secret in GitHub for the smoke test and evals in CI?
-- Turn on branch protection for main on GitHub (PRs and green CI required)?
 - Which plugins to install for the trial: commit-commands, pr-review-toolkit, plugin-dev?
 
 ## In flight
@@ -281,4 +302,5 @@ Revised order: guardrails, then the night shift, then the chat room to watch it.
   every release, not only when a script happens to be written.
 - Karl's reply and round-5 script: `docs/testers/rounds/round-5-karl.md`. Ready to send; his report
   goes back into `docs/testers/rounds/`, and each mismatch becomes a GitHub issue.
-- Next (agreed order): dope-tdd adopts the agent-os template.
+- Guardrails done (#161 and the ruleset). **Now: the night shift.** Then the team room, then
+  dope-tdd adopts the agent-os template.

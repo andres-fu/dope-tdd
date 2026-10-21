@@ -1,13 +1,18 @@
 import { describe, expect } from 'claude-code/testing'
 
 import { FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { keptPathFor } from '../hooks/retention'
 import { storeRoot } from '../hooks/unlocks'
 
 /** A home folder on the fixture drive, so it resolves the same way the root does on any host. */
 const HOME_DIR = `${FIXTURE_DRIVE}Users/tester`
 
 const TEST = `${ROOT}/tests/utils/formatDuration.test.ts`
-const KEPT = `${SOURCE}.dope-tdd.kept`
+// With no home folder a kept change goes to the temp folder, never beside the file in the repository (verified review A11).
+const TEMP_DIR = `${FIXTURE_DRIVE}Temp`
+// The folder name carries a hash of the root, which differs between the Windows and the POSIX fixture root in CI.
+const KEPT = keptPathFor({ home: undefined, temp: TEMP_DIR, root: ROOT, relative: 'src/utils/formatDuration.ts' }) ?? ''
+const KEPT_HOME = keptPathFor({ home: HOME_DIR, temp: undefined, root: ROOT, relative: 'src/utils/formatDuration.ts' }) ?? ''
 
 describe('catches the change', () => {
   test('at green: puts the source back, runs only that test, expects it to fail, restores the source', async ($, on) => {
@@ -121,6 +126,22 @@ describe('catches the change', () => {
 
     expect(world.writes).toEqual([])
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1 // edited in the IDE')
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed outside/)
+  })
+
+  // Verified review A1 (2026-10-20): the file was compared before a baseline run of up to 60 s, so a save from your
+  // editor during it was overwritten by the revert, then by the restore, and lost. It is compared again just before.
+  test('a save from your editor during the baseline is kept: the check does not revert, and says why', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.onBaselineRun = () => {
+      world.fileContents.set(SOURCE, 'export const b = 2 // saved in the IDE during the baseline')
+    }
+
+    const result = await runTests($, world, 'pass')
+
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+    expect(world.fileContents.get(SOURCE)).toBe('export const b = 2 // saved in the IDE during the baseline')
     expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed outside/)
   })
 
@@ -303,8 +324,8 @@ describe('the revert is safe', () => {
     expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*revert failed/)
   })
 
-  test('a file edited by hand while it was reverted is left as it is, and the change is kept beside it', async ($, on) => {
-    const world = fakeEngine(on)
+  test('a file edited by hand while it was reverted is left as it is, and the change is kept aside', async ($, on) => {
+    const world = fakeEngine(on, { env: { TEMP: TEMP_DIR } })
     await fixUnderGuard($, world)
     world.onCatchRun = () => {
       world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
@@ -318,7 +339,7 @@ describe('the revert is safe', () => {
       [KEPT, 'export const b = 1'],
     ])
     expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*changed during check/)
-    expect(world.toasts.some(t => /left as is; your change is in src\/utils\/formatDuration\.ts\.dope-tdd\.kept/.test(t))).toBe(true)
+    expect(world.toasts.some(t => t.includes(`left as is; your change is in ${KEPT}`))).toBe(true)
   })
 
   test('a test run while a file is reverted is refused, so it cannot read the reverted file', async ($, on) => {
@@ -415,8 +436,9 @@ describe('the revert is safe', () => {
     expect(world.writes).toEqual([[SOURCE, 'export const b = 1']])
   })
 
-  test('a file that moved since the interrupted check is left alone, the change is kept beside it, and the user is told', async ($, on) => {
+  test('a file that moved since the interrupted check is left alone, the change is kept aside, and the user is told', async ($, on) => {
     const world = fakeEngine(on, {
+      env: { TEMP: TEMP_DIR },
       store: { [`catch-journal:${ROOT}:utils/formatDuration`]: { files: [{ path: SOURCE, before: 'export const a = 1', after: 'export const b = 1' }] } },
     })
     world.fileContents.set(SOURCE, 'export const a = 1 // fixed by hand')
@@ -631,6 +653,23 @@ describe('the catch check stays out of the way', () => {
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
   })
 
+  // Verified review A11 (2026-10-20): a second kept copy of the same file overwrote the first, the only copy of that work.
+  test('a second change kept aside for the same file never overwrites the first', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
+    const first = KEPT_HOME
+    world.fileContents.set(first, 'export const kept = "the first one"')
+    await fixUnderGuard($, world)
+    world.onCatchRun = () => {
+      world.fileContents.set(SOURCE, 'export const a = 1 // hand edit during the check')
+    }
+
+    await runTests($, world, 'pass')
+
+    expect(world.fileContents.get(first)).toBe('export const kept = "the first one"')
+    const kept = world.writes.find(([, text]) => text === 'export const b = 1')
+    expect(kept?.[0]).toMatch(/formatDuration\.ts\.\d+$/)
+  })
+
   test('a change kept aside goes under the home folder, never into the repository where git add -A would take it', async ($, on) => {
     const world = fakeEngine(on, { env: { HOME: HOME_DIR } })
     await fixUnderGuard($, world)
@@ -641,8 +680,8 @@ describe('the catch check stays out of the way', () => {
     await runTests($, world, 'pass')
 
     const kept = world.writes.find(([, text]) => text === 'export const b = 1')
-    expect(kept?.[0]).toBe(`${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`)
-    expect(world.toasts.some(t => t.includes(`your change is in ${HOME_DIR}/.dope-tdd/kept/throughline/src/utils/formatDuration.ts`))).toBe(true)
+    expect(kept?.[0]).toBe(KEPT_HOME)
+    expect(world.toasts.some(t => t.includes(`your change is in ${KEPT_HOME}`))).toBe(true)
   })
 
   test('a change that could not even be kept aside is never written into the log: source text stays out of logs', async ($, on) => {
@@ -1035,19 +1074,22 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(world.writes).toContainEqual([`${WT}/tests/utils/formatDuration.test.ts`, "it('x', () => {})"])
   })
 
-  test('a test that is not green in the worktree as it stands falls back to the check in place, never to a verdict from a broken setup', async ($, on) => {
+  // Verified review A2 (2026-10-20): this used to fall back to rewriting your real file, silently, while the README said
+  // a Node check in a git checkout never writes your files. Now the check says it could not run, and why.
+  test('a test that is not green in the worktree as it stands is not checked, and your file is never written', async ($, on) => {
     const world = fakeEngine(on)
     gitRepo(world)
     await fixUnderGuard($, world)
     world.baselineRunIn.set(WT, { text: ' Tests  1 failed (1)\n', exitCode: 1 })
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
 
-    await runTests($, world, 'pass')
+    const green = await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(world.writes.filter(([path]) => path === SOURCE).map(([, text]) => text)).toEqual(['export const a = 1', 'export const b = 1'])
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
-    expect(status.text).toMatch(/proven 1/)
+    expect(JSON.stringify(green)).toMatch(/UNPROVEN: not checked \(the throwaway copy could not run the test/)
+    expect(status.text).toMatch(/not checked 1/)
   })
 
   test('a run that crashes still removes the worktree, and is unverified', async ($, on) => {

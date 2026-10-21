@@ -111,6 +111,8 @@ export type FakeWorld = {
   readOnly: boolean
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
   onCatchRun: () => void | Promise<void>
+  /** Called while the catch check runs its baseline, before anything is reverted: a save from your editor, say. */
+  onBaselineRun: () => void | Promise<void>
   /** Return true to make a write to that path fail. */
   writeFails: (path: string, text: string) => boolean
   /** Paths that exist but cannot be read (too large, locked). */
@@ -170,6 +172,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     diffText: '',
     readOnly: false,
     onCatchRun: () => {},
+    onBaselineRun: () => {},
     writeFails: () => false,
     unreadable: new Set(),
     links: new Map(),
@@ -222,6 +225,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     }
     if (e.argv[0] !== 'git' && (e as { init?: { env?: Record<string, string> } }).init?.env?.DOPE_TDD_BASELINE === '1') {
       world.baselineCalls++
+      await world.onBaselineRun()
       const run = world.baselineRunIn.get(world.runCwds[world.runCwds.length - 1] ?? '') ?? world.baselineRun
       return { value: { exitCode: run.exitCode, stdout: run.text, stderr: '' } } as never
     }

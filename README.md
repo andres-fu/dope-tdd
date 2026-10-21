@@ -331,7 +331,8 @@ that module's own test to check it.
 A test that fails only on an error (an import, a collection or a compile that
 broke) has checked nothing. Such a red unlocks the module but does not prove
 a pin, and Claude is told no assertion ran. A check run that fails that way
-is UNPROVEN · not checked, never PROVEN.
+is UNPROVEN · not checked, never PROVEN, and so is a break put back after
+such a red: a break that only stopped the test from loading proves nothing.
 
 A new file has no old code to put back. In that throwaway copy (Node, a git
 clone) the check makes up to four small changes to it instead, one at a time:

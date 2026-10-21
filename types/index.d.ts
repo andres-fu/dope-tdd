@@ -82,6 +82,8 @@ export type ModuleState = {
   sawRed: boolean
   /** Its test was edited after that red. */
   testTouchedAfterRed: boolean
+  /** Its last red never reached an assertion (an import, a collection or a compile broke): it proves no break (#132). */
+  redErrorsOnly?: boolean
   /** Its test has failed at some point: a change while it is green can be a refactor. */
   everSawRed: boolean
   /** A source edit, captured or not, since its last run. */

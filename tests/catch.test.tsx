@@ -1,6 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 
 import { FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, editAt, fakeEngine, fixUnderGuard, runBash, runCommand, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { NODE_TEST_REAL_LOAD_ERROR } from './fixtures/runnerOutputs'
 import { keptPathFor } from '../hooks/retention'
 import { storeRoot } from '../hooks/unlocks'
 
@@ -610,6 +611,29 @@ describe('PROVEN: break, red, restore, green', () => {
     expect(status.text).toMatch(/catch check: proven 1 · missed 0/)
     // No runner was started: there was nothing to revert.
     expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+  })
+
+  // #132, the break-and-restore door (found writing Karl's round 5, 2026-10-21): a break that only made the test fail to
+  // load (a bad import) gave a red no assertion ran in; restoring the code then read as PROVEN.
+  test('a break whose red was only an error (no assertion ran) is not proof when the code is put back', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    // Node's real output for a test file that failed to load, naming this module's own test.
+    world.bashText = NODE_TEST_REAL_LOAD_ERROR.replaceAll('test\\loaderr.test.js', 'tests\\utils\\formatDuration.test.ts')
+    const red = await runTests($, world, 'fail')
+    world.bashText = ''
+    await restore($)
+
+    const green = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(red.context?.join(' ')).toMatch(/but no assertion ran/)
+    expect(green.context?.join(' ')).not.toMatch(/PROVEN\. Its test failed on your break/)
+    expect(green.context?.join(' ')).toMatch(/UNPROVEN: not checked \(the red was an error, not a failed assertion: no assertion ran\)/)
+    expect(status.text).toMatch(/catch check: proven 0 · missed 0 · not checked 1/)
   })
 
   test('a test edited after the red with the code restored is not proof: that stays TEST CHANGED', async ($, on) => {

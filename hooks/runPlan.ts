@@ -139,7 +139,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     const own = targeted.current?.module
     // Only a module this test now unlocks: one with a test of its own (#37) would be left red with nothing to close it.
     for (const module of [...new Set(coveredByFailure)].filter(module => module !== own && targeted.unlocked[module] !== undefined)) {
-      targeted = recordRedFor(targeted, module, nowMs)
+      targeted = recordRedFor(targeted, module, nowMs, facts.errorsOnly === true)
     }
     // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.
     const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))

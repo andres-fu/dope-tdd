@@ -1024,6 +1024,23 @@ describe('a touch that changes nothing', () => {
     expect(allowed.deny).toBeUndefined()
     expect(status.text).toMatch(/workarounds: 1 \(touched unchanged 1\)/)
   })
+
+  // Decided 2026-10-20 (verified review A12): a comment in a test can be honest, so it still unlocks, but it is said and
+  // on the record as changing no test, never hidden; it is no workaround.
+  test('a test edit that changes only comments still unlocks, is said, and is on the record but not a workaround', async ($, on) => {
+    const world = fakeEngine(on)
+    const body = "it('x', () => { expect(1).toBe(1) })"
+
+    await writeAt($, 'tests/utils/formatDuration.test.ts', body)
+    const comment = await writeAt($, 'tests/utils/formatDuration.test.ts', `// next: the hour boundary\n${body}`)
+    const allowed = await editAt($, 'src/utils/formatDuration.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(comment.context?.join(' ')).toMatch(/changed only comments or blank lines/)
+    expect(allowed.deny).toBeUndefined()
+    expect(status.text).toMatch(/touched, comments only utils\/formatDuration/)
+    expect(status.text).not.toMatch(/workarounds: [1-9]/)
+  })
 })
 
 describe('the briefing in the system prompt', () => {

@@ -14,6 +14,7 @@ import {
   recordBlocked,
   recordCatch,
   recordChange,
+  recordCommentTouch,
   recordConfigChange,
   recordGitIn,
   recordCarriedRun,
@@ -715,5 +716,14 @@ describe('code brought in by git', () => {
     ])
     // Only the log moves: the events and when the last one was.
     expect({ ...s, events: [], lastEventMs: null }).toEqual({ ...INITIAL_STATS, events: [], lastEventMs: null })
+  })
+})
+
+// Decided 2026-10-20 (verified review A12): a comments-only touch is on the record, never counted as a workaround.
+describe('a test touched with comments only', () => {
+  test('is an event for the module, and no workaround', () => {
+    const s = recordCommentTouch(INITIAL_STATS, 'utils/a', 5)
+    expect(s.events.map(e => [e.kind, e.module])).toEqual([['comment-touch', 'utils/a']])
+    expect(s.workarounds).toBe(0)
   })
 })

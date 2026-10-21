@@ -24,6 +24,15 @@ describe('testEditSignals', () => {
     expect(testEditSignals(HONEST, skipped)).toEqual([{ kind: 'skipped', added: 1 }])
   })
 
+  // Decided 2026-10-20 (verified review A12): a comment in a test still unlocks its module, since it can be honest,
+  // a note of what is about to be tested, but the touch is on the record as changing no test.
+  test('an edit that changes only comments or blank lines is a comments-only signal, in JS and in Python', () => {
+    expect(testEditSignals(HONEST, `// about to cover negative amounts\n${HONEST}\n`)).toEqual([{ kind: 'comments-only' }])
+    expect(testEditSignals('def test_a():\n    assert 1 == 1\n', '# next: the empty case\ndef test_a():\n    assert 1 == 1\n')).toEqual([{ kind: 'comments-only' }])
+    expect(testEditSignals(HONEST, HONEST)).toEqual([])
+    expect(testEditSignals(HONEST, HONEST.replace("toBe('-$0.50')", "toBe('-$0.51')"))).toEqual([])
+  })
+
   test('a test that lost an assertion is a signal with before and after counts', () => {
     const weakened = HONEST.replace("  expect(formatCents(-50)).toBe('-$0.50')\n", '')
     expect(testEditSignals(HONEST, weakened)).toEqual([{ kind: 'assertion-removed', before: 2, after: 1 }])

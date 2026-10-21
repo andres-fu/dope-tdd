@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { carriedOnAdvice, carryWaitMessage, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
+import { carriedOnAdvice, carryWaitMessage, commentsOnlyAdvice, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
 import { say } from '../hooks/messages'
 import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch, recordChange } from '../hooks/stats'
 
@@ -228,6 +228,14 @@ describe('runAdvice after a proof with small changes tried', () => {
   test('caught by a test that imports the module, not its own: proven by that test', () => {
     expect(runAdvice(edited, green, { kind: 'caught', by: 'test/slugify.test.ts', own: 'test/io.test.ts' })).toBe(
       say('green.provenBy', { module: MODULE, sawRed: true, own: 'test/io.test.ts', by: 'test/slugify.test.ts' }),
+    )
+  })
+})
+
+describe('commentsOnlyAdvice (decided 2026-10-20)', () => {
+  test('says the touch changed no test, still unlocks, and is on the record', () => {
+    expect(commentsOnlyAdvice('tests/money/formatCents.test.ts', 'money/formatCents')).toBe(
+      say('touch.commentsOnly', { testPath: 'tests/money/formatCents.test.ts', module: 'money/formatCents' }),
     )
   })
 })

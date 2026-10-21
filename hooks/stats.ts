@@ -267,7 +267,7 @@ function runOutcome(s: TddStats, passed: boolean, nowMs: number, elsewhere: read
     if (module === undefined || prev === null) {
       return logged(base, 'fail', nowMs, module)
     }
-    const state: ModuleState = { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false }
+    const state: ModuleState = { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false, redErrorsOnly: errorsOnly }
     return logged(mirrored(withModule(base, module, state), state), 'fail', nowMs, module)
   }
 
@@ -437,9 +437,9 @@ export function recordImporter(s: TddStats, module: string, testPath: string): T
 }
 
 /** A failing test that imports this module is a red for it too: its cycle saw red, so its green will say so. */
-export function recordRedFor(s: TddStats, module: string, nowMs: number): TddStats {
+export function recordRedFor(s: TddStats, module: string, nowMs: number, errorsOnly = false): TddStats {
   const prev = moduleState(s, module)
-  return withModule(s, module, { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false })
+  return withModule(s, module, { ...prev, phase: 'red', cycleStartMs: prev.cycleStartMs ?? nowMs, sawRed: true, everSawRed: true, editedSinceRun: false, redErrorsOnly: errorsOnly })
 }
 
 /**

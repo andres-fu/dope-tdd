@@ -1047,6 +1047,8 @@ async function verifyCatch(
   provedByRed = false,
   /** Tests in its file that were failing before the change: a check where only these fail has caught nothing. */
   known: readonly string[] = [],
+  /** That red never reached an assertion: an import, a collection or a compile broke (#132). */
+  redErrorsOnly = false,
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
@@ -1067,6 +1069,11 @@ async function verifyCatch(
     // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
     if (!provedByRed) {
       return 'unchecked'
+    }
+    // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
+    // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).
+    if (redErrorsOnly) {
+      return { kind: 'unverified', reason: 'the red was an error, not a failed assertion: no assertion ran' }
     }
     const eol = lineEndingsOnly ? { lineEndings: true } : {}
     // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
@@ -1943,7 +1950,7 @@ async function checkShell(
   const before_ = passedModule === undefined ? null : moduleState(updated, passedModule)
   const checkStartMs = await $.clock.now()
   const check =
-    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed, alreadyFailing)
+    passedModule === undefined ? 'unchecked' : await verifyCatch($, root, config, afterRun, passedModule, before_?.editedSinceRun === true, nowMs - startedMs, nowMs, before_?.sawRed === true && !before_.testTouchedAfterRed, alreadyFailing, before_?.redErrorsOnly === true)
   // The time the check itself cost, baseline included: the part of a guarded run's overhead that is Dope TDD's own.
   const checkMs = (await $.clock.now()) - checkStartMs
   if (checkMs > 0) {

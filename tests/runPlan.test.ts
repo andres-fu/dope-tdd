@@ -251,4 +251,12 @@ describe('a red of errors only', () => {
     expect(crashed.state.unproven).toEqual(['utils/a'])
     expect(run(pinned, { outcome: 'fail', named: A_TEST, failed: ['tests/utils/a.test.ts'] }).state.unproven).toEqual([])
   })
+
+  // #132: a module turned red by a test that imports it remembers whether that red was errors only, as its own does.
+  test('a red of errors only in a test that imports another unlocked module marks that module too', () => {
+    const s = { ...workingOn('utils/b', B_TEST), unlocked: { 'utils/b': B_TEST, 'utils/c': C_TEST } }
+    const facts = { outcome: 'fail' as const, failed: ['tests/utils/b.test.ts'], importsOf: { [B_TEST]: ['utils/b', 'utils/c'] } }
+    expect(run(s, { ...facts, errorsOnly: true }).state.modules['utils/c']?.redErrorsOnly).toBe(true)
+    expect(run(s, facts).state.modules['utils/c']?.redErrorsOnly).toBe(false)
+  })
 })

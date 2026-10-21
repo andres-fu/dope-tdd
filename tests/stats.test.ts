@@ -14,6 +14,7 @@ import {
   recordBlocked,
   recordCatch,
   recordChange,
+  recordRedFor,
   recordCommentTouch,
   recordConfigChange,
   recordGuardFailure,
@@ -374,6 +375,12 @@ describe('proving a pin later', () => {
     const failed = recordRun(crashed, false, at(3))
     expect(failed.unproven).not.toContain('text/wrapLines')
     expect(failed.pinBroken).toBe(true)
+    // The module remembers whether its last red was errors only, so a break put back is not proof on such a red (#132).
+    expect(crashed.modules['text/wrapLines']?.redErrorsOnly).toBe(true)
+    expect(failed.modules['text/wrapLines']?.redErrorsOnly).toBe(false)
+    // A red through a test that imports the module carries the same flag.
+    expect(recordRedFor(crashed, 'text/other', at(4), true).modules['text/other']?.redErrorsOnly).toBe(true)
+    expect(recordRedFor(crashed, 'text/other', at(4)).modules['text/other']?.redErrorsOnly).toBe(false)
   })
 })
 

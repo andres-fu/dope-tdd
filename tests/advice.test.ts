@@ -47,10 +47,11 @@ describe('runAdvice', () => {
   test('a red of errors only after a pin went green says it proves nothing yet', () => {
     const pinned = recordRun(touched, true, at(1))
     const crashed = recordRun(pinned, false, at(2), [], { errorsOnly: true })
-    expect(runAdvice(pinned, crashed, undefined, { errorsOnly: true })).toBe(say('red.first', { module: MODULE }) + say('note.errorsOnly', { module: MODULE }))
-    // The same red on a module with no unproven pin needs no note.
+    expect(runAdvice(pinned, crashed, undefined, { errorsOnly: true })).toBe(say('red.errorsOnly', { module: MODULE }) + say('note.errorsOnly', { module: MODULE }))
+    // Karl's round 4 (2026-10-20): any red of errors only says no assertion ran, never "fix the assertion". With no
+    // unproven pin it needs no note: an import error is a fair first red for code that does not exist yet.
     const red = recordRun(touched, false, at(1), [], { errorsOnly: true })
-    expect(runAdvice(touched, red, undefined, { errorsOnly: true })).toBe(say('red.first', { module: MODULE }))
+    expect(runAdvice(touched, red, undefined, { errorsOnly: true })).toBe(say('red.errorsOnly', { module: MODULE }))
   })
 
   test('after a green that never saw red, says so and how to prove the test', () => {

@@ -261,7 +261,8 @@ export function expandKnown(text: string, vars: ShellVars): string {
 }
 
 // Commands that only read. `find` with -exec or -delete and `git` verbs that write are not among them.
-const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|where|tree|stat|file|du|df|sort|uniq|true|find(?![^\n]*\s-(?:exec|execdir|delete|ok|fprint)\b)|git\s+(?:status|log|diff|show|branch|rev-parse|ls-files|blame|remote|config\s+--get))(?:\s|$)/
+// Hashes only read (Karl's round 4, 2026-10-20: `sha256sum api.py` beside a git checkout read as a possible write).
+const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|where|tree|stat|file|du|df|sort|uniq|true|sha(?:1|224|256|384|512)sum|md5sum|b2sum|shasum|cksum|Get-FileHash|find(?![^\n]*\s-(?:exec|execdir|delete|ok|fprint)\b)|git\s+(?:status|log|diff|show|branch|rev-parse|ls-files|blame|remote|config\s+--get))(?:\s|$)/
 // An output redirect writes, whatever the command: `echo x > src/a.ts`. Stderr to a file descriptor or /dev/null does not.
 const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
 

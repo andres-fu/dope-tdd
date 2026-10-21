@@ -168,8 +168,9 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   const red = after.phase === 'red'
   // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
   // test, 2026-10-18: a wrong pin was told to "make it pass", which would mean changing code that was right).
+  // A red where no assertion ran is neither (Karl's round 4, 2026-10-20): "fix the assertion" was wrong advice there.
   const line = red
-    ? say(after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
+    ? say(context.errorsOnly === true ? 'red.errorsOnly' : after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
     : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
   const errorsNote = red && context.errorsOnly === true && before.unproven.includes(id) ? say('note.errorsOnly', { module }) : ''
   const other = context.ownTestOf

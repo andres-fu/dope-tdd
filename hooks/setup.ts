@@ -265,7 +265,11 @@ export function formatSetup(current: GuardConfig, inferred: Inference, survey: S
     `detected layout: ${describeLayout(inferred.layout)}; ${inferred.reason}`,
     ...(inferred.roots.length === 0 ? [] : [`detected roots: ${inferred.roots.join(', ')}`]),
     ...(inferred.testFiles === 0 ? [] : ['examples:', ...examples(survey, config, stack)]),
-    `current ${CONFIG_FILE}: ${hasConfigFile ? describeLayout(current.layout) : 'none (mirror by default)'}${current.roots.length === 0 ? '' : `; roots ${current.roots.join(', ')}`}${currentStack}`,
+    // Karl's round 4 (2026-10-20): with no file, `; stack node` beside `detected stack: python` read as a contradiction.
+    // Both were true: until the file names a stack, the guard reads only the markers at the root. So it says that.
+    !hasConfigFile && current.stack !== inferred.stack
+      ? `current ${CONFIG_FILE}: none. Until one is saved, the guard runs as ${current.stack} (from the markers at the root), not ${inferred.stack}`
+      : `current ${CONFIG_FILE}: ${hasConfigFile ? describeLayout(current.layout) : 'none (mirror by default)'}${current.roots.length === 0 ? '' : `; roots ${current.roots.join(', ')}`}${currentStack}`,
     ...(same
       ? ['the current layout already matches; nothing to write']
       : [`suggested ${CONFIG_FILE}:`, suggestion, `/tdd setup write saves it (mode, scope and exempt are kept)`]),

@@ -16,8 +16,9 @@ describe('time text', () => {
 
   test('formatSpan reads as a compact duration', () => {
     expect(formatSpan(45_000)).toBe('45S')
-    expect(formatSpan(3 * 60_000)).toBe('3M')
-    expect(formatSpan(130_000)).toBe('2M10S')
-    expect(formatSpan(65 * 60_000)).toBe('1H05M')
+    // MIN, as in the ago form (Karl's round 4, 2026-10-20): `3M15S` named minutes M here and MIN there.
+    expect(formatSpan(3 * 60_000)).toBe('3MIN')
+    expect(formatSpan(130_000)).toBe('2MIN10S')
+    expect(formatSpan(65 * 60_000)).toBe('1H05MIN')
   })
 })

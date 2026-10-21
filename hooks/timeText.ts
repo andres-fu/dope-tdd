@@ -28,10 +28,11 @@ export function formatSpan(spanMs: number): string {
   const seconds = totalSeconds % 60
 
   if (hours > 0) {
-    return `${hours}H${twoDigits(minutes)}M`
+    return `${hours}H${twoDigits(minutes)}MIN`
   }
   if (minutes > 0) {
-    return seconds > 0 ? `${minutes}M${twoDigits(seconds)}S` : `${minutes}M`
+    // MIN, as in formatAgo (Karl's round 4, 2026-10-20): `3M15S` named the minute M here and MIN there.
+    return seconds > 0 ? `${minutes}MIN${twoDigits(seconds)}S` : `${minutes}MIN`
   }
   return `${seconds}S`
 }

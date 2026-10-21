@@ -31,7 +31,7 @@ describe('catches the change', () => {
     expect(run).toEqual(['node', `${ROOT}/node_modules/vitest/vitest.mjs`, 'run', 'tests/utils/formatDuration.test.ts'])
     expect(world.fileContents.get(SOURCE)).toBe('export const b = 1')
     expect(status.text).toMatch(/proven 1/)
-    expect(result.context?.join(' ')).toMatch(/its test catches the change/)
+    expect(result.context?.join(' ')).toMatch(/: PROVEN\. It saw red, and with the change undone its test fails/)
   })
 
   test('the check first runs the test as it stands under its own command; a red there is no verdict, and nothing is reverted', async ($, on) => {
@@ -223,7 +223,7 @@ describe('catches the change', () => {
 
     expect(world.writes).toEqual([])
     expect(status.text).toMatch(/proven 1/)
-    expect(status.text).toMatch(/never failed 0/)
+    expect(status.text).toMatch(/0 never failed/)
   })
 
   test('a source edit made through the shell is captured and checked too', async ($, on) => {
@@ -248,7 +248,7 @@ describe('catches the change', () => {
       [SOURCE, 'export const b = 1'],
     ])
     expect(status.text).toMatch(/proven 1/)
-    expect(result.context?.join(' ')).toMatch(/its test catches the change/)
+    expect(result.context?.join(' ')).toMatch(/: PROVEN\. It saw red, and with the change undone its test fails/)
   })
 
   test('the test file for the runner is the relative path even when the test was named absolutely', async ($, on) => {
@@ -606,7 +606,7 @@ describe('PROVEN: break, red, restore, green', () => {
     const status = await runCommand($, 'tdd')
 
     expect(world.fileContents.get(SOURCE)).toBe('export const a = 1')
-    expect(green.context?.join(' ')).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
+    expect(green.context?.join(' ')).toMatch(/: PROVEN\. Its test failed on your break and passes with the code put back exactly as it was/)
     expect(status.text).toMatch(/catch check: proven 1 · missed 0/)
     // No runner was started: there was nothing to revert.
     expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
@@ -883,7 +883,7 @@ describe('the catch check in a worktree, never in your files', () => {
     const green = await runTests($, world, 'pass')
     const said = green.context?.join(' ') ?? ''
 
-    expect(said).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN/)
+    expect(said).toMatch(/: PROVEN\. Its test failed on your break and passes with the code put back exactly as it was/)
     expect(said).toMatch(/Only its line endings differ from before the break/)
     expect(said).not.toMatch(/MISSED: with your change undone its test still passes/)
   })
@@ -935,7 +935,7 @@ describe('the catch check in a worktree, never in your files', () => {
       expect(mutantRuns).toBe(2)
       expect(world.fileContents.get(SOURCE)).toBe(PINNED)
       expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
-      expect(said).toMatch(/the code is back exactly as it was before your break\. The red you saw is the proof .*: PROVEN\./)
+      expect(said).toMatch(/: PROVEN\. Its test failed on your break and passes with the code put back exactly as it was\./)
       expect(said).toMatch(/dope-tdd also changed it 2 ways in a throwaway copy: the test failed for 1\. These went unnoticed:/)
       expect(said).toMatch(/line 1: `1` → `2`/)
       expect(status.text).toMatch(/proven 1 · missed 0/)
@@ -1136,11 +1136,11 @@ describe('a green that closes other modules leaves the current module\'s story a
     const own = await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
     const again = await runTests($, world, 'pass')
 
-    expect(own.context?.join(' ')).toMatch(/GREEN on utils\/formatDuration, saw red, and its test catches the change/)
+    expect(own.context?.join(' ')).toMatch(/GREEN on utils\/formatDuration: PROVEN\. It saw red, and with the change undone its test fails/)
     const status = await runCommand($, 'tdd')
 
     expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
-    expect(status.text).toMatch(/cycles: 1 \(avg [^,]+, never failed 0\)/)
+    expect(status.text).toMatch(/cycles: 1 \(avg [^,]+, 0 never failed\)/)
     expect(status.text).not.toMatch(/also open/)
   })
 
@@ -1160,6 +1160,6 @@ describe('a green that closes other modules leaves the current module\'s story a
     const status = await runCommand($, 'tdd')
 
     expect(again.context?.join(' ') ?? '').not.toMatch(/never saw red/)
-    expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, never failed 0\)/)
+    expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, 0 never failed\)/)
   })
 })

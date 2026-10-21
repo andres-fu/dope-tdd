@@ -76,7 +76,7 @@ export const MESSAGES = {
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).
   'note.errorsOnly': entry<Module>({ module: 'utils/a' }, f =>
-    ` Every failure in this run is an error, not a failed assertion (an import, a collection or a compile that broke), so it does not prove the test of ${f.module} can fail. Fix the error, then break the code on purpose and run again.`),
+    ` So it does not prove the test of ${f.module} can fail: once the error is fixed, break the code on purpose and run again.`),
   // Appended to a RED or GREEN on the current module when the test that ran is another open module's own (2026-10-19).
   // The catch check covers the current module only, so a green says so.
   'note.ownTestToo': entry({ module: 'utils/a', other: 'utils/b', outcome: 'red' as 'red' | 'green' }, f =>
@@ -96,6 +96,10 @@ export const MESSAGES = {
   // VibeCast field test (2026-10-18): before any code change this cycle, a red is the bug or a pin that guessed wrong.
   'red.first': entry<Module>({ module: 'utils/a' }, f =>
     `dope-tdd: RED on ${f.module}. If this is the bug or the missing behaviour, make it pass with the smallest change, then run it again. If you are pinning what the code does now, the pin guessed wrong: fix the assertion and say why.`),
+  // Karl's round 4 (2026-10-20): a collection error got red.first's "fix the assertion", though no assertion ran. An
+  // import error is still a fair first red for code that does not exist yet, so it says both ways out.
+  'red.errorsOnly': entry<Module>({ module: 'utils/a' }, f =>
+    `dope-tdd: RED on ${f.module}, but no assertion ran: every failure is an error (an import, a collection or a compile that broke). If the test names code that does not exist yet, write it with the smallest change; otherwise fix the error and run again.`),
   'red.again': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: RED on ${f.module}. Make it pass with the smallest change, then run it again.`),
   'green.testChanged': entry<ModuleSource>({ module: 'utils/a', sourcePath: 'src/utils/a' }, f =>
     `dope-tdd: GREEN on ${f.module}, saw red, but the test changed after red and ${f.sourcePath} did not. The green came from the test, not from a fix. If the red was real, put the assertion back and fix the code. If the assertion was wrong (a pin that guessed today's behaviour wrongly), say why in your reply; it stays on the record.`),
@@ -119,7 +123,7 @@ export const MESSAGES = {
       f.survived.length === 0
         ? ''
         : ` These went unnoticed:\n${indented(f.survived)}\nOne break proves one behaviour; add a pin for each of these that matters. A change that cannot alter what the code does (an equivalent mutant) is fine to leave; say so.`
-    return `dope-tdd: GREEN on ${f.module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${f.lineEndings ? LINE_ENDINGS_NOTE : ''} dope-tdd also changed it ${f.tried} ${plural(f.tried, 'way')} in a throwaway copy: the test failed for ${caught}.${rest} ${REFACTOR}`
+    return `dope-tdd: GREEN on ${f.module}: PROVEN. Its test failed on your break and passes with the code put back exactly as it was.${f.lineEndings ? LINE_ENDINGS_NOTE : ''} dope-tdd also changed it ${f.tried} ${plural(f.tried, 'way')} in a throwaway copy: the test failed for ${caught}.${rest} ${REFACTOR}`
   }),
   'green.missed': entry({ module: 'utils/a', sawRed: true, slipped: ['-  return a + b', '+  return a - b'] as readonly string[] }, f => {
     const verdict = f.sawRed
@@ -129,13 +133,13 @@ export const MESSAGES = {
     return `${verdict}${slipped}`
   }),
   'green.brokenProven': entry({ module: 'utils/a', lineEndings: false }, f =>
-    `dope-tdd: GREEN on ${f.module}, and the code is back exactly as it was before your break. The red you saw is the proof that its test catches that change: PROVEN.${f.lineEndings ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`),
+    `dope-tdd: GREEN on ${f.module}: PROVEN. Its test failed on your break and passes with the code put back exactly as it was.${f.lineEndings ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`),
   'green.provenBy': entry({ module: 'io', sawRed: true, own: 'test/io.test.ts', by: 'test/slugify.test.ts' }, f =>
     `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}, but its own test, ${f.own}, does not catch the change, but ${f.by} does: PROVEN by ${f.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`),
   'green.caught': entry({ module: 'utils/a', sawRed: true }, f =>
     f.sawRed
-      ? `dope-tdd: GREEN on ${f.module}, saw red, and its test catches the change: PROVEN. ${REFACTOR}`
-      : `dope-tdd: GREEN on ${f.module}, never saw red, but its test catches the change: with your change undone it fails, so it is PROVEN. ${REFACTOR}`),
+      ? `dope-tdd: GREEN on ${f.module}: PROVEN. It saw red, and with the change undone its test fails. ${REFACTOR}`
+      : `dope-tdd: GREEN on ${f.module}: PROVEN. It never saw red, but with the change undone its test fails. ${REFACTOR}`),
   'green.notChecked': entry({ module: 'utils/a', sawRed: true, reason: 'timeout' }, f =>
     `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${f.reason}). ${REFACTOR}`),
   'green.pinBreakProven': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. ${REFACTOR}`),

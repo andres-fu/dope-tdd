@@ -46,8 +46,9 @@ function cycleLine(s: TddStats): string {
   if (s.cycles === 0) {
     return 'cycles: 0'
   }
-  const testChanged = s.testChanged === 0 ? '' : `, test changed ${s.testChanged}`
-  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, never failed ${s.neverSawRed}${testChanged})`
+  // Count first (Karl's round 4, 2026-10-20): "never failed 1" read as a sentence fragment.
+  const testChanged = s.testChanged === 0 ? '' : `, ${s.testChanged} test changed`
+  return `cycles: ${s.cycles} (avg ${formatSpan(s.cycleMsTotal / s.cycles)}, ${s.neverSawRed} never failed${testChanged})`
 }
 
 function runsLine(s: TddStats): string {

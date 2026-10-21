@@ -111,6 +111,15 @@ describe('suggestedConfig and formatSetup', () => {
     expect(text).toMatch(/\/tdd setup write saves it/)
   })
 
+  // Karl's round 4 (2026-10-20): with no file, `; stack node` beside `detected stack: python` read as a contradiction.
+  // Both were true: the guard reads only the root's markers until the file names a stack. Now it says that.
+  test('with no file, a stack the root markers chose that differs from the detected one is said as what runs until saved', () => {
+    const survey = { files: ['api.py', 'tests/test_api.py', 'tools/x.py'], packageDirs: [] }
+    const text = formatSetup(parseConfig(null, 'node'), inferLayout(survey), survey, false)
+    expect(text).toMatch(/^detected stack: python/m)
+    expect(text).toMatch(/^current dope-tdd\.json: none\. Until one is saved, the guard runs as node \(from the markers at the root\), not python$/m)
+  })
+
   test('says so when the current layout already matches', () => {
     const survey = { files: ['tests/a.test.ts'], packageDirs: [''] }
     expect(formatSetup(DEFAULT_CONFIG, inferLayout(survey), survey, true)).toMatch(/already matches; nothing to write/)

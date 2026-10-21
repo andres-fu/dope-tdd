@@ -51,7 +51,7 @@ describe('a test covers what it imports', () => {
     const status = await runCommand($, 'tdd')
 
     expect((edit as { deny?: string }).deny).toBeUndefined()
-    expect(green.context?.join(' ')).toMatch(/GREEN on io, saw red, and its test catches the change/)
+    expect(green.context?.join(' ')).toMatch(/GREEN on io: PROVEN\. It saw red, and with the change undone its test fails/)
     expect(status.text).toMatch(/module: io/)
     expect(status.text).toMatch(/proven 1/)
     expect(status.text).not.toMatch(/also open/)

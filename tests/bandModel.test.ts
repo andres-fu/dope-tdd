@@ -228,8 +228,8 @@ describe('band v3: the chain as words, and one verdict', () => {
   })
 
   test('RED, with how long it has been open, an alarm after ten minutes', () => {
-    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 2 * 60_000)).toEqual(['RED 2M|ember', 'green ·|dim'])
-    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 11 * 60_000)[0]).toBe('RED 11M|alarm')
+    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 2 * 60_000)).toEqual(['RED 2MIN|ember', 'green ·|dim'])
+    expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 11 * 60_000)[0]).toBe('RED 11MIN|alarm')
   })
 
   test('proven, by either kind of catch check', () => {

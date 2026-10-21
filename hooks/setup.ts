@@ -249,7 +249,8 @@ export function suggestedConfig(current: GuardConfig, inferred: Inference): Reco
   }
 }
 
-export function formatSetup(current: GuardConfig, inferred: Inference, survey: Survey, hasConfigFile: boolean): string {
+/** `testCommand`: how a test runs under the detected config, with a placeholder; absent when no runner was found. */
+export function formatSetup(current: GuardConfig, inferred: Inference, survey: Survey, hasConfigFile: boolean, testCommand?: string): string {
   const stack = STACKS[inferred.stack]
   const config: LayoutConfig = { layout: inferred.layout, roots: inferred.roots, stack: inferred.stack }
   const suggestion = JSON.stringify(suggestedConfig(current, inferred), null, 2)
@@ -265,6 +266,7 @@ export function formatSetup(current: GuardConfig, inferred: Inference, survey: S
     `detected layout: ${describeLayout(inferred.layout)}; ${inferred.reason}`,
     ...(inferred.roots.length === 0 ? [] : [`detected roots: ${inferred.roots.join(', ')}`]),
     ...(inferred.testFiles === 0 ? [] : ['examples:', ...examples(survey, config, stack)]),
+    ...(testCommand === undefined ? [] : [`test command: ${testCommand}`]),
     // Karl's round 4 (2026-10-20): with no file, `; stack node` beside `detected stack: python` read as a contradiction.
     // Both were true: until the file names a stack, the guard reads only the markers at the root. So it says that.
     !hasConfigFile && current.stack !== inferred.stack

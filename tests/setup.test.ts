@@ -120,6 +120,14 @@ describe('suggestedConfig and formatSetup', () => {
     expect(text).toMatch(/^current dope-tdd\.json: none\. Until one is saved, the guard runs as node \(from the markers at the root\), not python$/m)
   })
 
+  // Karl's round 4 (2026-10-20): setup never named a runner, so the pytest choice could only be seen in a later hint.
+  test('names the command a test runs with, once one is found, and says nothing of a runner when none is', () => {
+    const survey = { files: ['api.py', 'tests/test_api.py'], packageDirs: [] }
+    const text = formatSetup(parseConfig(null, 'python'), inferLayout(survey), survey, false, 'python -m pytest <test file>')
+    expect(text).toMatch(/^test command: python -m pytest <test file>$/m)
+    expect(formatSetup(parseConfig(null, 'python'), inferLayout(survey), survey, false)).not.toMatch(/test command/)
+  })
+
   test('says so when the current layout already matches', () => {
     const survey = { files: ['tests/a.test.ts'], packageDirs: [''] }
     expect(formatSetup(DEFAULT_CONFIG, inferLayout(survey), survey, true)).toMatch(/already matches; nothing to write/)

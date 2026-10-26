@@ -1,5 +1,7 @@
 import type { RunTime, StuckSpell, TddStats } from '../types'
 import type { GuardConfig } from './config.ts'
+import { redModules } from './leftRed.ts'
+import type { LeftRed } from './leftRed.ts'
 
 /**
  * One session's record, left on this machine when the session ends: the counts
@@ -36,6 +38,8 @@ export type SessionRecord = {
   runTimes: RunTime[]
   /** One row per stuck spell (idea 16): the same failure on one module, STUCK_RUNS runs or more in a row. */
   stuck: StuckSpell[]
+  /** The modules still red when the session ended (idea 15): the next session's briefing starts from them. */
+  leftRed: LeftRed[]
   receipt: string
 }
 
@@ -79,6 +83,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     worktreeChecks: s.worktreeChecks,
     runTimes: s.runTimes,
     stuck: s.stuck,
+    leftRed: redModules(s, meta.endedAtMs),
     receipt,
   }
 }

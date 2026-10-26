@@ -258,3 +258,41 @@ describe('the session record\'s integrity', () => {
     expect(edit.context?.join(' ') ?? '').not.toMatch(/session record/)
   })
 })
+
+// Idea 15: a module still red when a session ends is kept in the plugin store, and the next briefing leads with it.
+describe('left red on purpose', () => {
+  const KEY = `left-red:${ROOT.replace(/^C:/, 'c:')}`
+
+  async function briefing($: Engine): Promise<string> {
+    const composed = await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Bash'], outputStyle: null, traits: [] } as never)
+    return composed.sections.find(section => section.id === 'dope-tdd:briefing')?.text ?? ''
+  }
+
+  test('a session that ends with a module red stores it for the next one', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+
+    await end($)
+
+    expect((world.store.get(KEY) as { module: string }[]).map(entry => entry.module)).toEqual(['utils/formatDuration'])
+  })
+
+  test('the briefing leads with what an earlier session left red', async ($, on) => {
+    fakeEngine(on, { env: { HOME }, store: { [KEY]: [{ module: 'utils/formatDuration', failing: ['formats months'], atMs: T0 - 60_000 }] } })
+
+    const lines = (await briefing($)).split('\n')
+
+    expect(lines[1]).toBe('- Left red when an earlier session ended: utils/formatDuration (failing: `formats months`). Start there: run its test, then make it pass or say why it stays red.')
+  })
+
+  test('a session that leaves it green clears it', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME }, store: { [KEY]: [{ module: 'utils/formatDuration', failing: [], atMs: T0 - 60_000 }] } })
+    await fixUnderGuard($, world)
+    await runTests($, world, 'pass')
+
+    await end($)
+
+    expect(world.store.has(KEY)).toBe(false)
+  })
+})

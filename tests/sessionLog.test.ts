@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { changedRecords, sealRecord, verifyRecord } from '../hooks/sessionLog'
+import { DEFAULT_CONFIG } from '../hooks/config'
+import { changedRecords, sealRecord, sessionRecord, verifyRecord } from '../hooks/sessionLog'
+import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
 
 // Integrity of the session log (2026-10-26: could an agent or a person game this?). Only dope-tdd writes these files,
 // and only when a session ends, so an existing record that changed while a shell command ran was edited by it.
@@ -46,5 +48,15 @@ describe('sealRecord and verifyRecord', () => {
     const sealed = sealRecord(record)
     const reordered = { receipt: sealed.receipt, digest: sealed.digest, proven: sealed.proven, sessionId: sealed.sessionId }
     expect(verifyRecord(JSON.stringify(reordered))).toBe('sealed')
+  })
+})
+
+// Idea 15, and the observability rule: what a session left red is a field a dashboard can query.
+describe('sessionRecord', () => {
+  test('lists the modules left red, with their failing tests', () => {
+    const s = { ...INITIAL_STATS, modules: { 'utils/a': { ...FRESH_MODULE, phase: 'red' as const, redFailures: ['x'] }, 'utils/b': { ...FRESH_MODULE, phase: 'green' as const } } }
+    const endedAtMs = Date.UTC(2026, 9, 26)
+    const record = sessionRecord(s, DEFAULT_CONFIG, { sessionId: 'sess-1', reason: 'other', root: 'C:/work/x', endedAtMs, gitDir: null }, '')
+    expect(record.leftRed).toEqual([{ module: 'utils/a', failing: ['x'], atMs: endedAtMs }])
   })
 })

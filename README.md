@@ -214,6 +214,10 @@ Three things to ask Claude once it's installed, in your own project or in
 - A module unlocked in an earlier session (up to 7 days) waits for one run of
   its test this session, red or green, before its first edit; the carry-over
   is dropped if that test changed since.
+- A module still red when a session ends is kept (up to 7 days), and the
+  next session's briefing in that project leads with it: the module, the
+  failing test, and to start there. A later session that leaves it green
+  clears it; one that never touches it leaves it be.
 - A shell write lands where the command sends it: after `cd` (also through a
   variable the command set, `R=/tmp/x; cd $R`), a file outside the project is
   not refused. A destination it cannot expand (`$HOME`, `$(mktemp -d)`) is not
@@ -426,9 +430,10 @@ change back, so it holds a copy of the source file it is checking:
 | Session state | Claude Code's plugin state, held for the session. Claude Code lets any installed plugin read another's state | Before and after text of each file with an open change, counters, module and test names | Until the change is judged or the session ends |
 | Catch-check journal | Claude Code's plugin store: a plain JSON file under `~/.claude/plugins/store/`. Only an in-place check writes one | Before and after text of the file being checked, so an interrupted check can put it back | Removed when the check ends; one left behind is settled and removed at the next session start in that project, never from another |
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
+| Left red | Plugin store | Each module still red when a session ended: module name, failing test names or message, time | 7 days, or until a session leaves it green |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the modules left red (module, failing tests), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 

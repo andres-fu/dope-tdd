@@ -8,6 +8,7 @@ import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
 import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
+import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from './catchCheck.ts'
@@ -2442,6 +2443,14 @@ async function writeSessionLog($: EngineInterface, sessionId: string, reason: st
 `)
 }
 
+/** Idea 15: what this session leaves red joins what earlier ones did, in the store the next briefing reads. */
+async function storeLeftRed($: EngineInterface): Promise<void> {
+  const key = leftRedKey(await $.session.root())
+  const nowMs = await $.clock.now()
+  const entries = leftRedAtEnd(freshLeftRed(await $.store.get(key), nowMs), await readStats($), nowMs)
+  await (entries.length === 0 ? $.store.delete(key) : $.store.set(key, entries))
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   const root = await $.session.root()
   const config = await loadConfig($, root)
@@ -2576,6 +2585,11 @@ export const register: Register = on => {
     } catch {
       // The log is a record, not a gate.
     }
+    try {
+      await storeLeftRed($)
+    } catch {
+      // A note for the next session, not a gate.
+    }
     return next(e)
   })
 
@@ -2596,7 +2610,9 @@ export const register: Register = on => {
       layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
     }
     const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
-    const text = briefingText(config, await briefingCommand($, root, config), layoutNote)
+    // Idea 15: the store changes only when a session ends, so the briefing stays the same all session.
+    const leftRed = leftRedNote(freshLeftRed(await $.store.get(leftRedKey(root)), await $.clock.now()))
+    const text = briefingText(config, await briefingCommand($, root, config), layoutNote, leftRed)
     // Only the briefing: field guides from ~/.dope-tdd/guides were cut on 2026-10-20 (verified review B7).
     return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })

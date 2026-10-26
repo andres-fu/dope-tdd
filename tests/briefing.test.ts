@@ -56,4 +56,15 @@ describe('the briefing stays cheap', () => {
     expect(lines[2]).toBe(`- ${note}`)
     expect(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', null)).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
   })
+
+  // Idea 15: a module an earlier session left red leads the briefing, right after the first line.
+  test('a left-red note comes second, before the rules; without one the briefing is unchanged', () => {
+    const note = 'Left red when an earlier session ended: utils/a.'
+    const lines = briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', null, note).split('\n')
+    expect(lines[0]).toMatch(/^Dope TDD is on/)
+    expect(lines[1]).toBe(`- ${note}`)
+    expect(lines[2]).toMatch(/refused until/)
+    expect(briefingText({ ...DEFAULT_CONFIG, mode: 'warn' }, null, null, note)).toContain(note)
+    expect(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', null, null)).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
+  })
 })

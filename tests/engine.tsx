@@ -237,6 +237,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       const run = world.baselineRunIn.get(world.runCwds[world.runCwds.length - 1] ?? '') ?? world.baselineRun
       return { value: { exitCode: run.exitCode, stdout: run.text, stderr: '' } } as never
     }
+    // dope-tdd's own file chores (prune, link, unlink, remove a folder) are `node -e <script>`; no test run is.
+    if (e.argv[0] === 'node' && e.argv[1] === '-e') {
+      return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
+    }
     if (e.argv[0] !== 'git') {
       await world.onCatchRun()
       return world.catchRun === 'reject'

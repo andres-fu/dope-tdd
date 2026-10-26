@@ -344,7 +344,10 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden.
 
 With Vitest, Jest, ava or `node --test` in a git checkout (a clone or a linked
 worktree), the catch check undoes your change in a throwaway copy inside the
-checkout's git directory and never writes your files. If that copy cannot be
+checkout's git directory and never writes your files. A nested package's
+own `node_modules` (tests run from `site/` with `site/node_modules`) is
+linked into the copy so its config loads there, and unlinked before the copy
+is removed; the link is never followed when it goes. If that copy cannot be
 made or cannot run the test (more than 300 changed files, a slow checkout,
 a test that is not green there), the green is UNPROVEN · not checked, and
 the reason names the step that failed (for example "the test did not pass in

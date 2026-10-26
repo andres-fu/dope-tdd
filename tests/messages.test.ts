@@ -28,3 +28,13 @@ describe('the message catalogue', () => {
     expect(say('red.again', { module: 'runPlan' })).toBe(MESSAGES['red.again'].say({ module: 'runPlan' }))
   })
 })
+
+// Idea 18 (2026-10-26): a catch that kept the test's failure message quotes it; one without stays as it was.
+describe('green.caught', () => {
+  test('quotes the failure message when the catch kept one', () => {
+    expect(say('green.caught', { module: 'utils/a', sawRed: true, message: 'expected 2 to be 3' })).toBe(
+      'dope-tdd: GREEN on utils/a: PROVEN. It saw red, and with the change undone its test fails with `expected 2 to be 3`. Now refactor with the test untouched, or write the next failing test.',
+    )
+    expect(say('green.caught', { module: 'utils/a', sawRed: true })).toBe(GOLDEN['green.caught'])
+  })
+})

@@ -141,7 +141,7 @@ function greenAdvice(
     return say('green.provenBy', { module, sawRed, own: check.own ?? 'its paired test', by: check.by })
   }
   if (check?.kind === 'caught') {
-    return say('green.caught', { module, sawRed })
+    return say('green.caught', { module, sawRed, ...(check.message === undefined ? {} : { message: check.message }) })
   }
   if (check?.kind === 'unverified') {
     return say('green.notChecked', { module, sawRed, reason: check.reason })

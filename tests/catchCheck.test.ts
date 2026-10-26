@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from '../hooks/catchCheck'
-import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR } from './fixtures/runnerOutputs'
+import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR, VITEST_REAL_FAIL } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
   test('a timeout is a timeout; anything else is a runner that could not start, with its message', () => {
@@ -85,7 +85,7 @@ describe('catchOutcome', () => {
         reason: 'with the change undone the test could not run (an import, a collection or a compile error), so no assertion was checked',
       })
     }
-    expect(catchOutcome({ stdout: PYTEST_FAIL, stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
+    expect(catchOutcome({ stdout: PYTEST_FAIL, stderr: '', exitCode: 1 })).toEqual({ kind: 'caught', message: 'assert 3 == 4' })
   })
 
   test('reads a coloured summary', () => {
@@ -115,5 +115,13 @@ describe('worktreeFailureReason', () => {
     expect(worktreeFailureReason({ step: 'not-green', detail: 'red' })).toBe(
       'the test did not pass in the throwaway copy with your change in (red), so your file was left alone: a config that resolves paths from the project folder can run differently there',
     )
+  })
+})
+
+// Idea 18 (2026-10-26): what the test said when the change was undone travels with the catch.
+describe('a caught change keeps the failure message', () => {
+  test('the first assertion the run failed on; none when the output has none', () => {
+    expect(catchOutcome({ stdout: VITEST_REAL_FAIL, stderr: '', exitCode: 1 }, 'sum.test.js')).toEqual({ kind: 'caught', message: 'expected 2 to be 3' })
+    expect(catchOutcome({ stdout: ' Tests  1 failed (1)\n', stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
   })
 })

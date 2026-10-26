@@ -99,7 +99,7 @@ stays advisory and neutral (public blame, the paper finds, can end someone's car
 | 15 | Left red on purpose: a module still RED when a session ends is recorded as a deliberate stop, and the next session's briefing leads with it (the module, the failing test, the next step). Check first what the briefing carries over today | build | proposed |
 | 16 | Stuck signal: the same test failing with the same message N runs in a row is troubleshooting without traction; say so (step back, or `BLOCKED` for an agent). Deterministic, no model | build | proposed |
 | 17 | Loop time: show how long the one-file run took in `/tdd`, and flag a run slow enough to break orientation (relates to #168 and the proof's re-run cost) | build | proposed |
-| 18 | Receipts that build hunches: when the catch check reverts the change, keep the failure message it saw ("expected 3, got 2") in the receipt, so the reader learns what the change does | build | proposed |
+| 18 | Receipts that build hunches: when the catch check reverts the change, keep the failure message it saw ("expected 3, got 2") in the receipt, so the reader learns what the change does | build | **built** 2026-10-26 for Vitest, node --test and pytest; the pinned-break PROVEN line does not quote yet |
 | 19 | Stumble twice: a recorded spike path for the uphill part (explore freely, throw it away, rebuild test-first), instead of pushing people toward an override. Fits the brownfield use case | build | proposed |
 
 For agent-os, to take into the night-shift spec (`docs/specs/2026-10-21-night-shift.md` there):

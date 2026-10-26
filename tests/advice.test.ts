@@ -164,6 +164,13 @@ describe('runAdvice with the catch check', () => {
     expect(runAdvice(edited, green, { kind: 'caught' })).toBe(say('green.caught', { module: MODULE, sawRed: true }))
   })
 
+  // Idea 18 (2026-10-26): the PROVEN line says what undoing the change broke, in the test's own words.
+  test('a catch with a failure message quotes it', () => {
+    const said = runAdvice(edited, green, { kind: 'caught', message: 'expected 2 to be 3' })
+    expect(said).toBe(say('green.caught', { module: MODULE, sawRed: true, message: 'expected 2 to be 3' }))
+    expect(said).toMatch(/with the change undone its test fails with `expected 2 to be 3`\./)
+  })
+
   test('green, saw red, but the test misses the change: fix the test first', () => {
     expect(runAdvice(edited, green, { kind: 'missed' })).toBe(say('green.missed', { module: MODULE, sawRed: true, slipped: [] }))
   })

@@ -577,6 +577,18 @@ describe('/tdd receipt', () => {
     expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code on main, before the change, and fails/)
   })
 
+  // Idea 18 (2026-10-26): the receipt and the PROVEN line say what the test said with the change undone.
+  test('quotes the failure the catch check saw', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' FAIL  tests/utils/formatDuration.test.ts > formats months\nAssertionError: expected \'14m\' to be \'1y 2m\' // Object.is equality\n Tests  1 failed (1)\n', exitCode: 1 }
+    const green = await runTests($, world, 'pass')
+
+    expect(green.context?.join(' ') ?? '').toMatch(/with the change undone its test fails with `expected '14m' to be '1y 2m'`\./)
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+    expect(receipt.text).toMatch(/before the change, and fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
+  })
+
   test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {
     const world = fakeEngine(on)
     const empty = await $.command.run({ command: 'tdd', args: 'receipt' } as never)

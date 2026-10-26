@@ -42,7 +42,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
@@ -1932,7 +1932,7 @@ async function checkShell(
         }
       }
     }
-    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther, errorsOnly }
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther, errorsOnly, namesFailedFiles: outcome === 'fail' && namesFailedFiles(output) }
     let plan = null as RunPlan | null
     afterRun = await change($, s => {
       plan = applyRun(s, facts, root, config, nowMs)

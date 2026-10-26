@@ -214,6 +214,25 @@ describe('a whole-folder run that does not say which files failed', () => {
   })
 })
 
+// #165, seen dogfooding on agent-os: `npm test > full.txt; grep` printed only node --test's totals, with 9 failures in
+// other modules, and the module just proven went RED. node --test names the files that failed, so a suite red that
+// names none was thinned: it cannot be tied to the current module.
+describe('a suite run whose output was thinned to its summary', () => {
+  test('is a red elsewhere, not the current module’s red', () => {
+    const plan = run(workingOn('utils/a', A_TEST), { outcome: 'fail', namesFailedFiles: true, failed: [] })
+    expect(plan.state.phase).not.toBe('red')
+    expect(plan.elsewhere).toEqual([UNNAMED_FAILURE])
+  })
+
+  test('a thinned run of the module’s own test is still its red', () => {
+    expect(run(workingOn('utils/a', A_TEST), { outcome: 'fail', namesFailedFiles: true, named: A_TEST, failed: [] }).state.phase).toBe('red')
+  })
+
+  test('a thinned run filtered by test name keeps the old reading', () => {
+    expect(run(workingOn('utils/a', A_TEST), { outcome: 'fail', namesFailedFiles: true, filtered: true, failed: [] }).state.phase).toBe('red')
+  })
+})
+
 // Seen live 2026-10-18: a run of a file outside the layout moved the current module to RED, then to GREEN with
 // "saw red": a cycle it never had. Such a run is not this module's.
 describe('a run of files outside the layout is not the current module\'s', () => {

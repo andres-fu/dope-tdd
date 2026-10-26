@@ -58,6 +58,8 @@ export type RunFacts = {
   readonly namedOther?: readonly string[]
   /** The red never reached an assertion (runners.ts, failedOnlyOnErrors): it proves no pin. */
   readonly errorsOnly?: boolean
+  /** The runner names the files that failed in its full output (runners.ts, namesFailedFiles). */
+  readonly namesFailedFiles?: boolean
 }
 
 /** The red elsewhere of a whole-folder run that did not say which files failed. */
@@ -146,8 +148,13 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? [...failed] : []
     // A whole-folder run that named no failed file says only that something failed somewhere: it is not the current
     // module's red (seen live, 2026-10-18: a kit run read without its file headers turned the band RED). A run of the
-    // module's own test, or a suite that does not name files (vitest's summary), keeps its old reading.
+    // module's own test keeps its old reading.
     if (facts.wholeFolder === true && failed.length === 0 && own !== undefined) {
+      elsewhere = [UNNAMED_FAILURE]
+    }
+    // #165: the same for a suite run (no file named, no name filter) whose runner names failed files but whose output
+    // named none: it was thinned or redirected. Maven and Gradle never name files, so their red keeps the old reading.
+    if (facts.namesFailedFiles === true && named === undefined && !filtered && failed.length === 0 && own !== undefined) {
       elsewhere = [UNNAMED_FAILURE]
     }
     if (outside && own !== undefined) {

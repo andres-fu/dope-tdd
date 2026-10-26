@@ -863,6 +863,17 @@ export function failedFilesIn(output: string): string[] {
   return unique(RUNNERS.flatMap(runner => runner.failedFiles(withoutTaskPrefixes(output))))
 }
 
+/**
+ * Whether the runner that reads this output names the files that failed in its full output (#165). When it does and
+ * this output names none, the output was thinned or redirected, so a suite red cannot be tied to any module. Maven and
+ * Gradle never name files: their run picks its test by class name, and a red with no file is that test's.
+ */
+export function namesFailedFiles(output: string): boolean {
+  const text = withoutTaskPrefixes(output)
+  const runner = RUNNERS.find(runner => runner.read(text) !== 'unknown')
+  return runner !== undefined && runner.failedFiles !== noFailedFiles
+}
+
 const TOKEN = /[\w./\\:*-]+/g
 
 /** `tests.test_calc.CalcTest` → `tests/test_calc.py`: the path up to the first part named like a test file. */

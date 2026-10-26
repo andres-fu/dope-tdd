@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namesFailedFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -731,5 +731,21 @@ describe('a run filtered to some tests', () => {
     expect(filtersTests('pytest -m slow')).toBe(true)
     expect(filtersTests('npx vitest run -t name')).toBe(true)
     expect(filtersTests('dotnet test --filter FullyQualifiedName~Foo')).toBe(true)
+  })
+})
+
+// #165: a suite red whose output names no failed file is the current module's red only for a runner that never names
+// files (Maven and Gradle pick their test by class name). A runner that does name them was thinned or redirected.
+describe('namesFailedFiles', () => {
+  test('a runner that prints the files that failed, even when this output was thinned to its summary', () => {
+    expect(namesFailedFiles('ℹ tests 277\nℹ pass 268\nℹ fail 9\n')).toBe(true)
+    expect(namesFailedFiles(NODE_TEST_REAL_FAIL)).toBe(true)
+    expect(namesFailedFiles(PYTEST_FAIL)).toBe(true)
+  })
+
+  test('a runner that never names files, or output no runner reads', () => {
+    expect(namesFailedFiles(MAVEN_FAIL)).toBe(false)
+    expect(namesFailedFiles(GRADLE_FAIL)).toBe(false)
+    expect(namesFailedFiles('nothing a runner prints')).toBe(false)
   })
 })

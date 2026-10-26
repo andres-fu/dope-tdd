@@ -47,6 +47,21 @@ describe('a kit run is read like any other test run', () => {
   })
 })
 
+// #165, seen dogfooding on agent-os: a full suite with failures in other modules, redirected to a file and grepped
+// down to node --test's totals, turned the module just proven RED. Totals alone cannot say which module failed.
+describe('a suite run thinned to its totals', () => {
+  test("its red is not this module's red", async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+
+    world.bashFails = false
+    world.bashText = 'ℹ tests 277\nℹ pass 268\nℹ fail 9\n'
+    const red = await runBash($, 'npm test > full.txt 2>&1; grep -E "^ℹ (tests|pass|fail)" full.txt')
+    expect(red.context?.join(' ') ?? '').not.toMatch(/RED on utils\/formatDuration/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/phase: RED/)
+  })
+})
+
 // Seen live 2026-10-18: `node --test tools/pr-check/check.spec-node.ts`, a spec outside the layout, failed and then
 // passed while `reviewer` was the current module, and dope-tdd said "RED on reviewer", then "GREEN on reviewer, saw red".
 describe('a run of a file outside the layout is not the current module\'s', () => {

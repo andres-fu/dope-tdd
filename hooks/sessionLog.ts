@@ -1,4 +1,4 @@
-import type { RunTime, TddStats } from '../types'
+import type { RunTime, StuckSpell, TddStats } from '../types'
 import type { GuardConfig } from './config.ts'
 
 /**
@@ -34,6 +34,8 @@ export type SessionRecord = {
   worktreeChecks: number
   /** One row per timed one-file run (idea 17): the rows a dashboard would query (running tab, observability). */
   runTimes: RunTime[]
+  /** One row per stuck spell (idea 16): the same failure on one module, STUCK_RUNS runs or more in a row. */
+  stuck: StuckSpell[]
   receipt: string
 }
 
@@ -76,6 +78,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     checkMs: s.checkMsTotal,
     worktreeChecks: s.worktreeChecks,
     runTimes: s.runTimes,
+    stuck: s.stuck,
     receipt,
   }
 }

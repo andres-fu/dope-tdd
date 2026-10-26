@@ -60,6 +60,8 @@ export const INITIAL_STATS: TddStats = {
   checkMsTotal: 0,
   worktreeChecks: 0,
   runTimes: [],
+  sameRed: null,
+  stuck: [],
   unwatched: [],
   lastCatch: null,
   lastCycle: null,
@@ -148,6 +150,8 @@ export function normalizeStats(stored: unknown): TddStats {
     checkMsTotal: pick('checkMsTotal', isNumber),
     worktreeChecks: pick('worktreeChecks', isNumber),
     runTimes: pick('runTimes', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.tookMs === 'number')),
+    sameRed: pick('sameRed', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.failure === 'string' && typeof v.runs === 'number')),
+    stuck: pick('stuck', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.runs === 'number')),
     unwatched: strings(pick('unwatched', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
@@ -232,6 +236,33 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
  * module's own test: the suite is red, the module is not. Its phase does not move.
  */
 /** `errorsOnly`: the red never reached an assertion (an import, a collection, a compile), so it proves no pin. */
+/** Identical reds in a row on one module that count as stuck (idea 16): trying things with no traction. */
+export const STUCK_RUNS = 3
+const STUCK_KEPT = 50
+
+/**
+ * The same failure on one module, run after run (idea 16). `failure` is what the run failed with (a message, or the
+ * failing tests' names); null when the output says neither, and then the count is left alone. A green, another failure
+ * or another module starts over. From STUCK_RUNS in a row the spell is a row in `stuck`, updated while it lasts.
+ */
+export function recordSameRed(s: TddStats, module: string, outcome: 'pass' | 'fail', failure: string | null, atMs: number): TddStats {
+  if (outcome === 'pass') {
+    return s.sameRed === null ? s : { ...s, sameRed: null }
+  }
+  if (failure === null) {
+    return s
+  }
+  const prev = s.sameRed
+  const runs = prev !== null && prev.module === module && prev.failure === failure ? prev.runs + 1 : 1
+  const sameRed = { module, failure, runs }
+  if (runs < STUCK_RUNS) {
+    return { ...s, sameRed }
+  }
+  const spell = { atMs, module, failure, runs }
+  const stuck = runs === STUCK_RUNS ? [...s.stuck, spell].slice(-STUCK_KEPT) : [...s.stuck.slice(0, -1), { ...(s.stuck.at(-1) ?? spell), runs }]
+  return { ...s, sameRed, stuck }
+}
+
 const RUN_TIMES_KEPT = 200
 
 /**

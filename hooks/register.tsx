@@ -42,7 +42,7 @@ import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { sessionLogPath, sessionRecord } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
@@ -76,6 +76,7 @@ import {
   recordRedNames,
   recordReportedElsewhere,
   recordRunTime,
+  recordSameRed,
   recordUnwatchedEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -1957,6 +1958,12 @@ async function checkShell(
     if (named !== undefined) {
       afterRun = await change($, s => recordRunTime(s, nowMs, nowMs - startedMs))
     }
+    // Idea 16: the same failure on the current module, run after run, is motion without progress.
+    const stuckOn = afterRun.current?.module
+    if (stuckOn !== undefined && countsForCurrent && elsewhere.length === 0) {
+      const failure = outcome === 'fail' ? (failureMessage(output) ?? (failedTestsIn(output).join(', ') || null)) : null
+      afterRun = await change($, s => recordSameRed(s, stuckOn, outcome === 'pass' ? 'pass' : 'fail', failure, nowMs))
+    }
   }
   const passedModule = outcome === 'pass' && countsForCurrent && !afterRun.paused ? afterRun.current?.module : undefined
   // The module's own record before this run: its red, its test edits, its uncaptured edits. Never another module's.
@@ -1984,7 +1991,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, errorsOnly: outcome === 'fail' && failedOnlyOnErrors(output), ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, errorsOnly: outcome === 'fail' && failedOnlyOnErrors(output), ...(afterRun.sameRed !== null && afterRun.sameRed.module === runModule ? { stuck: afterRun.sameRed } : {}), ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
 
   const reminders = shellReminders(
     {

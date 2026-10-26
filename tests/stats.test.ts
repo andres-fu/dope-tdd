@@ -25,6 +25,7 @@ import {
   recordStaleUnlocks,
   recordRun,
   recordRunTime,
+  recordSameRed,
   recordSourceEdit,
   recordTestChanged,
   recordPinSkill,
@@ -780,5 +781,47 @@ describe('recordRunTime', () => {
     expect(capped.length).toBe(200)
     expect(capped[0]?.atMs).toBe(1)
     expect(capped[199]?.tookMs).toBe(4_200)
+  })
+})
+
+// Idea 16 (2026-10-26): the same failure run after run is motion without progress. Counted per module, and each spell
+// that reaches STUCK_RUNS is a row in the record, for a dashboard to query later (running tab, observability).
+describe('recordSameRed', () => {
+  const on = { ...INITIAL_STATS, current: { module: 'utils/a', testPath: 'tests/utils/a.test.ts' } }
+
+  test('the same failure counts up; another failure, another module or a green starts over', () => {
+    const once = recordSameRed(on, 'utils/a', 'fail', 'expected 2 to be 3', 1_000)
+    const twice = recordSameRed(once, 'utils/a', 'fail', 'expected 2 to be 3', 2_000)
+    expect(twice.sameRed).toEqual({ module: 'utils/a', failure: 'expected 2 to be 3', runs: 2 })
+    expect(recordSameRed(twice, 'utils/a', 'fail', 'expected 1 to be 3', 3_000).sameRed?.runs).toBe(1)
+    expect(recordSameRed(twice, 'utils/b', 'fail', 'expected 2 to be 3', 3_000).sameRed?.runs).toBe(1)
+    expect(recordSameRed(twice, 'utils/a', 'pass', null, 3_000).sameRed).toBeNull()
+  })
+
+  test('a red the output does not describe leaves the count alone', () => {
+    const twice = recordSameRed(recordSameRed(on, 'utils/a', 'fail', 'x', 1_000), 'utils/a', 'fail', 'x', 2_000)
+    expect(recordSameRed(twice, 'utils/a', 'fail', null, 3_000).sameRed?.runs).toBe(2)
+  })
+
+  test('the third run in a row is a stuck spell: one row, updated while it lasts', () => {
+    let s = on
+    for (let run = 1; run <= 4; run++) {
+      s = recordSameRed(s, 'utils/a', 'fail', 'expected 2 to be 3', run * 1_000)
+    }
+    expect(s.stuck).toEqual([{ atMs: 3_000, module: 'utils/a', failure: 'expected 2 to be 3', runs: 4 }])
+    expect(recordSameRed(on, 'utils/a', 'fail', 'x', 1_000).stuck).toEqual([])
+  })
+})
+
+// Rows a dashboard reads come back from the store only when they are rows (ideas 16 and 17).
+describe('normalizeStats keeps the dashboard rows only when they are well formed', () => {
+  test('good rows survive; a malformed list falls back to empty', () => {
+    const spell = { atMs: 1, module: 'utils/a', failure: 'x', runs: 3 }
+    const time = { atMs: 1, module: 'utils/a', outcome: 'pass', tookMs: 5 }
+    expect(normalizeStats({ stuck: [spell], runTimes: [time] }).stuck).toEqual([spell])
+    expect(normalizeStats({ stuck: [spell], runTimes: [time] }).runTimes).toEqual([time])
+    expect(normalizeStats({ stuck: [{ runs: 'three' }] }).stuck).toEqual([])
+    expect(normalizeStats({ runTimes: [{ tookMs: 'slow' }] }).runTimes).toEqual([])
+    expect(normalizeStats({ sameRed: { module: 'utils/a' } }).sameRed).toBeNull()
   })
 })

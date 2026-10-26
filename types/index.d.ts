@@ -159,6 +159,10 @@ export type TddStats = {
   worktreeChecks: number
   /** One row per timed one-file run (idea 17), the newest last, capped: what a dashboard would query. */
   runTimes: RunTime[]
+  /** The current run of identical reds on one module (idea 16); null after a green or before any red. */
+  sameRed: { module: string; failure: string; runs: number } | null
+  /** One row per stuck spell (STUCK_RUNS or more identical reds in a row), the newest last, capped. */
+  stuck: StuckSpell[]
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   /** Code files edited this session that the layout pairs with no test, newest last, at most 20: what it is not watching. */
   unwatched: readonly string[]
@@ -173,6 +177,9 @@ export type TddStats = {
 
 /** `module`: the module the run was about (the current one, or another's own test); `files`: for elsewhere, what failed. */
 /** `tookMs`: how long a run of one named test file took (idea 17); absent for a suite run or a record from before. */
+/** The same failure on one module, run after run (idea 16): `atMs` is when it reached STUCK_RUNS, `runs` how long it lasted. */
+export type StuckSpell = { atMs: number; module: string; failure: string; runs: number }
+
 /** A one-file run and how long it took (idea 17). */
 export type RunTime = { atMs: number; module: string | null; outcome: 'pass' | 'fail'; tookMs: number }
 

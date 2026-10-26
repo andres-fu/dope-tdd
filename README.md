@@ -227,6 +227,10 @@ Three things to ask Claude once it's installed, in your own project or in
   GREEN (a run passed). A run is a `vitest`, `jest`, `npm test`-style command
   at the start of a shell command; its result is read from the runner's own
   summary line, not the exit code.
+- The same failure on the module you are on three runs in a row (the same
+  assertion message, or the same failing tests) is trying things without
+  traction. The red then tells Claude so, and to step back or say BLOCKED,
+  again at six runs, nine, and so on. Each spell is kept in the session log.
 - A suite run's red is a module's red only when the output names that
   module's test among the files that failed. A suite run thinned to its
   totals (`npm test > out.txt; grep ...`, `| tail -3`) by a runner that names
@@ -424,7 +428,7 @@ change back, so it holds a copy of the source file it is checking:
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), the repository folder name (in a linked worktree, the main checkout's), no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the repository folder name (in a linked worktree, the main checkout's), no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 

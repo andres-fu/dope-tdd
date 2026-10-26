@@ -197,3 +197,24 @@ describe('the session record keeps one-file run times', () => {
     expect(record.runTimes?.map(({ module, outcome, tookMs }) => ({ module, outcome, tookMs }))).toEqual([{ module: 'utils/formatDuration', outcome: 'fail', tookMs: 4_000 }])
   })
 })
+
+// Idea 16 (2026-10-26): the same failure three runs in a row is said to the agent, and the spell is a row in the record.
+describe('a module stuck on the same failure', () => {
+  test('the third identical red says so, and the record keeps the spell', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await startSession($)
+    await touchTest($, world, 'utils/formatDuration')
+    world.bashFails = true
+    world.bashText = ' FAIL  tests/utils/formatDuration.test.ts > formats months\nAssertionError: expected \'14m\' to be \'1y 2m\' // Object.is equality\n Tests  1 failed (1)\n'
+    const runs = []
+    for (let run = 0; run < 3; run++) {
+      runs.push(await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts'))
+    }
+    expect(runs[1]?.context?.join(' ') ?? '').not.toMatch(/runs in a row/)
+    expect(runs[2]?.context?.join(' ') ?? '').toMatch(/The same failure 3 runs in a row \(`expected '14m' to be '1y 2m'`\): this is not moving\./)
+    await end($)
+
+    const record = JSON.parse(logged(world).at(-1)?.[1] ?? '{}') as { stuck?: { module: string; failure: string; runs: number }[] }
+    expect(record.stuck?.map(({ module, failure, runs }) => ({ module, failure, runs }))).toEqual([{ module: 'utils/formatDuration', failure: "expected '14m' to be '1y 2m'", runs: 3 }])
+  })
+})

@@ -1,7 +1,7 @@
 # 2026-10-26 — Stumble twice: a spike happens in a throwaway copy, then the work is rebuilt test-first
 
-Status: proposed. Idea 19 in the running tab (`docs/planning/process-and-agent-os.md`). Nothing is
-built until the open questions at the end are answered.
+Status: decided 2026-10-26, with the recommended answer to each question at the end. Idea 19 in the
+running tab (`docs/planning/process-and-agent-os.md`).
 
 ## The problem
 The *Theory of Developer Momentum* paper (arXiv 2610.24935) describes a task as a hill. On the uphill
@@ -14,7 +14,7 @@ person to approve it, and the untested code it leaves behind is debt until a tes
 uphill part of every task is pushed toward an override, the thing the gate is meant to make rare. With
 nobody there to approve, an agent that needs to explore is simply denied.
 
-## What is proposed
+## What was decided
 A spike happens outside the project, in a throwaway git worktree, and is then thrown away. Nothing
 in it reaches the project except through the gate.
 
@@ -73,14 +73,13 @@ PR. The live tests cover the hook and the cleanup, and the skill text is checked
 A spike outside git (no repository) gets no worktree. The skill says to copy the folder instead, or
 to ask for an override.
 
-## Open questions (the user's call)
-1. **Who may start a spike?** Recommended: the agent, without asking, because nothing it writes there
-   is kept. The alternative is a person only, with `/tdd spike`.
-2. **Uncommitted changes in the copy?** Recommended: yes, applied from `git stash create`, so the spike
-   explores the code as it is. The alternative is HEAD only, which is simpler but explores older code.
-3. **A time box?** Recommended: none enforced. The skill suggests about 30 minutes, and the record keeps
-   the start time. An enforced timer needs a way to see the spike end, which a removed folder only
-   shows after the fact.
+## The questions, and what was decided
+1. **Who may start a spike?** The agent, without asking, because nothing it writes there is kept. (The
+   alternative was a person only, with `/tdd spike`.)
+2. **Uncommitted changes in the copy?** Yes, applied from `git stash create`, so the spike explores the
+   code as it is. (The alternative was HEAD only: simpler, but older code.)
+3. **A time box?** None enforced. The skill suggests about 30 minutes, and the record keeps the start
+   time. An enforced timer needs a way to see the spike end, which a removed folder only shows after
+   the fact.
 4. **Name the copy-back?** A shell command that reads from `~/.dope-tdd/spikes/` and writes guarded
-   source could be named "copied from a spike" on the record. Recommended: later, if the record shows
-   it happens.
+   source could be named "copied from a spike" on the record. Later, if the record shows it happens.

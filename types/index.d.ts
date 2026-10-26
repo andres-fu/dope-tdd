@@ -23,6 +23,8 @@ export type EventKind =
   | 'hollow-touch'
   /** The override record changed outside dope-tdd and was put back (override v1, 2026-10-18). */
   | 'record-edited'
+  /** A session record in ~/.dope-tdd/sessions/ changed while a shell command ran (2026-10-26, integrity). */
+  | 'log-edited'
   /** #54: an edit refused because a carried-over unlock waits for one run of its test this session. */
   | 'needs-run'
   /** #54: that run happened; the carried-over unlock is active. */

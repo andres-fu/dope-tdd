@@ -217,7 +217,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **UNPROVEN · not checked: change not captured** |
 | Put a file back with git (`git restore`, `git checkout -- <file>`, `git stash`) | Nothing: code put back to a saved state is not an edit | no change |
 | Bring code in with git (`git checkout main -- <file>`, `git pull`, `git stash pop`) | Does not count it as Claude's edit, but records it, with the git verb only | `brought in by git, not guarded` in `/tdd` |
-| Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, or pause the guard | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
+| Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, pause the guard, or edit a session record in `~/.dope-tdd/sessions/` from the shell | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
 | Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down until the operation ends; Claude is told when it starts and ends | **STANDING DOWN** · git rebase in progress |
 
 What it does **not** do: it never writes code or tests for Claude, never

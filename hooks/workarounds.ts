@@ -3,9 +3,9 @@
  * Each detector is pure: it reads texts and counts, the adapter records.
  */
 
-export type WorkaroundKind = 'config' | 'pause' | 'test-changed' | 'skipped' | 'assertion-removed' | 'commented-out' | 'hollow-touch' | 'record-edited'
+export type WorkaroundKind = 'config' | 'pause' | 'test-changed' | 'skipped' | 'assertion-removed' | 'commented-out' | 'hollow-touch' | 'record-edited' | 'log-edited'
 
-export const WORKAROUND_KINDS: readonly WorkaroundKind[] = ['config', 'pause', 'test-changed', 'skipped', 'assertion-removed', 'commented-out', 'hollow-touch', 'record-edited']
+export const WORKAROUND_KINDS: readonly WorkaroundKind[] = ['config', 'pause', 'test-changed', 'skipped', 'assertion-removed', 'commented-out', 'hollow-touch', 'record-edited', 'log-edited']
 
 const SKIP_MARKER = /\b(?:it|test|describe)\s*\.\s*(?:skip|only|todo)\b|\bx(?:it|test|describe)\s*\(/g
 // A call, not a mention: `import assert from 'node:assert'` asserts nothing, `assertEquals(...)` and `assert.ok(...)` do.

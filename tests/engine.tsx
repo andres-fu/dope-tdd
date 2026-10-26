@@ -337,7 +337,9 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
         names.set(name, deeper.length > 0 ? 'dir' : names.get(name) ?? 'file')
       }
     }
-    const entries = [...names].map(([name, kind]) => ({ name, kind, size: 1, mtimeMs: world.testModifiedAt, isLink: false }))
+    // A file written in the test has its real size, so a test can see a record that changed (2026-10-26, integrity).
+    const sizeOf = (name: string) => world.fileContents.get(`${dir}/${name}`)?.length ?? 1
+    const entries = [...names].map(([name, kind]) => ({ name, kind, size: kind === 'file' ? sizeOf(name) : 1, mtimeMs: world.testModifiedAt, isLink: false }))
     return { value: entries } as never
   })
   on('fs.read', (_$, e) => {

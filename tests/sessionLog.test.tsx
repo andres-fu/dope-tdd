@@ -3,6 +3,7 @@ import type { Engine } from 'claude-code/testing'
 
 import { FIXTURE_DRIVE, ROOT, T0, editAt, fakeEngine, fixUnderGuard, runBash, runTests, startSession, test, touchTest } from './engine'
 import type { FakeWorld } from './engine'
+import { verifyRecord } from '../hooks/sessionLog'
 
 const HOME = `${FIXTURE_DRIVE}Users/tester`
 const SESSIONS = `${HOME}/.dope-tdd/sessions/`
@@ -216,5 +217,44 @@ describe('a module stuck on the same failure', () => {
 
     const record = JSON.parse(logged(world).at(-1)?.[1] ?? '{}') as { stuck?: { module: string; failure: string; runs: number }[] }
     expect(record.stuck?.map(({ module, failure, runs }) => ({ module, failure, runs }))).toEqual([{ module: 'utils/formatDuration', failure: "expected '14m' to be '1y 2m'", runs: 3 }])
+  })
+})
+
+// Integrity (2026-10-26): could an agent or a person game this? The record is sealed with a digest of its content, and
+// a shell command that edits an existing record is a workaround on the record.
+describe('the session record\'s integrity', () => {
+  test('a record is written sealed', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await fixUnderGuard($, world)
+    await end($)
+
+    expect(verifyRecord(logged(world).at(-1)?.[1] ?? '')).toBe('sealed')
+  })
+
+  test('a command that edits an existing record is a workaround, and Claude is told', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    const old = `${SESSIONS}2026-10-25-sess-0.json`
+    world.fileContents.set(old, '{"proven":1}')
+    await startSession($)
+    world.onBash = () => {
+      world.fileContents.set(old, '{"proven":99}')
+    }
+
+    const edit = await runBash($, 'node bump.js')
+
+    expect(edit.context?.join(' ') ?? '').toMatch(/that command changed a session record in ~\/\.dope-tdd\/sessions\/ \(2026-10-25-sess-0\.json\)/)
+    expect(((await $.command.run({ command: 'tdd', args: '' } as never)) as { text: string }).text).toMatch(/workarounds: 1 \(session log edited 1\)/)
+  })
+
+  test('a record another session writes while a command runs is not', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await startSession($)
+    world.onBash = () => {
+      world.fileContents.set(`${SESSIONS}2026-10-26-sess-9.json`, '{"proven":1}')
+    }
+
+    const edit = await runBash($, 'node other.js')
+
+    expect(edit.context?.join(' ') ?? '').not.toMatch(/session record/)
   })
 })

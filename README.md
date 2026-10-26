@@ -219,6 +219,14 @@ Three things to ask Claude once it's installed, in your own project or in
   GREEN (a run passed). A run is a `vitest`, `jest`, `npm test`-style command
   at the start of a shell command; its result is read from the runner's own
   summary line, not the exit code.
+- A suite run's red is a module's red only when the output names that
+  module's test among the files that failed. A suite run thinned to its
+  totals (`npm test > out.txt; grep ...`, `| tail -3`) by a runner that names
+  failed files (Vitest, Jest, node --test, pytest) says only that something
+  failed somewhere: it is a red elsewhere, and the open module keeps its
+  phase. Run the module's own test file to see its red. Maven and Gradle pick
+  their test by class name and never name files, so their red is still the
+  module's.
 - After every shell command, `git diff` under `src/` and `tests/` is the
   source of truth: source files changed without a test touched count as
   unguarded, and tests written through the shell count as touched.

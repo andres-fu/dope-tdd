@@ -39,8 +39,13 @@ export const MINUTE = 60_000
 export const TEST_SOURCE = "it('formats months', () => {\n  expect(formatDuration(14)).toBe('1y 2m')\n})\n"
 export const SOURCE = `${ROOT}/src/utils/formatDuration.ts`
 export const PASS_SUMMARY = ' ✓ tests/utils/formatDuration.test.ts (1 test)\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n'
-/** A failure that names no file: the module under test is red, as a run of its own test would say. */
+/** A failure that names no file: since #165 a suite run thinned to this is a red elsewhere, not the module's red. */
 export const FAIL_SUMMARY = ' Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+
+/** What Vitest prints when `testPath` fails: its FAIL line, then the summary, so the red is that test's module's. */
+export function failOutput(testPath: string | null): string {
+  return testPath === null ? FAIL_SUMMARY : ` FAIL  ${testPath} > fails\n${FAIL_SUMMARY}`
+}
 
 export const BAND = {
   component: 'AbovePrompt',
@@ -58,6 +63,8 @@ export type FakeWorld = {
   clock: MockClock
   bashFails: boolean
   bashText: string
+  /** The test file last written through Edit or Write, from the root: a failing run with no `bashText` names it. */
+  lastTest: string | null
   testModifiedAt: number
   existingFiles: Set<string>
   fileContents: Map<string, string>
@@ -136,6 +143,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     clock: mock.clock(on, { now: T0 }),
     bashFails: false,
     bashText: '',
+    lastTest: null,
     testModifiedAt: T0,
     existingFiles: new Set(),
     fileContents: new Map(),
@@ -361,8 +369,11 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
         world.fileContents.set(target, current.replace(input.old_string, input.new_string))
       }
     }
+    if ((e.tool === 'Write' || e.tool === 'Edit') && target !== undefined && /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(target)) {
+      world.lastTest = target.startsWith(`${ROOT}/`) ? target.slice(ROOT.length + 1) : target
+    }
     if (isShell && world.bashFails) {
-      return { isError: true as const, result: 'FAIL', text: world.bashText || FAIL_SUMMARY }
+      return { isError: true as const, result: 'FAIL', text: world.bashText || failOutput(world.lastTest) }
     }
     // A real runner always prints its summary; a shell command that is not a test run prints whatever it prints.
     return { result: {} as never, text: world.bashText || PASS_SUMMARY, ...(isShell && world.readOnly ? { isReadOnly: true as const } : {}) }

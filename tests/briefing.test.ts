@@ -68,3 +68,13 @@ describe('the briefing stays cheap', () => {
     expect(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', null, null)).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
   })
 })
+
+describe('briefingText spike', () => {
+  // Idea 19: the spike is offered before the override, in enforce mode where refusals happen.
+  test('in enforce mode names the spike skill before the override', () => {
+    const text = briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>')
+    expect(text).toContain('To explore before you know what to test, use /dope-tdd:spike: work in a throwaway copy outside the project, then rebuild here test-first.')
+    expect(text.indexOf('/dope-tdd:spike')).toBeLessThan(text.indexOf('override_request'))
+    expect(briefingText({ ...DEFAULT_CONFIG, mode: 'warn' }, null)).not.toMatch(/dope-tdd:spike/)
+  })
+})

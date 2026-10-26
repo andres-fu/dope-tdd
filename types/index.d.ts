@@ -45,6 +45,8 @@ export type EventKind =
   | 'comment-touch'
   /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
   | 'git-in'
+  /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */
+  | 'spike'
 
 /** `slipped` on a miss: the lines of the change the test did not notice, as `+ line` and `- line`. */
 /** `proven`: the code was broken on purpose, the test went red, and the code is back byte for byte: the red was the check. */
@@ -165,6 +167,8 @@ export type TddStats = {
   sameRed: { module: string; failure: string; runs: number } | null
   /** One row per stuck spell (STUCK_RUNS or more identical reds in a row), the newest last, capped. */
   stuck: StuckSpell[]
+  /** One row per spike this session (idea 19), the newest last, capped: its question and when it started. */
+  spikes: Spike[]
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   /** Code files edited this session that the layout pairs with no test, newest last, at most 20: what it is not watching. */
   unwatched: readonly string[]
@@ -181,6 +185,9 @@ export type TddStats = {
 /** `tookMs`: how long a run of one named test file took (idea 17); absent for a suite run or a record from before. */
 /** The same failure on one module, run after run (idea 16): `atMs` is when it reached STUCK_RUNS, `runs` how long it lasted. */
 export type StuckSpell = { atMs: number; module: string; failure: string; runs: number }
+
+/** A spike (idea 19): the question it explores, and when the spike skill ran. */
+export type Spike = { atMs: number; question: string }
 
 /** A one-file run and how long it took (idea 17). */
 export type RunTime = { atMs: number; module: string | null; outcome: 'pass' | 'fail'; tookMs: number }

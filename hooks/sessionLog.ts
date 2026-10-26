@@ -1,4 +1,4 @@
-import type { RunTime, StuckSpell, TddStats } from '../types'
+import type { RunTime, Spike, StuckSpell, TddStats } from '../types'
 import type { GuardConfig } from './config.ts'
 import { redModules } from './leftRed.ts'
 import type { LeftRed } from './leftRed.ts'
@@ -40,6 +40,8 @@ export type SessionRecord = {
   stuck: StuckSpell[]
   /** The modules still red when the session ended (idea 15): the next session's briefing starts from them. */
   leftRed: LeftRed[]
+  /** One row per spike (idea 19): when the spike skill ran, and its question. */
+  spikes: Spike[]
   receipt: string
 }
 
@@ -84,6 +86,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     runTimes: s.runTimes,
     stuck: s.stuck,
     leftRed: redModules(s, meta.endedAtMs),
+    spikes: s.spikes,
     receipt,
   }
 }

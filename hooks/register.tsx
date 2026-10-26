@@ -8,6 +8,7 @@ import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
 import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
+import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spike.ts'
 import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
@@ -83,6 +84,7 @@ import {
   recordStaleUnlocks,
   recordTestChanged,
   recordPinSkill,
+  recordSpike,
   recordTestTouch,
   releaseCurrent,
   recordUnreadRun,
@@ -2121,6 +2123,17 @@ async function pruneOldFiles($: EngineInterface, nowMs: number): Promise<void> {
         }
       }
     }
+    // Idea 19: a spike copy is a throwaway the skill removes; one left behind goes after SPIKE_TTL_MS. Its git
+    // worktree entry is left for git, which prunes entries whose folder is gone.
+    let spikes: Awaited<ReturnType<typeof $.fs.list>> = []
+    try {
+      spikes = await $.fs.list(`${base}/spikes`)
+    } catch {
+      // No spikes folder yet.
+    }
+    for (const name of staleSpikes(spikes, nowMs)) {
+      await $.process.run(removeFolderArgv(`${base}/spikes/${name}`), { timeoutMs: 30_000 }).catch(() => undefined)
+    }
     const kept = await filesUnder(`${base}/kept`)
     const notice = keptNotice(kept.map(file => file.path.slice(`${base}/kept/`.length)))
     if (notice !== null) {
@@ -2623,6 +2636,11 @@ export const register: Register = on => {
     if (PIN_SKILL.test(e.skill)) {
       const nowMs = await $.clock.now()
       await change($, s => recordPinSkill(s, nowMs))
+    }
+    // Idea 19: the spike skill carries its question on a Question: line (spike.ts, spikeQuestion).
+    if (SPIKE_SKILL.test(e.skill)) {
+      const nowMs = await $.clock.now()
+      await change($, s => recordSpike(s, spikeQuestion(e.text), nowMs))
     }
     return next(e)
   })

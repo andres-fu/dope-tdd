@@ -49,6 +49,14 @@ the pins did not notice.
 A restore that differs only in line endings (a Windows shell edit can rewrite
 CRLF as LF) still counts as the code being back.
 
+`/dope-tdd:spike <question>` is for exploring before the path is clear,
+when no failing test can be written yet. The agent works in a throwaway git
+worktree outside the project (`~/.dope-tdd/spikes/`), writes down what it
+learned and the first failing test, removes the copy, and rebuilds in the
+project test-first. Nothing in the copy is guarded or kept, so a spike needs
+no approval and is not a workaround. `/tdd` lists it with its question
+(`docs/decisions/2026-10-26_stumble-twice.md`).
+
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
@@ -433,7 +441,8 @@ change back, so it holds a copy of the source file it is checking:
 | Left red | Plugin store | Each module still red when a session ended: module name, failing test names or message, time | 7 days, or until a session leaves it green |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the modules left red (module, failing tests), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the modules left red (module, failing tests), each spike (question, time), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Spike copies | `~/.dope-tdd/spikes/` | A git worktree of your project, made by `/dope-tdd:spike` for exploring | Removed by the skill when the spike ends; one left behind is removed at a session start after 7 days |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
 

@@ -62,6 +62,7 @@ export const INITIAL_STATS: TddStats = {
   runTimes: [],
   sameRed: null,
   stuck: [],
+  spikes: [],
   unwatched: [],
   lastCatch: null,
   lastCycle: null,
@@ -152,6 +153,7 @@ export function normalizeStats(stored: unknown): TddStats {
     runTimes: pick('runTimes', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.tookMs === 'number')),
     sameRed: pick('sameRed', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.failure === 'string' && typeof v.runs === 'number')),
     stuck: pick('stuck', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.runs === 'number')),
+    spikes: pick('spikes', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.atMs === 'number' && typeof row.question === 'string')),
     unwatched: strings(pick('unwatched', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
@@ -402,6 +404,13 @@ export function recordTestChanged(s: TddStats, module: string, nowMs: number): T
 /** The pin skill ran (`/dope-tdd:pin`, typed or called by the agent): logged once, and kept for the session. */
 export function recordPinSkill(s: TddStats, nowMs: number): TddStats {
   return s.pinning ? s : logged({ ...s, pinning: true }, 'pinning', nowMs)
+}
+
+const SPIKES_KEPT = 50
+
+/** A spike started (idea 19): its own row and event, never a workaround, since nothing written in the spike is kept. */
+export function recordSpike(s: TddStats, question: string, nowMs: number): TddStats {
+  return logged({ ...s, spikes: [...s.spikes, { atMs: nowMs, question }].slice(-SPIKES_KEPT) }, 'spike', nowMs, undefined, question)
 }
 
 /** A config edit is always logged; only one that loosens the guard counts as a workaround. */

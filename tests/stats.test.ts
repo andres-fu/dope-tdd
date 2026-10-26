@@ -29,6 +29,7 @@ import {
   recordSourceEdit,
   recordTestChanged,
   recordPinSkill,
+  recordSpike,
   recordTestTouch,
   recordUnreadRun,
   recordOtherPass,
@@ -823,5 +824,30 @@ describe('normalizeStats keeps the dashboard rows only when they are well formed
     expect(normalizeStats({ stuck: [{ runs: 'three' }] }).stuck).toEqual([])
     expect(normalizeStats({ runTimes: [{ tookMs: 'slow' }] }).runTimes).toEqual([])
     expect(normalizeStats({ sameRed: { module: 'utils/a' } }).sameRed).toBeNull()
+  })
+})
+
+// Idea 19: a spike is recorded as a spike, never a workaround.
+describe('recordSpike', () => {
+  test('adds a row and an event, and counts no workaround', () => {
+    const s = recordSpike(INITIAL_STATS, 'can the parser stream?', T0)
+    expect(s.spikes).toEqual([{ atMs: T0, question: 'can the parser stream?' }])
+    expect(s.events.at(-1)).toMatchObject({ kind: 'spike', detail: 'can the parser stream?' })
+    expect(s.workarounds).toBe(0)
+  })
+
+  test('keeps the newest 50', () => {
+    let s = INITIAL_STATS
+    for (let i = 0; i < 55; i++) {
+      s = recordSpike(s, `q${i}`, T0 + i)
+    }
+    expect(s.spikes.length).toBe(50)
+    expect(s.spikes[0]?.question).toBe('q5')
+  })
+
+  test('survives a reload, and a malformed value reads as none', () => {
+    const s = recordSpike(INITIAL_STATS, 'q', T0)
+    expect(normalizeStats(JSON.parse(JSON.stringify(s))).spikes).toEqual(s.spikes)
+    expect(normalizeStats({ ...s, spikes: [{ atMs: 1, question: 3 }] }).spikes).toEqual([])
   })
 })

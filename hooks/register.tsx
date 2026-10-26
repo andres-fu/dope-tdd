@@ -2320,10 +2320,13 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
     lines.push(`git checkout ${base} -- ${path}`, run, `git checkout HEAD -- ${path}`)
   }
   lines.push('```')
+  // Idea 18: the words the test failed with when the catch check undid the change, when it kept them.
+  const caught = s.lastCatch?.module === module && s.lastCatch.outcome.kind === 'caught' ? s.lastCatch.outcome.message : undefined
+  const fails = caught === undefined ? 'fails' : `fails with \`${caught}\``
   lines.push(
     change === undefined
       ? `No change to ${label} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
-      : `The first run passes. The second runs the same test against the code on ${base}, before the change, and fails, which is what the catch check saw. The last line puts the change back.`,
+      : `The first run passes. The second runs the same test against the code on ${base}, before the change, and ${fails}, which is what the catch check saw. The last line puts the change back.`,
   )
   return lines.join('\n')
 }

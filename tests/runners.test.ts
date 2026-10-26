@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, isTestRun, namedOtherFiles, namesFailedFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, failureMessage, isTestRun, namedOtherFiles, namesFailedFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -45,6 +45,7 @@ import {
   UNITTEST_PASS,
   UNITTEST_PASS_VERBOSE,
   UNITTEST_SKIP_ONLY,
+  VITEST_REAL_FAIL,
 } from './fixtures/runnerOutputs'
 
 // Python's own unittest (2026-10-19): a Python project with few tests often has no pytest, and its runs went unseen.
@@ -747,5 +748,26 @@ describe('namesFailedFiles', () => {
     expect(namesFailedFiles(MAVEN_FAIL)).toBe(false)
     expect(namesFailedFiles(GRADLE_FAIL)).toBe(false)
     expect(namesFailedFiles('nothing a runner prints')).toBe(false)
+  })
+})
+
+// Idea 18 (2026-10-26): a catch keeps the message the test failed with, so a reader learns what the change does.
+describe('failureMessage', () => {
+  test('the first assertion, in the runner\'s words, from real output', () => {
+    expect(failureMessage(VITEST_REAL_FAIL)).toBe('expected 2 to be 3')
+    expect(failureMessage(NODE_TEST_REAL_FAIL)).toBe('Expected values to be strictly equal: 2 !== 3')
+    expect(failureMessage(PYTEST_FAIL)).toBe('assert 3 == 4')
+  })
+
+  test('nothing for a pass, an error that is not an assertion, or a runner it does not read', () => {
+    expect(failureMessage(NODE_TEST_REAL_PASS)).toBeNull()
+    expect(failureMessage(NODE_TEST_REAL_LOAD_ERROR)).toBeNull()
+    expect(failureMessage(MAVEN_FAIL)).toBeNull()
+  })
+
+  test('a long message is cut to one short line', () => {
+    const message = failureMessage(`AssertionError: expected ${'x'.repeat(300)} to be 1\n`)
+    expect(message?.length).toBeLessThanOrEqual(120)
+    expect(message?.endsWith('…')).toBe(true)
   })
 })

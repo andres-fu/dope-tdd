@@ -136,10 +136,13 @@ export const MESSAGES = {
     `dope-tdd: GREEN on ${f.module}: PROVEN. Its test failed on your break and passes with the code put back exactly as it was.${f.lineEndings ? LINE_ENDINGS_NOTE : ''} ${REFACTOR}`),
   'green.provenBy': entry({ module: 'io', sawRed: true, own: 'test/io.test.ts', by: 'test/slugify.test.ts' }, f =>
     `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}, but its own test, ${f.own}, does not catch the change, but ${f.by} does: PROVEN by ${f.by}. Its own test is missing an assertion for this change; add one there. ${REFACTOR}`),
-  'green.caught': entry({ module: 'utils/a', sawRed: true }, f =>
-    f.sawRed
-      ? `dope-tdd: GREEN on ${f.module}: PROVEN. It saw red, and with the change undone its test fails. ${REFACTOR}`
-      : `dope-tdd: GREEN on ${f.module}: PROVEN. It never saw red, but with the change undone its test fails. ${REFACTOR}`),
+  // Idea 18 (2026-10-26): `message` is what the test said with the change undone, when the catch kept one.
+  'green.caught': entry<{ module: string; sawRed: boolean; message?: string }>({ module: 'utils/a', sawRed: true }, f => {
+    const fails = f.message === undefined ? 'its test fails' : `its test fails with \`${f.message}\``
+    return f.sawRed
+      ? `dope-tdd: GREEN on ${f.module}: PROVEN. It saw red, and with the change undone ${fails}. ${REFACTOR}`
+      : `dope-tdd: GREEN on ${f.module}: PROVEN. It never saw red, but with the change undone ${fails}. ${REFACTOR}`
+  }),
   'green.notChecked': entry({ module: 'utils/a', sawRed: true, reason: 'timeout' }, f =>
     `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${f.reason}). ${REFACTOR}`),
   'green.pinBreakProven': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. ${REFACTOR}`),

@@ -1,5 +1,5 @@
 import type { CatchOutcome } from '../types'
-import { failedFilesIn, failedOnlyOnErrors, failedTestsIn, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
+import { failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
 import type { RunnerKind, RunnerOptions } from './runners.ts'
 import { runnerDidNotStart, stripAnsi } from './runOutcome.ts'
 
@@ -131,7 +131,12 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string, kno
       return { kind: 'unverified', reason: 'the red was in other test files' }
     }
   }
-  return outcome === 'fail' ? { kind: 'caught' } : { kind: 'missed' }
+  if (outcome !== 'fail') {
+    return { kind: 'missed' }
+  }
+  // Idea 18: what the test said with the change undone, for the PROVEN line and the receipt.
+  const message = failureMessage(output)
+  return message === null ? { kind: 'caught' } : { kind: 'caught', message }
 }
 
 export function timeBudgetMs(greenRunMs: number): number {

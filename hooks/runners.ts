@@ -868,6 +868,35 @@ export function failedFilesIn(output: string): string[] {
  * this output names none, the output was thinned or redirected, so a suite red cannot be tied to any module. Maven and
  * Gradle never name files: their run picks its test by class name, and a red with no file is that test's.
  */
+const PYTEST_ASSERTION = /^E\s+(\S.*)$/m
+// Vitest's `AssertionError: expected 2 to be 3`, node:assert's `AssertionError [ERR_ASSERTION]: ...:` with the values
+// on the next non-blank line. An Error that is not an assertion (a module not found) is no message about the change.
+const ASSERTION_LINE = /^\s*AssertionError(?: \[\w+\])?: (.+)$/m
+const MESSAGE_MAX = 120
+
+/**
+ * The first assertion the output failed on, in the runner's own words and on one short line (idea 18, 2026-10-26):
+ * a catch keeps it, so the PROVEN line and the receipt can say what undoing the change broke. Null when there is none.
+ */
+export function failureMessage(output: string): string | null {
+  const text = withoutTaskPrefixes(stripAnsi(output)).replace(/\r/g, '')
+  const pytest = PYTEST_ASSERTION.exec(text)?.[1]
+  let message = pytest
+  if (message === undefined) {
+    const match = ASSERTION_LINE.exec(text)
+    if (match?.[1] === undefined) {
+      return null
+    }
+    message = match[1].trim().replace(/\s*\/\/ Object\.is equality$/, '')
+    if (message.endsWith(':')) {
+      const next = text.slice(match.index + match[0].length).split('\n').map(line => line.trim()).find(line => line !== '')
+      message = next === undefined ? message.slice(0, -1) : `${message} ${next}`
+    }
+  }
+  const line = message.trim()
+  return line.length <= MESSAGE_MAX ? line : `${line.slice(0, MESSAGE_MAX - 1)}…`
+}
+
 export function namesFailedFiles(output: string): boolean {
   const text = withoutTaskPrefixes(output)
   const runner = RUNNERS.find(runner => runner.read(text) !== 'unknown')

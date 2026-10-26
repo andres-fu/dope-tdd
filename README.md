@@ -52,7 +52,10 @@ CRLF as LF) still counts as the code being back.
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request.
+paste into a pull request. When the catch check saw the test fail on an
+assertion (Vitest, node --test, pytest), the PROVEN line and the receipt quote
+it, for example ``fails with `expected 2 to be 3` ``, so a reader learns what
+the change does without running anything.
 
 There is no off switch. When test-first does not fit, the agent asks for an
 override with a reason (`mcp__dope-tdd__override_request`) and stops; you

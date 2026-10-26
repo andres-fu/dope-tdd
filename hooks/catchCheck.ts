@@ -60,6 +60,32 @@ function namesTest(failed: readonly string[], testPath: string): boolean {
  * failed, the red must include it: a red in other files is not this test
  * catching the change.
  */
+/** Why the throwaway copy (a git worktree) gave no outcome: the step that failed, with what it saw. */
+export type WorktreeFailure = { readonly step: 'copy' | 'changes' | 'too-many' | 'unreadable' | 'not-green' | 'error'; readonly detail?: string }
+
+/**
+ * The reason a check in the throwaway copy is unverified, in words (#168). It used to say "see the log" for every
+ * failure, while most of them wrote nothing to any log; now the step that failed is named in the reason itself.
+ */
+export function worktreeFailureReason(failure: WorktreeFailure): string {
+  const left = 'so your file was left alone'
+  switch (failure.step) {
+    case 'copy':
+      return `the throwaway copy could not be made (git worktree add failed), ${left}`
+    case 'changes':
+      return `the throwaway copy could not be made (git could not list your uncommitted changes), ${left}`
+    case 'too-many':
+      return `the throwaway copy could not be made (more than ${failure.detail ?? 'the limit of'} uncommitted files to copy), ${left}`
+    case 'unreadable':
+      return `the throwaway copy could not be made (${failure.detail ?? 'a changed file'} could not be read), ${left}`
+    case 'not-green':
+      // #168: a nested package whose Vite config resolves from the project folder ran red in the copy only.
+      return `the test did not pass in the throwaway copy with your change in (${failure.detail ?? 'red'}), ${left}: a config that resolves paths from the project folder can run differently there`
+    case 'error':
+      return `the throwaway copy could not run the test (${failure.detail ?? 'an error'}), ${left}`
+  }
+}
+
 export function catchOutcome(run: RunResult | RunFailure, testPath?: string, known: readonly string[] = []): CatchOutcome {
   if (run === 'timeout') {
     return { kind: 'unverified', reason: 'timeout' }

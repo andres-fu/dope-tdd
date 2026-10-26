@@ -134,8 +134,9 @@ itself.
 - Vitest, Jest, ava and `node --test` check in a throwaway copy (in a clone
   or a linked worktree) and never touch your files. With more than 300
   changed files, a slow checkout, or a test that is not green in the copy,
-  the green is UNPROVEN · not checked and says why; nothing is written to
-  your files.
+  the green is UNPROVEN · not checked and says why, naming the step that
+  failed; nothing is written to your files. If it says the test did not pass
+  in the throwaway copy, prove that one by hand: break, red, restore, green.
 - The gdUnit4 (Godot), Maven and Gradle summary readers are provisional (the .NET one is read from real runs): they were written
   from the runners' own source and docs, not from a run. If you are on one
   of those, the whole output of one real test run, pass and fail, is the most

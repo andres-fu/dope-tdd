@@ -232,8 +232,9 @@ function readNodeTest(output: string): RunOutcome {
 }
 
 /**
- * The counts a filter kept. A red needs tests and fail; a green needs every test to have passed, because what the
- * filter dropped (cancelled, skipped, todo) could hide behind a pass count short of the total.
+ * The counts a filter kept. A red needs only a failure count: `fail 1` is a red whatever the total (#183, a filter
+ * to `# (pass|fail)` left 43 of 80 runs unread). A green needs the total too, and every test to have passed, because
+ * what the filter dropped (cancelled, skipped, todo) could hide behind a pass count short of the total (#18).
  */
 function readThinnedNodeTest(text: string): RunOutcome {
   const count = (word: string): number | undefined => {
@@ -242,11 +243,14 @@ function readThinnedNodeTest(text: string): RunOutcome {
   }
   const tests = count('tests')
   const fail = count('fail')
-  if (tests === undefined || fail === undefined) {
+  if (fail === undefined) {
     return 'unknown'
   }
   if (fail > 0 || (count('cancelled') ?? 0) > 0) {
     return 'fail'
+  }
+  if (tests === undefined) {
+    return 'unknown'
   }
   // No pass line is never green: undefined equals no total.
   const pass = count('pass')

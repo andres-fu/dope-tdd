@@ -151,7 +151,9 @@ itself.
   still refused.
 - Run one test file at a time, and keep the runner's summary line in the
   output: Dope TDD reads that line, never the exit code, so a `tail` or a
-  `grep` that drops it leaves the run unread. A whole suite cut down to its
+  `grep` that drops it leaves the run unread. For node --test, a failure
+  count left on its own (`grep -E "^# (pass|fail)"`) still reads as a red;
+  a green needs the total line too. A whole suite cut down to its
   totals is read, but a red in it is not charged to the module you are on:
   the totals don't say which file failed.
 - Several sessions in one checkout share one catch-check lock, so a second

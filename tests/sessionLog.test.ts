@@ -60,3 +60,11 @@ describe('sessionRecord', () => {
     expect(record.leftRed).toEqual([{ module: 'utils/a', failing: ['x'], atMs: endedAtMs }])
   })
 })
+
+describe('sessionRecord spikes', () => {
+  test('lists the spikes', () => {
+    const s = { ...INITIAL_STATS, spikes: [{ atMs: 1, question: 'q' }] }
+    const record = sessionRecord(s, DEFAULT_CONFIG, { sessionId: 'sess-1', reason: 'other', root: 'C:/work/x', endedAtMs: 2, gitDir: null }, '')
+    expect(record.spikes).toEqual([{ atMs: 1, question: 'q' }])
+  })
+})

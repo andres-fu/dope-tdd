@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordRun, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordRun, recordSpike, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -203,5 +203,19 @@ describe('/tdd says pin corrections apart from workarounds', () => {
     expect(text).toMatch(/^JUST NOW: pin corrected cover$/m)
     expect(text).not.toMatch(/workarounds/)
     expect(formatGlossary()).toMatch(/^ {2}pins corrected +a pin fixed after its first red, with the code unchanged, while the pin skill was in use; it still needs a deliberate break to prove it/m)
+  })
+})
+
+// Idea 19: spikes have their own line, never under workarounds.
+describe('formatStatus spikes', () => {
+  test('a spike is its own line with the last question, and the event reads spiked', () => {
+    const text = formatStatus(recordSpike(INITIAL_STATS, 'can the parser stream?', T0), T0 + 1000)
+    expect(text.split('\n')).toContain('spikes: 1 (last: can the parser stream?), explored outside the project, then rebuilt test-first')
+    expect(text).not.toMatch(/workarounds/)
+    expect(text).toContain('spiked (can the parser stream?)')
+  })
+
+  test('no spike: no line', () => {
+    expect(formatStatus(INITIAL_STATS, T0)).not.toMatch(/spikes:/)
   })
 })

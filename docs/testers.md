@@ -90,6 +90,9 @@ the kind of change:
   under them.
 - **Code with no tests at all.** `/dope-tdd:pin` pins today's behaviour first,
   proves the pins, then the change goes ahead under them.
+- **Not sure yet what the code should do.** `/dope-tdd:spike <question>`
+  explores in a throwaway copy outside the project, then the work is
+  rebuilt test-first. No approval needed; `/tdd` lists the spike.
 - **Moving code into new files.** Each new file is a module of its own, so
   each needs its test touched (or pinned) before it is written.
 

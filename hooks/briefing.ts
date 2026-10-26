@@ -20,6 +20,8 @@ export function briefingText(config: GuardConfig, runCommand: string | null, lay
         'A module unlocked in an earlier session (up to 7 days) needs one run of its test this session, red or green, before its first edit, and is dropped if that test changed since. ' +
         // Option A (docs review, 2026-10-18): the refactor path and the override, known before the first refusal.
         'To refactor code whose test already passes, add or tighten one assertion for what you will change and see it fail, or pin it first. ' +
+        // Idea 19 (stumble twice): exploring has a path of its own, so it is not pushed toward an override.
+        'To explore before you know what to test, use /dope-tdd:spike: work in a throwaway copy outside the project, then rebuild here test-first. ' +
         'If nothing fits, ask with mcp__dope-tdd__override_request, then stop and wait: a person decides.'
       : config.mode === 'warn'
         ? 'An edit to a source file whose test was not touched first goes through with a warning, and is counted.'

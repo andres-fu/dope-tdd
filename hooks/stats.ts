@@ -59,6 +59,7 @@ export const INITIAL_STATS: TddStats = {
   refactors: 0,
   checkMsTotal: 0,
   worktreeChecks: 0,
+  runTimes: [],
   unwatched: [],
   lastCatch: null,
   lastCycle: null,
@@ -146,6 +147,7 @@ export function normalizeStats(stored: unknown): TddStats {
     refactors: pick('refactors', isNumber),
     checkMsTotal: pick('checkMsTotal', isNumber),
     worktreeChecks: pick('worktreeChecks', isNumber),
+    runTimes: pick('runTimes', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.tookMs === 'number')),
     unwatched: strings(pick('unwatched', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
@@ -230,6 +232,22 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
  * module's own test: the suite is red, the module is not. Its phase does not move.
  */
 /** `errorsOnly`: the red never reached an assertion (an import, a collection, a compile), so it proves no pin. */
+const RUN_TIMES_KEPT = 200
+
+/**
+ * How long the run recorded at `atMs` took (idea 17): set on that record only, so a later run never inherits it, and
+ * kept as a row in `runTimes` for the session record, where a dashboard can read it (running tab, observability).
+ */
+export function recordRunTime(s: TddStats, atMs: number, tookMs: number): TddStats {
+  const last = s.lastRun
+  if (last === null || last.atMs !== atMs) {
+    return s
+  }
+  const outcome: 'pass' | 'fail' = last.outcome === 'pass' ? 'pass' : 'fail'
+  const row = { atMs, module: last.module, outcome, tookMs }
+  return { ...s, lastRun: { ...last, tookMs }, runTimes: [...s.runTimes, row].slice(-RUN_TIMES_KEPT) }
+}
+
 export function recordRun(s: TddStats, passed: boolean, nowMs: number, elsewhere: readonly string[] = [], options: { errorsOnly?: boolean } = {}): TddStats {
   const red = !passed && elsewhere.length > 0 ? 'elsewhere' : passed ? 'pass' : 'fail'
   const lastRun: LastRun = { module: s.current?.module ?? null, outcome: red, files: red === 'elsewhere' ? [...elsewhere] : [], atMs: nowMs }

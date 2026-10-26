@@ -1,4 +1,4 @@
-import type { TddStats } from '../types'
+import type { RunTime, TddStats } from '../types'
 import type { GuardConfig } from './config.ts'
 
 /**
@@ -32,6 +32,8 @@ export type SessionRecord = {
   checkMs: number
   /** Catch checks that ran in a worktree, never in the user's files. */
   worktreeChecks: number
+  /** One row per timed one-file run (idea 17): the rows a dashboard would query (running tab, observability). */
+  runTimes: RunTime[]
   receipt: string
 }
 
@@ -73,6 +75,7 @@ export function sessionRecord(s: TddStats, config: GuardConfig, meta: SessionMet
     workarounds: s.workarounds,
     checkMs: s.checkMsTotal,
     worktreeChecks: s.worktreeChecks,
+    runTimes: s.runTimes,
     receipt,
   }
 }

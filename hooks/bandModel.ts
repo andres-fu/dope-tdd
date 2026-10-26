@@ -13,6 +13,9 @@ import { stackOf } from './stacks.ts'
 import { RED_TIMER_ALARM_MS } from './theme.ts'
 import { formatAgo, formatSpan } from './timeText.ts'
 
+/** A one-file run this long is slow for the loop: it should take seconds, and by 30 s the agent and the person drift. */
+export const SLOW_RUN_MS = 30_000
+
 /** The fixed folder a layout template starts with: `tests/{module}.test.{ext}` lives under `tests/`. */
 function fixedPrefix(template: string): string {
   return template.slice(0, Math.max(0, template.indexOf('{')))
@@ -319,7 +322,10 @@ export function lastRunLine(s: TddStats, nowMs: number): string | null {
   const testPath = module === null ? undefined : s.unlocked[module]
   const name = testPath !== undefined ? fileName(testPath) : module !== null ? `${module} test` : 'the tests'
   const whose = module !== null && s.current !== null && module !== s.current.module ? ' · another module' : ''
-  return `last run: ${name} ${last.outcome === 'pass' ? 'passed' : 'failed'}${whose} · ${ago}`
+  // Idea 17: a one-file run is the loop, and a slow one breaks orientation (5 to 10 minutes was the worst wait in the
+  // Theory of Developer Momentum's interviews); from SLOW_RUN_MS it says so.
+  const took = last.tookMs === undefined ? '' : ` in ${formatSpan(last.tookMs)}${last.tookMs >= SLOW_RUN_MS ? ', slow for one file' : ''}`
+  return `last run: ${name} ${last.outcome === 'pass' ? 'passed' : 'failed'}${took}${whose} · ${ago}`
 }
 
 /**

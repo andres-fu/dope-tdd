@@ -75,6 +75,10 @@ export const MESSAGES = {
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).
+  // Idea 16 (2026-10-26): appended to a RED when the same failure came back STUCK_RUNS runs in a row, and every
+  // STUCK_RUNS after: motion without progress, where stepping back or asking beats another try.
+  'note.stuck': entry({ runs: 3, failure: 'expected 2 to be 3' }, f =>
+    ` The same failure ${f.runs} runs in a row (\`${f.failure}\`): this is not moving. Step back and re-read what the test expects, or say BLOCKED and what you need from the user.`),
   'note.errorsOnly': entry<Module>({ module: 'utils/a' }, f =>
     ` So it does not prove the test of ${f.module} can fail: once the error is fixed, break the code on purpose and run again.`),
   // Appended to a RED or GREEN on the current module when the test that ran is another open module's own (2026-10-19).

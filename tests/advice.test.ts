@@ -29,6 +29,17 @@ describe('runAdvice', () => {
     expect(runAdvice(changed, recordRun(changed, false, at(2)))).toBe(say('red.again', { module: MODULE }))
   })
 
+  // Idea 16 (2026-10-26): the same failure three runs in a row, and every three after, adds the stuck note to the red.
+  test('a red stuck on the same failure says so at 3 and 6 runs, not in between', () => {
+    const changed = recordChange(recordRun(touched, false, at(1)), MODULE, 'C:/w/src/money/formatCents.ts', 'a', 'b')
+    const red = recordRun(changed, false, at(2))
+    const stuck = (runs: number) => runAdvice(changed, red, undefined, { stuck: { runs, failure: 'expected 2 to be 3' } })
+    expect(stuck(3)).toBe(say('red.again', { module: MODULE }) + say('note.stuck', { runs: 3, failure: 'expected 2 to be 3' }))
+    expect(stuck(4)).toBe(say('red.again', { module: MODULE }))
+    expect(stuck(6)).toBe(say('red.again', { module: MODULE }) + say('note.stuck', { runs: 6, failure: 'expected 2 to be 3' }))
+    expect(stuck(2)).toBe(say('red.again', { module: MODULE }))
+  })
+
   test('after a green that saw red, says so and gives the next step', () => {
     const edited = recordSourceEdit(recordRun(touched, false, at(1)), MODULE, true, at(2))
     expect(runAdvice(edited, recordRun(edited, true, at(3)))).toBe(say('green.sawRed', { module: MODULE }))

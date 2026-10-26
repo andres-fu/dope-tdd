@@ -38,3 +38,12 @@ describe('green.caught', () => {
     expect(say('green.caught', { module: 'utils/a', sawRed: true })).toBe(GOLDEN['green.caught'])
   })
 })
+
+// Idea 16 (2026-10-26): the same failure run after run is not progress; the note says so and offers the two ways out.
+describe('note.stuck', () => {
+  test('names the failure and how many runs, and says step back or BLOCKED', () => {
+    expect(say('note.stuck', { runs: 3, failure: 'expected 2 to be 3' })).toBe(
+      ' The same failure 3 runs in a row (`expected 2 to be 3`): this is not moving. Step back and re-read what the test expects, or say BLOCKED and what you need from the user.',
+    )
+  })
+})

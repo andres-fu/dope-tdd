@@ -1,6 +1,7 @@
 // What to tell the agent after an edit or a run: the decisions. The words are in the catalogue (messages.ts, 2026-10-18).
 import type { CatchOutcome, TddStats } from '../types'
 import { say } from './messages.ts'
+import { STUCK_RUNS } from './stats.ts'
 
 export type Check = CatchOutcome | 'refactor'
 
@@ -19,6 +20,8 @@ export type RunContext = {
   ownTestOf?: string
   /** The red never reached an assertion (runners.ts, failedOnlyOnErrors). */
   errorsOnly?: boolean
+  /** The same failure on this module, run after run (stats.ts, recordSameRed). */
+  stuck?: { runs: number; failure: string }
 }
 
 function defaultSource(module: string): string {
@@ -173,7 +176,10 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
     ? say(context.errorsOnly === true ? 'red.errorsOnly' : after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
     : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
   const errorsNote = red && context.errorsOnly === true && before.unproven.includes(id) ? say('note.errorsOnly', { module }) : ''
+  // Idea 16: said at STUCK_RUNS and every STUCK_RUNS after, so a long spell is named without a line on every run.
+  const stuck = context.stuck
+  const stuckNote = red && stuck !== undefined && stuck.runs >= STUCK_RUNS && stuck.runs % STUCK_RUNS === 0 ? say('note.stuck', stuck) : ''
   const other = context.ownTestOf
-  const said = line === null ? null : line + errorsNote
+  const said = line === null ? null : line + errorsNote + stuckNote
   return said === null || other === undefined ? said : said + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
 }

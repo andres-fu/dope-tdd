@@ -15,6 +15,7 @@ const WORKAROUND_WORDS: Readonly<Record<string, string>> = {
   'commented-out': 'commented out',
   'hollow-touch': 'touched unchanged',
   'record-edited': 'override record edited',
+  'log-edited': 'session log edited',
 }
 
 const RECENT_EVENTS = 10

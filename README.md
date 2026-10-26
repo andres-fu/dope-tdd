@@ -33,7 +33,7 @@ each moment it decides before the action runs:
 | Run the tests | Reads the runner's summary, not the exit code | red ✓ green ✓, last run |
 | Go green without a red | Says the test has proven nothing yet | UNPROVEN · never failed |
 | Go green after red | Reverts, runs that test, restores, attaches the verdict | PROVEN, MISSED |
-| Bend the test, skip, comment out, loosen config | Counts it and asks why | workarounds in `/tdd` |
+| Bend the test, skip, comment out, loosen config, edit its records | Counts it and asks why | workarounds in `/tdd` |
 
 The mechanism is the one Anthropic describes under
 [Guard or change a tool call](https://code.claude.com/docs/en/plugins/mods/events#guard-or-change-a-tool-call);
@@ -428,9 +428,15 @@ change back, so it holds a copy of the source file it is checking:
 | Unlocks | Plugin store | A test path, a time and a short hash of the test (no text) | 7 days |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the repository folder name (in a linked worktree, the main checkout's), no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source and no absolute path | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Kept changes | `~/.dope-tdd/kept/` | Your edit, only when a file changed during a check and could not be restored | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name), the files edited under it | In your repo, as long as you keep it; commit it with the change |
+
+The session log is evidence of how a session went, not proof. A shell
+command that changes an existing record is recorded as a workaround and
+Claude is told, and the digest shows a hand edit later. Neither can stop an
+agent that reads this code: anything the plugin can write, an agent with a
+shell can too. Proof is what the pull-request check below re-runs in CI.
 
 Files matched by `exempt` in `dope-tdd.json` are not captured. The 30-day
 cleanup uses `node`; where it is missing, the files stay until you delete

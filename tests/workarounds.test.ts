@@ -71,4 +71,9 @@ describe('WORKAROUND_KINDS (2026-10-18)', () => {
   test('includes an override record changed outside dope-tdd', () => {
     expect(WORKAROUND_KINDS).toContain('record-edited')
   })
+
+  // 2026-10-26 (integrity): a shell command that edits a session record in ~/.dope-tdd/sessions/.
+  test('includes a session log edited by a command', () => {
+    expect(WORKAROUND_KINDS).toContain('log-edited')
+  })
 })

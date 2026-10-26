@@ -114,6 +114,12 @@ describe('formatStatus names an edited override record (2026-10-18)', () => {
     const s = recordWorkaround(INITIAL_STATS, 'record-edited', '', 'dope-tdd.overrides.json', T0)
     expect(formatStatus(s, T0)).toMatch(/workarounds: 1 \(override record edited 1\)/)
   })
+
+  // 2026-10-26 (integrity): an edit to a session record has its own word.
+  test('and an edited session log as its own', () => {
+    const s = recordWorkaround(INITIAL_STATS, 'log-edited', '', '2026-10-26-sess-1.json', T0)
+    expect(formatStatus(s, T0)).toMatch(/workarounds: 1 \(session log edited 1\)/)
+  })
 })
 
 describe('formatStatus as rows the app can show as a table (2026-10-18)', () => {

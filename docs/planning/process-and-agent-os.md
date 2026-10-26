@@ -135,9 +135,11 @@ is timed). The plugin's numbers are evidence of how a session went, not proof. P
 what the agent cannot write: the pull-request catch check in CI (`tools/pr-check`) re-runs each
 changed module's test against the base branch's code. A dashboard should therefore show two tiers:
 CI verdicts as the facts, and local session records as context, never mixed in one number. Cheap
-hardening for the local tier, to weigh: record a shell write to `~/.dope-tdd/` as a workaround, as
-`dope-tdd.json` and the override record already are; stamp each record with a hash so a hand edit
-shows; and reconcile local PROVEN counts against the PR check, where a gap is itself a signal.
+hardening for the local tier: record a shell write to `~/.dope-tdd/` as a workaround, as
+`dope-tdd.json` and the override record already are (**built** 2026-10-26, for existing session
+records); stamp each record with a hash so a hand edit shows (**built** 2026-10-26,
+`verifyRecord`); and reconcile local PROVEN counts against the PR check, where a gap is itself a
+signal (open).
 
 Questions for the brainstorm: which questions the dashboard answers (proof rate per repo, slow
 loops, workarounds, overrides, verdicts over time); one machine or several (testers, the night

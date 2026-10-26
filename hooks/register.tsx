@@ -44,7 +44,8 @@ import type { GitOperation } from './gitOperation.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
-import { sessionLogPath, sessionRecord } from './sessionLog.ts'
+import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
+import type { RecordEntry } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
 import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
@@ -2372,6 +2373,42 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
   return tell(false, result, [line])
 }
 
+/** The session records in `<home>/.dope-tdd/sessions/`, or none when there is no home or no folder yet. */
+async function sessionRecords($: EngineInterface, home: string | undefined): Promise<RecordEntry[]> {
+  if (home === undefined || home === '') {
+    return []
+  }
+  try {
+    const entries = await $.fs.list(`${home.replace(/\\/g, '/').replace(/\/$/, '')}/.dope-tdd/sessions`)
+    return entries.filter(entry => entry.kind === 'file').map(({ name, size, mtimeMs }) => ({ name, size, mtimeMs }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Integrity (2026-10-26: could an agent or a person game this?). Only dope-tdd writes the session records, at a
+ * session's end, so an existing record that changed while a shell command ran was edited by it: a workaround on the
+ * record, said to the agent. It is not put back (its old text was never read); the record's digest shows the edit too.
+ */
+async function watchSessionLogs($: EngineInterface, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  const before = await sessionRecords($, home)
+  const result = await run()
+  if (before.length === 0) {
+    return result
+  }
+  const changed = changedRecords(before, await sessionRecords($, home))
+  if (changed.length === 0) {
+    return result
+  }
+  const nowMs = await $.clock.now()
+  await change($, s => recordWorkaround(s, 'log-edited', '', changed.join(', '), nowMs))
+  const line = `dope-tdd: that command changed a session record in ~/.dope-tdd/sessions/ (${changed.join(', ')}); only dope-tdd writes those. Recorded as a workaround; say why.`
+  $.ui.log(line)
+  return tell(false, result, [line])
+}
+
 /** Locked modules a shell command writes that an approved override covers are let through and counted on it; the rest stay locked. */
 async function coverShellWrites($: EngineInterface, root: string, locked: readonly string[], writes: readonly { path: string; module: string | null }[]): Promise<string[]> {
   const relative = writes.map(write => ({ ...write, path: relativePath(root, write.path) }))
@@ -2399,7 +2436,8 @@ async function writeSessionLog($: EngineInterface, sessionId: string, reason: st
   const config = await loadConfig($, root)
   const nowMs = await $.clock.now()
   const build = (await read($, buildAtom)) || undefined
-  const record = sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs, gitDir: await gitDirOf($, root), ...(build === undefined ? {} : { build }) }, formatStatus(s, nowMs, config, build))
+  // Sealed with a digest of its content (2026-10-26, integrity): a hand edit shows; see sessionLog.ts, sealRecord.
+  const record = sealRecord(sessionRecord(s, config, { sessionId, reason, root, endedAtMs: nowMs, gitDir: await gitDirOf($, root), ...(build === undefined ? {} : { build }) }, formatStatus(s, nowMs, config, build)))
   await $.fs.write(sessionLogPath(home, nowMs, sessionId), `${JSON.stringify(record, null, 2)}
 `)
 }
@@ -2593,13 +2631,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash'))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash')))).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell'))).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell')))).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

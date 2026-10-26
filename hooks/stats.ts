@@ -427,7 +427,7 @@ export function recordConfigChange(s: TddStats, detail: string, loosened: boolea
 /** A skip/only marker added to a test, an assertion removed, or code commented out: recorded with what was seen. */
 export function recordWorkaround(
   s: TddStats,
-  kind: 'skipped' | 'assertion-removed' | 'commented-out' | 'hollow-touch' | 'record-edited',
+  kind: 'skipped' | 'assertion-removed' | 'commented-out' | 'hollow-touch' | 'record-edited' | 'log-edited',
   module: string,
   detail: string,
   nowMs: number,

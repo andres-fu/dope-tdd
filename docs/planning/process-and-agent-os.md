@@ -100,7 +100,7 @@ stays advisory and neutral (public blame, the paper finds, can end someone's car
 | 16 | Stuck signal: the same test failing with the same message N runs in a row is troubleshooting without traction; say so (step back, or `BLOCKED` for an agent). Deterministic, no model | build | **built** 2026-10-26: a note on the third identical red (and every third after), and one row per spell in the session record (`stuck`) |
 | 17 | Loop time: show how long the one-file run took in `/tdd`, and flag a run slow enough to break orientation (relates to #168 and the proof's re-run cost) | build | **built** 2026-10-26: on the band and the refusal, and one row per run in the session record (`runTimes`); not in `/tdd` yet |
 | 18 | Receipts that build hunches: when the catch check reverts the change, keep the failure message it saw ("expected 3, got 2") in the receipt, so the reader learns what the change does | build | **built** 2026-10-26 for Vitest, node --test and pytest; the pinned-break PROVEN line does not quote yet |
-| 19 | Stumble twice: a recorded spike path for the uphill part (explore freely, throw it away, rebuild test-first), instead of pushing people toward an override. Fits the brownfield use case | build | proposed |
+| 19 | Stumble twice: a recorded spike path for the uphill part (explore freely, throw it away, rebuild test-first), instead of pushing people toward an override. Fits the brownfield use case | build | proposed: decision doc `docs/decisions/2026-10-26_stumble-twice.md` (a spike in a throwaway worktree outside the project, recorded, no approval), awaiting answers |
 
 For agent-os, to take into the night-shift spec (`docs/specs/2026-10-21-night-shift.md` there):
 

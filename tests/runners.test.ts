@@ -542,7 +542,7 @@ describe("Node's built-in runner, read from real output (node --test, Node 24, W
     expect(failedFilesIn(NODE_TEST_REAL_TAP_FAIL)).toEqual(['C:/Users/dev/vibecast/test/broken.test.js'])
   })
 
-  test('a summary a filter thinned still reads, as long as tests, pass and fail are all there (#18)', () => {
+  test('a summary a filter thinned still reads: a red from its failure count, a green only with the total (#18, #183)', () => {
     const kept = (output: string, pattern: RegExp) => output.split('\n').filter(line => pattern.test(line)).join('\n')
     // `| grep -E "✖|ℹ (tests|pass|fail)"` and `| head -30 | grep …`, as the VibeCast agent ran them
     expect(readRun(kept(NODE_TEST_REAL_FAIL, /✖|ℹ (tests|pass|fail)/))).toBe('fail')
@@ -551,6 +551,10 @@ describe("Node's built-in runner, read from real output (node --test, Node 24, W
     // `| grep -E "^ℹ (tests|fail)"`: a red says so on its own; a green needs its pass count
     expect(readRun(kept(NODE_TEST_REAL_FAIL, /^ℹ (tests|fail) /))).toBe('fail')
     expect(readRun(kept(NODE_TEST_REAL_PASS, /^ℹ (tests|fail) /))).toBe('unknown')
+    // #183: `| grep -E "^# (pass|fail)"` drops the total. A failure count is a red on its own; a green still needs the
+    // total, so the pass-and-fail-only green below stays unread.
+    expect(readRun(kept(NODE_TEST_REAL_TAP_FAIL, /^# (pass|fail) /))).toBe('fail')
+    expect(readRun('ℹ pass 6\nℹ fail 1\n')).toBe('fail')
   })
 
   test('a thinned summary is never green when anything could hide behind it', () => {

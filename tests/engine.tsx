@@ -98,7 +98,7 @@ export type FakeWorld = {
   dirty: string
   deleted: string
   hasVitest: boolean
-  onBash: (command: string) => void
+  onBash: (command: string) => void | Promise<void>
   /** What $.model.complete answers (the reviewer model), and every call it got. */
   modelReply: unknown
   modelCalls: { model: string; effort?: string; system?: string; prompt: string }[]
@@ -353,10 +353,10 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       ? { value: e.path.endsWith('.svg') ? '<svg xmlns="http://www.w3.org/2000/svg"/>' : TEST_SOURCE }
       : { deny: `ENOENT: ${e.path}` }
   })
-  on('tool.call', (_$, e) => {
+  on('tool.call', async (_$, e) => {
     const isShell = e.tool === 'Bash' || e.tool === 'PowerShell'
     if (isShell) {
-      world.onBash(String((e as { command?: unknown }).command ?? ''))
+      await world.onBash(String((e as { command?: unknown }).command ?? ''))
     }
     const input = e as { file_path?: string; content?: string; old_string?: string; new_string?: string }
     const target = input.file_path === undefined ? undefined : fakePath(input.file_path)

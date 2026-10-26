@@ -104,7 +104,8 @@ itself.
 
 - **The band** (terminal and the Desktop app's Code tab): line 1 is the
   module, `red ✓ green ✓`, the verdict (PROVEN, MISSED, `UNPROVEN · why`,
-  CHANGED) and the last run, which you can click to open that test. Line 2
+  CHANGED) and the last run, which you can click to open that test; a run of
+  one test file says how long it took, and from 30 seconds says it is slow. Line 2
   is the one next step.
 - **`/tdd`**: the whole record, with the build first. `/tdd why` explains
   every word on the band and every row of `/tdd`.

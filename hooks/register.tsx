@@ -75,6 +75,7 @@ import {
   recordKnownFailures,
   recordRedNames,
   recordReportedElsewhere,
+  recordRunTime,
   recordUnwatchedEdit,
   recordStaleUnlocks,
   recordTestChanged,
@@ -1951,6 +1952,10 @@ async function checkShell(
         await rememberUnlock($, root, module, testPath, nowMs)
       }
       ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent, ownTestOf } = plan)
+    }
+    // Idea 17: a run of one named test file is the loop; how long it took goes on the band and into the record.
+    if (named !== undefined) {
+      afterRun = await change($, s => recordRunTime(s, nowMs, nowMs - startedMs))
     }
   }
   const passedModule = outcome === 'pass' && countsForCurrent && !afterRun.paused ? afterRun.current?.module : undefined

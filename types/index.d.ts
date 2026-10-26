@@ -157,6 +157,8 @@ export type TddStats = {
   checkMsTotal: number
   /** Catch checks that ran in a worktree, with the user's files untouched. */
   worktreeChecks: number
+  /** One row per timed one-file run (idea 17), the newest last, capped: what a dashboard would query. */
+  runTimes: RunTime[]
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   /** Code files edited this session that the layout pairs with no test, newest last, at most 20: what it is not watching. */
   unwatched: readonly string[]
@@ -170,7 +172,11 @@ export type TddStats = {
 }
 
 /** `module`: the module the run was about (the current one, or another's own test); `files`: for elsewhere, what failed. */
-export type LastRun = { module: string | null; outcome: 'pass' | 'fail' | 'elsewhere' | 'unread'; files: string[]; atMs: number }
+/** `tookMs`: how long a run of one named test file took (idea 17); absent for a suite run or a record from before. */
+/** A one-file run and how long it took (idea 17). */
+export type RunTime = { atMs: number; module: string | null; outcome: 'pass' | 'fail'; tookMs: number }
+
+export type LastRun = { module: string | null; outcome: 'pass' | 'fail' | 'elsewhere' | 'unread'; files: string[]; atMs: number; tookMs?: number }
 
 export type OverrideKind = 'spike' | 'hotfix' | 'generated' | 'legacy' | 'other'
 /** `change`: one edit. `module`: until a condition the request names. `pause`: every module, for some minutes. */

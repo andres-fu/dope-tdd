@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { FIXTURE_DRIVE, ROOT, T0, editAt, fakeEngine, fixUnderGuard, runTests, startSession, test } from './engine'
+import { FIXTURE_DRIVE, ROOT, T0, editAt, fakeEngine, fixUnderGuard, runBash, runTests, startSession, test, touchTest } from './engine'
 import type { FakeWorld } from './engine'
 
 const HOME = `${FIXTURE_DRIVE}Users/tester`
@@ -178,5 +178,22 @@ describe('the plugin store stays small and says its version', () => {
     expect(world.store.has(`unlocks:${ROOT}`)).toBe(true)
     expect(world.store.has(`unlocks:${FIXTURE_DRIVE}gone`)).toBe(false)
     expect(world.store.get('store-version')).toBe(1)
+  })
+})
+
+// Idea 17 (2026-10-26): how long each one-file run took is a row in the record, for a dashboard to query later.
+describe('the session record keeps one-file run times', () => {
+  test('a one-file run is a row with its module, outcome and time; a suite run is not', async ($, on) => {
+    const world = fakeEngine(on, { env: { HOME } })
+    await startSession($)
+    await touchTest($, world, 'utils/formatDuration')
+    world.onBash = () => world.clock.advance(4_000)
+    world.bashFails = true
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    await runBash($, 'npx vitest run')
+    await end($)
+
+    const record = JSON.parse(logged(world).at(-1)?.[1] ?? '{}') as { runTimes?: { module: string; outcome: string; tookMs: number }[] }
+    expect(record.runTimes?.map(({ module, outcome, tookMs }) => ({ module, outcome, tookMs }))).toEqual([{ module: 'utils/formatDuration', outcome: 'fail', tookMs: 4_000 }])
   })
 })

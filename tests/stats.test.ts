@@ -24,6 +24,7 @@ import {
   recordImporter,
   recordStaleUnlocks,
   recordRun,
+  recordRunTime,
   recordSourceEdit,
   recordTestChanged,
   recordPinSkill,
@@ -757,5 +758,27 @@ describe('a test touched with comments only', () => {
     const s = recordCommentTouch(INITIAL_STATS, 'utils/a', 5)
     expect(s.events.map(e => [e.kind, e.module])).toEqual([['comment-touch', 'utils/a']])
     expect(s.workarounds).toBe(0)
+  })
+})
+
+// Idea 17 (2026-10-26): how long a one-file run took, so a loop slow enough to break orientation is seen.
+describe('recordRunTime', () => {
+  test('the run just recorded keeps how long it took; an older record is left alone', () => {
+    const ran = recordRun(INITIAL_STATS, true, 5_000)
+    expect(recordRunTime(ran, 5_000, 4_200).lastRun?.tookMs).toBe(4_200)
+    expect(recordRunTime(ran, 9_000, 4_200).lastRun?.tookMs).toBeUndefined()
+    expect(recordRunTime(INITIAL_STATS, 5_000, 4_200).lastRun).toBeNull()
+  })
+
+  // Kept as rows, not only words on the band, so a dashboard can query them later (running tab, observability).
+  test('each timed run is a row in runTimes, oldest dropped past the cap', () => {
+    const ran = recordRun({ ...INITIAL_STATS, current: { module: 'utils/a', testPath: 'tests/utils/a.test.ts' } }, false, 5_000)
+    expect(recordRunTime(ran, 5_000, 4_200).runTimes).toEqual([{ atMs: 5_000, module: 'utils/a', outcome: 'fail', tookMs: 4_200 }])
+    expect(recordRunTime(ran, 9_000, 4_200).runTimes).toEqual([])
+    const full = { ...ran, runTimes: Array.from({ length: 200 }, (_, k) => ({ atMs: k, module: null, outcome: 'pass' as const, tookMs: 1 })) }
+    const capped = recordRunTime(full, 5_000, 4_200).runTimes
+    expect(capped.length).toBe(200)
+    expect(capped[0]?.atMs).toBe(1)
+    expect(capped[199]?.tookMs).toBe(4_200)
   })
 })

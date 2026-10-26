@@ -374,6 +374,12 @@ describe('lastRun', () => {
     expect(lastRun(record('fail'))).toBe('last run: runPlan.test.ts failed · 1min ago')
   })
 
+  // Idea 17 (2026-10-26): a one-file run says how long it took, and a slow one says so.
+  test('a one-file run says how long it took, and a slow one is named slow', () => {
+    expect(lastRun({ ...record('pass'), tookMs: 4_200 })).toBe('last run: runPlan.test.ts passed in 4S · 1min ago')
+    expect(lastRun({ ...record('fail'), tookMs: 45_000 })).toBe('last run: runPlan.test.ts failed in 45S, slow for one file · 1min ago')
+  })
+
   test('another file failed: not this module', () => {
     expect(lastRun(record('elsewhere', 'runPlan', ['tests/overrideFlow.test.tsx']))).toBe('last run: overrideFlow.test.tsx failed · not this module · 1min ago')
     expect(lastRun(record('elsewhere', 'runPlan', ['tests/a.test.ts', 'tests/b.test.ts']))).toBe('last run: a.test.ts +1 failed · not this module · 1min ago')

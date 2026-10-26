@@ -537,3 +537,20 @@ describe('band v3', () => {
     expect(((await $.command.run({ command: 'tdd', args: '' } as never)) as { text: string }).text).toMatch(/^JUST NOW: reset$/m)
   })
 })
+
+// Idea 17 (2026-10-26): the last run says how long a one-file run took, and names a slow one; a suite run says nothing.
+describe('the last run says how long a one-file run took', () => {
+  test('45 seconds for one file is named slow; a suite run has no time', async ($, on) => {
+    const world = fakeEngine(on)
+    await startSession($)
+    await touchTest($, world, 'utils/formatDuration')
+    world.onBash = () => world.clock.advance(45_000)
+    world.bashFails = true
+    await runBash($, 'npx vitest run tests/utils/formatDuration.test.ts')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Button', text: 'last run: formatDuration.test.ts failed in 45S, slow for one file · just now' })).toBeDefined()
+
+    await runBash($, 'npx vitest run')
+    expect(await ui.find({ type: 'Button', text: 'last run: formatDuration.test.ts failed · just now' })).toBeDefined()
+  })
+})

@@ -326,7 +326,9 @@ worktree), the catch check undoes your change in a throwaway copy inside the
 checkout's git directory and never writes your files. If that copy cannot be
 made or cannot run the test (more than 300 changed files, a slow checkout,
 a test that is not green there), the green is UNPROVEN · not checked, and
-says why; it never falls back to your file. Outside a git checkout, or with
+the reason names the step that failed (for example "the test did not pass in
+the throwaway copy with your change in (red)", which a config that resolves
+paths from the project folder can cause); it never falls back to your file. Outside a git checkout, or with
 an experimental runner and `"catchCheck": true`, it writes the old code into
 your file for the length of one test run, then puts your change back. The
 file is compared again just before that, so a save from your editor in the

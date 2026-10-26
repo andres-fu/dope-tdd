@@ -782,6 +782,22 @@ describe('the catch check in a worktree, never in your files', () => {
     expect(JSON.parse(record?.[1] ?? '{}').worktreeChecks).toBe(0)
   })
 
+  // #168, seen in an Astro + Vitest site: the test ran red in the throwaway copy only, and the reason said "see the
+  // log", where nothing had been written. The reason now says what happened.
+  test('a test that is not green in the throwaway copy says so in the reason, and your file is left alone', async ($, on) => {
+    const world = fakeEngine(on)
+    gitRepo(world)
+    await fixUnderGuard($, world)
+    world.baselineRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+
+    const green = await runTests($, world, 'pass')
+
+    const said = green.context?.join(' ') ?? ''
+    expect(said).toMatch(/the test did not pass in the throwaway copy with your change in \(red\), so your file was left alone/)
+    expect(said).not.toMatch(/see the log/)
+    expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
+  })
+
   // Field test on VibeCast (2026-10-18): in a linked worktree `.git` is a file, so `.git/HEAD` never exists and both
   // the isolated check and the small changes to a new file were skipped without a word. The desktop app runs every
   // side session in a linked worktree. The throwaway copy now lives in the worktree's own git directory.
@@ -1145,7 +1161,7 @@ describe('the catch check in a worktree, never in your files', () => {
 
     expect(world.writes.filter(([path]) => path === SOURCE)).toEqual([])
     expect(world.gitCalls.some(argv => argv.join(' ') === `git worktree remove --force ${WT}`)).toBe(true)
-    expect(JSON.stringify(green)).toMatch(/UNPROVEN: not checked \(the throwaway copy could not run the test/)
+    expect(JSON.stringify(green)).toMatch(/UNPROVEN: not checked \(the test did not pass in the throwaway copy with your change in \(red\)/)
     expect(status.text).toMatch(/not checked 1/)
   })
 

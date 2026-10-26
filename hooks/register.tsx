@@ -10,8 +10,8 @@ import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
-import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from './catchCheck.ts'
-import type { RunnerKind } from './catchCheck.ts'
+import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from './catchCheck.ts'
+import type { RunnerKind, WorktreeFailure } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
 import { buildLabel, manifestVersion } from './build.ts'
@@ -886,11 +886,11 @@ async function testFingerprint($: EngineInterface, testPath: string): Promise<st
   return text === null ? 'missing' : contentHash(text)
 }
 
-async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | null> {
+async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | WorktreeFailure> {
   const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
   const gitDir = await gitDirOf($, root)
   if (gitDir === null) {
-    return null
+    return { step: 'copy' }
   }
   const wt = `${gitDir}/${CHECK_WORKTREE}`
   // The lock's time is when this check starts, not when the run that asked for it did (review #7).
@@ -912,23 +912,23 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     // core.hooksPath points at a folder that does not exist, so git finds none (verified review A16, 2026-10-20).
     const added = await gitQuiet($, root, ['-c', `core.hooksPath=${gitDir}/dope-tdd/no-hooks`, 'worktree', 'add', '--detach', wt, 'HEAD'], undefined, WORKTREE_TIMEOUT_MS)
     if (added === null || added.exitCode !== 0) {
-      return null
+      return { step: 'copy' }
     }
     const dirty = listed(await gitQuiet($, root, ['diff', '--name-only', 'HEAD']))
     const untracked = listed(await gitQuiet($, root, ['ls-files', '--others', '--exclude-standard']))
     const deleted = listed(await gitQuiet($, root, ['diff', '--name-only', '--diff-filter=D', 'HEAD']))
     if (dirty === null || untracked === null || deleted === null) {
-      return null
+      return { step: 'changes' }
     }
     const gone = new Set(deleted)
     const copies = [...new Set([...dirty, ...untracked])].filter(file => !gone.has(file))
     if (copies.length > MAX_COPIED_FILES) {
-      return null
+      return { step: 'too-many', detail: String(MAX_COPIED_FILES) }
     }
     for (const file of copies) {
       const text = await readWhole($, `${root}/${file}`)
       if (text === null) {
-        return null
+        return { step: 'unreadable', detail: file }
       }
       await $.fs.write(`${wt}/${file}`, text)
     }
@@ -949,8 +949,9 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
         base = catchOutcome(runFailure(error))
       }
       if (base.kind !== 'missed') {
-        $.ui.log(`dope-tdd: the test is not green in the check worktree (${base.kind === 'unverified' ? base.reason : 'red'}); checking in place`)
-        return null
+        const detail = base.kind === 'unverified' ? base.reason : 'red'
+        $.ui.log(`dope-tdd: the test is not green in the check worktree (${detail}); your file was left alone`)
+        return { step: 'not-green', detail }
       }
       baselined.add(baselineKey)
     }
@@ -971,8 +972,8 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     await change($, state => ({ ...state, worktreeChecks: state.worktreeChecks + 1 }))
     return outcomes
   } catch (error) {
-    $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); checking in place`)
-    return null
+    $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); your file was left alone`)
+    return { step: 'error', detail: String(error) }
   } finally {
     await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
     await change($, releaseCheck)
@@ -1014,7 +1015,7 @@ async function newFileCheck(
   const variants = mutants.map(mutant => mutant.text)
   const deadlineMs = (await $.clock.now()) + VERIFY_BUDGET_MS
   const outcomes = await checkInWorktree($, root, { module, path, variants, after, runIn, relativeTest, argv, greenRunMs, nowMs, known, deadlineMs })
-  if (outcomes === null) {
+  if (!Array.isArray(outcomes)) {
     return null
   }
   const caught = mutants.filter((_, k) => outcomes[k]?.kind === 'caught').length
@@ -1156,9 +1157,13 @@ async function checkAgainst(
   // the copy cannot be made or cannot run the test, the check says so; it once fell back to rewriting the user's real
   // file, silently, while the README promised it never would (verified review A2, 2026-10-20).
   if (ISOLATED_RUNNERS.has(runner.kind) && (await gitDirOf($, root)) !== null) {
-    const isolated = (await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh }))?.[0]
+    const checked = await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh })
+    if (!Array.isArray(checked)) {
+      return { kind: 'unverified', reason: worktreeFailureReason(checked) }
+    }
+    const isolated = checked[0]
     if (isolated === undefined) {
-      return { kind: 'unverified', reason: 'the throwaway copy could not run the test, so your file was left alone; see the log' }
+      return { kind: 'unverified', reason: 'the throwaway copy ran nothing, so your file was left alone' }
     }
     return isolated.kind === 'missed' ? { kind: 'missed', slipped: changedLines(before, after) } : isolated
   }

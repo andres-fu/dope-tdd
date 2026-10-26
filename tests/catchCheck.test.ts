@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, runFailure, runnerArgv, timeBudgetMs } from '../hooks/catchCheck'
+import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from '../hooks/catchCheck'
 import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
@@ -97,5 +97,23 @@ describe('timeBudgetMs', () => {
   test('is twice the green run plus five seconds, capped at a minute', () => {
     expect(timeBudgetMs(2_000)).toBe(9_000)
     expect(timeBudgetMs(60_000)).toBe(60_000)
+  })
+})
+
+// #168, seen adopting dope-tdd in an Astro + Vitest site: "the throwaway copy could not run the test ... see the log",
+// while most ways the copy fails wrote nothing to any log. The reason now says which step failed.
+describe('worktreeFailureReason', () => {
+  test('names the step that failed, and leaves the user\'s file alone', () => {
+    expect(worktreeFailureReason({ step: 'copy' })).toBe('the throwaway copy could not be made (git worktree add failed), so your file was left alone')
+    expect(worktreeFailureReason({ step: 'changes' })).toBe('the throwaway copy could not be made (git could not list your uncommitted changes), so your file was left alone')
+    expect(worktreeFailureReason({ step: 'too-many', detail: '300' })).toBe('the throwaway copy could not be made (more than 300 uncommitted files to copy), so your file was left alone')
+    expect(worktreeFailureReason({ step: 'unreadable', detail: 'site/src/a.ts' })).toBe('the throwaway copy could not be made (site/src/a.ts could not be read), so your file was left alone')
+    expect(worktreeFailureReason({ step: 'error', detail: 'EPERM' })).toBe('the throwaway copy could not run the test (EPERM), so your file was left alone')
+  })
+
+  test('a test that does not pass in the copy says why, and where the copy runs it differently', () => {
+    expect(worktreeFailureReason({ step: 'not-green', detail: 'red' })).toBe(
+      'the test did not pass in the throwaway copy with your change in (red), so your file was left alone: a config that resolves paths from the project folder can run differently there',
+    )
   })
 })

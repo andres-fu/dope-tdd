@@ -61,7 +61,9 @@ names the command your tests run with, and proposes a `dope-tdd.json`. Out of th
 with `tests/<module>.test.ts`; co-located tests, `__tests__/` folders and
 per-package roots work once the layout is set. Skip this and a project laid
 out differently gets refusals that name the wrong test, or a band that says
-**NOT WATCHING**.
+**NOT WATCHING**. With no `dope-tdd.json` and a default layout that matches
+none of your code, Claude is told so at the start, with the layout
+`/tdd setup` finds, and asks you to run it.
 
 To watch without steering at first, put `"mode": "observe"` in
 `dope-tdd.json`: nothing is refused and no file is ever undone, but every

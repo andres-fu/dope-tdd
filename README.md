@@ -123,6 +123,11 @@ project, which is gdUnit4's own rule. The project's root files say which it is
 { "layout": { "source": "lib/{module}.{ext}", "test": "spec/{module}.spec.{ext}" } }
 ```
 
+With no `dope-tdd.json`, Dope TDD looks once at the start of a session: if
+the default layout matches none of the project's code, nothing would ever be
+refused, so Claude is told so, with the layout `/tdd setup` finds (for
+example `colocated` under `site`), and asks you to run `/tdd setup`.
+
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
 One `dope-tdd.json` guards one stack: in a repository with a Python backend
 and a React frontend, pick the stack you want guarded and list the other

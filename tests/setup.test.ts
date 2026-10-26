@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { DEFAULT_CONFIG, parseConfig } from '../hooks/config'
-import { formatSetup, inferLayout, suggestedConfig } from '../hooks/setup'
+import { formatSetup, inferLayout, layoutMismatch, suggestedConfig } from '../hooks/setup'
 
 describe('inferLayout', () => {
   test('tests under tests/ mean mirror', () => {
@@ -131,5 +131,30 @@ describe('suggestedConfig and formatSetup', () => {
   test('says so when the current layout already matches', () => {
     const survey = { files: ['tests/a.test.ts'], packageDirs: [''] }
     expect(formatSetup(DEFAULT_CONFIG, inferLayout(survey), survey, true)).toMatch(/already matches; nothing to write/)
+  })
+})
+
+// #167, seen adopting dope-tdd in an Astro site: no dope-tdd.json, tests beside their sources in a site/ package. The
+// default mirror layout matched no file, so the guard paired nothing and said nothing.
+describe('layoutMismatch', () => {
+  const astro = { files: ['site/src/lib/countup.ts', 'site/src/lib/countup.test.ts', 'site/src/data/projects.ts'], packageDirs: ['site'] }
+
+  test('/tdd setup finds the co-located layout inside the package', () => {
+    const inferred = inferLayout(astro)
+    expect(inferred.layout.name).toBe('colocated')
+    expect(inferred.roots).toEqual(['site'])
+  })
+
+  test('with no config file and a default layout that matches no source file, it says so and names what setup finds', () => {
+    const note = layoutMismatch(astro, DEFAULT_CONFIG)
+    expect(note).toMatch(/default layout matches none of this project's code/)
+    expect(note).toMatch(/colocated \(src\/\{module\}\.\{ext\} ↔ src\/\{module\}\.test\.\{ext\}\) under site/)
+    expect(note).toMatch(/no edit is refused until a dope-tdd\.json is saved: ask the user to run \/tdd setup/)
+  })
+
+  test('nothing to say when the default fits, a config file names the layout, or there is no code', () => {
+    expect(layoutMismatch({ files: ['src/a.ts', 'tests/a.test.ts'], packageDirs: [''] }, DEFAULT_CONFIG)).toBeNull()
+    expect(layoutMismatch(astro, { ...DEFAULT_CONFIG, layoutGuessed: false })).toBeNull()
+    expect(layoutMismatch({ files: [], packageDirs: [] }, DEFAULT_CONFIG)).toBeNull()
   })
 })

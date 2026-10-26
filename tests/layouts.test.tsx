@@ -333,3 +333,30 @@ describe('a module in a folder with a layout of its own is named by its real pat
     expect(touched.context?.join(' ')).toMatch(/dope-tdd: queueOps unlocked\./)
   })
 })
+
+// #167, seen adopting dope-tdd in an Astro site: no dope-tdd.json, tests beside their sources in site/. The default
+// layout matched no file, so nothing was ever refused and nothing said why.
+describe('a default layout that matches none of the code', () => {
+  async function briefing($: Parameters<typeof runCommand>[0]): Promise<string> {
+    const composed = await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal'], tools: ['Edit', 'Bash'], outputStyle: null, traits: [] })
+    return composed.sections.find(section => section.id === 'dope-tdd:briefing')?.text ?? ''
+  }
+
+  test('is said in the briefing, with the layout /tdd setup finds', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/site/package.json`)
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.test.ts`, "it('counts', () => {})")
+
+    const text = await briefing($)
+    expect(text).toMatch(/The default layout matches none of this project's code/)
+    expect(text).toMatch(/colocated \(src\/\{module\}\.\{ext\} ↔ src\/\{module\}\.test\.\{ext\}\) under site/)
+  })
+
+  test('is not said when the default pairs the code', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/src/utils/a.ts`, 'export const a = 1')
+
+    expect(await briefing($)).not.toMatch(/default layout matches none/)
+  })
+})

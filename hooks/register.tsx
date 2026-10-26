@@ -51,7 +51,7 @@ import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './run
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
-import { formatSetup, inferLayout, isCodeFile, suggestedConfig } from './setup.ts'
+import { formatSetup, inferLayout, isCodeFile, layoutMismatch, suggestedConfig } from './setup.ts'
 import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
 import type { Saved } from './bandModel.ts'
 import type { Survey } from './setup.ts'
@@ -155,6 +155,8 @@ async function writeCwd($: EngineInterface, shell: ShellName, cwd: string): Prom
 let cachedConfig: { root: string; config: GuardConfig } | null = null
 /** The stack each root's files pointed at when first listed; `/tdd setup` looks again. */
 const detectedStacks = new Map<string, StackName | undefined>()
+/** What the briefing says about a default layout that matches none of the code (#167), per root; `/tdd setup` looks again. */
+const layoutNotes = new Map<string, string | null>()
 /** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
 const repairedRoots = new Set<string>()
 let guardFailureToasted = false
@@ -1337,6 +1339,7 @@ function parsedJson(text: string | null): Record<string, unknown> {
 /** `/tdd setup` shows what the project looks like and the config that fits; `/tdd setup write` saves it. */
 async function setupText($: EngineInterface, root: string, write: boolean, nowMs: number): Promise<string> {
   detectedStacks.delete(root)
+  layoutNotes.delete(root)
   const survey = await surveyProject($, root)
   const configPath = `${root}/${CONFIG_FILE}`
   const existing = await readWhole($, configPath)
@@ -2530,7 +2533,12 @@ export const register: Register = on => {
     if (config.mode === 'observe') {
       return composed
     }
-    const text = briefingText(config, await briefingCommand($, root, config))
+    // #167: with no dope-tdd.json the project is walked once per root, so a default that pairs nothing is said.
+    if (config.layoutGuessed === true && !layoutNotes.has(root)) {
+      layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
+    }
+    const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
+    const text = briefingText(config, await briefingCommand($, root, config), layoutNote)
     // Only the briefing: field guides from ~/.dope-tdd/guides were cut on 2026-10-20 (verified review B7).
     return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })

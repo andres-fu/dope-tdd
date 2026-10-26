@@ -47,4 +47,13 @@ describe('the briefing stays cheap', () => {
       expect(briefingText({ ...DEFAULT_CONFIG, mode, layout }, command).length).toBeLessThanOrEqual(2000)
     }
   })
+
+  // #167: a default layout that matches none of the code is said right after the layout, where the agent reads it.
+  test('a layout note follows the layout line; without one the briefing is unchanged', () => {
+    const note = 'The default layout matches none of this project\'s code.'
+    const lines = briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', note).split('\n')
+    expect(lines[1]).toMatch(/Tests pair with sources by this layout/)
+    expect(lines[2]).toBe(`- ${note}`)
+    expect(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>', null)).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
+  })
 })

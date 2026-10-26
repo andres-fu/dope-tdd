@@ -8,9 +8,10 @@ import type { GuardConfig } from './config.ts'
  * meant. Short on purpose: every line is a rule it will meet, in its words.
  *
  * `runCommand` is how one test file runs in this project, with `<test file>`
- * where the path goes, or null when no runner was found.
+ * where the path goes, or null when no runner was found. `layoutNote` says the
+ * default layout matches none of the code (#167, setup.ts layoutMismatch).
  */
-export function briefingText(config: GuardConfig, runCommand: string | null): string {
+export function briefingText(config: GuardConfig, runCommand: string | null, layoutNote: string | null = null): string {
   const gate =
     config.mode === 'enforce'
       ? // The carry-over clause (#54) is here so the agent's model of the gate matches it before it is ever refused.
@@ -25,6 +26,7 @@ export function briefingText(config: GuardConfig, runCommand: string | null): st
   return [
     `Dope TDD is on in this project (mode: ${config.mode}). It stands in the path of Edit, Write and shell commands.`,
     `- ${gate} Tests pair with sources by this layout: ${describeLayout(config.layout)}.`,
+    ...(layoutNote === null ? [] : [`- ${layoutNote}`]),
     runCommand === null
       ? '- Run one test file at a time, and keep the runner\'s summary line in the output: it reads that line, never the exit code.'
       : `- Run one test file at a time: \`${runCommand}\`. Keep the runner's summary line in the output: it reads that line, never the exit code.`,

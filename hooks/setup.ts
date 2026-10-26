@@ -236,6 +236,29 @@ function sourceFile(config: LayoutConfig, module: string, ext: string): string {
   return `${sourcePathFor(config, module)}.${ext}`
 }
 
+/**
+ * What to tell Claude when no dope-tdd.json names a layout and the default matches none of the project's code (#167):
+ * then nothing is ever refused, and before this nothing said so. Null when a config file names the layout, the default
+ * pairs some code, or there is no code to pair.
+ */
+export function layoutMismatch(survey: Survey, current: GuardConfig): string | null {
+  if (current.layoutGuessed !== true) {
+    return null
+  }
+  const stack = STACKS[current.stack]
+  const code = survey.files.filter(file => isCodeFileIn(stack, file) && !isTestFileIn(stack, file))
+  const config: LayoutConfig = { layout: current.layout, roots: current.roots, stack: current.stack }
+  if (code.length === 0 || code.some(file => classifyPath('R:', `R:/${file}`, config).kind === 'source')) {
+    return null
+  }
+  const inferred = inferLayout(survey)
+  const where = inferred.roots.length === 0 ? '' : ` under ${inferred.roots.join(', ')}`
+  return (
+    `The default layout matches none of this project's code, so no edit is refused until a ${CONFIG_FILE} is saved: ` +
+    `ask the user to run /tdd setup. It finds ${describeLayout(inferred.layout)}${where}.`
+  )
+}
+
 export function suggestedConfig(current: GuardConfig, inferred: Inference): Record<string, unknown> {
   const stack = STACKS[inferred.stack]
   return {

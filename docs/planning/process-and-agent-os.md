@@ -79,6 +79,44 @@ in a PR or reply comes from output seen this session; behaviour changes update d
 PR (CI); releases only through the release workflow (CI); a repeated mistake becomes a check;
 one concern per PR, follow-ups as issues; check before you explain.
 
+## Ideas from the Theory of Developer Momentum (2026-10-26)
+
+Source: Starr, Mann and Storey, *Theory of Developer Momentum*, arXiv 2610.24935 (read 2026-10-26:
+the theory and discussion sections). Its claims, in short: momentum (felt progress toward a goal) is
+not flow (immersion) and not motivation (energy from caring). A task is a hill: uphill is fog and
+exploring, the crest is when the path is clear, downhill is execution. Working context is rebuilt
+every session, helped by notes and a designed restart. Not all motion is progress. Feedback delays
+of 5 to 10 minutes, or waiting on an agent, break orientation. With agents the downhill part
+compresses, and one person's momentum can outrun the team's ability to verify. Interview-based
+(12 developers, 8 feedback interviews), so the agent findings are leads, not results.
+
+Already in dope-tdd: the band's `next` line is a restart hook; one-file runs read by their summary
+line are a tight feedback loop; PROVEN and MISSED tell progress from motion; workaround tracking
+stays advisory and neutral (public blame, the paper finds, can end someone's caring).
+
+| # | Item | Build or adopt | Status |
+| --- | --- | --- | --- |
+| 15 | Left red on purpose: a module still RED when a session ends is recorded as a deliberate stop, and the next session's briefing leads with it (the module, the failing test, the next step). Check first what the briefing carries over today | build | proposed |
+| 16 | Stuck signal: the same test failing with the same message N runs in a row is troubleshooting without traction; say so (step back, or `BLOCKED` for an agent). Deterministic, no model | build | proposed |
+| 17 | Loop time: show how long the one-file run took in `/tdd`, and flag a run slow enough to break orientation (relates to #168 and the proof's re-run cost) | build | proposed |
+| 18 | Receipts that build hunches: when the catch check reverts the change, keep the failure message it saw ("expected 3, got 2") in the receipt, so the reader learns what the change does | build | proposed |
+| 19 | Stumble twice: a recorded spike path for the uphill part (explore freely, throw it away, rebuild test-first), instead of pushing people toward an override. Fits the brownfield use case | build | proposed |
+
+For agent-os, to take into the night-shift spec (`docs/specs/2026-10-21-night-shift.md` there):
+
+- **`ready` means past the crest**: the goal is clear, what done looks like is written, and the
+  first failing test is named. Agents take the downhill part; getting an issue over the hill is
+  the product manager's job.
+- **A cap on unreviewed night PRs**: "one PR per night" does not stop drafts piling up faster than
+  the stakeholder reviews them. The picker skips the night when N `night/` drafts are waiting.
+- **A brief built for re-orientation**: lead with the next decision, and split `BLOCKED` into "a
+  decision on the intended path" (cheap to pick up) and "went the wrong way" (costly: first work
+  out what happened).
+- **A handoff note per session**: what's done, the next step, the open question, anything left red
+  on purpose.
+- **`/retro` lens**: was a way forward possible, were we enabled (tools, time, know-how), were we
+  supported?
+
 ## Build vs adopt: Anthropic plugins and built-ins
 
 Researched 2026-10-21 by reading the official marketplace READMEs and code, and the Claude Code docs, in full.

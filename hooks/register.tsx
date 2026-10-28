@@ -43,6 +43,8 @@ import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
+import { learnRoot, rootOfAgent } from './agentRoots.ts'
+import type { AgentRoots } from './agentRoots.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
@@ -145,11 +147,39 @@ const buildAtom = atom({ plugin: 'dope-tdd', key: 'build' } as const, '')
 const sessionIdAtom = atom({ plugin: 'dope-tdd', key: 'session-id' } as const, '')
 type ShellName = 'bash' | 'powershell'
 
-function readCwd($: EngineInterface, shell: ShellName): Promise<string> {
+/** Each subagent's worktree, learned from the paths it names (agentRoots.ts); the main loop is never listed. */
+const agentRootsAtom = atom({ plugin: 'dope-tdd', key: 'agent-roots' } as const, {} as AgentRoots)
+/** Where each subagent's shells are, by `<agentId>:<shell>`: one agent's `cd` must not move another's (#198). */
+const agentCwds = atom({ plugin: 'dope-tdd', key: 'agent-cwds' } as const, {} as Readonly<Record<string, string>>)
+
+async function placeAgent($: EngineInterface, agentId: string | undefined, path: string | undefined): Promise<void> {
+  if (agentId === undefined || path === undefined) {
+    return
+  }
+  const sessionRoot = await $.session.root()
+  const roots = await read($, agentRootsAtom)
+  const next = learnRoot(roots, agentId, sessionRoot, path)
+  if (next !== roots) {
+    await update($, agentRootsAtom, () => next)
+  }
+}
+
+async function agentRoot($: EngineInterface, agentId: string | undefined): Promise<string> {
+  return rootOfAgent(await read($, agentRootsAtom), agentId, await $.session.root())
+}
+
+async function readCwd($: EngineInterface, shell: ShellName, agentId?: string): Promise<string> {
+  if (agentId !== undefined) {
+    return (await read($, agentCwds))[`${agentId}:${shell}`] ?? ''
+  }
   return shell === 'bash' ? read($, bashCwd) : read($, powershellCwd)
 }
 
-async function writeCwd($: EngineInterface, shell: ShellName, cwd: string): Promise<void> {
+async function writeCwd($: EngineInterface, shell: ShellName, cwd: string, agentId?: string): Promise<void> {
+  if (agentId !== undefined) {
+    await update($, agentCwds, cwds => ({ ...cwds, [`${agentId}:${shell}`]: cwd }))
+    return
+  }
   if (shell === 'bash') {
     await update($, bashCwd, () => cwd)
   } else {
@@ -1755,22 +1785,25 @@ async function guardShell(
   command: string,
   proceed: () => Promise<ToolCallResult>,
   shell: ShellName,
+  agentId?: string,
 ): Promise<ToolCallResult> {
-  const root = await $.session.root()
+  // A subagent's shell runs in its worktree once its paths placed it there: its writes, its git check and its
+  // catch check are that checkout's, not the session's (#198).
+  const root = await agentRoot($, agentId)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await checkShell($, command, proceed, shell)
+    const result = await checkShell($, command, proceed, shell, root, agentId)
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
   // The shell still moves while the guard stands down, so the next command starts where this one left it.
-  const carried = await readCwd($, shell)
+  const carried = await readCwd($, shell, agentId)
   const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
   const touchesCode = isTestRun(command) || findSourceWrites(command, start).length > 0
   const result = await standDown($, root, git.lines, touchesCode, proceed)
   if (result.deny === undefined) {
     const moved = cwdAfter(command, start)
-    await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root)
+    await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root, agentId)
   }
   return result
 }
@@ -1780,14 +1813,15 @@ async function checkShell(
   command: string,
   proceed: () => Promise<ToolCallResult>,
   shell: ShellName,
+  root: string,
+  agentId: string | undefined,
 ): Promise<ToolCallResult> {
-  const root = await $.session.root()
   await ensureRepaired($, root, await $.clock.now())
   const current = await readStats($)
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
   // The command starts where the last one left the shell, when that is still inside the project.
-  const carried = await readCwd($, shell)
+  const carried = await readCwd($, shell, agentId)
   const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
 
   // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
@@ -1843,7 +1877,7 @@ async function checkShell(
     return result
   }
   const moved = cwdAfter(command, start)
-  await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root)
+  await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root, agentId)
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
@@ -2685,23 +2719,45 @@ export const register: Register = on => {
     return { result: `dope-tdd: the override request could not be recorded (${next.error.kind}); stop and ask the user.` } as ToolCallResult
   })
 
-  on('tool.call', { tool: 'Edit' }, ($, e, next) => guardFileWrite($, 'Edit', e.file_path, () => next(e))).catch(($, e, next) => {
+  // The paths a subagent reads and searches say which worktree it works in, before it runs a command there (#198).
+  on('tool.call', { tool: 'Read' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.file_path)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: 'Glob' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.path)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: 'Grep' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.path)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.file_path)
+    return guardFileWrite($, 'Edit', e.file_path, () => next(e))
+  }).catch(($, e, next) => {
     reportGuardFailure($, 'Edit', next.error)
     return next(e)
   })
 
-  on('tool.call', { tool: 'Write' }, ($, e, next) => guardFileWrite($, 'Write', e.file_path, () => next(e))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.file_path)
+    return guardFileWrite($, 'Write', e.file_path, () => next(e))
+  }).catch(($, e, next) => {
     reportGuardFailure($, 'Write', next.error)
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash')))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell')))).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

@@ -164,8 +164,9 @@ itself.
   agent cannot edit or test a file while another session's check has it
   undone. Giving each agent its own git worktree is the calmest setup. For
   subagents in a worktree, Edit, Write and shell writes are refused as in the
-  main checkout, but the git check after a command and the catch check still
-  look at the main folder, and all agents in one session share its state (#198).
+  main checkout, and once a subagent has named a path in its worktree, its
+  shell, git check and catch check run there. All agents in one session still
+  share its state (#198).
 - During a git rebase, merge, cherry-pick, revert, `am` or bisect the guard
   stands down and says so (**STANDING DOWN**). A bisect you forgot to reset
   keeps it standing down until you run `git bisect reset`.

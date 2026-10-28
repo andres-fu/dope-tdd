@@ -43,6 +43,24 @@ describe('an agent worktree is guarded like the main checkout', () => {
     })
   }
 
+  // An agent's shell runs in its worktree. Once a path it reads places it there, its shell is judged by that
+  // worktree's dope-tdd.json, not the main checkout's: here the worktree exempts src/**, the main checkout does not.
+  test("an agent's relative shell write is judged in the worktree its reads placed it in", async ($, on) => {
+    const world = fakeEngine(on)
+    const worktree = `${ROOT}/.claude/worktrees/agent-x`
+    world.fileContents.set(`${worktree}/dope-tdd.json`, '{"exempt":["src/**"]}')
+    const write = { tool: 'Bash', command: "sed -i 's/a/b/' src/utils/calculateDuration.ts" }
+
+    const before = await $.tool.call({ ...write, agentId: 'a1' } as never)
+    await $.tool.call({ tool: 'Read', file_path: `${worktree}/src/utils/calculateDuration.ts`, agentId: 'a1' } as never)
+    const placed = await $.tool.call({ ...write, agentId: 'a1' } as never)
+    const mainLoop = await $.tool.call(write as never)
+
+    expect(before.deny).toBeDefined()
+    expect(placed.deny).toBeUndefined()
+    expect(mainLoop.deny).toBeDefined()
+  })
+
   test('touching the test in the worktree unlocks the edit there', async ($, on) => {
     fakeEngine(on)
 

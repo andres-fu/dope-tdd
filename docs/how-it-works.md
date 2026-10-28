@@ -125,12 +125,13 @@ refused, and a shell change to it is put back and counted as a workaround.
 - A subagent started with `isolation: "worktree"` works in
   `.claude/worktrees/<name>/`. Its Edit and Write calls, and shell writes that
   name a path inside the worktree, are judged against that worktree, so they
-  are refused and unlocked like the main checkout's. A shell write by a
-  relative path is read from the main folder: it names the same module, so
-  the refusal is the same, but the `git` check after the command and the
-  catch check still look at the main folder. Every agent in the session
-  shares one module and one set of unlocks
-  ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
+  are refused and unlocked like the main checkout's. The first path it reads,
+  searches or edits there places the agent in that worktree: from then on its
+  shell commands, the `git` check after them and its catch check run in the
+  worktree, with its own `dope-tdd.json`, and its `cd` doesn't move anyone
+  else's shell. A shell command it runs before naming any such path is read
+  from the main folder. Every agent in the session still shares one module and
+  one set of unlocks ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
 - While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
   progress, the guard stands down: the code that operation puts on disk was
   written before, so nothing is refused, counted or checked until it ends.

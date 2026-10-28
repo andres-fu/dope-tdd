@@ -31,21 +31,25 @@ why and lists the ways past it.
   default; see the rough edges.
 - Not watched yet: Go, Rust and Ruby, and test commands that hide the runner
   behind another tool (`tox`, `make test`, a shell script). Their runs are not recognised, so the guard sees no red or green
-  and the band stays at writing after a run. Pick a project in a supported stack;
+  and the band doesn't move past **red ·** after a run. Pick a project in a supported stack;
   if you try one of these anyway, the `/tdd` output is still a useful report.
 - Node and git.
 - **What appears in your repository.** `dope-tdd.json` at the root if you run
   `/tdd setup` (the layout and settings; commit it). `dope-tdd.overrides.json`
-  the first time Claude asks to pass the guard (the record of who approved
-  what; commit it, it is the audit trail). Nothing else: session records and
-  the copies a catch check keeps live in `~/.dope-tdd/`, outside the repo.
+  the first time Claude asks for an override (the record of which role
+  approved what; commit it, it is the audit trail). Inside `.git` (not your
+  files): the catch check's throwaway copy while it runs, and a git ref that
+  locks it. Session records and kept copies live in `~/.dope-tdd/`, outside
+  the repo.
 
 ## Install
 
 ```bash
 claude plugin marketplace add andres-fu/dope-tdd
-claude plugin install dope-tdd@dope-tdd
+claude plugin install dope-tdd@dope-tdd --scope project
 ```
+
+Run it inside the project you'll test with, so the guard is on there only.
 
 Then, in Claude Code, `/reload-plugins` and `/tdd`. It answers with
 `guard: ON` and the mode: the plugin is live. If `/tdd` is not a command, the
@@ -124,8 +128,8 @@ itself.
 
 ## Known rough edges
 
-- Live runs so far are on Windows. CI runs the whole suite on Windows,
-  Linux and macOS, but you may be the first person to use it on a Mac or on
+- Live runs so far are on Windows. CI runs the whole suite on Windows
+  and Linux for every pull request, and on macOS for every push to main, but you may be the first person to use it on a Mac or on
   Linux. If paths or shell commands misbehave, that is exactly what we want
   to hear.
 - Python, Godot, Java and .NET are experimental. Their catch check would
@@ -163,7 +167,7 @@ itself.
   stands down and says so (**STANDING DOWN**). A bisect you forgot to reset
   keeps it standing down until you run `git bisect reset`.
 - Claude Code cloud sessions do not load plugins, so the guard does not run
-  there. Use the pull-request check (see the README) to prove the result of
+  there. Use the pull-request check ([docs/pr-check.md](pr-check.md)) to prove the result of
   a cloud session instead.
 - If one of its own checks fails internally, the call goes through
   unobserved and it says so in the log and a toast: it fails open, on the
@@ -213,7 +217,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Run the tests through the shell | Reads the runner's own summary line, not the exit code. A failure in another file, or a run of a file outside the layout, is not this module's. Output with no summary is unread, never guessed. | **red ✓** / **green ✓**, and the last run in words |
 | Run the test and see it fail on an error, not an assertion (an import, a collection, a compile) | Counts it as red, but not as proof: no assertion ran. A catch check that fails this way is not proof either, and neither is putting the code back after a break that only gave such a red | **RED**, and Claude is told no assertion ran; a check gives **UNPROVEN · not checked** |
 | Fail the same way three runs in a row | Counts identical reds on the module (the same assertion message, or the same failing tests); a green or a different failure starts over | **RED**, and Claude is told the failure is not moving: step back, or say BLOCKED |
-| Go green without ever seeing red | Says so: a test that has never failed has proven nothing yet | **UNPROVEN · never failed** |
+| Go green without ever seeing red | Runs the catch check on the change too; if that can't prove the test, says a test that has never failed has proven nothing yet | **PROVEN**, or **UNPROVEN · never failed** |
 | Go green after red | Holds the result, undoes Claude's change, runs only that module's test, and attaches the verdict to what Claude reads, quoting the assertion the test failed on when it can read one (Vitest, node --test, pytest); `/tdd receipt` quotes it too. Another module whose red cycle the same whole-suite green closes is not checked, and `/tdd` names it | **PROVEN**, **MISSED**, or **UNPROVEN · not checked:** with the reason |
 | Break the code on purpose, see red, put it back exactly, go green | The red was the proof. In a git checkout it then makes a few small changes in a throwaway copy and names any the test did not notice | **PROVEN**, with the unnoticed changes listed |
 | Edit a module unlocked in an earlier session (up to 7 days) | Refuses the first edit until its test runs once this session, red or green, and says why; drops the carry-over if the test changed since | the refusal names the command; `/tdd` lists it under `unlocked earlier` |
@@ -226,8 +230,11 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, pause the guard, or edit a session record in `~/.dope-tdd/sessions/` from the shell | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
 | Work while a git rebase, merge, cherry-pick, revert, `am` or bisect is in progress | Stands down until the operation ends; Claude is told when it starts and ends | **STANDING DOWN** · git rebase in progress |
 
-What it does **not** do: it never writes code or tests for Claude, never
-runs anything but your own test file, and never changes a file except to
-undo and restore Claude's change during a catch check. From a clone of the
+What it does **not** do: it never writes code or tests for Claude. It runs
+your test runner on one test file, plus `git` and small `node -e` helpers
+(the full list is in [docs/security-and-data.md](security-and-data.md)). In
+your project it writes only `dope-tdd.json` (on `/tdd setup write`) and
+`dope-tdd.overrides.json`, puts that file back if a shell command changes it,
+and, for an in-place catch check, undoes and restores Claude's change. From a clone of the
 repository, `claude plugin validate .` lists every action it steps into
 (`hooks:`) and everything it touches (`calls:`).

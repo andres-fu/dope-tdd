@@ -18,11 +18,11 @@ first reply within a week.
 Dope TDD runs on your machine, inside Claude Code, and reads and writes your files. A security
 problem includes anything that:
 
-- loses or changes your work outside what it says it does (see "What Dope TDD stores" in the README)
+- loses or changes your work outside what it says it does (see `docs/security-and-data.md`)
 - writes, deletes or links files outside the project, its `.git` folder, the plugin store or
   `~/.dope-tdd/`
 - runs a command you didn't ask for, or runs one with input an attacker controls
-- sends anything off your machine beyond what "What Dope TDD sends" in the README describes
+- sends anything off your machine beyond what `docs/security-and-data.md` describes
 
 Getting around its own rules (editing source without a test, faking a red) is a bug, not a
 security problem: file it as an issue. The README says plainly that an agent with a shell can

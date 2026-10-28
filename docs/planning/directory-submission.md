@@ -78,16 +78,18 @@ These are judged by a reviewer or the security scan, not by validation.
 
 ## Data handling answers (portal step 4)
 
-Drafted from the README; confirm before submitting.
+Confirmed 2026-10-28.
 
-- **Reads or stores personal data:** no. It stores file text being checked, test and module names,
-  counts and timings under the user's account (see "What Dope TDD stores").
-- **Sends data to services other than declared connectors:** no, except the opt-in experimental
-  `"approver": "model"` override, which sends the override request and part of the diff through
-  the session's own model client.
-- **How long it keeps data:** session log 30 days, unlocks and left-red 7 days, check copies
-  removed when the check ends; kept changes until the user deletes them.
+- **Reads or stores personal data:** no. It keeps the source text of files being checked, test and
+  module names, run timings, and typed override reasons and spike questions, all on the user's
+  machine or in their repo (`docs/security-and-data.md`).
+- **Sends data to services other than declared connectors:** no, unless the user turns on the
+  experimental model approver, which sends the override request and part of the diff through the
+  session's own model client.
+- **How long it keeps data:** session logs 30 days; unlocks, left-red modules and spike copies 7
+  days; check copies until the check ends; kept changes until the user deletes them.
 - **Intended for people under 18:** no.
+- **Contact email:** the account's own (confirmed).
 
 ## Before the first Validate
 
@@ -106,12 +108,15 @@ Not directory rules; Andres's own rules for public repos.
   home folder, not `CLAUDE_CONFIG_DIR`, so a test profile still writes to the real session log.
 - **Optional:** `claude plugin eval` with a small eval suite (the docs suggest it; the directory
   doesn't require it).
-- **To do:** release a version with the above, then submit.
+- Listing description: `plugin.json` and `marketplace.json` now match the GitHub description.
+- **To do:** release 0.2.7 (#193, #194, #195, a test fixture that used a `ghp_`-shaped fake token),
+  run the portal's **Validate**, then submit.
 
-## Open questions
+## Decisions
 
-1. **Track `main` or a release tag?** Tracking `main` scans every merge. A tag (or a `release`
-   branch) means only releases reach users, which matches the "version bump per tester release" rule.
-2. **Auto-publish:** after the first version, publish passing versions automatically or by hand?
-3. **Mod rules:** the portal applies rules to mods that the CLI doesn't show. Only a real
-   **Validate** run will tell; do one early, before the release, to see the findings.
+1. **Track `main`.** With the release flow (CONTRIBUTING.md, Releases), `main` only moves when a
+   version ships, so tracking it means only releases reach users, with nothing to update in the
+   portal at each release. A tracked tag would stay on one commit until changed by hand.
+2. **Submit on 0.2.7**, not 0.2.6: the first version reviewed should include #194, the model
+   approver pause fix. Validate can run earlier to surface the portal's rules for mods.
+3. **Auto-publish:** open; decide after the first version is approved.

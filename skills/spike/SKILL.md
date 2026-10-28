@@ -16,7 +16,7 @@ If the question above is empty, say in one line what the spike should answer bef
 In a git repository, from the project root:
 
 ```bash
-SPIKE="$HOME/.dope-tdd/spikes/$(basename "$PWD")-<short-slug>"
+SPIKE="$HOME/.dope-tdd/spikes/$(basename "$(git rev-parse --show-toplevel)")-<short-slug>"
 git worktree add --detach "$SPIKE" HEAD
 STASH=$(git stash create) && [ -n "$STASH" ] && git -C "$SPIKE" stash apply "$STASH"
 ```

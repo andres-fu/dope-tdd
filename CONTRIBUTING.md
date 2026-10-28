@@ -60,13 +60,13 @@ merging it into `main` doesn't delete it.
 ### The loop
 
 While working, run only the one test file you are changing, as above. A full
-`claude plugin test .` takes about 35 seconds and the POSIX-root pass about 35
+`claude plugin test .` takes about 35 seconds and the POSIX-root run about 35
 more, so running every suite after every step makes a small change take
 minutes. Once, before opening a pull request, run everything:
 
 ```bash
 npm run check            # validate, plugin test and node --test, all at once
-npm run check -- --all   # the same, plus the POSIX-root pass
+npm run check -- --all   # the same, plus the POSIX-root run
 npm run golden           # after changing a message's words: rewrite the golden file
 ```
 
@@ -80,7 +80,7 @@ agent will read differently.
 `npm run check` starts the suites at the same time, prints each one's output whole as it
 finishes (its own summary line included), then one PASS/FAIL line per suite
 and a combined verdict; it exits non-zero if any suite failed. The POSIX-root
-pass is left to CI by default: it runs the same ~1000 kit tests again, which
+run is left to CI by default: it runs the same ~1000 kit tests again, which
 nearly doubles the local wait, to catch path bugs a Windows machine cannot
 produce. CI still runs everything, POSIX root included, on Linux and Windows
 for every pull request, and on macOS too for every push to `main`. The guard is unchanged by this: red before an

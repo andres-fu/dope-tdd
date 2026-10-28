@@ -1251,3 +1251,61 @@ describe('a green that closes other modules leaves the current module\'s story a
     expect(status.text).toMatch(/cycles: 2 \(avg [^,]+, 0 never failed\)/)
   })
 })
+
+// #168, seen in an Astro + Vitest site: the tests run from site/, whose own node_modules holds astro. The copy lives
+// inside .git, so a runner walking up from it never reached site/node_modules and the config could not load.
+describe('a nested package in the throwaway copy', () => {
+  const WT = `${ROOT}/.git/dope-tdd/wt`
+  const SITE_CONFIG = '{"stack":"node","layout":{"source":"site/src/{module}.{ext}","test":"site/src/{module}.test.{ext}"}}'
+
+  async function fixInSite($: Parameters<typeof runCommand>[0], world: ReturnType<typeof fakeEngine>) {
+    world.existingFiles.add(`${ROOT}/.git/HEAD`)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, SITE_CONFIG)
+    world.existingFiles.add(`${ROOT}/site/node_modules`)
+    world.existingFiles.add(`${ROOT}/site/node_modules/vitest/vitest.mjs`)
+    world.fileContents.set(`${ROOT}/site/src/lib/a.ts`, 'export const a = 1')
+    world.existingFiles.add(`${ROOT}/site/src/lib/a.test.ts`)
+    await editAt($, 'site/src/lib/a.test.ts')
+    world.bashFails = true
+    world.bashText = ' FAIL  src/lib/a.test.ts\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
+    await runBash($, 'cd site && npx vitest run src/lib/a.test.ts')
+    await editAt($, 'site/src/lib/a.ts')
+    world.bashFails = false
+    world.bashText = ' ✓ src/lib/a.test.ts (1 test)\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n'
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runBash($, 'npx vitest run src/lib/a.test.ts')
+  }
+
+  const isLink = (argv: readonly string[]) => argv[0] === 'node' && String(argv[2]).includes('symlinkSync')
+  const isUnlink = (argv: readonly string[]) => argv[0] === 'node' && String(argv[2]).includes('unlinkSync')
+
+  test('its node_modules is linked into the copy before the test runs there, and unlinked before the copy is removed', async ($, on) => {
+    const world = fakeEngine(on)
+    // `git worktree remove` leaves the folder when it holds a link: the check clears what is left.
+    world.existingFiles.add(WT)
+    await fixInSite($, world)
+
+    const link = world.gitCalls.findIndex(isLink)
+    const run = world.gitCalls.findIndex((argv, i) => argv.some(arg => arg.includes('vitest.mjs')) && world.runCwds[i] === `${WT}/site`)
+    const unlink = world.gitCalls.findLastIndex(isUnlink)
+    const removed = world.gitCalls.findLastIndex(argv => argv.join(' ') === `git worktree remove --force ${WT}`)
+    expect(world.gitCalls[link]?.slice(3)).toEqual([`${ROOT}/site/node_modules`, `${WT}/site/node_modules`])
+    expect(link).toBeGreaterThan(-1)
+    expect(run).toBeGreaterThan(link)
+    expect(world.gitCalls[unlink]?.[3]).toBe(`${WT}/site/node_modules`)
+    expect(unlink).toBeGreaterThan(run)
+    expect(removed).toBeGreaterThan(unlink)
+    expect(world.gitCalls.findLast(argv => argv[0] === 'node' && String(argv[2]).includes('recursive'))?.at(-1)).toBe(WT)
+    expect((await runCommand($, 'tdd')).text).toMatch(/proven 1/)
+  })
+
+  test('a run at the root links nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/.git/HEAD`)
+    await fixUnderGuard($, world)
+
+    await runTests($, world, 'pass')
+
+    expect(world.gitCalls.some(isLink)).toBe(false)
+  })
+})

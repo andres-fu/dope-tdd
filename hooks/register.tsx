@@ -12,7 +12,7 @@ import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spi
 import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
-import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from './catchCheck.ts'
+import { catchOutcome, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
 import type { RunnerKind, WorktreeFailure } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
@@ -842,7 +842,8 @@ const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest',
 // Inside the checkout's own git directory, so watchers and `git status` never see it: `.git/dope-tdd/wt` in a clone,
 // `<main>/.git/worktrees/<name>/dope-tdd/wt` in a linked worktree (field test on VibeCast, 2026-10-18: a linked
 // worktree, where `.git` is a file, had no isolated check and no small changes, and nothing said so). From there the
-// runner walks up to the main checkout's node_modules; a test that is not green there falls back to the check in place.
+// runner walks up to the main checkout's node_modules, and a nested package's is linked in (#168). A test that is not
+// green there is unverified, and your file is left alone (verified review A2): it never falls back to the check in place.
 const CHECK_WORKTREE = 'dope-tdd/wt'
 /** dope-tdd's own pin skill, by its plugin-qualified name or its bare one. */
 const PIN_SKILL = /^(?:dope-tdd:)?pin$/
@@ -892,6 +893,22 @@ async function testFingerprint($: EngineInterface, testPath: string): Promise<st
   return text === null ? 'missing' : contentHash(text)
 }
 
+/**
+ * Removes the check's copy. Links into nested packages go first (#168): unlinkArgv removes only a link and throws on a
+ * real folder, so nothing they point at can be reached. `git worktree remove` leaves a folder that still holds a link
+ * (checked by hand on Windows, 2026-10-26), and that folder would block the next `worktree add`, so what is left goes
+ * too; Node's recursive remove takes a link away without following it (checked the same day).
+ */
+async function removeCheckWorktree($: EngineInterface, root: string, wt: string, packageDirs: readonly string[]): Promise<void> {
+  for (const dir of packageDirs) {
+    await $.process.run(unlinkArgv(`${wt}/${dir}/node_modules`), { timeoutMs: 10_000 }).catch(() => undefined)
+  }
+  await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+  if (await $.fs.exists(wt)) {
+    await $.process.run(removeFolderArgv(wt), { timeoutMs: 30_000 }).catch(() => undefined)
+  }
+}
+
 async function checkInWorktree($: EngineInterface, root: string, check: WorktreeCheck): Promise<CatchOutcome[] | WorktreeFailure> {
   const { module, path, variants, after, runIn, relativeTest, argv, greenRunMs } = check
   const gitDir = await gitDirOf($, root)
@@ -911,8 +928,9 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     return variants.map(() => ({ kind: 'unverified', reason: `another session was checking ${shared.module}` }))
   }
   const sharedSha = shared.kind === 'acquired' ? shared.sha : null
+  const packageDirs = nestedPackageDirs(relativePath(root, runIn))
   try {
-    await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+    await removeCheckWorktree($, root, wt, packageDirs)
     // Checking out a large repository can take longer than the engine's 30 s default (verified review A3).
     // No hooks: `worktree add` runs the repository's post-checkout hook, a program nobody asked the check to run.
     // core.hooksPath points at a folder that does not exist, so git finds none (verified review A16, 2026-10-20).
@@ -940,6 +958,15 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     }
     for (const file of gone) {
       await gitQuiet($, wt, ['rm', '-q', '--', file])
+    }
+    // #168: a nested package's node_modules (site/node_modules in an Astro site) is out of the runner's reach from the
+    // copy inside .git, so each one on the way down to the run is linked in. Unlinked before the copy is removed.
+    for (const dir of packageDirs) {
+      const target = `${root}/${dir}/node_modules`
+      const link = `${wt}/${dir}/node_modules`
+      if ((await $.fs.exists(target)) && !(await $.fs.exists(link))) {
+        await $.process.run(linkArgv(target, link), { timeoutMs: 10_000 }).catch(() => undefined)
+      }
     }
     const inTree = `${wt}/${relativePath(root, path)}`
     const cwd = runIn === root ? wt : `${wt}/${relativePath(root, runIn)}`
@@ -981,7 +1008,7 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     $.ui.log(`dope-tdd: the check worktree failed (${String(error)}); your file was left alone`)
     return { step: 'error', detail: String(error) }
   } finally {
-    await gitQuiet($, root, ['worktree', 'remove', '--force', wt])
+    await removeCheckWorktree($, root, wt, packageDirs)
     await change($, releaseCheck)
     if (sharedSha !== null) {
       await releaseSharedLock($, root, sharedSha)

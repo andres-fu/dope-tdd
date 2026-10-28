@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, runFailure, runnerArgv, timeBudgetMs, worktreeFailureReason } from '../hooks/catchCheck'
+import { catchOutcome, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
 import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR, VITEST_REAL_FAIL } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
@@ -123,5 +123,40 @@ describe('a caught change keeps the failure message', () => {
   test('the first assertion the run failed on; none when the output has none', () => {
     expect(catchOutcome({ stdout: VITEST_REAL_FAIL, stderr: '', exitCode: 1 }, 'sum.test.js')).toEqual({ kind: 'caught', message: 'expected 2 to be 3' })
     expect(catchOutcome({ stdout: ' Tests  1 failed (1)\n', stderr: '', exitCode: 1 })).toEqual({ kind: 'caught' })
+  })
+})
+
+// #168: a nested package (site/ in an Astro site) keeps its own node_modules. From the copy inside .git, a runner walks
+// up past it and cannot load the package's config, so each folder on the way down to the run gets its node_modules
+// linked in the copy.
+describe('nestedPackageDirs', () => {
+  test('every folder from the root down to where the run happens, the root itself left out', () => {
+    expect(nestedPackageDirs('site')).toEqual(['site'])
+    expect(nestedPackageDirs('apps/web')).toEqual(['apps', 'apps/web'])
+    expect(nestedPackageDirs('apps\\web\\')).toEqual(['apps', 'apps/web'])
+  })
+
+  test('a run at the root needs none', () => {
+    expect(nestedPackageDirs('')).toEqual([])
+    expect(nestedPackageDirs('.')).toEqual([])
+  })
+})
+
+describe('linkArgv and unlinkArgv', () => {
+  test('paths are arguments, never part of the script', () => {
+    const link = linkArgv("C:/w/site/node_modules", "C:/w/.git/dope-tdd/wt/si'te/node_modules")
+    expect(link.slice(0, 2)).toEqual(['node', '-e'])
+    expect(link[2]).toMatch(/symlinkSync\(process\.argv\[1\], process\.argv\[2\], 'junction'\)/)
+    expect(link.slice(3)).toEqual(["C:/w/site/node_modules", "C:/w/.git/dope-tdd/wt/si'te/node_modules"])
+  })
+
+  // Checked by hand on Windows (2026-10-26): unlinkSync removes a junction and leaves its target; on a real folder it
+  // throws, so the unlink can never delete what a link pointed at, or a folder that was not a link.
+  test('the unlink removes only a link, and a missing one is fine', () => {
+    const unlink = unlinkArgv('C:/w/.git/dope-tdd/wt/site/node_modules')
+    expect(unlink[2]).toMatch(/unlinkSync\(process\.argv\[1\]\)/)
+    expect(unlink[2]).toMatch(/ENOENT/)
+    expect(unlink[2]).not.toMatch(/rmSync|recursive/)
+    expect(unlink[3]).toBe('C:/w/.git/dope-tdd/wt/site/node_modules')
   })
 })

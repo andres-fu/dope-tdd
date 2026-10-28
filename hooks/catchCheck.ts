@@ -139,6 +139,30 @@ export function catchOutcome(run: RunResult | RunFailure, testPath?: string, kno
   return message === null ? { kind: 'caught' } : { kind: 'caught', message }
 }
 
+/**
+ * #168: the folders from the root down to where the run happens, root left out, as `a`, `a/b`. The copy lives inside
+ * `.git`, so a runner walking up from it reaches the root's node_modules but never a nested package's (an Astro site
+ * in `site/`, with `site/node_modules` and a config that imports `astro`). Each of these whose node_modules exists is
+ * linked into the copy at the same place.
+ */
+export function nestedPackageDirs(runInRelative: string): string[] {
+  const parts = runInRelative.replace(/\\/g, '/').split('/').filter(part => part !== '' && part !== '.')
+  return parts.map((_part, i) => parts.slice(0, i + 1).join('/'))
+}
+
+/** A directory junction on Windows (no admin rights needed), a symlink elsewhere: Node ignores the type off Windows. */
+export function linkArgv(target: string, link: string): string[] {
+  return ['node', '-e', "require('node:fs').symlinkSync(process.argv[1], process.argv[2], 'junction')", target, link]
+}
+
+/**
+ * Removes a link made by linkArgv, never what it points at. unlinkSync takes the junction away and leaves its target
+ * (checked by hand on Windows, 2026-10-26); on a real folder it throws, so it cannot delete one. A missing link is fine.
+ */
+export function unlinkArgv(link: string): string[] {
+  return ['node', '-e', "try { require('node:fs').unlinkSync(process.argv[1]) } catch (error) { if (error.code !== 'ENOENT') throw error }", link]
+}
+
 export function timeBudgetMs(greenRunMs: number): number {
   return Math.min(2 * greenRunMs + 5_000, MAX_BUDGET_MS)
 }

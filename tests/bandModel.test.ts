@@ -189,6 +189,20 @@ describe('band v3: one guard word, only when the guard is not simply enforcing',
     expect(guard(on({ guardFailures: 1 }))).toEqual({ word: 'GUARD FAILING', detail: '1 call went through unguarded after an internal error · see the log' })
   })
 
+  // #193: an invalid dope-tdd.json falls back to enforce and the default layout, and that was said only in /tdd. The
+  // band names the file and the error. After a failing guard (still the most urgent), before standing down and pause,
+  // which end by themselves while a broken file does not.
+  test('an invalid dope-tdd.json, naming the file and the error', () => {
+    const error = 'dope-tdd.json: mode must be one of enforce, warn, observe'
+    expect(guard(on({}), { error })).toEqual({
+      word: 'CONFIG INVALID',
+      detail: 'dope-tdd.json: mode must be one of enforce, warn, observe · using the defaults: enforce, default layout · fix the file',
+    })
+    expect(guard(on({ paused: true }), { error }, { standingDown: 'merge' })?.word).toBe('CONFIG INVALID')
+    expect(guard(on({ guardFailures: 1 }), { error })?.word).toBe('GUARD FAILING')
+    expect(bandView(INITIAL_STATS, { ...CONFIG, error }).idle).toBe(false)
+  })
+
   test('a git operation in progress', () => {
     expect(guard(on({}), {}, { standingDown: 'rebase' })).toEqual({ word: 'STANDING DOWN', detail: 'git rebase in progress · back when it ends' })
   })

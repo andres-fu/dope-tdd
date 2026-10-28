@@ -100,6 +100,8 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     expect(text).toMatch(/^ {2}STANDING DOWN +a git rebase, merge, cherry-pick, revert, am or bisect is in progress/m)
     expect(text).toMatch(/^ {2}WARN ONLY +the mode lets untested edits through, with a warning/m)
     expect(text).toMatch(/^ {2}OBSERVING +the mode refuses nothing; dope-tdd only records/m)
+    // #193: an invalid dope-tdd.json is said on the band, so /tdd why explains the word.
+    expect(text).toMatch(/^ {2}CONFIG INVALID +dope-tdd.json did not parse or has an invalid value: the defaults apply \(enforce, the default layout\) until it is fixed/m)
     // Live trial: one row for every override still open, whichever module is current, with END (2026-10-18).
     expect(text).toMatch(/^ {2}OVERRIDE OPEN +an approved override that still lets edits through: what is left and who approved it; END closes it/m)
     expect(text).not.toMatch(/OVERRIDDEN/)

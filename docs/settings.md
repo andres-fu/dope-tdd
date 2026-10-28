@@ -7,9 +7,10 @@ Everything `dope-tdd.json` can set, and how the catch check runs.
 An optional `dope-tdd.json` at the repository root sets how strict the guard
 is and where. Every setting shows in `/tdd`, so nothing is hidden. If the file
 doesn't parse or a value is invalid, Dope TDD uses the defaults (`enforce`,
-the default layout) for all of it, and only `/tdd` says so, in a
-`config: … (using defaults)` line
-([#193](https://github.com/andres-fu/dope-tdd/issues/193)). Some stacks add
+the default layout) for all of it, and says so: the band shows **CONFIG
+INVALID** with the file and the error, Claude's session briefing says the file
+was not read and why so it can tell you, and `/tdd` shows a
+`config: … (using defaults)` line. Some stacks add
 exemptions of their own: Godot exempts `addons/**`, .NET `bin/**` and `obj/**`.
 
 ```json

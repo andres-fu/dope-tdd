@@ -122,6 +122,12 @@ refused, and a shell change to it is put back and counted as a workaround.
   change that.
 - The project must be a git repository; without one the shell backstop
   records nothing.
+- A subagent started with `isolation: "worktree"` works in
+  `.claude/worktrees/<name>/`. Its Edit and Write calls are judged against
+  that worktree, so they are refused and unlocked like the main checkout's.
+  Not yet: its shell edits are read from the main folder, and every agent in
+  the session shares one module and one set of unlocks
+  ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
 - While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
   progress, the guard stands down: the code that operation puts on disk was
   written before, so nothing is refused, counted or checked until it ends.

@@ -4,6 +4,35 @@ import { contentHash, unlockKey } from '../hooks/unlocks'
 
 import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, TEST_SOURCE, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
 
+// #198 (2026-10-28): a subagent with isolation: worktree edits under <root>/.claude/worktrees/<name>/. Read from the
+// session root those paths matched no layout, and a live probe's edit to untested code went through without a word.
+describe('an agent worktree is guarded like the main checkout', () => {
+  test('an Edit to untested source in an agent worktree is refused, naming the test in that worktree', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a Write to untested source in an agent worktree is refused too', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await writeAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('touching the test in the worktree unlocks the edit there', async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, '.claude/worktrees/agent-x/tests/utils/calculateDuration.test.ts')
+    const result = await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')
+
+    expect(result.deny).toBeUndefined()
+  })
+})
+
 describe('bash bypass', () => {
   test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {
     fakeEngine(on)

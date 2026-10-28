@@ -42,6 +42,21 @@ and any push aimed at `main` from another branch (its tests:
 command's text, so a spelling it misses still meets GitHub's branch protection
 on `main`, which is what actually enforces the rule.
 
+### Releases
+
+From 0.2.6, `main` only moves when a version ships:
+
+1. Feature and fix pull requests target the `release` branch.
+2. When a version is ready, one pull request bumps `version` in
+   `.claude-plugin/plugin.json`, adds the tester note under
+   `docs/testers/rounds/`, and merges `release` into `main`.
+3. The merge on `main` is tagged `vX.Y.Z`. The plugin directory and the
+   pull-request check's `uses:` line follow tags, so only a tagged release
+   reaches users.
+
+`release` is protected like `main` (pull requests, green CI, no deletion), so
+merging it into `main` doesn't delete it.
+
 ### The loop
 
 While working, run only the one test file you are changing, as above. A full

@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
       # install the project's dependencies here, as its own CI does
       # pin to a release tag or commit, not a branch
-      - uses: andres-fu/dope-tdd/tools/pr-check@main
+      - uses: andres-fu/dope-tdd/tools/pr-check@v0.2.6
         with:
           base: ${{ github.base_ref }}
 ```

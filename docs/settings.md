@@ -7,9 +7,10 @@ Everything `dope-tdd.json` can set, and how the catch check runs.
 An optional `dope-tdd.json` at the repository root sets how strict the guard
 is and where. Every setting shows in `/tdd`, so nothing is hidden. If the file
 doesn't parse or a value is invalid, Dope TDD uses the defaults (`enforce`,
-the default layout) for all of it, and only `/tdd` says so, in a
-`config: … (using defaults)` line
-([#193](https://github.com/andres-fu/dope-tdd/issues/193)). Some stacks add
+the default layout) for all of it, and says so: the band shows **CONFIG
+INVALID** with the file and the error, Claude's session briefing says the file
+was not read and why so it can tell you, and `/tdd` shows a
+`config: … (using defaults)` line. Some stacks add
 exemptions of their own: Godot exempts `addons/**`, .NET `bin/**` and `obj/**`.
 
 ```json
@@ -51,9 +52,9 @@ exemptions of their own: Godot exempts `addons/**`, .NET `bin/**` and `obj/**`.
   no tools, sees the request as data and the module's hunks only, answers
   APPROVE, DENY or ESCALATE, and anything else, a failed call, or a repeat
   on the same module goes to you (or is denied when nobody is there).
-  Hotfixes and your own pauses never go to it, but an agent's pause
-  request does, and an APPROVE pauses every module: set `"pause": false`
-  alongside it if that's too much ([#194](https://github.com/andres-fu/dope-tdd/issues/194)). It is a different model
+  Hotfixes and pauses, yours or the agent's, never go to it: a pause
+  switches off every module, so an agent's pause request goes to you (or is
+  denied when nobody is there). It is a different model
   from the session's unless you name one: `"model": "claude-opus-5-5"`,
   `"effort": "high"`. Its decisions are recorded as the model's, with its
   reason, and turning it on is recorded as a loosening.

@@ -69,6 +69,19 @@ describe('the briefing stays cheap', () => {
   })
 })
 
+describe('an invalid dope-tdd.json', () => {
+  // #193: the file fell back to the defaults and only /tdd said so; the agent is told, second, so it can tell the user.
+  test('is said second, with the file, the error and the fallback, and that the user should know', () => {
+    const error = 'dope-tdd.json: mode must be one of enforce, warn, observe'
+    const lines = briefingText({ ...DEFAULT_CONFIG, error }, 'npx vitest run <test file>').split('\n')
+    expect(lines[1]).toBe(
+      '- dope-tdd.json was not read (mode must be one of enforce, warn, observe), so the defaults apply: enforce and the default layout. Tell the user, so they can fix the file.',
+    )
+    expect(lines[2]).toMatch(/refused until/)
+    expect(briefingText({ ...DEFAULT_CONFIG, error: null }, 'npx vitest run <test file>')).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
+  })
+})
+
 describe('briefingText spike', () => {
   // Idea 19: the spike is offered before the override, in enforce mode where refusals happen.
   test('in enforce mode names the spike skill before the override', () => {

@@ -177,6 +177,7 @@ export function formatGlossary(): string {
     word('STANDING DOWN', 'a git rebase, merge, cherry-pick, revert, am or bisect is in progress: the guard waits until it ends'),
     word('WARN ONLY', 'the mode lets untested edits through, with a warning (dope-tdd.json)'),
     word('OBSERVING', 'the mode refuses nothing; dope-tdd only records (dope-tdd.json)'),
+    word('CONFIG INVALID', 'dope-tdd.json did not parse or has an invalid value: the defaults apply (enforce, the default layout) until it is fixed'),
     word('OVERRIDE ASKED', 'the agent asked to pass the guard and waits: /tdd approve, or /tdd deny <why>'),
     word('OVERRIDE OPEN', 'an approved override that still lets edits through: what is left and who approved it; END closes it'),
     '/tdd',

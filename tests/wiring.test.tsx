@@ -71,6 +71,29 @@ describe('an agent worktree is guarded like the main checkout', () => {
   })
 })
 
+// #195: NotebookEdit writes files too (its path field is notebook_path), and went through unseen.
+describe('the NotebookEdit tool is guarded like Edit', () => {
+  const notebookEdit = ($: Parameters<typeof editAt>[0], relative: string) =>
+    $.tool.call({ tool: 'NotebookEdit', notebook_path: `${ROOT}/${relative}`, new_source: 'x' } as never)
+
+  test('a NotebookEdit to untested source is refused, naming its test', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await notebookEdit($, 'src/utils/calculateDuration.ts')
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a NotebookEdit is allowed once the test is touched', async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+    const result = await notebookEdit($, 'src/utils/calculateDuration.ts')
+
+    expect(result.deny).toBeUndefined()
+  })
+})
+
 describe('bash bypass', () => {
   test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {
     fakeEngine(on)
@@ -313,12 +336,12 @@ describe('bash bypass', () => {
       world.numstat = '3\t1\tsrc/App.tsx\n'
     }
 
-    await runBash($, 'git pull https://me:ghp_s3cr3tt0k3n@github.com/acme/app main')
+    await runBash($, 'git pull https://me:s3cr3t-not-a-token@github.com/acme/app main')
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/brought in by git, not guarded App \(git pull\)$/m)
-    expect(status.text).not.toMatch(/ghp_s3cr3tt0k3n/)
-    expect(world.logs.join('\n')).not.toMatch(/ghp_s3cr3tt0k3n/)
+    expect(status.text).not.toMatch(/s3cr3t-not-a-token/)
+    expect(world.logs.join('\n')).not.toMatch(/s3cr3t-not-a-token/)
   })
 
   // Karl's round 4 (2026-10-20): reads beside the checkout made it the agent's edit, since only test runs were quiet.

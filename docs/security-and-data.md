@@ -43,8 +43,8 @@ a mod that calls `$.process.run`. Dope TDD calls it for the runs above.
 
 Nothing of its own: no network requests, no telemetry. The one exception is
 opt-in and experimental. With `"overrides": { "approver": "model" }`, each
-override request the agent makes goes to the model API through the session's
-own client, the same API Claude Code already talks to. It sends the request
+override request the agent makes, except a hotfix or a pause, goes to the model
+API through the session's own client, the same API Claude Code already talks to. It sends the request
 (scope, kind, path, reason, what ends it, minutes), the module's test path and
 its last catch-check verdict, how many requests it has had this week and
 today, and up to 120 lines of the uncommitted diff of that module and its

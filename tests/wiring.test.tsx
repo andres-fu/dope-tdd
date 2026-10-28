@@ -336,12 +336,12 @@ describe('bash bypass', () => {
       world.numstat = '3\t1\tsrc/App.tsx\n'
     }
 
-    await runBash($, 'git pull https://me:ghp_s3cr3tt0k3n@github.com/acme/app main')
+    await runBash($, 'git pull https://me:s3cr3t-not-a-token@github.com/acme/app main')
     const status = await runCommand($, 'tdd')
 
     expect(status.text).toMatch(/brought in by git, not guarded App \(git pull\)$/m)
-    expect(status.text).not.toMatch(/ghp_s3cr3tt0k3n/)
-    expect(world.logs.join('\n')).not.toMatch(/ghp_s3cr3tt0k3n/)
+    expect(status.text).not.toMatch(/s3cr3t-not-a-token/)
+    expect(world.logs.join('\n')).not.toMatch(/s3cr3t-not-a-token/)
   })
 
   // Karl's round 4 (2026-10-20): reads beside the checkout made it the agent's edit, since only test runs were quiet.

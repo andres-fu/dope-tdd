@@ -122,7 +122,7 @@ describe('bringsInCode', () => {
 // token in a remote URL can sit.
 describe('gitVerb', () => {
   test('the git subcommand, and the stash action, from the first git segment; nothing else', () => {
-    expect(gitVerb('git pull https://me:ghp_x@github.com/acme/app main')).toBe('git pull')
+    expect(gitVerb('git pull https://me:not-a-token@github.com/acme/app main')).toBe('git pull')
     expect(gitVerb('cd app && git checkout main -- src/a.ts')).toBe('git checkout')
     expect(gitVerb('git stash pop')).toBe('git stash pop')
     expect(gitVerb('git -c http.extraheader=AUTH fetch origin')).toBe('git fetch')

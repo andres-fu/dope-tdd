@@ -1,7 +1,7 @@
 {
   "name": "dope-tdd",
   "displayName": "Dope TDD",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Keeps Claude Code test-first and proves each test catches its change: refuses edits to untested code, then undoes the change and reruns the test.",
   "author": {
     "name": "Andres Fuentes"

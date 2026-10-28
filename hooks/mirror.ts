@@ -55,6 +55,22 @@ export function relativePath(root: string, path: string): string {
   return relativeTo(root, path) ?? path
 }
 
+/**
+ * The root a file is judged against: the agent worktree it sits in, or else the session's root (#198, 2026-10-28).
+ * A subagent with isolation: worktree works in <root>/.claude/worktrees/<name>, a checkout of its own whose paths
+ * match no layout when read from the session root. The engine names no root for a subagent's call, so the path
+ * says it. Spelled as the path spells it, so classifyPath finds the file inside it.
+ */
+export function worktreeRootFor(root: string, path: string): string {
+  const rest = relativeTo(root, path)
+  const worktree = rest === undefined ? null : /^\.claude\/worktrees\/[^/]+(?=\/)/.exec(rest)
+  if (rest === undefined || worktree === null) {
+    return root
+  }
+  const normalized = toForwardSlashes(path)
+  return normalized.slice(0, normalized.length - rest.length + worktree[0].length)
+}
+
 /** Splits `packages/app/src/a.ts` into the package root that a root glob names and the rest; null when under no root. */
 export function splitRoot(relative: string, roots: readonly string[]): { pkg: string; rest: string } | null {
   if (roots.length === 0) {

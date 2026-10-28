@@ -43,7 +43,7 @@ import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
-import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from './mirror.ts'
+import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1539,7 +1539,8 @@ async function guardFileWrite(
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
-  const root = await $.session.root()
+  // A file in an agent worktree is judged against that worktree, the checkout it belongs to (#198).
+  const root = worktreeRootFor(await $.session.root(), filePath)
   const git = await noteGitOperation($, root)
   if (git.operation !== null) {
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
@@ -1555,7 +1556,7 @@ async function checkFileWrite(
   writtenPath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
-  const root = await $.session.root()
+  const root = worktreeRootFor(await $.session.root(), writtenPath)
   const filePath = await projectPath($, root, writtenPath)
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)

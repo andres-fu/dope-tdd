@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { LAYOUTS } from '../hooks/layout'
-import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs } from '../hooks/mirror'
+import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
@@ -151,5 +151,35 @@ describe('respelled: a path reached through a symbolic link, spelled from the ro
     expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/other/a.ts')).toBeNull()
     expect(respelled('/tmp/app', '/private/tmp/app', '/private/tmp/application/a.ts')).toBeNull()
     expect(respelled('/tmp/app', null, '/private/tmp/app/src/a.ts')).toBeNull()
+  })
+})
+
+// #198 (2026-10-28): a subagent started with isolation: worktree edits files under <root>/.claude/worktrees/<name>/.
+// Read against the session's root, those paths matched no layout, so its edits to untested code went through unguarded.
+describe('worktreeRootFor: a file in an agent worktree is judged against that worktree, not the session root', () => {
+  test('a file in an agent worktree belongs to that worktree', () => {
+    expect(worktreeRootFor(ROOT, `${ROOT}/.claude/worktrees/agent-a6d4/hooks/timeText.ts`)).toBe(`${ROOT}/.claude/worktrees/agent-a6d4`)
+    expect(worktreeRootFor('/work/app', '/work/app/.claude/worktrees/fix-198/src/a.ts')).toBe('/work/app/.claude/worktrees/fix-198')
+  })
+
+  test('the worktree is spelled as the edited path spells it, so classifyPath sees the path inside it', () => {
+    const edited = 'c:\\WORK\\app\\.claude\\worktrees\\agent-x\\src\\a.ts'
+    const root = worktreeRootFor('C:/work/app', edited)
+    expect(root).toBe('c:/WORK/app/.claude/worktrees/agent-x')
+    expect(classifyPath(root, edited)).toEqual({ kind: 'source', module: 'a' })
+  })
+
+  test('a file in the main checkout keeps the session root', () => {
+    expect(worktreeRootFor(ROOT, `${ROOT}/src/a.ts`)).toBe(ROOT)
+    expect(worktreeRootFor(ROOT, `${ROOT}/.claude/settings.json`)).toBe(ROOT)
+    expect(worktreeRootFor(ROOT, `${ROOT}/.claude/worktrees/notes.md`)).toBe(ROOT)
+  })
+
+  test('a path outside the session root is left to the root it already has', () => {
+    expect(worktreeRootFor(ROOT, 'C:/elsewhere/.claude/worktrees/x/src/a.ts')).toBe(ROOT)
+  })
+
+  test('Linux keeps case: a differently spelled folder is not the root', () => {
+    expect(worktreeRootFor('/work/app', '/work/App/.claude/worktrees/x/src/a.ts')).toBe('/work/app')
   })
 })

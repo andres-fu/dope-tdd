@@ -123,10 +123,13 @@ refused, and a shell change to it is put back and counted as a workaround.
 - The project must be a git repository; without one the shell backstop
   records nothing.
 - A subagent started with `isolation: "worktree"` works in
-  `.claude/worktrees/<name>/`. Its Edit and Write calls are judged against
-  that worktree, so they are refused and unlocked like the main checkout's.
-  Not yet: its shell edits are read from the main folder, and every agent in
-  the session shares one module and one set of unlocks
+  `.claude/worktrees/<name>/`. Its Edit and Write calls, and shell writes that
+  name a path inside the worktree, are judged against that worktree, so they
+  are refused and unlocked like the main checkout's. A shell write by a
+  relative path is read from the main folder: it names the same module, so
+  the refusal is the same, but the `git` check after the command and the
+  catch check still look at the main folder. Every agent in the session
+  shares one module and one set of unlocks
   ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
 - While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
   progress, the guard stands down: the code that operation puts on disk was

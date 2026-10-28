@@ -23,6 +23,26 @@ describe('an agent worktree is guarded like the main checkout', () => {
     expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
   })
 
+  test('a shell write to untested source in an agent worktree, by absolute path, is refused too', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runBash($, `sed -i 's/a/b/' ${ROOT}/.claude/worktrees/agent-x/src/utils/calculateDuration.ts`)
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  // The live probe (2026-10-28) wrote through Git Bash's spelling of the drive, /c/Users/...
+  if (/^[A-Za-z]:\/$/.test(FIXTURE_DRIVE)) {
+    test('the same write spelled the Git Bash way (/c/...) is refused too', async ($, on) => {
+      fakeEngine(on)
+
+      const gitBash = `/${FIXTURE_DRIVE[0]?.toLowerCase()}${ROOT.slice(2)}/.claude/worktrees/agent-x/src/utils/calculateDuration.ts`
+      const result = await runBash($, `echo 'x' >> ${gitBash}`)
+
+      expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+    })
+  }
+
   test('touching the test in the worktree unlocks the edit there', async ($, on) => {
     fakeEngine(on)
 

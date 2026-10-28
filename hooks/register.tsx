@@ -1794,7 +1794,9 @@ async function checkShell(
   const writes = await Promise.all(
     findSourceWrites(command, start).map(async written => {
       const path = await projectPath($, root, absolutePath(root, written))
-      return { path, module: sourceModuleOf(root, path, config), policy: policyFor(config, relativePath(root, path)) }
+      // A write into an agent worktree is judged against that worktree, as Edit and Write are (#198).
+      const home = worktreeRootFor(root, path)
+      return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
     }),
   )
   const gated = gateShellWrites(writes, current.unlocked, current.inherited)

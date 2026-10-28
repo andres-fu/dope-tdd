@@ -19,6 +19,14 @@ reads back carries the verdict. A rule in CLAUDE.md is advice Claude can
 forget or argue with; this is a gate it has to pass, and every refusal says
 why, so it can.
 
+**Refusing edits is the point.** Once you install it for a project, Dope TDD
+refuses Claude's Edit, Write and shell edits to untested source in that
+project, by design. It changes nothing about other plugins' tools. To ease
+off, set `"mode": "warn"` or `"observe"` in `dope-tdd.json` (see
+[Settings](#settings-checked-into-the-repo)). To turn it off, run
+`claude plugin disable dope-tdd@dope-tdd` (add `--scope project` for a
+project install) or `claude plugin uninstall dope-tdd@dope-tdd`.
+
 ## What it enforces
 
 It stands in the path of four tools: Edit, Write, Bash and PowerShell. At
@@ -432,6 +440,12 @@ as they are.
 ## What Dope TDD stores
 
 Everything below lives under your user account.
+
+It never stores conversation text: not your prompts, not Claude's replies.
+What carries from one session to the next is test state only (which modules
+were unlocked or left red, with module and test names and the failing tests'
+names or message), and the next session's briefing reads it back so Claude picks up
+where the tests stand.
 
 To prove a test can fail, it reverts your change, reruns the test and puts the
 change back, so it holds a copy of the source file it is checking:

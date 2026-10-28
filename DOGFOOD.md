@@ -81,7 +81,7 @@ caches and who controls the input; trust boundaries on headers.
 
 ## 2026-10-09 — Roadhouse, dry run of the inference on the real tree
 
-Clone at C:\Users\fuent\Roadhouse-Game. Fed its 130 code files and root entries to inferLayout:
+A local clone. Fed its 130 code files and root entries to inferLayout:
 stack godot (project.godot at the root), layout godot-csharp, "37 of 56 test files pair with a
 source under godot-csharp", suggested config { stack: godot, layout: godot-csharp }. The 19 that do
 not pair are feature-level suites (BandCore, EconomyBalance, Harness, MainSceneLoad, ...) with no

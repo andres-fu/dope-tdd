@@ -37,5 +37,5 @@ GitHub, and no plugin in the Claude Code directories uses it.
 **Update, 2026-10-08:** the GitHub repository was renamed to `andres-fu/dope-tdd`
 (GitHub redirects the old `red-first` URLs; the remote was repointed). The
 playground package is `dope-tdd-playground`. The local folder is still
-`C:\Users\fuent\red-first`; renaming it means re-adding the local marketplace by
+`red-first`; renaming it means re-adding the local marketplace by
 its new path, so the owner does that between sessions.

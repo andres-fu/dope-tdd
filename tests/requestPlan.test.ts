@@ -55,12 +55,24 @@ describe('refusal: the form and the bar, before anyone is asked', () => {
   })
 })
 
-describe('sendsToModel: only an agent request, never a hotfix, and only when the repo opted in', () => {
+describe('sendsToModel: only an agent request, never a hotfix or a pause, and only when the repo opted in', () => {
   test('each case', () => {
     expect(sendsToModel(ask(), 'model')).toBe(true)
+    expect(sendsToModel(ask({ scope: 'module' }), 'model')).toBe(true)
     expect(sendsToModel(ask({ kind: 'hotfix' }), 'model')).toBe(false)
     expect(sendsToModel(ask({ by: 'human' }), 'model')).toBe(false)
     expect(sendsToModel(ask(), 'human')).toBe(false)
+  })
+
+  // #194: an approved pause switches off every module, so an agent's pause request goes to a person, never the model.
+  test("an agent's pause request never goes to the model", () => {
+    expect(sendsToModel(ask({ scope: 'pause', module: null, path: null, minutes: 30 }), 'model')).toBe(false)
+  })
+
+  test('with nobody there, an agent pause that skipped the model is denied, not approved', () => {
+    const { entry, pause } = plan({ request: ask({ scope: 'pause', module: null, path: null, minutes: 30 }), present: false })
+    expect(entry).toMatchObject({ status: 'denied', decidedBy: 'unattended' })
+    expect(pause).toBe(false)
   })
 })
 

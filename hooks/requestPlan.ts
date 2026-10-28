@@ -51,9 +51,13 @@ export function refusal(request: OverrideRequest, record: readonly Override[], n
   return why === null ? null : `dope-tdd: override refused: ${why}.`
 }
 
-/** A hotfix and a person's own request never go to the model: the first is recovery, the second is the approver. */
+/**
+ * A hotfix, a pause and a person's own request never go to the model: the first is recovery, the last is the approver.
+ * A pause switches off every module at once (#194), so an agent's pause waits for a person, or is denied when nobody
+ * is there, like any request the model does not see.
+ */
 export function sendsToModel(request: OverrideRequest, approver: 'human' | 'model'): boolean {
-  return approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix'
+  return approver === 'model' && request.by === 'agent' && request.kind !== 'hotfix' && request.scope !== 'pause'
 }
 
 export function planRequest(args: {

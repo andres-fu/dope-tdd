@@ -14,9 +14,9 @@ In the studio, an overdub covers a bad take instead of recording it again.
 Bending a test until it passes is the overdub, and Dope TDD hears it.
 
 It is a Claude Code plugin (a *mod*: it runs inside Claude Code). It checks
-every Edit, Write and shell command before it runs. A rule in CLAUDE.md is
-advice Claude can forget; this is a gate it has to pass, and every refusal
-says why and what to do instead.
+every Edit, Write, NotebookEdit and shell command before it runs. A rule in
+CLAUDE.md is advice Claude can forget; this is a gate it has to pass, and
+every refusal says why and what to do instead.
 
 ## What you see
 

@@ -1563,9 +1563,12 @@ async function standDown(
   return tell(config.mode === 'observe', result, lines)
 }
 
+/** The tools that write one named file. NotebookEdit edits a notebook cell, but the file is a file like any other (#195). */
+type FileTool = 'Edit' | 'Write' | 'NotebookEdit'
+
 async function guardFileWrite(
   $: EngineInterface,
-  tool: 'Edit' | 'Write',
+  tool: FileTool,
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
@@ -1582,7 +1585,7 @@ async function guardFileWrite(
 
 async function checkFileWrite(
   $: EngineInterface,
-  tool: 'Edit' | 'Write',
+  tool: FileTool,
   writtenPath: string,
   proceed: () => Promise<ToolCallResult>,
 ): Promise<ToolCallResult> {
@@ -2748,6 +2751,15 @@ export const register: Register = on => {
     return guardFileWrite($, 'Write', e.file_path, () => next(e))
   }).catch(($, e, next) => {
     reportGuardFailure($, 'Write', next.error)
+    return next(e)
+  })
+
+  // A notebook cell edit writes a file too, and an untested one is refused like an Edit (#195). Its path is notebook_path.
+  on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
+    await placeAgent($, e.agentId, e.notebook_path)
+    return guardFileWrite($, 'NotebookEdit', e.notebook_path, () => next(e))
+  }).catch(($, e, next) => {
+    reportGuardFailure($, 'NotebookEdit', next.error)
     return next(e)
   })
 

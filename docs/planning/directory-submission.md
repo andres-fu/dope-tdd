@@ -68,7 +68,7 @@ These are judged by a reviewer or the security scan, not by validation.
 | README says everything the plugin runs, sends or fetches (security scan) | Done: "What Dope TDD sends" and "What Dope TDD stores" |
 | Privacy policy link (3A) | Done: `privacyPolicyUrl` points at "What Dope TDD sends" |
 | Support channel (3B) | Done: `supportUrl` is the issue tracker |
-| Security contact (3B) | `SECURITY.md` done. **To do**: turn on private vulnerability reporting in the repo settings (it's off, and `SECURITY.md` points at it) |
+| Security contact (3B) | Done: `SECURITY.md`, and private vulnerability reporting is on (2026-10-28) |
 | Purpose, operation and troubleshooting documented (3C) | Done in README; check the troubleshooting part is easy to find |
 | At least three working example prompts or use cases (3E) | Done: "Try it in ten minutes" lists three prompts to ask Claude (fix a bug, pin and refactor, show the state) |
 | Interfering with Claude's calls to other tools only when the user intends it (2E) | Done: the README's top says refusing edits is the point, that it's installed per project, and how to ease off or turn it off |

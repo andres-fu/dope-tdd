@@ -54,11 +54,10 @@ Sources (read in full 2026-10-28):
 | `hooks/hooks.json` valid, using `modules` | Blocks | Done |
 | Skill front matter valid, `description` is text | Blocks | Done (CLI passes) |
 | Readable source, nothing minified | Held for a reviewer | Done (TypeScript source) |
-| Listing icon | Warning | **To do** |
+| Listing icon | Warning | Done: `.claude-plugin/icon.png`, 1024 px, rendered from `assets/skull.svg` |
 
-**Icon:** add a square PNG, 512 to 2048 px, under 2 MB, at `.claude-plugin/icon.png` (SVG is not
-accepted). The portal takes the icon only the first time the plugin is saved or submitted, so it
-has to be in place before the first **Validate**. A PNG of `assets/skull.svg` is the obvious choice.
+**Icon:** the portal takes the icon only the first time the plugin is saved or submitted, so it
+had to be in place before the first **Validate**. Changing it later doesn't change the listing.
 
 ## Policy and review
 
@@ -69,7 +68,7 @@ These are judged by a reviewer or the security scan, not by validation.
 | README says everything the plugin runs, sends or fetches (security scan) | Done: "What Dope TDD sends" and "What Dope TDD stores" |
 | Privacy policy link (3A) | Done: `privacyPolicyUrl` points at "What Dope TDD sends" |
 | Support channel (3B) | Done: `supportUrl` is the issue tracker |
-| Security contact (3B) | **To do**: add `SECURITY.md` (GitHub private vulnerability reporting is free) |
+| Security contact (3B) | `SECURITY.md` done. **To do**: turn on private vulnerability reporting in the repo settings (it's off, and `SECURITY.md` points at it) |
 | Purpose, operation and troubleshooting documented (3C) | Done in README; check the troubleshooting part is easy to find |
 | At least three working example prompts or use cases (3E) | **To do**: "Try it in ten minutes" is a walkthrough; add three short example prompts |
 | Interfering with Claude's calls to other tools only when the user intends it (2E) | Blocking Edit and Write is the product. **To do**: say plainly at the top of the README that it refuses edits by design, that the user turns it on per project, and how to turn it off |

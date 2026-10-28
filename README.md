@@ -634,6 +634,8 @@ Testers start at `docs/testers.md`. Report with the **Tester report** issue
 template; the one moment the plugin was wrong, silent or annoying is the most
 useful thing you can send.
 
+Security problems go privately, not in an issue: see `SECURITY.md`.
+
 ## License
 
 MIT. Copyright (c) 2026 Andres Fuentes. See `LICENSE`.

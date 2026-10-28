@@ -95,8 +95,15 @@ Not directory rules; Andres's own rules for public repos.
 
 - Done: local paths and the username removed from `DOGFOOD.md` and
   `docs/decisions/2026-10-08_name-dope-tdd.md`. Test fixtures use made-up paths and stay.
-- **To do:** test on a clean machine: add the marketplace, install, start a session, and confirm
-  the band, a refusal, a red and a PROVEN.
+- Done 2026-10-28 on Windows (Claude Code v2.1.306, main at 645c092): a clean install in a fresh
+  Claude Code profile (`CLAUDE_CONFIG_DIR` pointed at an empty folder) and a copy of `playground/`.
+  Following the README word for word, `marketplace add andres-fu/dope-tdd` and
+  `install --scope project` worked. The session loaded the plugin, and on "Fix Bug 1 from BUGS.md"
+  Claude wrote the test first, saw it fail, fixed it, and the catch check said PROVEN. An edit to
+  untested source was refused with the three ways forward. `/tdd` printed the state, and
+  `claude plugin disable ... --scope project` stopped the plugin loading. The band wasn't
+  checked (headless runs). Not covered: macOS and Linux. Note: `~/.dope-tdd/` follows the
+  home folder, not `CLAUDE_CONFIG_DIR`, so a test profile still writes to the real session log.
 - **Optional:** `claude plugin eval` with a small eval suite (the docs suggest it; the directory
   doesn't require it).
 - **To do:** release a version with the above, then submit.

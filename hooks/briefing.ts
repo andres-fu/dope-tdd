@@ -1,4 +1,4 @@
-import { describeLayout } from './config.ts'
+import { CONFIG_FILE, describeLayout } from './config.ts'
 import type { GuardConfig } from './config.ts'
 
 /**
@@ -28,6 +28,9 @@ export function briefingText(config: GuardConfig, runCommand: string | null, lay
         : 'It watches and records only; nothing is refused.'
   return [
     `Dope TDD is on in this project (mode: ${config.mode}). It stands in the path of Edit, Write and shell commands.`,
+    // #193: an invalid file falls back to the defaults (config.ts) and only /tdd said so. Said second, before the rules
+    // it changes, so the agent can tell the user why it is refused where the file meant it not to be.
+    ...(config.error === null ? [] : [`- ${configErrorNote(config.error)}`]),
     ...(leftRed === null ? [] : [`- ${leftRed}`]),
     `- ${gate} Tests pair with sources by this layout: ${describeLayout(config.layout)}.`,
     ...(layoutNote === null ? [] : [`- ${layoutNote}`]),
@@ -39,4 +42,11 @@ export function briefingText(config: GuardConfig, runCommand: string | null, lay
     '- Skips, removed assertions, commented-out code, a test re-saved unchanged, and a loosened dope-tdd.json are recorded as workarounds. If you take one, say why in your reply.',
     '- Its verdicts arrive in the tool results as lines starting `dope-tdd:`. The mcp__dope-tdd__status tool shows the whole state.',
   ].join('\n')
+}
+
+/** What the briefing says about a dope-tdd.json that was not read (#193). `error` starts with the file name (config.ts). */
+function configErrorNote(error: string): string {
+  const prefix = `${CONFIG_FILE}: `
+  const reason = error.startsWith(prefix) ? error.slice(prefix.length) : error
+  return `${CONFIG_FILE} was not read (${reason}), so the defaults apply: enforce and the default layout. Tell the user, so they can fix the file.`
 }

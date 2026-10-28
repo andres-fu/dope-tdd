@@ -156,7 +156,8 @@ a loop that slow is where you and the agent drift. Line 2 is the next step.
 A third line appears only when you must act, such as an override waiting for you, with APPROVE and DENY. While
 the guard enforces it says nothing about itself; when it does not, one word
 says so: PAUSED, STANDING DOWN, WARN ONLY, OBSERVING, NOT WATCHING or CAN'T
-READ RUNS. GUARD FAILING outranks all of them: an internal error let a call
+READ RUNS, or CONFIG INVALID when `dope-tdd.json` could not be read and the
+defaults apply. GUARD FAILING outranks all of them: an internal error let a call
 through unguarded, and the band says how many (it fails open, on the record). Before anything happens it says what it will do. Counts live in
 `/tdd`, which prints the full status and event log; `/tdd why` explains every
 word; `/tdd reset yes` starts the counts over, on the record. Claude reads

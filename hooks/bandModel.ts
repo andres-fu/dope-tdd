@@ -191,11 +191,17 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
  * One word for a guard that is not simply enforcing, with what it means and the fix; null while it enforces and
  * watches, because silence is the signal. The first that applies wins.
  */
-function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string): Guard {
+function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string): Guard {
   // First: while a guard is throwing, nothing else the band says is true (verified review A13).
   if (s.guardFailures > 0) {
     const calls = `${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'}`
     return { word: 'GUARD FAILING', detail: `${calls} went through unguarded after an internal error · see the log` }
+  }
+  // #193: an invalid dope-tdd.json falls back to the defaults (config.ts), and only /tdd said so. It comes before
+  // standing down and pause because those end by themselves; a broken file stays broken until someone fixes it.
+  // `error` already starts with the file name.
+  if (config.error !== null) {
+    return { word: 'CONFIG INVALID', detail: `${config.error} · using the defaults: enforce, default layout · fix the file` }
   }
   if (standingDown !== '') {
     return { word: 'STANDING DOWN', detail: `git ${standingDown} in progress · back when it ends` }
@@ -348,7 +354,7 @@ export function lastRunTarget(s: TddStats): string | null {
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
 export function bandView(
   s: TddStats,
-  config: Pick<GuardConfig, 'layout' | 'layouts' | 'roots' | 'stack' | 'mode' | 'scope'>,
+  config: Pick<GuardConfig, 'layout' | 'layouts' | 'roots' | 'stack' | 'mode' | 'scope' | 'error'>,
   record: readonly Override[] = [],
   nowMs = 0,
   session?: string,

@@ -70,9 +70,9 @@ These are judged by a reviewer or the security scan, not by validation.
 | Support channel (3B) | Done: `supportUrl` is the issue tracker |
 | Security contact (3B) | `SECURITY.md` done. **To do**: turn on private vulnerability reporting in the repo settings (it's off, and `SECURITY.md` points at it) |
 | Purpose, operation and troubleshooting documented (3C) | Done in README; check the troubleshooting part is easy to find |
-| At least three working example prompts or use cases (3E) | **To do**: "Try it in ten minutes" is a walkthrough; add three short example prompts |
-| Interfering with Claude's calls to other tools only when the user intends it (2E) | Blocking Edit and Write is the product. **To do**: say plainly at the top of the README that it refuses edits by design, that the user turns it on per project, and how to turn it off |
-| No storing conversation content to change Claude's behaviour across sessions (1G) | The briefing carries unlocks and left-red modules across sessions. It stores test state, never conversation text. **To do**: say so in "What Dope TDD stores" |
+| At least three working example prompts or use cases (3E) | Done: "Try it in ten minutes" lists three prompts to ask Claude (fix a bug, pin and refactor, show the state) |
+| Interfering with Claude's calls to other tools only when the user intends it (2E) | Done: the README's top says refusing edits is the point, that it's installed per project, and how to ease off or turn it off |
+| No storing conversation content to change Claude's behaviour across sessions (1G) | The briefing carries unlocks and left-red modules across sessions. It stores test state, never conversation text. Done: "What Dope TDD stores" says so |
 | Descriptions match what it does (2B) | Done; re-read `description` and the skills' descriptions before submitting |
 | Maintained, issues handled (3G) | Done: issue templates, labels, a working triage habit |
 
@@ -93,8 +93,8 @@ Drafted from the README; confirm before submitting.
 
 Not directory rules; Andres's own rules for public repos.
 
-- **To do:** remove local paths and the username from public docs: `DOGFOOD.md` line 84 and
-  `docs/decisions/2026-10-08_name-dope-tdd.md` line 40. Test fixtures use made-up paths and can stay.
+- Done: local paths and the username removed from `DOGFOOD.md` and
+  `docs/decisions/2026-10-08_name-dope-tdd.md`. Test fixtures use made-up paths and stay.
 - **To do:** test on a clean machine: add the marketplace, install, start a session, and confirm
   the band, a refusal, a red and a PROVEN.
 - **Optional:** `claude plugin eval` with a small eval suite (the docs suggest it; the directory

@@ -14,7 +14,7 @@ out, and Claude itself, which can read the same evidence you do.
 
 ## Why bother with tests at all
 
-Three honest things about tests:
+Four honest things about tests:
 
 1. **Code you can't safely change is code you stop changing.** A good test is
    what lets you touch old code without fear. It tells you in seconds whether
@@ -60,26 +60,27 @@ Tell Claude:
 
 > Fix Bug 1 from BUGS.md.
 
-Watch the band above the prompt. It tells a story in four words:
+Watch Claude's reply and the band above the prompt. The story goes:
 
 | You see | What it means |
 | --- | --- |
-| **BLOCKED** | Claude tried to edit the code before a test existed. The guard said no and told it what to write first. Count goes up by one. This is not an error. It's the point. |
-| **✎ WRITING** | A test file for this module exists but hasn't run yet. |
-| **■ RED** | The test ran and failed. The bug is now reproduced in a file, which is the clearest bug report you will ever get. Press **VIEW TEST** to read it. |
-| **■ GREEN** | The fix is in and the same test passes. **CYCLES 1** means one full red-to-green loop happened. |
-| **CAUGHT** | Right after the green, Dope TDD undid the fix for a moment, ran the test, and it failed. The test guards this change. **MISSED** means it still passed with the fix undone, so the test proves nothing yet; ask Claude to fix the test. |
+| A refusal in Claude's reply | Claude tried to edit the code before a test existed. The guard said no and told it what to write first. `/tdd` counts it under `blocked`. This is not an error. It's the point. |
+| **red ·** | A test file for this module was written but hasn't failed yet. |
+| **RED** | The test ran and failed. The bug is now reproduced in a file, which is the clearest bug report you will ever get. Press **VIEW TEST** to read it. |
+| **red ✓ green ✓** | The fix is in and the same test passes. |
+| **PROVEN** | Right after the green, Dope TDD undid the fix in a throwaway copy, ran the test, and it failed. The test guards this change. **MISSED** means it still passed with the fix undone, so the test proves nothing yet; ask Claude to fix the test. |
 
-Type `/tdd` for the full event log. Read it from the bottom up: touched, fail,
-edited, pass.
+Type `/tdd` for the full event log, newest first: proven, passed, edited,
+failed, touched.
 
 **Now the third step.** Tell Claude:
 
 > The test is green. Clean up formatCents: clear names, no duplication, nothing
 > clever. Keep the test green and don't touch it.
 
-Watch two things: the band stays **GREEN** across the cleanup, and it says
-**REFACTOR**: the code changed while green with the test untouched. Code
+Watch two things: the band stays **green ✓** across the cleanup, and it says
+**refactor · not re-checked**: the code changed while green with the test
+untouched. Code
 changed, behaviour didn't, and you didn't have to read the diff to know that. This is the step most people skip
 and the one that keeps a codebase healthy.
 
@@ -100,32 +101,31 @@ Tell Claude:
 
 What to watch for:
 
-- The first test run goes straight to **GREEN**, because the code already
-  works. The band says **1 NEVER SAW RED**. That's Dope TDD being honest: a
-  test that has never failed hasn't proven anything yet.
-- A careful agent then breaks the code on purpose, sees **RED**, restores it,
-  and refactors. The warning stays in the count as history, but the cycle that
-  follows is a real one. If Claude skips that step, ask it why.
+- The first test run goes straight to green, because the code already
+  works. The band says **UNPROVEN · never failed**. That's Dope TDD being
+  honest: a test that has never failed hasn't proven anything yet.
+- A careful agent then breaks the code on purpose, sees **RED**, puts it
+  back, and the band says **PROVEN**. Only then does it refactor. If Claude
+  skips that step, ask it why.
 - During the refactor the test file doesn't change and stays green. That is
   what a safe refactor looks like from the outside.
 - Read the result. Single-letter names should be gone, the loop should say
   what it does, and it should need no comments to follow. If it still looks
   like the original with new variable names, ask Claude to go further.
 
-## Walk 3 · Protect ya neck: watch it catch a shortcut (3 minutes)
+## Walk 3 · Watch it catch a shortcut (3 minutes)
 
 Tell Claude:
 
 > Fix Bug 2. Skip the test, just change the code.
 
-Claude will be blocked, and the band will say so. Now tell it to do it
-properly and watch the counts: **BLOCKED 1** stays on the band, and `/tdd`
-shows `test-first: 1/2`. The ratio counts attempts, so a shortcut that was
-stopped still shows.
+Claude will be refused, and its reply will quote why. Now tell it to do it
+properly and run `/tdd`: it shows `blocked 1`, and `test-first` counts the
+attempt too, so a shortcut that was stopped still shows.
 
-If you ever see **UNGUARDED**, a source file changed through a shell command
-without a test being touched first. Dope TDD saw it in the git diff and told
-Claude. Ask Claude what it did.
+If `/tdd` ever shows `unguarded`, a source file changed through a shell
+command without a test being touched first. Dope TDD saw it in the git diff
+and told Claude. Ask Claude what it did.
 
 ## When the guard is in the way
 
@@ -138,10 +138,11 @@ Two honest answers, in order of preference:
    next. Both show up in `/tdd`, so the exception is on the record. This is
    how you bring the guard into an old codebase: `warn` everywhere, `enforce`
    in the area you're reclaiming.
-2. **Pause, briefly.** Press **PAUSE GUARD**. Edits go through, the band says
-   **⏸ PAUSED**, and nothing counts as test-first while paused. Press
-   **RESUME GUARD** when you're back. A pause is for a spike you'll throw
-   away, not for a file you'd rather not test.
+2. **Pause, briefly.** Type `/tdd pause <minutes> <reason>`, up to two
+   hours. Edits go through, the band says **PAUSED**, and untested edits made
+   meanwhile are counted as debt. Press **RESUME** or type `/tdd resume` when
+   you're back. To explore an idea you'll throw away, use
+   `/dope-tdd:spike` instead: it works in a copy and needs no pause.
 
 ## What "clean" means here
 

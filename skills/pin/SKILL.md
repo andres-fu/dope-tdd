@@ -19,7 +19,7 @@ Use this when the code you are about to change has no test that guards it. The g
 
 Run only that test file, with the command the briefing gives. It should pass. Dope TDD will say **UNPROVEN · never failed**: correct, because a test that has never failed has proven nothing yet.
 
-If a pin is red on its first run, the source has not changed, so the pin guessed today's behaviour wrongly. Fix the assertion to what the code does, and say in your reply which pin was wrong and why. Dope TDD records it as **UNPROVEN · the test changed** after red: that is expected here, and it stays on the record because the same steps would also hide a test rewritten to match a bug. Then prove the corrected pin in step 3 as usual.
+If a pin is red on its first run, the source has not changed, so the pin guessed today's behaviour wrongly. Fix the assertion to what the code does, and say in your reply which pin was wrong and why. Dope TDD records it as **UNPROVEN · pin corrected: prove it with a break**: that is expected here, and it stays on the record because the same steps would also hide a test rewritten to match a bug. Then prove the corrected pin in step 3 as usual.
 
 ## 3. Prove the pins can fail
 

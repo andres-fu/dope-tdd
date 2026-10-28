@@ -71,6 +71,29 @@ describe('an agent worktree is guarded like the main checkout', () => {
   })
 })
 
+// #195: NotebookEdit writes files too (its path field is notebook_path), and went through unseen.
+describe('the NotebookEdit tool is guarded like Edit', () => {
+  const notebookEdit = ($: Parameters<typeof editAt>[0], relative: string) =>
+    $.tool.call({ tool: 'NotebookEdit', notebook_path: `${ROOT}/${relative}`, new_source: 'x' } as never)
+
+  test('a NotebookEdit to untested source is refused, naming its test', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await notebookEdit($, 'src/utils/calculateDuration.ts')
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a NotebookEdit is allowed once the test is touched', async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+    const result = await notebookEdit($, 'src/utils/calculateDuration.ts')
+
+    expect(result.deny).toBeUndefined()
+  })
+})
+
 describe('bash bypass', () => {
   test('a script that edits a test file and only quotes a source path in a string is not refused', async ($, on) => {
     fakeEngine(on)

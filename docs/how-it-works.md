@@ -4,9 +4,10 @@ What Dope TDD does at each step, how it decides, what the band says, and how the
 
 ## What it enforces
 
-It stands in the path of four tools: Edit, Write, Bash and PowerShell. Other
-tools that write files (NotebookEdit, another plugin's or an MCP server's file
-tools) are not guarded yet ([#195](https://github.com/andres-fu/dope-tdd/issues/195)).
+It stands in the path of five tools: Edit, Write, NotebookEdit, Bash and
+PowerShell. NotebookEdit is guarded like Edit, by the file it names
+([#195](https://github.com/andres-fu/dope-tdd/issues/195)). Other tools that
+write files, another plugin's or an MCP server's file tools, are not guarded.
 At each moment it decides before the action runs:
 
 | Claude is about to... | Dope TDD... | Word |
@@ -69,10 +70,10 @@ refused, and a shell change to it is put back and counted as a workaround.
 
 ## How it decides
 
-- `src/**/X.ts(x)` can't be edited (Edit, Write, or a shell write) until
-  `tests/**/X.test.ts(x)` was created or edited in this session, or run and
-  seen failing. The refusal names the test with the extension of the file
-  being edited (`a.js` → `a.test.js`), then lists numbered ways to unblock:
+- `src/**/X.ts(x)` can't be edited (Edit, Write, NotebookEdit, or a shell
+  write) until `tests/**/X.test.ts(x)` was created or edited in this session,
+  or run and seen failing. The refusal names the test with the extension of
+  the file being edited (`a.js` → `a.test.js`), then lists numbered ways to unblock:
   (1) make that test fail, with the exact command that runs it; (2) pin
   untested code with `/dope-tdd:pin`; (3) ask for an override. The override
   is offered on the module's first refusal only, so it reads as the last

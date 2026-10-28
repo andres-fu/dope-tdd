@@ -50,11 +50,11 @@ Sources (read in full 2026-10-28):
 | Only text, images and fonts; no `.ico`, `.pdf`, `.zip` or executables | Held for a reviewer | Done (one SVG) |
 | No `package.json` beside a lockfile at the root | Held for a reviewer | Done (root `package.json` has no dependencies and no lockfile; `playground/` has one, below the root) |
 | No package launchers (`npx`, `uvx` and so on) in hooks | Blocks if unpinned | Done |
-| No credentials in any file, no reading `$GITHUB_TOKEN` and the like | Blocks or held | Done |
+| No credentials in any file, and no reading credentials from the environment | Blocks or held | Done |
 | `hooks/hooks.json` valid, using `modules` | Blocks | Done |
 | Skill front matter valid, `description` is text | Blocks | Done (CLI passes) |
 | Readable source, nothing minified | Held for a reviewer | Done (TypeScript source) |
-| Listing icon | Warning | Done: `.claude-plugin/icon.png`, 1024 px, rendered from `assets/skull.svg` |
+| Listing icon | Warning | Done: a 1024 px PNG in the plugin manifest folder, rendered from the skull SVG in assets |
 
 **Icon:** the portal takes the icon only the first time the plugin is saved or submitted, so it
 had to be in place before the first **Validate**. Changing it later doesn't change the listing.

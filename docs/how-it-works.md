@@ -118,7 +118,7 @@ refused, and a shell change to it is put back and counted as a workaround.
   Git bringing code in from elsewhere (`git checkout main -- <file>`, `git
   pull`, `git merge`, `git stash pop`, `git cherry-pick`) is not counted as
   Claude's edit either, but `/tdd` records it as **brought in by git, not
-  guarded**, with the git verb only (the arguments can hold a token).
+  guarded**, with the git verb only (the arguments can hold a password).
   Commands that only read beside it (`cat`, `sha256sum`, `git status`) do not
   change that.
 - The project must be a git repository; without one the shell backstop

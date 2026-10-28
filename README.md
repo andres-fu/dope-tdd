@@ -141,18 +141,45 @@ setting shows in `/tdd`.
 - `catchCheck`, `pause`, `overrides`: see [docs/settings.md](docs/settings.md).
 - `layout`, `layouts`, `roots`, `stack`: see [docs/setup.md](docs/setup.md).
 
-## Privacy and safety
+## What it runs, writes, sends and hooks
 
-- It runs your test runner and `git` as you, outside Claude Code's sandbox and
-  permission rules, like every plugin's hooks.
-- It sends nothing over the network, unless you turn on the experimental
-  model approver for overrides.
-- It keeps test state and session logs on your machine under `~/.dope-tdd/`,
-  never the conversation. The only typed text it keeps is a spike's question
-  and override reasons (those in `dope-tdd.overrides.json`, in your repo).
-  Delete `~/.dope-tdd/` any time; `DOPE_TDD_LOG=off` keeps no logs.
+It is a mod: its code runs inside Claude Code, as you, outside Claude Code's
+sandbox and permission rules, like every plugin's hooks.
 
-Exactly what it runs, sends and stores: [docs/security-and-data.md](docs/security-and-data.md).
+- **Programs it starts:** your project's test runner on one test file (Vitest,
+  Jest, ava, `node --test`; on the experimental stacks pytest, unittest, Maven,
+  Gradle, `dotnet test`, gdUnit4, or `claude plugin test` for a plugin project),
+  `git` (to read changes and make its throwaway check copy inside `.git`), and
+  small `node -e` helpers that link and remove that copy and clean up old logs.
+  The command it runs comes from your project: the runner it finds and the test
+  file being checked.
+- **Files it writes:** `dope-tdd.json` (only on `/tdd setup write`) and
+  `dope-tdd.overrides.json` in your repo; its check copy under `.git/dope-tdd/`;
+  session logs, spike copies and kept changes under `~/.dope-tdd/`; and its
+  state in Claude Code's plugin store. On the experimental stacks with
+  `"catchCheck": true`, it puts the old code into the file being checked for one
+  test run, then puts your change back. It writes no build or start-up file,
+  and no settings file other than its own `dope-tdd.json`.
+- **What it sends:** nothing over the network. The one exception is opt-in and
+  experimental: with `"overrides": { "approver": "model" }`, an agent's override
+  request and part of the module's diff go to the model through the session's
+  own client. Your test runner can reach the network on its own (a package
+  restore, say); that is the runner, not Dope TDD.
+- **What it reads:** the files it checks, git's view of your changes, and your
+  test runner's output. It doesn't keep the conversation: the only typed text it
+  keeps is a spike's question and override reasons.
+- **What it hooks:** Edit, Write, NotebookEdit, Bash and PowerShell calls, to
+  refuse an untested edit before it runs (it never rewrites a call); Read, Glob
+  and Grep calls, only to note which worktree a subagent works in; the system
+  prompt, to add a short briefing on its rules; the start and end of each
+  session, to load its state and put back a check cut off mid-way; the start of
+  a session after
+  `/clear`, `/resume` or a fork, to load its state again (it changes nothing
+  there); the `/dope-tdd:pin` and `/dope-tdd:spike` skills, to record that they
+  ran; and its own `/tdd` command. It draws the band above the prompt.
+
+Delete `~/.dope-tdd/` any time; `DOPE_TDD_LOG=off` keeps no logs. Every detail:
+[docs/security-and-data.md](docs/security-and-data.md).
 
 ## On every pull request
 

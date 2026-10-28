@@ -244,6 +244,10 @@ declare module 'claude-code' {
       tick: number
       'bash-cwd': string
       'powershell-cwd': string
+      /** Each subagent's worktree root, by agentId (#198). */
+      'agent-roots': Readonly<Record<string, string>>
+      /** Each subagent's shell folder, by `<agentId>:<shell>` (#198). */
+      'agent-cwds': Readonly<Record<string, string>>
       'git-operation': string
       'unread-runners': readonly string[]
       /** Which dope-tdd is running (build.ts), read once at session start. */

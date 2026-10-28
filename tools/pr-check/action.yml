@@ -15,14 +15,22 @@ inputs:
 runs:
   using: composite
   steps:
+    # Inputs reach the scripts as environment variables, never written into them: `${{ … }}` inside run:
+    # is pasted in before bash reads it, so a crafted value would run as shell (#191).
     - name: Fetch the base branch
       shell: bash
-      run: git fetch --no-tags --depth=200 origin "${{ inputs.base }}"
+      env:
+        BASE: ${{ inputs.base }}
+      run: git fetch --no-tags --depth=200 origin "$BASE"
     - name: Do the tests catch this change?
       shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        TIMEOUT_MS: ${{ inputs.timeout-ms }}
       run: >
         npx -y tsx@4.19.2 "$GITHUB_ACTION_PATH/check.ts"
         --repo "$GITHUB_WORKSPACE"
-        --base "origin/${{ inputs.base }}"
-        --fail-on "${{ inputs.fail-on }}"
-        --timeout-ms "${{ inputs.timeout-ms }}"
+        --base "origin/$BASE"
+        --fail-on "$FAIL_ON"
+        --timeout-ms "$TIMEOUT_MS"

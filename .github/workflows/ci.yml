@@ -57,6 +57,8 @@ jobs:
         run: node --test tools/check/check.test.mjs
       - name: Check the pull-request check end to end, on a throwaway repository
         run: node --test tools/pr-check/flow.spec-node.ts
+      - name: Check the pull-request check action passes its inputs safely
+        run: node --test tools/pr-check/action.spec-node.ts
       - name: Check the move check's reading of git
         run: node --test tools/move-check/check.spec-node.ts
       - name: Check the move check

@@ -196,8 +196,10 @@ describe('band v3: one guard word, only when the guard is not simply enforcing',
     const error = 'dope-tdd.json: mode must be one of enforce, warn, observe'
     expect(guard(on({}), { error })).toEqual({
       word: 'CONFIG INVALID',
-      detail: 'dope-tdd.json: mode must be one of enforce, warn, observe · using the defaults: enforce, default layout · fix the file',
+      detail: 'dope-tdd.json: mode must be one of enforce, warn, observe · using the defaults: enforce, node, default layout · fix the file',
     })
+    // #223 (tester round 6): the stack falls back too, and the band never said which one was in force.
+    expect(guard(on({}), { error, stack: 'python' })?.detail).toMatch(/using the defaults: enforce, python, default layout/)
     expect(guard(on({ paused: true }), { error }, { standingDown: 'merge' })?.word).toBe('CONFIG INVALID')
     expect(guard(on({ guardFailures: 1 }), { error })?.word).toBe('GUARD FAILING')
     expect(bandView(INITIAL_STATS, { ...CONFIG, error }).idle).toBe(false)

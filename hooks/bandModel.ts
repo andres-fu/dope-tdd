@@ -193,7 +193,7 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
  * One word for a guard that is not simply enforcing, with what it means and the fix; null while it enforces and
  * watches, because silence is the signal. The first that applies wins.
  */
-function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string, matchesNothing: boolean): Guard {
+function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error' | 'stack'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string, matchesNothing: boolean): Guard {
   // First: while a guard is throwing, nothing else the band says is true (verified review A13).
   if (s.guardFailures > 0) {
     const calls = `${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'}`
@@ -204,7 +204,8 @@ function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch
   // `error` already starts with the file name.
   if (config.error !== null) {
     // #214: when the default layout pairs none of the code, "using the defaults: enforce" read as still guarding.
-    const fallback = matchesNothing ? "ignored, and the default layout matches none of this project's code, so nothing is guarded" : 'using the defaults: enforce, default layout'
+    const fallback = matchesNothing ? "ignored, and the default layout matches none of this project's code, so nothing is guarded" : `using the defaults: ${config.mode}, ${config.stack}, default layout`
+    // #223: the stack falls back too, so the band names the one in force (the file may still say another).
     return { word: 'CONFIG INVALID', detail: `${config.error} · ${fallback} · fix the file` }
   }
   if (standingDown !== '') {

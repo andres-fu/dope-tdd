@@ -133,6 +133,10 @@ refused, and a shell change to it is put back and counted as a workaround.
   else's shell. A shell command it runs before naming any such path is read
   from the main folder. Every agent in the session still shares one module and
   one set of unlocks ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
+- A subagent gets the session briefing too: Claude Code adds it only to the main
+  session's system prompt, so Dope TDD appends it to the task the subagent is
+  spawned with. A fork already carries it, and a workflow's agents can't be
+  given it.
 - While a git rebase, merge, cherry-pick, revert, `am` or bisect is in
   progress, the guard stands down: the code that operation puts on disk was
   written before, so nothing is refused, counted or checked until it ends.

@@ -36,7 +36,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   pinning: 'pin skill in use',
   'git-in': 'brought in by git, not guarded',
   'comment-touch': 'touched, comments only',
-  spike: 'spiked',
+  spike: 'spike started',
 }
 
 // Pin corrected (2026-10-18): a fixed pin is not a workaround, so it is said on its own line, never under workarounds.
@@ -45,9 +45,10 @@ function pinsLine(s: TddStats): string[] {
 }
 
 // Idea 19: a spike keeps none of its code, so it is not a workaround; said on its own line, with the last question.
+// #213: it is recorded when the skill starts, and nothing tracks the copy or a rebuild, so the line claims only a start.
 function spikesLine(s: TddStats): string[] {
   const last = s.spikes.at(-1)
-  return last === undefined ? [] : [`spikes: ${s.spikes.length} (last: ${last.question}), explored outside the project, then rebuilt test-first`]
+  return last === undefined ? [] : [`spikes started: ${s.spikes.length} (last: ${last.question}), each in a throwaway copy outside the project`]
 }
 
 function cycleLine(s: TddStats): string {

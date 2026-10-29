@@ -45,6 +45,23 @@ Not sure? `/tdd setup` reads the repo and shows the stack and layout it finds,
 the command a test runs with (`test command: python -m pytest <test file>`),
 and the JSON to use; `/tdd setup write` saves it.
 
+## Subagents in their own worktree
+
+A subagent started with `isolation: "worktree"` works in a fresh git worktree
+under `.claude/worktrees/`, and Dope TDD reads that worktree's own
+`dope-tdd.json` and tests. The worktree holds only what is committed, and when
+the repository has a remote, Claude Code can create it from the default remote
+branch (`origin/HEAD`) rather than the branch you are on.
+
+So commit `dope-tdd.json` and your tests to the branch worktrees are created
+from, usually `main`. If they are untracked, or committed only on a local
+branch, the subagent's worktree has neither: the default layout applies there,
+and if it matches none of the code, the subagent's edits go through unguarded
+and nothing says so.
+
+To check, have a subagent read a source file and try an untested edit to it. It
+should be refused, naming the test.
+
 ## Languages
 
 Node is supported. The other stacks are **experimental**: the guard, the

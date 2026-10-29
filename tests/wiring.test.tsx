@@ -71,6 +71,36 @@ describe('an agent worktree is guarded like the main checkout', () => {
   })
 })
 
+// #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
+// session. A subagent refused after the main session never saw option (3), though it holds the tool.
+describe('each agent is offered the override on its own first refusal', () => {
+  const edit = { tool: 'Edit', file_path: SOURCE, old_string: 'a', new_string: 'b' }
+
+  test('an Edit refused to a subagent after the main session still names the override', async ($, on) => {
+    fakeEngine(on)
+
+    const main = await $.tool.call(edit as never)
+    const mainAgain = await $.tool.call(edit as never)
+    const sub = await $.tool.call({ ...edit, agentId: 'a1' } as never)
+    const subAgain = await $.tool.call({ ...edit, agentId: 'a1' } as never)
+
+    expect(main.deny).toMatch(/override_request/)
+    expect(mainAgain.deny).not.toMatch(/override_request/)
+    expect(sub.deny).toMatch(/override_request/)
+    expect(subAgain.deny).not.toMatch(/override_request/)
+  })
+
+  test('a shell write refused to a subagent after the main session still names the override', async ($, on) => {
+    fakeEngine(on)
+    const write = { tool: 'Bash', command: `sed -i 's/a/b/' ${SOURCE}` }
+
+    await $.tool.call(write as never)
+    const sub = await $.tool.call({ ...write, agentId: 'a1' } as never)
+
+    expect(sub.deny).toMatch(/override_request/)
+  })
+})
+
 // #195: NotebookEdit writes files too (its path field is notebook_path), and went through unseen.
 describe('the NotebookEdit tool is guarded like Edit', () => {
   const notebookEdit = ($: Parameters<typeof editAt>[0], relative: string) =>

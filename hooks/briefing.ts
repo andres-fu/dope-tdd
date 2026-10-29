@@ -27,7 +27,8 @@ export function briefingText(config: GuardConfig, runCommand: string | null, lay
         ? 'An edit to a source file whose test was not touched first goes through with a warning, and is counted.'
         : 'It watches and records only; nothing is refused.'
   return [
-    `Dope TDD is on in this project (mode: ${config.mode}). It stands in the path of Edit, Write and shell commands.`,
+    // #214: under an invalid file the mode is the default, not the user's setting; the header says so.
+    `Dope TDD is on in this project (mode: ${config.mode}${config.error === null ? '' : `, the default; ${CONFIG_FILE} was not read`}). It stands in the path of Edit, Write and shell commands.`,
     // #193: an invalid file falls back to the defaults (config.ts) and only /tdd said so. Said second, before the rules
     // it changes, so the agent can tell the user why it is refused where the file meant it not to be.
     ...(config.error === null ? [] : [`- ${configErrorNote(config.error)}`]),

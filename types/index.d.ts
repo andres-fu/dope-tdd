@@ -108,6 +108,8 @@ export type TddEvent = {
   kind: EventKind
   module?: string
   detail?: string
+  /** The subagent that caused it; absent for the main session (#212). */
+  agent?: string
 }
 
 export type TddStats = {

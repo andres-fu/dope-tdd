@@ -158,7 +158,11 @@ A third line appears only when you must act, such as an override waiting for you
 the guard enforces it says nothing about itself; when it does not, one word
 says so: PAUSED, STANDING DOWN, WARN ONLY, OBSERVING, NOT WATCHING or CAN'T
 READ RUNS, or CONFIG INVALID when `dope-tdd.json` could not be read and the
-defaults apply. GUARD FAILING outranks all of them: an internal error let a call
+defaults apply (and, when the default layout matches none of the code, that
+nothing is guarded). After a refused edit, the band says so
+(`refused: stats · write its test first · a subagent · 2min ago`) until that
+module's test is touched or run, so a subagent's refusal is seen too.
+GUARD FAILING outranks all of them: an internal error let a call
 through unguarded, and the band says how many (it fails open, on the record). Before anything happens it says what it will do. Counts live in
 `/tdd`, which prints the full status and event log; `/tdd why` explains every
 word; `/tdd reset yes` starts the counts over, on the record. Claude reads

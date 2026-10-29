@@ -241,6 +241,13 @@ describe('edits', () => {
   test('blocked attempts are counted', () => {
     expect(recordBlocked(INITIAL_STATS, 'App', T0).blocked).toBe(1)
   })
+
+  // #212: the refusal says which agent it was, so the override is offered once per agent, and it survives a reload.
+  test('a subagent\'s refusal carries its agent id through a save and load', () => {
+    const s = normalizeStats(JSON.parse(JSON.stringify(recordBlocked(INITIAL_STATS, 'App', T0, 'agent-1'))))
+    expect(s.events.at(-1)).toEqual({ atMs: T0, kind: 'blocked', module: 'App', agent: 'agent-1' })
+    expect(recordBlocked(INITIAL_STATS, 'App', T0).events.at(-1)).toEqual({ atMs: T0, kind: 'blocked', module: 'App' })
+  })
 })
 
 describe('normalizeStats', () => {

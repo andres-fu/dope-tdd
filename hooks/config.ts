@@ -378,6 +378,13 @@ function pauseWords(minutes: number): string {
 }
 
 export function describeConfigChange(before: GuardConfig, after: GuardConfig): string | null {
+  // #214: an invalid file is ignored whole, so field diffs (`stack python → node`) read as if the edit changed them.
+  // Say once that it is ignored, and what is in force instead.
+  if (after.error !== null) {
+    return before.error === after.error
+      ? null
+      : escapeControls(`now invalid: ${after.error}; the whole file is ignored, so the defaults apply: mode ${after.mode}, stack ${after.stack}, layout ${after.layout.name}`)
+  }
   const parts = [
     ...(before.mode === after.mode ? [] : [`mode ${before.mode} → ${after.mode}`]),
     ...((before.catchCheck !== false) === (after.catchCheck !== false) ? [] : [`catch check ${before.catchCheck === false ? 'off → on' : 'on → off'}`]),

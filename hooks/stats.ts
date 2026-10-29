@@ -592,7 +592,8 @@ export function recordStaleUnlocks(
   nowMs: number,
 ): TddStats {
   return Object.entries(entries)
-    .filter(([module]) => !unlockedThisSession(s, module))
+    // #182: every re-seed (a reload, /clear, /resume, a fork) finds the same entries; one already on record is not news.
+    .filter(([module, entry]) => !unlockedThisSession(s, module) && s.stale[module] !== entry.atMs)
     .reduce((acc, [module, entry]) => logged({ ...acc, stale: { ...acc.stale, [module]: entry.atMs } }, 'stale-unlock', nowMs, module), s)
 }
 

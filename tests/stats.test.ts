@@ -469,6 +469,19 @@ describe('unlocks remembered from earlier sessions', () => {
     expect(recordTestTouch(stale, { module: 'utils/a', testPath: 'tests/utils/a.test.ts' }, 60).stale['utils/a']).toBeUndefined()
   })
 
+  // #182: every re-seed (a reload, /clear, /resume, a fork) found the same stale entries and logged them again, so
+  // repeats pushed the events that matter out of /tdd's ten. Logged once; an entry stored at another time is new.
+  test('a re-seed that finds the same stale entry logs nothing more', () => {
+    const entries = { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 5 }, 'utils/b': { testPath: 'tests/utils/b.test.ts', atMs: 6 } }
+    const once = recordStaleUnlocks(INITIAL_STATS, entries, 50)
+    const twice = recordStaleUnlocks(once, entries, 600_050)
+
+    expect(twice.events.filter(event => event.kind === 'stale-unlock')).toHaveLength(2)
+    const restored = recordStaleUnlocks(twice, { 'utils/a': { testPath: 'tests/utils/a.test.ts', atMs: 9 } }, 600_060)
+    expect(restored.events.filter(event => event.kind === 'stale-unlock')).toHaveLength(3)
+    expect(restored.stale['utils/a']).toBe(9)
+  })
+
   test('the stale list survives a reload of the stored stats, and a bad value does not', () => {
     expect(normalizeStats({ stale: { 'utils/a': 5 } }).stale).toEqual({ 'utils/a': 5 })
     expect(normalizeStats({ stale: 'nope' }).stale).toEqual({})

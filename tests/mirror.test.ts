@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { LAYOUTS } from '../hooks/layout'
-import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
+import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
@@ -181,5 +181,32 @@ describe('worktreeRootFor: a file in an agent worktree is judged against that wo
 
   test('Linux keeps case: a differently spelled folder is not the root', () => {
     expect(worktreeRootFor('/work/app', '/work/App/.claude/worktrees/x/src/a.ts')).toBe('/work/app')
+  })
+})
+
+// #198: an unlock counts only in the checkout its test was touched in. A test in an agent worktree must not unlock
+// the main checkout's module, nor the other way round.
+describe('sameCheckout: whether two files sit in the same checkout of the session', () => {
+  test('two files in the main checkout, or in the same agent worktree, are in the same checkout', () => {
+    expect(sameCheckout(ROOT, `${ROOT}/src/a.ts`, `${ROOT}/tests/a.test.ts`)).toBe(true)
+    expect(sameCheckout(ROOT, `${ROOT}/.claude/worktrees/agent-x/src/a.ts`, `${ROOT}/.claude/worktrees/agent-x/tests/a.test.ts`)).toBe(true)
+  })
+
+  test('the main checkout and an agent worktree, or two worktrees, are not', () => {
+    expect(sameCheckout(ROOT, `${ROOT}/src/a.ts`, `${ROOT}/.claude/worktrees/agent-x/tests/a.test.ts`)).toBe(false)
+    expect(sameCheckout(ROOT, `${ROOT}/.claude/worktrees/agent-x/src/a.ts`, `${ROOT}/tests/a.test.ts`)).toBe(false)
+    expect(sameCheckout(ROOT, `${ROOT}/.claude/worktrees/agent-x/src/a.ts`, `${ROOT}/.claude/worktrees/agent-y/tests/a.test.ts`)).toBe(false)
+  })
+
+  test('spelling does not matter: slashes and the case of a Windows path', () => {
+    expect(sameCheckout('C:/work/app', 'c:\\WORK\\app\\src\\a.ts', 'C:/work/app/tests/a.test.ts')).toBe(true)
+    expect(sameCheckout('C:/work/app', 'c:\\work\\app\\.claude\\worktrees\\agent-x\\src\\a.ts', 'C:/work/app/tests/a.test.ts')).toBe(false)
+  })
+
+  // A test path from a runner's output may be relative. Read as the main checkout, a session with no worktrees is
+  // judged exactly as before; only a path that names a worktree is told apart.
+  test('a path in no worktree, relative or elsewhere, counts as the main checkout', () => {
+    expect(sameCheckout(ROOT, `${ROOT}/src/a.ts`, 'tests/a.test.ts')).toBe(true)
+    expect(sameCheckout(ROOT, `${ROOT}/.claude/worktrees/agent-x/src/a.ts`, 'tests/a.test.ts')).toBe(false)
   })
 })

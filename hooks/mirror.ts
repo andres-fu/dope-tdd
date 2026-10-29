@@ -71,6 +71,18 @@ export function worktreeRootFor(root: string, path: string): string {
   return normalized.slice(0, normalized.length - rest.length + worktree[0].length)
 }
 
+/**
+ * Whether two files sit in the same checkout of the session: both in the main one, or both in one agent worktree
+ * (#198). Unlocks are kept by module name, so a test touched in one checkout would otherwise unlock the same module in
+ * another, and "a test before this code" would be met by a test in a different copy of the code.
+ */
+export function sameCheckout(root: string, a: string, b: string): boolean {
+  // A path in no worktree, even a relative one from a runner's output, is the main checkout (''): a session with no
+  // worktrees is judged exactly as before.
+  const checkout = (path: string): string => /^\.claude\/worktrees\/([^/]+)\//.exec(relativeTo(root, path) ?? '')?.[1] ?? ''
+  return checkout(a) === checkout(b)
+}
+
 /** Splits `packages/app/src/a.ts` into the package root that a root glob names and the rest; null when under no root. */
 export function splitRoot(relative: string, roots: readonly string[]): { pkg: string; rest: string } | null {
   if (roots.length === 0) {

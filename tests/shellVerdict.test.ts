@@ -37,6 +37,17 @@ describe('gateShellWrites', () => {
     ] as const
     expect(gateShellWrites(writes, unlocked, inherited)).toEqual({ locked: ['utils/b', 'utils/a', 'utils/b'], waiting: ['utils/carried'] })
   })
+
+  // #198: an unlock counts only in the checkout its test was touched in, so a write to the main checkout is not let
+  // through by a test touched in an agent worktree, nor the other way round.
+  test('a write is locked when its module was unlocked by a test in another checkout', () => {
+    const fromWorktree = { 'utils/open': 'C:/r/.claude/worktrees/agent-x/tests/utils/open.test.ts' }
+    const main = { module: 'utils/open', policy: 'enforce', path: 'C:/r/src/utils/open.ts' } as const
+    const worktree = { module: 'utils/open', policy: 'enforce', path: 'C:/r/.claude/worktrees/agent-x/src/utils/open.ts' } as const
+    expect(gateShellWrites([main], fromWorktree, {}, 'C:/r')).toEqual({ locked: ['utils/open'], waiting: [] })
+    expect(gateShellWrites([worktree], fromWorktree, {}, 'C:/r')).toEqual({ locked: [], waiting: [] })
+    expect(gateShellWrites([worktree], unlocked, {}, 'C:/r')).toEqual({ locked: ['utils/open'], waiting: [] })
+  })
 })
 
 describe('judgeFailures', () => {

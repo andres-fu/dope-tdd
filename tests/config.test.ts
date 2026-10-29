@@ -176,3 +176,14 @@ describe('overrides in dope-tdd.json: who approves (2026-10-18)', () => {
     expect(describeConfigChange(human, model)).toBe('approver human → model')
   })
 })
+
+// #214 (tester round 6): an invalid file is ignored whole, so the agent was told `stack python → node` while the file
+// still said python, which read as if the edit changed the stack. Say once that the file is ignored, and what applies.
+describe('describeConfigChange when the file turns invalid', () => {
+  test('says the whole file is ignored and names the defaults in force, not field changes', () => {
+    const before = parseConfig('{"mode":"warn","stack":"python"}')
+    const text = describeConfigChange(before, parseConfig('{"mode":"Warn","stack":"python"}'))
+    expect(text).toMatch(/^now invalid: dope-tdd\.json: mode must be one of enforce, warn, observe; the whole file is ignored, so the defaults apply: mode enforce, stack \w+, layout \w+$/)
+    expect(text).not.toMatch(/→/)
+  })
+})

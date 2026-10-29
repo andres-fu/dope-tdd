@@ -78,6 +78,8 @@ describe('an invalid dope-tdd.json', () => {
       '- dope-tdd.json was not read (mode must be one of enforce, warn, observe), so the defaults apply: enforce and the default layout. Tell the user, so they can fix the file.',
     )
     expect(lines[2]).toMatch(/refused until/)
+    // #214: the header named the fallback as if it were the user's setting.
+    expect(lines[0]).toMatch(/^Dope TDD is on in this project \(mode: enforce, the default; dope-tdd\.json was not read\)\. /)
     expect(briefingText({ ...DEFAULT_CONFIG, error: null }, 'npx vitest run <test file>')).toBe(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>'))
   })
 })

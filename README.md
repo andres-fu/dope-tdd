@@ -124,7 +124,10 @@ and presets are in [docs/setup.md](docs/setup.md).
 | Python (pytest, unittest), Godot 4 (gdUnit4, `dotnet test`), Java (Maven, Gradle), .NET (`dotnet test`) | Experimental: refusals and test reading work; the catch check is off until `"catchCheck": true`, because it undoes your change on disk for one run |
 | Go, Rust, Ruby | Not read yet |
 
-The project must be a git repository.
+The project must be a git repository. A subagent in its own worktree sees only
+what is committed, so commit `dope-tdd.json` and your tests to the branch
+worktrees are created from; see
+[subagents in their own worktree](docs/setup.md#subagents-in-their-own-worktree).
 
 ## Settings
 

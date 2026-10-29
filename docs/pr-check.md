@@ -35,10 +35,18 @@ came from another file unchanged, by the move check below), UNTESTED, or
 UNPROVEN (not checked) with the reason, in the job summary: the same words
 the plugin uses. Tests that already fail on the pull request
 are set aside by name. By default a MISSED fails the check; `fail-on:
-untested` is stricter, `never` only reports. It reads the layout and
-`exempt` from `dope-tdd.json`, but not `mode`, `scope` or `catchCheck`, so it
-runs experimental runners in place whatever the config says
-([#192](https://github.com/andres-fu/dope-tdd/issues/192)). Run locally, it
+untested` is stricter, `never` only reports. It reads `dope-tdd.json` as the
+plugin does ([#192](https://github.com/andres-fu/dope-tdd/issues/192)): the
+layout, `exempt`, and:
+
+- `mode` and `scope`: a module in `observe` (by mode, or outside `scope`) is
+  not checked, as the plugin runs no catch check there; under `warn` it is
+  checked and reported, but a MISSED doesn't fail the check.
+- `catchCheck`: `false` turns the check off; the experimental runners (pytest,
+  unittest, Maven, Gradle, `dotnet test`, gdUnit4) are checked only with
+  `"catchCheck": true`, since their check puts the base version on disk.
+
+Run locally, it
 puts the base version into each source file in place and back again, with
 no journal: it refuses to start with uncommitted changes, and a run stopped
 halfway leaves the base version on disk until you `git checkout` the file. Run it locally from a pull request's checkout with

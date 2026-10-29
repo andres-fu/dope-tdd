@@ -22,10 +22,11 @@ import { spawnSync, execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { catchOutcome, runnerArgv } from '../../hooks/catchCheck.ts'
-import type { RunFailure, RunResult } from '../../hooks/catchCheck.ts'
+import { catchOutcome, isIsolatedRunner, runnerArgv } from '../../hooks/catchCheck.ts'
+import type { RunFailure, RunResult, RunnerKind } from '../../hooks/catchCheck.ts'
 import { CONFIG_FILE, parseConfig, policyFor } from '../../hooks/config.ts'
-import type { GuardConfig } from '../../hooks/config.ts'
+import type { GuardConfig, Policy } from '../../hooks/config.ts'
+import { experimentalCheckReason } from '../../hooks/refusals.ts'
 import { findRunner } from '../../hooks/findRunner.ts'
 import { importCandidates } from '../../hooks/imports.ts'
 import { classifyPath, moduleLabel, relativePath, testFileFor } from '../../hooks/mirror.ts'
@@ -36,7 +37,28 @@ import type { Move, Rename } from '../move-check/move.ts'
 import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
 
 type Verdict = 'PROVEN' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNPROVEN'
-export type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string }
+/** `policy`: what dope-tdd.json says for the source; only an enforced one fails the check (#192). */
+export type Row = { module: string; source: string; test: string | null; verdict: Verdict; note: string; policy?: Policy }
+
+/**
+ * Why a module is not checked, as the plugin decides it, or null to check it (#192). Observe, by mode or outside
+ * `scope`, runs no catch check in the plugin either; "catchCheck": false turns it off; an experimental runner's check
+ * undoes the change on disk, so it runs only with "catchCheck": true.
+ */
+export function notCheckedBecause(config: GuardConfig, policy: Policy, runner: RunnerKind): string | null {
+  if (policy === 'observe') {
+    return config.mode === 'observe' ? `mode is "observe" in ${CONFIG_FILE}, so nothing is checked` : `outside "scope" in ${CONFIG_FILE}, so observed only`
+  }
+  if (config.catchCheck === false) return `"catchCheck": false in ${CONFIG_FILE}`
+  if (!isIsolatedRunner(runner) && config.catchCheck !== true) return experimentalCheckReason(runner)
+  return null
+}
+
+/** Whether the rows fail the check: a MISSED (or, with --fail-on untested, an UNTESTED) where the module is enforced. */
+export function isFailing(rows: readonly Row[], failOn: string): boolean {
+  if (failOn === 'never') return false
+  return rows.some(row => (row.policy ?? 'enforce') === 'enforce' && (row.verdict === 'MISSED' || (failOn === 'untested' && row.verdict === 'UNTESTED')))
+}
 
 function git(root: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim()
@@ -105,14 +127,14 @@ export function movedRow(moves: readonly Move[], target: string, targetText: str
   return { verdict: 'MOVED', note: `moved from ${from}: ${each.join(', ')}${added.length === 0 ? '' : `; new here, not checked: ${added.join(', ')}`}` }
 }
 
-async function checkModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number, moves: readonly Move[]): Promise<Row> {
+async function checkModule(root: string, config: GuardConfig, policy: Policy, base: string, source: string, module: string, test: string | null, timeoutMs: number, moves: readonly Move[]): Promise<Row> {
   const moved = existsSync(`${root}/${source}`) ? movedRow(moves, source, readFileSync(`${root}/${source}`, 'utf8'), !existsAt(root, base, source)) : null
   if (moved !== null && 'verdict' in moved) return { module, source, test, verdict: 'MOVED', note: moved.note }
-  const checked = await catchCheckModule(root, config, base, source, module, test, timeoutMs)
+  const checked = await catchCheckModule(root, config, policy, base, source, module, test, timeoutMs)
   return moved === null ? checked : { ...checked, note: `${checked.note}; ${moved.note}` }
 }
 
-async function catchCheckModule(root: string, config: GuardConfig, base: string, source: string, module: string, test: string | null, timeoutMs: number): Promise<Row> {
+async function catchCheckModule(root: string, config: GuardConfig, policy: Policy, base: string, source: string, module: string, test: string | null, timeoutMs: number): Promise<Row> {
   const row = (verdict: Verdict, note: string): Row => ({ module, source, test, verdict, note })
   const notChecked = (why: string): Row => row('UNPROVEN', `not checked: ${why}`)
   if (test === null) return row('UNTESTED', 'no test for this module in the pull request or beside it')
@@ -132,6 +154,8 @@ async function catchCheckModule(root: string, config: GuardConfig, base: string,
     path => Promise.resolve(existsSync(path) ? readFileSync(path, 'utf8') : null),
   )
   if (runner === null) return notChecked('no test runner found')
+  const skip = notCheckedBecause(config, policy, runner.kind)
+  if (skip !== null) return notChecked(skip)
   const runIn = runner.root !== root && runner.root.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? runner.root : root
   const relativeTest = relativePath(runIn, `${root}/${test}`)
   const godot = config.godot ?? process.env.GODOT_BIN ?? null
@@ -191,10 +215,11 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
   const rows: Row[] = []
   for (const path of changed) {
     const target = classifyPath(root, `${root}/${path}`, config)
-    if (target.kind !== 'source' || policyFor(config, path) === 'exempt') continue
-    const row = await checkModule(root, config, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves)
+    const policy = target.kind === 'source' ? policyFor(config, path) : 'exempt'
+    if (target.kind !== 'source' || policy === 'exempt') continue
+    const row = await checkModule(root, config, policy, base, path, target.module, testFor(root, config, target.module, tests), timeoutMs, moves)
     // The table names a module as the plugin's messages do: a folder's module by its source path (`web//x` reads `web/src/x`).
-    rows.push({ ...row, module: moduleLabel(config, row.module) })
+    rows.push({ ...row, module: moduleLabel(config, row.module), policy })
   }
   return { rows, base }
 }
@@ -216,8 +241,7 @@ async function main(): Promise<void> {
   const text = report(rows, `${baseRef} (${base.slice(0, 7)})`)
   console.log(text)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)
-  const failing = rows.some(row => row.verdict === 'MISSED' || (failOn === 'untested' && row.verdict === 'UNTESTED'))
-  process.exitCode = failOn !== 'never' && failing ? 1 : 0
+  process.exitCode = isFailing(rows, failOn) ? 1 : 0
 }
 
 if (process.argv[1] !== undefined && /check\.ts$/.test(process.argv[1])) {

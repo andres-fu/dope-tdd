@@ -67,6 +67,8 @@ export type BandView = {
   lastRun: string | null
   /** The test file a click on the last run opens, as recorded (maybe relative); null keeps the line plain text. */
   lastRunOpens: string | null
+  /** The last refusal, until its module moves on (#216): a subagent's was otherwise seen by no one. */
+  refused: string | null
 }
 
 /** The part of the layout's source template before its first token: `hooks/{module}.{ext}` is watched in `hooks/`. */
@@ -191,7 +193,7 @@ function nextOf(s: TddStats, watch: Watch, pending: Override | null, open: reado
  * One word for a guard that is not simply enforcing, with what it means and the fix; null while it enforces and
  * watches, because silence is the signal. The first that applies wins.
  */
-function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string): Guard {
+function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch: Watch, record: readonly Override[], nowMs: number, standingDown: string, matchesNothing: boolean): Guard {
   // First: while a guard is throwing, nothing else the band says is true (verified review A13).
   if (s.guardFailures > 0) {
     const calls = `${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'}`
@@ -201,7 +203,9 @@ function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error'>, watch
   // standing down and pause because those end by themselves; a broken file stays broken until someone fixes it.
   // `error` already starts with the file name.
   if (config.error !== null) {
-    return { word: 'CONFIG INVALID', detail: `${config.error} · using the defaults: enforce, default layout · fix the file` }
+    // #214: when the default layout pairs none of the code, "using the defaults: enforce" read as still guarding.
+    const fallback = matchesNothing ? "ignored, and the default layout matches none of this project's code, so nothing is guarded" : 'using the defaults: enforce, default layout'
+    return { word: 'CONFIG INVALID', detail: `${config.error} · ${fallback} · fix the file` }
   }
   if (standingDown !== '') {
     return { word: 'STANDING DOWN', detail: `git ${standingDown} in progress · back when it ends` }
@@ -352,6 +356,23 @@ export function lastRunTarget(s: TddStats): string | null {
 }
 
 /** `session`: this session's id, so another session's override is marked as theirs (overrides.ts, coveringOverride). */
+// What answers a refusal: its test touched or run, or the edit going through.
+const MOVED_ON: ReadonlySet<string> = new Set(['touched', 'fail', 'pass', 'edited'])
+
+/** #216: the last refusal in words, until its module moves on; it says when it was a subagent's. */
+function refusedLine(s: TddStats, nowMs: number): string | null {
+  const index = s.events.findLastIndex(event => event.kind === 'blocked')
+  const last = s.events[index]
+  if (last === undefined || last.module === undefined) {
+    return null
+  }
+  if (s.events.slice(index + 1).some(event => event.module === last.module && MOVED_ON.has(event.kind))) {
+    return null
+  }
+  const whose = last.agent === undefined ? '' : ' · a subagent'
+  return `refused: ${last.module} · write its test first${whose} · ${formatAgo(nowMs - last.atMs).toLowerCase()}`
+}
+
 export function bandView(
   s: TddStats,
   config: Pick<GuardConfig, 'layout' | 'layouts' | 'roots' | 'stack' | 'mode' | 'scope' | 'error'>,
@@ -361,6 +382,8 @@ export function bandView(
   /** The git operation the guard stands down for, or ''. */
   standingDown = '',
   saved: Saved | null = null,
+  /** The default layout pairs none of the project's code (setup.ts layoutMismatch, #214). */
+  matchesNothing = false,
 ): BandView {
   const watch = watchOf(s, config)
   const showProgress = watch.kind === 'watching' && s.current !== null
@@ -373,8 +396,9 @@ export function bandView(
     return left === null ? [] : [{ target: o.module ?? 'pause', text: `${o.module ?? 'every module'} · ${o.kind} · ${left} · approved by ${deciderLabel(o)}${theirs}` }]
   })
   const chain = chainOf(s)
-  const guard = guardOf(s, config, watch, record, nowMs, standingDown)
+  const guard = guardOf(s, config, watch, record, nowMs, standingDown, matchesNothing)
   const lastRun = lastRunLine(s, nowMs)
+  const refused = refusedLine(s, nowMs)
   return {
     watch,
     showProgress,
@@ -385,10 +409,11 @@ export function bandView(
     open,
     lastRun,
     lastRunOpens: lastRunTarget(s),
+    refused,
     guard,
     tokens: tokensOf(s, chain, nowMs),
     verdict: verdictOf(s),
     module: s.current === null ? null : moduleLabel(config, s.current.module),
-    idle: s.current === null && guard === null && pending === null && open.length === 0 && lastRun === null,
+    idle: s.current === null && guard === null && pending === null && open.length === 0 && lastRun === null && refused === null,
   }
 }

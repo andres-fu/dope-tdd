@@ -20,6 +20,8 @@ export type BandModel = {
   standingDown: string
   /** Whether the current module's work is committed or pushed, as git last said. */
   saved?: Saved
+  /** The default layout pairs none of the project's code (#214): an invalid file then guards nothing. */
+  matchesNothing?: boolean
   /** The repo's override record: a waiting request, and the open overrides, show on the band. */
   overrides: readonly Override[]
   onViewTest: () => unknown
@@ -70,7 +72,7 @@ function drawToken(el: AnyElements, token: Token) {
 export function drawBand(el: AnyElements, model: BandModel) {
   const { Box, Text, Button } = el
   const { stats: s, config, nowMs, logo } = model
-  const view = bandView(s, config, model.overrides, nowMs, model.session, model.standingDown, model.saved ?? null)
+  const view = bandView(s, config, model.overrides, nowMs, model.session, model.standingDown, model.saved ?? null, model.matchesNothing === true)
 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={ACCENT.ember} paddingX={1}>
@@ -89,6 +91,8 @@ export function drawBand(el: AnyElements, model: BandModel) {
           <Button key="last-run" label={view.lastRun} plain dimColor onPress={model.onOpenLastRun} />
         )}
         {view.lastRun !== null && view.lastRunOpens === null && <Text dimColor>{view.lastRun}</Text>}
+        {/* #216: a refusal, a subagent's above all, was seen by no one watching the band. */}
+        {view.refused !== null && <Text color={ACCENT.paused}>{view.refused}</Text>}
       </Box>
       {/* Every open door gets a sign, whichever module is current, and a way to close it (live trial, 2026-10-18). */}
       {view.open.map(door => (

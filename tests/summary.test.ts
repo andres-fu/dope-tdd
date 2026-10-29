@@ -30,8 +30,9 @@ describe('formatStatus', () => {
     expect(text).toMatch(/phase: RED/)
     expect(text).toMatch(/module: utils\/a/)
     expect(text).toMatch(/runs: 1 \(0 pass, 1 fail\)/)
-    expect(text).toMatch(/^1MIN AGO: touched utils\/a$/m)
-    expect(text).toMatch(/^JUST NOW: paused$/m)
+    // #216: rows under an hour say the seconds too.
+    expect(text).toMatch(/^1MIN05S AGO: touched utils\/a$/m)
+    expect(text).toMatch(/^55S AGO: paused$/m)
   })
 })
 
@@ -222,5 +223,21 @@ describe('formatStatus spikes', () => {
 
   test('no spike: no line', () => {
     expect(formatStatus(INITIAL_STATS, T0)).not.toMatch(/spikes:/)
+  })
+})
+
+// #216 (tester round 6): rows said only the minute, so refusals seconds apart read the same and merged in the next
+// read, and nothing said which row was a subagent's. Under an hour a row says the seconds too.
+describe('formatStatus event rows', () => {
+  const at = (atMs: number, agent?: string) => ({ atMs, kind: 'blocked' as const, module: 'stats', ...(agent === undefined ? {} : { agent }) })
+
+  test('under an hour, a row says the seconds', () => {
+    const text = formatStatus({ ...INITIAL_STATS, events: [at(T0 - 492_000), at(T0 - 12_000)] }, T0)
+    expect(text).toMatch(/^8MIN12S AGO: blocked stats$/m)
+    expect(text).toMatch(/^12S AGO: blocked stats$/m)
+  })
+
+  test("a subagent's row says so", () => {
+    expect(formatStatus({ ...INITIAL_STATS, events: [at(T0, 'a1')] }, T0)).toMatch(/^JUST NOW: blocked stats · subagent$/m)
   })
 })

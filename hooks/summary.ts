@@ -77,6 +77,13 @@ function openLine(s: TddStats, label: Label): string[] {
   return others.length === 0 ? [] : [`also open: ${others.map(({ module, phase }) => `${label(module)} (${phase})`).join(', ')}`]
 }
 
+// #216: under an hour a row says the seconds too, so events seconds apart keep apart from one read to the next.
+// Written as the phase line writes a span (formatSpan), floored so a row never reads older than it is.
+function rowAgo(elapsedMs: number): string {
+  const seconds = Math.floor(elapsedMs / 1000)
+  return seconds < 1 || seconds >= 3600 ? formatAgo(elapsedMs) : `${formatSpan(seconds * 1000)} AGO`
+}
+
 // "when: what" rows under a header row: the app shows /tdd as a table of "key: value" rows (2026-10-18).
 function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
   if (s.events.length === 0) {
@@ -87,7 +94,9 @@ function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
     .reverse()
     .map(e => {
       const what = [e.module === undefined ? '' : label(e.module), e.detail === undefined ? '' : `(${e.detail})`].filter(part => part !== '').join(' ')
-      return `${formatAgo(nowMs - e.atMs)}: ${EVENT_WORDS[e.kind] ?? e.kind} ${what}`.trimEnd()
+      // #216: a subagent's row says so; the band's refusal line does the same.
+      const whose = e.agent === undefined ? '' : ' · subagent'
+      return `${rowAgo(nowMs - e.atMs)}: ${EVENT_WORDS[e.kind] ?? e.kind} ${what}`.trimEnd() + whose
     })
   return ['recent events: newest first', ...rows]
 }

@@ -554,3 +554,14 @@ describe('the last run says how long a one-file run took', () => {
     expect(await ui.find({ type: 'Button', text: 'last run: formatDuration.test.ts failed · just now' })).toBeDefined()
   })
 })
+
+// #216 (tester round 6): a refusal, above all a subagent's, left the band idle; the person watching never knew.
+describe('the band shows the last refusal', () => {
+  test("a subagent's refused edit shows on the band, saying it was a subagent", async ($, on) => {
+    fakeEngine(on)
+    await $.tool.call({ tool: 'Edit', file_path: SOURCE, old_string: 'a', new_string: 'b', agentId: 'a1' } as never)
+
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(await ui.find({ type: 'Text', text: /^refused: .*formatDuration · write its test first · a subagent · just now$/ })).toBeDefined()
+  })
+})

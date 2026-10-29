@@ -1571,6 +1571,7 @@ async function guardFileWrite(
   tool: FileTool,
   filePath: string,
   proceed: () => Promise<ToolCallResult>,
+  agentId?: string,
 ): Promise<ToolCallResult> {
   // A file in an agent worktree is judged against that worktree, the checkout it belongs to (#198).
   const root = worktreeRootFor(await $.session.root(), filePath)
@@ -1578,7 +1579,7 @@ async function guardFileWrite(
   if (git.operation !== null) {
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
   }
-  const result = await checkFileWrite($, tool, filePath, proceed)
+  const result = await checkFileWrite($, tool, filePath, proceed, agentId)
   await noteSaved($, root)
   return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
 }
@@ -1588,6 +1589,7 @@ async function checkFileWrite(
   tool: FileTool,
   writtenPath: string,
   proceed: () => Promise<ToolCallResult>,
+  agentId?: string,
 ): Promise<ToolCallResult> {
   const root = worktreeRootFor(await $.session.root(), writtenPath)
   const filePath = await projectPath($, root, writtenPath)
@@ -1625,8 +1627,9 @@ async function checkFileWrite(
     return proceed()
   }
   if (verdict.kind === 'blocked' && target.kind === 'source') {
-    await change($, s => recordBlocked(s, target.module, gateNowMs))
-    return { deny: lockedFor(config, current, target.module, gateNowMs, filePath, await lockedFacts($, root, config, current, target.module, filePath, gateNowMs)) }
+    // Refusals are kept per agent, so each agent is offered the override on its own first one (#212).
+    await change($, s => recordBlocked(s, target.module, gateNowMs, agentId))
+    return { deny: lockedFor(config, current, target.module, gateNowMs, filePath, await lockedFacts($, root, config, current, target.module, filePath, gateNowMs), agentId) }
   }
   if (verdict.kind === 'carry-wait' && target.kind === 'source') {
     await change($, s => recordCarryWait(s, target.module, gateNowMs))
@@ -1847,11 +1850,11 @@ async function checkShell(
   if (gate.kind === 'refuse') {
     const { locked, waiting } = gate
     const nowMs = await $.clock.now()
-    await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs), s)))
+    await change($, s => waiting.reduce((acc, module) => recordCarryWait(acc, module, nowMs), locked.reduce((acc, module) => recordBlocked(acc, module, nowMs, agentId), s)))
     const waits = await Promise.all(waiting.map(module => carryWait($, root, config, current, module, nowMs)))
     const writtenPath = (module: string) => writes.find(write => write.module === module)?.path
     const refusals = await Promise.all(
-      locked.map(async module => lockedFor(config, current, module, nowMs, writtenPath(module), await lockedFacts($, root, config, current, module, writtenPath(module), nowMs))),
+      locked.map(async module => lockedFor(config, current, module, nowMs, writtenPath(module), await lockedFacts($, root, config, current, module, writtenPath(module), nowMs), agentId)),
     )
     return { deny: [...refusals, ...waits].join('\n') }
   }
@@ -2742,7 +2745,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     await placeAgent($, e.agentId, e.file_path)
-    return guardFileWrite($, 'Edit', e.file_path, () => next(e))
+    return guardFileWrite($, 'Edit', e.file_path, () => next(e), e.agentId)
   }).catch(($, e, next) => {
     reportGuardFailure($, 'Edit', next.error)
     return next(e)
@@ -2750,7 +2753,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     await placeAgent($, e.agentId, e.file_path)
-    return guardFileWrite($, 'Write', e.file_path, () => next(e))
+    return guardFileWrite($, 'Write', e.file_path, () => next(e), e.agentId)
   }).catch(($, e, next) => {
     reportGuardFailure($, 'Write', next.error)
     return next(e)
@@ -2759,7 +2762,7 @@ export const register: Register = on => {
   // A notebook cell edit writes a file too, and an untested one is refused like an Edit (#195). Its path is notebook_path.
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
     await placeAgent($, e.agentId, e.notebook_path)
-    return guardFileWrite($, 'NotebookEdit', e.notebook_path, () => next(e))
+    return guardFileWrite($, 'NotebookEdit', e.notebook_path, () => next(e), e.agentId)
   }).catch(($, e, next) => {
     reportGuardFailure($, 'NotebookEdit', next.error)
     return next(e)

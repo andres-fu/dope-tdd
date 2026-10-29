@@ -54,16 +54,20 @@ export function lockedMessage(config: GuardConfig, module: string, staleAgeMs?: 
   return [head, unblockSteps(testPath, facts.command, facts.overrideOffered !== true, facts.testExists === true), ...lastRun].join('\n')
 }
 
-/** Whether this session already refused an edit to the module: the event log keeps its last 50 events, so an old one may have rolled off, and then the override is offered again. */
-export function wasRefused(s: TddStats, module: string): boolean {
-  return s.events.some(event => event.kind === 'blocked' && event.module === module)
+/**
+ * Whether this session already refused this agent an edit to the module: the event log keeps its last 50 events, so an old
+ * one may have rolled off, and then the override is offered again. Per agent (#212): a subagent never saw the main
+ * session's refusal, so it is offered the override on its own first one. `agent` is undefined for the main session.
+ */
+export function wasRefused(s: TddStats, module: string, agent?: string): boolean {
+  return s.events.some(event => event.kind === 'blocked' && event.module === module && event.agent === agent)
 }
 
 /** A refused write to a locked module's file, with the stale note when a carried-over unlock was dropped for it. */
-export function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number, writtenPath?: string, facts: LockedFacts = {}): string {
+export function lockedFor(config: GuardConfig, s: TddStats, module: string, nowMs: number, writtenPath?: string, facts: LockedFacts = {}, agent?: string): string {
   const staleAt = s.stale[module]
   return lockedMessage(config, module, staleAt === undefined ? undefined : nowMs - staleAt, writtenPath === undefined ? undefined : extOf(writtenPath), {
-    overrideOffered: wasRefused(s, module),
+    overrideOffered: wasRefused(s, module, agent),
     ...facts,
   })
 }

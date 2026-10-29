@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { OVERRIDE_HINT, lockedMessage, unblockSteps } from '../hooks/refusals'
+import { OVERRIDE_HINT, lockedFor, lockedMessage, unblockSteps, wasRefused } from '../hooks/refusals'
+import { INITIAL_STATS, recordBlocked } from '../hooks/stats'
 
 const CONFIG = { ...DEFAULT_CONFIG, layout: { name: 'custom', source: 'hooks/{module}.{ext}', test: 'tests/{module}.test.{ext}' } }
 const COMMAND = 'node --import ./tests/node/register.mjs --test tests/runPlan.test.ts'
@@ -39,6 +40,27 @@ describe('the override is offered once per module', () => {
     expect(message).toMatch(/^\(2\) no test for this code yet/m)
     expect(message).not.toMatch(/override_request/)
     expect(message).not.toMatch(/^\(3\)/m)
+  })
+})
+
+// #212: each agent sees the override on its own first refusal. A subagent refused after the main session was refused on
+// the same module was treated as already told, and never learned the override exists.
+describe('the override is offered once per module and agent', () => {
+  const refusedByMain = recordBlocked(INITIAL_STATS, 'runPlan', 1)
+
+  test('the main session, refused once, is not offered it again', () => {
+    expect(wasRefused(refusedByMain, 'runPlan')).toBe(true)
+  })
+
+  test('a subagent refused after the main session is still offered it', () => {
+    expect(wasRefused(refusedByMain, 'runPlan', 'agent-1')).toBe(false)
+    expect(lockedFor(CONFIG, refusedByMain, 'runPlan', 2, undefined, {}, 'agent-1')).toMatch(/override_request/)
+  })
+
+  test('a subagent refused once is not offered it again, and the main session still is', () => {
+    const refusedBySub = recordBlocked(INITIAL_STATS, 'runPlan', 1, 'agent-1')
+    expect(wasRefused(refusedBySub, 'runPlan', 'agent-1')).toBe(true)
+    expect(wasRefused(refusedBySub, 'runPlan')).toBe(false)
   })
 })
 

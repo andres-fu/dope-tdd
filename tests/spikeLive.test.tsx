@@ -14,7 +14,7 @@ describe('a spike', () => {
     await $.skill.prompt({ skill: 'dope-tdd:spike', text: '# Spike\n\nQuestion: can the parser stream?\n', frontmatter: {} } as never)
     const status = (await runCommand($, 'tdd')).text
 
-    expect(status).toMatch(/^spikes: 1 \(last: can the parser stream\?\)/m)
+    expect(status).toMatch(/^spikes started: 1 \(last: can the parser stream\?\)/m)
     expect(status).not.toMatch(/workarounds/)
   })
 

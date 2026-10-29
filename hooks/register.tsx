@@ -12,8 +12,8 @@ import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spi
 import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
-import { catchOutcome, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
-import type { RunnerKind, WorktreeFailure } from './catchCheck.ts'
+import { catchOutcome, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
+import type { WorktreeFailure } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
 import { buildLabel, manifestVersion } from './build.ts'
@@ -45,7 +45,7 @@ import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
-import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
+import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -859,7 +859,7 @@ async function allFailingNames($: EngineInterface, root: string, config: GuardCo
     const command = await oneTestCommand($, root, config, testPath)
     // The same opt-in as the catch check: observe mode starts nothing, and an experimental runner (the venv python,
     // mvnw, a Godot binary) runs only with "catchCheck": true (verified review A4, 2026-10-20).
-    if (command === null || config.mode === 'observe' || (!ISOLATED_RUNNERS.has(command.runner.kind) && config.catchCheck !== true)) {
+    if (command === null || config.mode === 'observe' || (!isIsolatedRunner(command.runner.kind) && config.catchCheck !== true)) {
       return []
     }
     const run = await $.process.run(command.argv, { cwd: command.runIn, env: { CI: '1', DOPE_TDD_NAMES: '1' }, timeoutMs: 60_000 })
@@ -884,8 +884,6 @@ async function checkRun($: EngineInterface, argv: string[], init: Parameters<Eng
 
 /** How long `git worktree add` may take: a checkout of a large repository on Windows can pass the 30 s default. */
 const WORKTREE_TIMEOUT_MS = 120_000
-/** Runners that find packages by walking up from the file, so a worktree inside .git still reaches the project's node_modules. */
-const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
 // Inside the checkout's own git directory, so watchers and `git status` never see it: `.git/dope-tdd/wt` in a clone,
 // `<main>/.git/worktrees/<name>/dope-tdd/wt` in a linked worktree (field test on VibeCast, 2026-10-18: a linked
 // worktree, where `.git` is a file, had no isolated check and no small changes, and nothing said so). From there the
@@ -1084,7 +1082,7 @@ async function newFileCheck(
     return { kind: 'unverified', reason: 'changed outside' }
   }
   const command = await oneTestCommand($, root, config, testPath)
-  if (command === null || !ISOLATED_RUNNERS.has(command.runner.kind) || (await gitDirOf($, root)) === null) {
+  if (command === null || !isIsolatedRunner(command.runner.kind) || (await gitDirOf($, root)) === null) {
     return null
   }
   const mutants = mutantsOf(after, { angles: flipsAngles(path, after), types: /\.[cm]?tsx?$/.test(path) })
@@ -1229,14 +1227,14 @@ async function checkAgainst(
   }
   const { runner, runIn, relativeTest, argv } = command
   // The experimental runners have no throwaway copy: their check writes the old code into the user's file, so only on request.
-  if (!ISOLATED_RUNNERS.has(runner.kind) && config.catchCheck !== true) {
+  if (!isIsolatedRunner(runner.kind) && config.catchCheck !== true) {
     return { kind: 'unverified', reason: experimentalCheckReason(runner.kind) }
   }
 
   // In a git checkout, a Node runner checks in a worktree: the change is undone there, never in the user's files. When
   // the copy cannot be made or cannot run the test, the check says so; it once fell back to rewriting the user's real
   // file, silently, while the README promised it never would (verified review A2, 2026-10-20).
-  if (ISOLATED_RUNNERS.has(runner.kind) && (await gitDirOf($, root)) !== null) {
+  if (isIsolatedRunner(runner.kind) && (await gitDirOf($, root)) !== null) {
     const checked = await checkInWorktree($, root, { module, path, variants: [before], after, runIn, relativeTest, argv, greenRunMs, nowMs, known, fresh })
     if (!Array.isArray(checked)) {
       return { kind: 'unverified', reason: worktreeFailureReason(checked) }
@@ -1608,7 +1606,8 @@ async function checkFileWrite(
   proceed: () => Promise<ToolCallResult>,
   agentId?: string,
 ): Promise<ToolCallResult> {
-  const root = worktreeRootFor(await $.session.root(), writtenPath)
+  const sessionRoot = await $.session.root()
+  const root = worktreeRootFor(sessionRoot, writtenPath)
   const filePath = await projectPath($, root, writtenPath)
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)
@@ -1621,7 +1620,10 @@ async function checkFileWrite(
   const current = await readStats($)
   const quiet = config.mode === 'observe'
   const policy = target.kind === 'source' ? policyFor(config, relative) : null
-  const isLocked = target.kind === 'source' && current.unlocked[target.module] === undefined
+  // #198: unlocks are kept by module name, so one counts only if its test is in this file's checkout; a test touched
+  // in an agent worktree must not unlock the main checkout's module, nor the other way round.
+  const unlockedBy = target.kind === 'source' ? current.unlocked[target.module] : undefined
+  const isLocked = target.kind === 'source' && (unlockedBy === undefined || !sameCheckout(sessionRoot, filePath, unlockedBy))
   const gateNowMs = await $.clock.now()
   const record = await read($, overrideRecord)
   const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
@@ -1856,7 +1858,7 @@ async function checkShell(
       return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
     }),
   )
-  const gated = gateShellWrites(writes, current.unlocked, current.inherited)
+  const gated = gateShellWrites(writes, current.unlocked, current.inherited, await $.session.root())
   const writesRecord = writesFileNamed(command, OVERRIDES_FILE)
   const covered = writesRecord || gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
   // The verdict is shellVerdict.ts's; this words the refusal and records it.

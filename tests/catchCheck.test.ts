@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
+import { catchOutcome, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
 import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR, VITEST_REAL_FAIL } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
@@ -158,5 +158,21 @@ describe('linkArgv and unlinkArgv', () => {
     expect(unlink[2]).toMatch(/ENOENT/)
     expect(unlink[2]).not.toMatch(/rmSync|recursive/)
     expect(unlink[3]).toBe('C:/w/.git/dope-tdd/wt/site/node_modules')
+  })
+})
+
+// One list for the plugin and the pull-request check (#192): which runners check in a throwaway copy. The others are
+// experimental, and their check undoes the change on disk, so it runs only with "catchCheck": true.
+describe('isIsolatedRunner', () => {
+  test('the Node runners check in a throwaway copy', () => {
+    for (const kind of ['vitest', 'jest', 'ava', 'node-test'] as const) {
+      expect(isIsolatedRunner(kind)).toBe(true)
+    }
+  })
+
+  test('the experimental runners do not', () => {
+    for (const kind of ['pytest', 'unittest', 'gdunit4', 'maven', 'gradle', 'dotnet', 'plugin-kit'] as const) {
+      expect(isIsolatedRunner(kind)).toBe(false)
+    }
   })
 })

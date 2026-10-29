@@ -4,6 +4,14 @@ import type { RunnerKind, RunnerOptions } from './runners.ts'
 import { runnerDidNotStart, stripAnsi } from './runOutcome.ts'
 
 export type { RunnerKind, RunnerOptions } from './runners.ts'
+
+// The runners whose check runs in a throwaway copy. The others are experimental: their check undoes the change on
+// disk, so it runs only with "catchCheck": true. One list for the plugin and the pull-request check (#192).
+const ISOLATED_RUNNERS: ReadonlySet<RunnerKind> = new Set<RunnerKind>(['vitest', 'jest', 'ava', 'node-test'])
+
+export function isIsolatedRunner(kind: RunnerKind): boolean {
+  return ISOLATED_RUNNERS.has(kind)
+}
 export type RunResult = { stdout: string; stderr: string; exitCode: number }
 export type RunFailure = 'timeout' | 'no-runner' | { failedToStart: string }
 

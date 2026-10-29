@@ -3,25 +3,32 @@
 // result; what is decided lives here, where a unit test reaches it without the fake engine.
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
 import type { Policy } from './config.ts'
-import { moduleLabel, relativePath, sourcePathFor } from './mirror.ts'
+import { moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
 import type { LayoutConfig } from './mirror.ts'
 
-export type ShellWrite = { readonly module: string | null; readonly policy: Policy }
+/** `path`: the file written, so an unlock counts only in its own checkout (#198). */
+export type ShellWrite = { readonly module: string | null; readonly policy: Policy; readonly path?: string }
 
 /**
  * Which modules a shell command's writes may not reach yet: `locked`, enforced with no unlock; `waiting`, unlocked
  * only by a carry-over from an earlier session, whose run this session it waits for, as an Edit does (#54).
+ * `root`, the session's: an unlock counts only for a write in the checkout its test is in (#198).
  */
 export function gateShellWrites(
   writes: readonly ShellWrite[],
   unlocked: Readonly<Record<string, string>>,
   inherited: Readonly<Record<string, number>>,
+  root?: string,
 ): { locked: string[]; waiting: string[] } {
-  const locked = writes.flatMap(({ module, policy }) =>
-    module !== null && policy === 'enforce' && unlocked[module] === undefined ? [module] : [],
+  const isUnlocked = ({ module, path }: ShellWrite): boolean => {
+    const testPath = module === null ? undefined : unlocked[module]
+    return testPath !== undefined && (root === undefined || path === undefined || sameCheckout(root, path, testPath))
+  }
+  const locked = writes.flatMap(write =>
+    write.module !== null && write.policy === 'enforce' && !isUnlocked(write) ? [write.module] : [],
   )
-  const waiting = writes.flatMap(({ module, policy }) =>
-    module !== null && policy === 'enforce' && unlocked[module] !== undefined && inherited[module] !== undefined ? [module] : [],
+  const waiting = writes.flatMap(write =>
+    write.module !== null && write.policy === 'enforce' && isUnlocked(write) && inherited[write.module] !== undefined ? [write.module] : [],
   )
   return { locked, waiting }
 }

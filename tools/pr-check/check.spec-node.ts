@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { findMoves } from '../move-check/move.ts'
-import { movedRow, report } from './check.ts'
+import { isFailing, movedRow, notCheckedBecause, report } from './check.ts'
+import { DEFAULT_CONFIG } from '../../hooks/config.ts'
 
 test('the report counts each verdict and lists every module with its reason', () => {
   const text = report(
@@ -78,4 +79,33 @@ test('a file that already existed and received moved code is never MOVED: its ow
   assert.deepEqual(movedRow(findMoves(base, head), 'a.js', head['a.js'], false), {
     note: 'also received moved code from b.js: `g` identical',
   })
+})
+
+// #192: the check read dope-tdd.json only in part. It ignored mode, scope and catchCheck, so it ran experimental
+// runners in place whatever the config said. It now decides as the plugin does.
+test('a module in observe, by mode or outside scope, is not checked, as the plugin runs no catch check there', () => {
+  assert.match(notCheckedBecause({ ...DEFAULT_CONFIG, mode: 'observe' }, 'observe', 'vitest') ?? '', /observe/)
+  assert.match(notCheckedBecause({ ...DEFAULT_CONFIG, scope: ['src/billing/**'] }, 'observe', 'vitest') ?? '', /scope/)
+})
+
+test('"catchCheck": false turns the check off', () => {
+  assert.match(notCheckedBecause({ ...DEFAULT_CONFIG, catchCheck: false }, 'enforce', 'vitest') ?? '', /"catchCheck": false/)
+})
+
+test('an experimental runner is checked only with "catchCheck": true, in the plugin\'s words', () => {
+  assert.match(notCheckedBecause(DEFAULT_CONFIG, 'enforce', 'pytest') ?? '', /pytest is experimental, so its check would undo your change on disk; "catchCheck": true in dope-tdd\.json allows it/)
+  assert.equal(notCheckedBecause({ ...DEFAULT_CONFIG, catchCheck: true }, 'enforce', 'pytest'), null)
+  assert.equal(notCheckedBecause(DEFAULT_CONFIG, 'enforce', 'vitest'), null)
+  assert.equal(notCheckedBecause(DEFAULT_CONFIG, 'warn', 'vitest'), null)
+})
+
+test('a MISSED fails the check only where the module is enforced; under warn it is reported, not failed', () => {
+  const missed = { module: 'a', source: 'a.ts', test: 'a.test.ts', verdict: 'MISSED', note: '' } as const
+  assert.equal(isFailing([{ ...missed, policy: 'enforce' }], 'missed'), true)
+  assert.equal(isFailing([{ ...missed, policy: 'warn' }], 'missed'), false)
+  assert.equal(isFailing([{ ...missed, policy: 'enforce' }], 'never'), false)
+  const untested = { module: 'b', source: 'b.ts', test: null, verdict: 'UNTESTED', note: '', policy: 'enforce' } as const
+  assert.equal(isFailing([untested], 'missed'), false)
+  assert.equal(isFailing([untested], 'untested'), true)
+  assert.equal(isFailing([{ ...untested, policy: 'warn' }], 'untested'), false)
 })

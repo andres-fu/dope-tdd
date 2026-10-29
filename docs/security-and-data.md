@@ -96,7 +96,7 @@ Claude Code log.
 ## For the plugin directory's reviewer
 
 The directory's scan holds Dope TDD on the warnings below. What the code
-behind each one does, checked against 0.2.10 (all in `hooks/register.tsx`
+behind each one does, checked against 0.2.11 (all in `hooks/register.tsx`
 unless named):
 
 - **Includes a mod.** Its code runs inside Claude Code, as the person, like

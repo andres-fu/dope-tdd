@@ -174,7 +174,8 @@ sandbox and permission rules, like every plugin's hooks.
 - **What it hooks:** Edit, Write, NotebookEdit, Bash and PowerShell calls, to
   refuse an untested edit before it runs (it never rewrites a call); Read, Glob
   and Grep calls, only to note which worktree a subagent works in; the system
-  prompt, to add a short briefing on its rules; the start and end of each
+  prompt, to add a short briefing on its rules; a subagent's task as it is
+  spawned, to add the same briefing to the end (forks already have it); the start and end of each
   session, to load its state and put back a check cut off mid-way; the start of
   a session after
   `/clear`, `/resume` or a fork, to load its state again (it changes nothing
@@ -182,7 +183,8 @@ sandbox and permission rules, like every plugin's hooks.
   ran; and its own `/tdd` command. It draws the band above the prompt.
 
 Delete `~/.dope-tdd/` any time; `DOPE_TDD_LOG=off` keeps no logs. Every detail:
-[docs/security-and-data.md](docs/security-and-data.md).
+[docs/security-and-data.md](docs/security-and-data.md), which also answers each
+of the plugin directory's scan warnings with the code behind it.
 
 ## On every pull request
 

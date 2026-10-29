@@ -131,8 +131,13 @@ refused, and a shell change to it is put back and counted as a workaround.
   shell commands, the `git` check after them and its catch check run in the
   worktree, with its own `dope-tdd.json`, and its `cd` doesn't move anyone
   else's shell. A shell command it runs before naming any such path is read
-  from the main folder. Every agent in the session still shares one module and
-  one set of unlocks ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
+  from the main folder. An unlock counts only in the checkout its test is in: a
+  test touched in a worktree doesn't unlock the main checkout's module, nor the
+  other way round ([#198](https://github.com/andres-fu/dope-tdd/issues/198)).
+  Every agent still shares one current module and phase, and one test per
+  module: when two checkouts work on the same module, the last test touch holds
+  the unlock and the other is refused until it touches its test again
+  ([#227](https://github.com/andres-fu/dope-tdd/issues/227)).
 - A subagent gets the session briefing too: Claude Code adds it only to the main
   session's system prompt, so Dope TDD appends it to the task the subagent is
   spawned with. A fork already carries it, and a workflow's agents can't be

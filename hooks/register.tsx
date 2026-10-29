@@ -45,7 +45,7 @@ import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
-import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
+import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1608,7 +1608,8 @@ async function checkFileWrite(
   proceed: () => Promise<ToolCallResult>,
   agentId?: string,
 ): Promise<ToolCallResult> {
-  const root = worktreeRootFor(await $.session.root(), writtenPath)
+  const sessionRoot = await $.session.root()
+  const root = worktreeRootFor(sessionRoot, writtenPath)
   const filePath = await projectPath($, root, writtenPath)
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)
@@ -1621,7 +1622,10 @@ async function checkFileWrite(
   const current = await readStats($)
   const quiet = config.mode === 'observe'
   const policy = target.kind === 'source' ? policyFor(config, relative) : null
-  const isLocked = target.kind === 'source' && current.unlocked[target.module] === undefined
+  // #198: unlocks are kept by module name, so one counts only if its test is in this file's checkout; a test touched
+  // in an agent worktree must not unlock the main checkout's module, nor the other way round.
+  const unlockedBy = target.kind === 'source' ? current.unlocked[target.module] : undefined
+  const isLocked = target.kind === 'source' && (unlockedBy === undefined || !sameCheckout(sessionRoot, filePath, unlockedBy))
   const gateNowMs = await $.clock.now()
   const record = await read($, overrideRecord)
   const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
@@ -1856,7 +1860,7 @@ async function checkShell(
       return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
     }),
   )
-  const gated = gateShellWrites(writes, current.unlocked, current.inherited)
+  const gated = gateShellWrites(writes, current.unlocked, current.inherited, await $.session.root())
   const writesRecord = writesFileNamed(command, OVERRIDES_FILE)
   const covered = writesRecord || gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
   // The verdict is shellVerdict.ts's; this words the refusal and records it.

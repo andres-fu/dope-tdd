@@ -1272,3 +1272,50 @@ describe('a subagent is briefed when it is spawned', () => {
     expect(seen.prompt).toBe('Fix the date bug.')
   })
 })
+
+// #198: unlocks were kept by module name only, so a test touched in one checkout unlocked the same module in another.
+// The rule "a test before this code" was met by a test in a different copy of the code.
+describe('an unlock belongs to the checkout its test was touched in', () => {
+  test("a test touched in an agent worktree does not unlock the main checkout's module", async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, '.claude/worktrees/agent-x/tests/utils/calculateDuration.test.ts')
+    const main = await editAt($, 'src/utils/calculateDuration.ts')
+
+    expect(main.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test("a test touched in the main checkout does not unlock an agent worktree's module", async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+    const worktree = await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')
+
+    expect(worktree.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  // The small fix (2026-10-29): the unlock list still holds one test per module, so when both checkouts work on the
+  // same module, the last touch holds the unlock and the other checkout is refused until it touches its test again.
+  // It fails safe: never an edit let through, at worst one asked for twice.
+  test('both checkouts on one module: the last touch holds the unlock, and the other is refused, never let through', async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, '.claude/worktrees/agent-x/tests/utils/calculateDuration.test.ts')
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+
+    expect((await editAt($, 'src/utils/calculateDuration.ts')).deny).toBeUndefined()
+    expect((await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')).deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+
+    await editAt($, '.claude/worktrees/agent-x/tests/utils/calculateDuration.test.ts')
+    expect((await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')).deny).toBeUndefined()
+  })
+
+  test('a shell write to the main checkout is not let through by a test touched in an agent worktree', async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, '.claude/worktrees/agent-x/tests/utils/calculateDuration.test.ts')
+    const result = await runBash($, `sed -i 's/a/b/' ${ROOT}/src/utils/calculateDuration.ts`)
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+})

@@ -508,3 +508,51 @@ describe('the band says a corrected pin is not proven yet', () => {
     expect(bandView(s, CONFIG).verdict).toEqual({ text: 'UNPROVEN · pin corrected: prove it with a break', tone: 'warn' })
   })
 })
+
+// #214 part 3 (tester round 6): under an invalid file the defaults apply, and when the default layout matches none of
+// the project's code nothing is guarded at all; "using the defaults: enforce" read as still guarding.
+describe('an invalid dope-tdd.json whose default layout matches nothing', () => {
+  test('the band says nothing is guarded', () => {
+    const error = 'dope-tdd.json: mode must be one of enforce, warn, observe'
+    expect(bandView(INITIAL_STATS, { ...CONFIG, error }, [], 0, undefined, '', null, true).guard).toEqual({
+      word: 'CONFIG INVALID',
+      detail: "dope-tdd.json: mode must be one of enforce, warn, observe · ignored, and the default layout matches none of this project's code, so nothing is guarded · fix the file",
+    })
+  })
+
+  test('a valid file is not affected by the layout note', () => {
+    expect(bandView(on({}), CONFIG, [], 0, undefined, '', null, true).guard).toBeNull()
+  })
+})
+
+// #216 (tester round 6): a refusal, above all a subagent's, left no mark on the band; the person watching saw idle.
+describe('the band shows the last refusal until its module moves on', () => {
+  const MIN = 60_000
+  const blocked = (module: string, atMs: number, agent?: string) => ({ atMs, kind: 'blocked' as const, module, ...(agent === undefined ? {} : { agent }) })
+
+  test('a refusal names the module and when, and the band is not idle', () => {
+    const view = bandView({ ...INITIAL_STATS, events: [blocked('stats', 0)] }, CONFIG, [], 2 * MIN)
+    expect(view.refused).toBe('refused: stats · write its test first · 2min ago')
+    expect(view.idle).toBe(false)
+  })
+
+  test("a subagent's refusal says so", () => {
+    expect(bandView({ ...INITIAL_STATS, events: [blocked('stats', 0, 'a1')] }, CONFIG, [], 0).refused).toBe('refused: stats · write its test first · a subagent · just now')
+  })
+
+  test('once its test is touched or run, the refusal is no longer shown', () => {
+    for (const kind of ['touched', 'fail', 'pass', 'edited'] as const) {
+      const s = { ...INITIAL_STATS, events: [blocked('stats', 0), { atMs: 1, kind, module: 'stats' }] }
+      expect(bandView(s, CONFIG, [], 2).refused).toBeNull()
+    }
+  })
+
+  test('activity on another module does not hide it', () => {
+    const s = { ...INITIAL_STATS, events: [blocked('stats', 0), { atMs: 1, kind: 'touched' as const, module: 'mirror' }] }
+    expect(bandView(s, CONFIG, [], 2).refused).toMatch(/^refused: stats/)
+  })
+
+  test('no refusal, no line', () => {
+    expect(bandView(INITIAL_STATS, CONFIG).refused).toBeNull()
+  })
+})

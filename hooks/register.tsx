@@ -2790,12 +2790,15 @@ export const register: Register = on => {
     }
 
     const nowMs = await $.clock.now()
-    const config = await configForRender($, await $.session.root())
+    const root = await $.session.root()
+    const config = await configForRender($, root)
     const logo = e.surface === 'terminal' ? null : await loadLogo($)
 
     return drawBand($.ui.resolve(e), {
       stats: current,
       config,
+      // #214: the session-start survey (layoutNotes) says when the default layout pairs none of the code.
+      matchesNothing: config.layoutGuessed === true && (layoutNotes.get(root) ?? null) !== null,
       nowMs,
       logo,
       standingDown,

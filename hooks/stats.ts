@@ -171,12 +171,13 @@ function without<T>(record: Readonly<Record<string, T>>, key: string): Record<st
   return rest
 }
 
-function logged(s: TddStats, kind: EventKind, atMs: number, module?: string, detail?: string): TddStats {
+function logged(s: TddStats, kind: EventKind, atMs: number, module?: string, detail?: string, agent?: string): TddStats {
   const event: TddEvent = {
     atMs,
     kind,
     ...(module === undefined ? {} : { module }),
     ...(detail === undefined ? {} : { detail }),
+    ...(agent === undefined ? {} : { agent }),
   }
   return {
     ...s,
@@ -457,8 +458,9 @@ export function recordSourceEdit(s: TddStats, module: string, isGuarded: boolean
     : logged({ ...followed, unguarded: s.unguarded + 1 }, 'unguarded', nowMs, module)
 }
 
-export function recordBlocked(s: TddStats, module: string, nowMs: number): TddStats {
-  return logged({ ...s, blocked: s.blocked + 1 }, 'blocked', nowMs, module)
+/** `agent`: the subagent refused, so the override is offered once per agent (#212). */
+export function recordBlocked(s: TddStats, module: string, nowMs: number, agent?: string): TddStats {
+  return logged({ ...s, blocked: s.blocked + 1 }, 'blocked', nowMs, module, undefined, agent)
 }
 
 /**

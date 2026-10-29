@@ -1,7 +1,7 @@
 {
   "name": "dope-tdd",
   "displayName": "Dope TDD",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Keeps Claude Code test-first and proves each test catches its change: refuses edits to untested code, then undoes the change and reruns the test.",
   "author": {
     "name": "Andres Fuentes"
@@ -10,7 +10,7 @@
   "repository": "https://github.com/andres-fu/dope-tdd",
   "documentationUrl": "https://github.com/andres-fu/dope-tdd#readme",
   "supportUrl": "https://github.com/andres-fu/dope-tdd/issues",
-  "privacyPolicyUrl": "https://github.com/andres-fu/dope-tdd#what-dope-tdd-sends",
+  "privacyPolicyUrl": "https://github.com/andres-fu/dope-tdd/blob/main/docs/security-and-data.md#what-dope-tdd-sends",
   "license": "MIT",
   "keywords": ["tdd", "testing", "test-first", "vitest", "jest", "mod"],
   "types": "./types/index.d.ts"

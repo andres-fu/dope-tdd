@@ -66,7 +66,7 @@ These are judged by a reviewer or the security scan, not by validation.
 | Policy point | State |
 | --- | --- |
 | README says everything the plugin runs, sends or fetches (security scan) | Done: "What Dope TDD sends" and "What Dope TDD stores" |
-| Privacy policy link (3A) | Done: `privacyPolicyUrl` points at "What Dope TDD sends" |
+| Privacy policy link (3A) | Done: `privacyPolicyUrl` points at "What Dope TDD sends" in `docs/security-and-data.md` (fixed in 0.2.9; the README anchor went away in the rewrite) |
 | Support channel (3B) | Done: `supportUrl` is the issue tracker |
 | Security contact (3B) | Done: `SECURITY.md`, and private vulnerability reporting is on (2026-10-28) |
 | Purpose, operation and troubleshooting documented (3C) | Done in README; check the troubleshooting part is easy to find |

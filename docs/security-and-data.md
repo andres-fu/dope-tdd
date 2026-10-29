@@ -92,3 +92,33 @@ Files matched by `exempt` in `dope-tdd.json` are not captured. The 30-day
 cleanup uses `node`; where it is missing, the files stay until you delete
 them. Delete `~/.dope-tdd/` at any time. Source text is never written to the
 Claude Code log.
+
+## For the plugin directory's reviewer
+
+The directory's scan holds Dope TDD on the warnings below. What the code
+behind each one does, checked against 0.2.9 (all in `hooks/register.tsx`
+unless named):
+
+- **Includes a mod.** Its code runs inside Claude Code, as the person, like
+  every plugin's hooks. It registers no tool that runs code on its own; the one
+  tool it adds, `mcp__dope-tdd__override_request`, records a request in
+  `dope-tdd.overrides.json` and waits for a person.
+- **Starts programs, with a computed command.** Three kinds, each as an
+  argument list (`$.process.run(argv)`), never through a shell: `git`, with
+  arguments it builds itself; the project's test runner on one test file,
+  where the runner comes from the project's own files and the file is the one
+  being checked (`runPlan.ts`, `findRunner.ts`); and short `node -e` helpers
+  that link and remove its check copy and prune old logs.
+- **Writes files.** Only those listed under "What Dope TDD stores", plus
+  `dope-tdd.json` on `/tdd setup write`, `dope-tdd.overrides.json`, and its
+  check copy under `.git/dope-tdd/`.
+- **Reads local data, and can send data out.** It reads the files it checks,
+  git's view of the changes, and the test runner's output. The only send is the
+  opt-in model approver above (`"overrides": { "approver": "model" }`, off by
+  default): `$.model.complete`, through the session's own client, to the model
+  API Claude Code already uses. Nothing else leaves the machine; there is no
+  `fetch` or other network call.
+- **Reads the conversation, and can send data out.** It reads the output of
+  Bash and PowerShell calls to find the test runner's summary line, the
+  question a `/dope-tdd:spike` run carries, and an override's reason. Of these,
+  only an override request's fields go out, and only with the opt-in approver.

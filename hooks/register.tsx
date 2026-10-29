@@ -249,6 +249,23 @@ async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig
   return config
 }
 
+/** The rules as the agent is told them, or null in observe mode, which measures how the agent works on its own. */
+async function briefing($: EngineInterface): Promise<string | null> {
+  const root = await $.session.root()
+  const config = await loadConfig($, root)
+  if (config.mode === 'observe') {
+    return null
+  }
+  // #167: with no dope-tdd.json the project is walked once per root, so a default that pairs nothing is said.
+  if (config.layoutGuessed === true && !layoutNotes.has(root)) {
+    layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
+  }
+  const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
+  // Idea 15: the store changes only when a session ends, so the briefing stays the same all session.
+  const leftRed = leftRedNote(freshLeftRed(await $.store.get(leftRedKey(root)), await $.clock.now()))
+  return briefingText(config, await briefingCommand($, root, config), layoutNote, leftRed)
+}
+
 async function configForRender($: EngineInterface, root: string): Promise<GuardConfig> {
   return cachedConfig?.root === root ? cachedConfig.config : loadConfig($, root)
 }
@@ -2684,23 +2701,21 @@ export const register: Register = on => {
   // The briefing: the rules in Claude's system prompt, so the first refusal is an expected step, not a surprise.
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
-    const root = await $.session.root()
-    const config = await loadConfig($, root)
-    // Observe measures how the agent works on its own, so it is not briefed.
-    if (config.mode === 'observe') {
-      return composed
-    }
-    // #167: with no dope-tdd.json the project is walked once per root, so a default that pairs nothing is said.
-    if (config.layoutGuessed === true && !layoutNotes.has(root)) {
-      layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
-    }
-    const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
-    // Idea 15: the store changes only when a session ends, so the briefing stays the same all session.
-    const leftRed = leftRedNote(freshLeftRed(await $.store.get(leftRedKey(root)), await $.clock.now()))
-    const text = briefingText(config, await briefingCommand($, root, config), layoutNote, leftRed)
+    const text = await briefing($)
     // Only the briefing: field guides from ~/.dope-tdd/guides were cut on 2026-10-20 (verified review B7).
-    return { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
+    return text === null ? composed : { sections: [...composed.sections, { id: 'dope-tdd:briefing', text, scope: 'session' as const }] }
   })
+
+  // #222 (tester round 6): prompt.compose reaches the main session's system prompt only, so a subagent learned the
+  // rules from its first refusal. The briefing rides on the task it is spawned with. A fork inherits the parent's
+  // context, briefing included; a workflow agent's prompt cannot be rewritten.
+  on('agent.spawn', async ($, e, next) => {
+    if (e.fork || e.subagentType === 'fork' || e.workflow !== undefined) {
+      return next(e)
+    }
+    const text = await briefing($)
+    return next(text === null ? e : { ...e, prompt: `${e.prompt}\n\n${text}` })
+  }).catch(($, e, next) => next(e))
 
   // Pin corrected (2026-10-18): the pin skill running, typed or called by the agent, is what tells a corrected pin from a
   // test bent to match a bug. Watched only; the skill's prompt passes through unchanged.

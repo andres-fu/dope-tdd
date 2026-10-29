@@ -1238,3 +1238,37 @@ describe('a refused file that looks like a throwaway script (#32)', () => {
     expect(result.deny).toMatch(/One-off script\?/)
   })
 })
+
+// #222 (tester round 6): the briefing went only into the main session's system prompt, so a subagent learned the rules
+// from its first refusal. It now rides on the prompt the subagent is spawned with.
+describe('a subagent is briefed when it is spawned', () => {
+  const spawnSeen = (on: Parameters<typeof fakeEngine>[0]) => {
+    const seen: { prompt?: string } = {}
+    // Stands in for the engine: records the prompt the subagent would run with.
+    on('agent.spawn', (_$, e) => {
+      seen.prompt = (e as { prompt: string }).prompt
+      return { model: 'm', agentId: 'a1' }
+    })
+    return seen
+  }
+
+  test("the subagent's prompt keeps its task and gains the rules", async ($, on) => {
+    fakeEngine(on)
+    const seen = spawnSeen(on)
+
+    await $.agent.spawn({ prompt: 'Fix the date bug.' })
+
+    expect(seen.prompt?.startsWith('Fix the date bug.')).toBe(true)
+    expect(seen.prompt).toMatch(/Dope TDD is on in this project \(mode: enforce\)/)
+    expect(seen.prompt).toMatch(/mcp__dope-tdd__override_request/)
+  })
+
+  test('a fork, which inherits the briefing with its context, is not briefed again', async ($, on) => {
+    fakeEngine(on)
+    const seen = spawnSeen(on)
+
+    await $.agent.spawn({ prompt: 'Fix the date bug.', subagentType: 'fork' } as never)
+
+    expect(seen.prompt).toBe('Fix the date bug.')
+  })
+})

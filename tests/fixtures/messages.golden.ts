@@ -15,6 +15,7 @@ export const GOLDEN: Record<string, string> = {
   "outside.project": "dope-tdd: C:/work/other/src/a.ts is outside this project (C:/work/app), so it is not guarded or counted, and nor is anything else outside it this session. To work test-first in another repository, open a Claude Code session in it.",
   "edit.unguarded": "dope-tdd: src/utils/a was edited with no test touched first. Write tests/utils/a.test.ts next and see it fail.",
   "run.crashed": "dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.",
+  "run.otherCheckout": "dope-tdd: that run does not count for utils/a: its test is in another checkout, .claude/worktrees/w/tests/utils/a.test.ts. Run it there.",
   "run.truncated": "dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.",
   "run.unread": "dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. Run one test file and keep the end of its output, where the summary is.",
   "run.unreadable": "dope-tdd: this was a mocha run, and dope-tdd cannot read mocha's summary yet, so mocha runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.",

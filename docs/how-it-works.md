@@ -147,6 +147,22 @@ refused, and a shell change to it is put back and counted as a workaround.
   module: when two checkouts work on the same module, the last test touch holds
   the unlock and the other is refused until it touches its test again
   ([#227](https://github.com/andres-fu/dope-tdd/issues/227)).
+- A session's own shell can work in `.claude/worktrees/<name>/` too, as the
+  desktop app sets up, with no agent to place it. Each shell command is judged
+  by where it works: the folder its test run is in, else the first file it
+  writes, else where it ends. Inside a worktree, its writes, the `git` check
+  around it, its `dope-tdd.json` and its catch check are that worktree's, and
+  the catch check builds its throwaway copy from there. A run counts for a
+  module only in the checkout its unlock belongs to: a run of the main
+  checkout's copy of a test says so and changes nothing for a module unlocked
+  in a worktree, nor the other way round. A runner installed in the main
+  checkout is found from a worktree under it, as `npx` finds it there. Dope TDD
+  knows a shell's folder only from the `cd` commands it sees. Headless Claude
+  Code puts the shell back at the project after each command without saying so:
+  a relative `cd` that then only makes sense from the project is read from
+  there, but a bare command is read from where the last `cd` left it. There,
+  put the `cd` and the command in one call
+  ([#250](https://github.com/andres-fu/dope-tdd/issues/250)).
 - A subagent gets the session briefing too: Claude Code adds it only to the main
   session's system prompt, so Dope TDD appends it to the task the subagent is
   spawned with. A fork already carries it, and a workflow's agents can't be

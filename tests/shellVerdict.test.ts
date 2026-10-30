@@ -267,13 +267,18 @@ describe('ownTestRun', () => {
     expect(ownTestRun('npx vitest run src/utils/a.ts', 'fail', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
   })
 
-  // Pins today's behaviour, which is #250: a run in a worktree nested under the root is classified against the root,
-  // so it counts for no module. The fix gives this the run's own checkout as `root` (mirror.ts, worktreeRootFor).
-  test('#250 as it stands: a run in a nested worktree is classified against the session root', () => {
+  // #250: `root` is the run's own checkout (shellCheckout.ts). Against the session root, a run in a worktree nested under
+  // it matches no layout, so it counts for no module.
+  test('a run in a nested worktree is classified against the checkout it was given', () => {
     expect(ownTestRun(run, 'fail', 'C:/r/.claude/worktrees/w', ROOT, DEFAULT_CONFIG)).toBeNull()
     expect(ownTestRun(run, 'fail', 'C:/r/.claude/worktrees/w', 'C:/r/.claude/worktrees/w', DEFAULT_CONFIG)).toEqual({
       module: 'utils/a',
       testPath: 'C:/r/.claude/worktrees/w/tests/utils/a.test.ts',
     })
+  })
+
+  test('a module unlocked in another checkout is not this run to judge: its failures are not that module\'s', () => {
+    expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/a'])).toBeNull()
+    expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/b'])).toEqual({ module: 'utils/a', testPath: 'C:/r/tests/utils/a.test.ts' })
   })
 })

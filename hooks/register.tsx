@@ -51,7 +51,9 @@ import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failur
 import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
-import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
+import { cwdAfter, isPureRead } from './shell.ts'
+import { cwdToCarry, settledStart, shellRoot, shellStart, unlockedElsewhere } from './shellCheckout.ts'
+import type { ShellScene } from './shellCheckout.ts'
 import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
@@ -1819,23 +1821,26 @@ async function guardShell(
   shell: ShellName,
   agentId?: string,
 ): Promise<ToolCallResult> {
-  // A subagent's shell runs in its worktree once its paths placed it there: its writes, its git check and its
-  // catch check are that checkout's, not the session's (#198).
-  const root = await agentRoot($, agentId)
+  // A subagent's shell runs in its worktree once its paths placed it there (#198); any shell can work in a worktree with
+  // no agent to place it, so where this command works says which (#250). Its writes, its git check and its catch check
+  // are that checkout's, not the session's.
+  const sessionRoot = await $.session.root()
+  const scene: ShellScene = { base: await agentRoot($, agentId), sessionRoot, mainCheckout: await mainCheckoutOf($, sessionRoot) }
+  // The command starts where the last one left the shell, when that is still inside the project.
+  const start = await settledStart(command, shellStart(await readCwd($, shell, agentId), scene), scene.base, path => $.fs.exists(path))
+  const written = findSourceWrites(command, start)
+  const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await checkShell($, command, proceed, shell, root, agentId)
+    const result = await checkShell($, command, proceed, shell, { root, start, written, scene }, agentId)
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
   // The shell still moves while the guard stands down, so the next command starts where this one left it.
-  const carried = await readCwd($, shell, agentId)
-  const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
-  const touchesCode = isTestRun(command) || findSourceWrites(command, start).length > 0
+  const touchesCode = isTestRun(command) || written.length > 0
   const result = await standDown($, root, git.lines, touchesCode, proceed)
   if (result.deny === undefined) {
-    const moved = cwdAfter(command, start)
-    await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root, agentId)
+    await writeCwd($, shell, cwdToCarry(cwdAfter(command, start), root, scene.base), agentId)
   }
   return result
 }
@@ -1845,25 +1850,22 @@ async function checkShell(
   command: string,
   proceed: () => Promise<ToolCallResult>,
   shell: ShellName,
-  root: string,
+  { root, start, written, scene }: { root: string; start: string; written: readonly string[]; scene: ShellScene },
   agentId: string | undefined,
 ): Promise<ToolCallResult> {
   await ensureRepaired($, root, await $.clock.now())
   const current = await readStats($)
   const config = await loadConfig($, root)
   const quiet = config.mode === 'observe'
-  // The command starts where the last one left the shell, when that is still inside the project.
-  const carried = await readCwd($, shell, agentId)
-  const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
 
-  const sessionRoot = await $.session.root()
-  const mainCheckout = await mainCheckoutOf($, sessionRoot)
+  const { sessionRoot, mainCheckout } = scene
   // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
   const writes = await Promise.all(
-    findSourceWrites(command, start).map(async written => {
-      const path = await projectPath($, root, absolutePath(root, written))
-      // A write into an agent worktree is judged against that worktree, as Edit and Write are (#198).
-      const home = worktreeRootFor(root, path, mainCheckout)
+    written.map(async each => {
+      const path = await projectPath($, root, absolutePath(root, each))
+      // A write into a worktree is judged against that worktree, as Edit and Write are (#198); from the session root,
+      // since `root` can itself be a worktree now and a file in the main checkout is no file of that one.
+      const home = worktreeRootFor(sessionRoot, path, mainCheckout)
       return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
     }),
   )
@@ -1910,8 +1912,7 @@ async function checkShell(
   if (result.deny !== undefined) {
     return result
   }
-  const moved = cwdAfter(command, start)
-  await writeCwd($, shell, moved !== ELSEWHERE && isInsideRoot(root, moved) ? moved : root, agentId)
+  await writeCwd($, shell, cwdToCarry(cwdAfter(command, start), root, scene.base), agentId)
   const after = before === null ? null : await snapshotWatched($, root, config)
   const nowMs = await $.clock.now()
 
@@ -1967,7 +1968,10 @@ async function checkShell(
       commented.push(...(await noteCommentedOut($, root, write.module, write.path, beforeText(write.before), write.after, nowMs)))
     }
   }
-  const unguardedPaths = unguardedShellPaths(changedSources, updated.unlocked, path => policyFor(config, path))
+  // A module unlocked in another checkout has no test on record here, and this command's run says nothing about it (#250).
+  const foreign = unlockedElsewhere(updated.unlocked, root, sessionRoot, mainCheckout)
+  const unlockedHere = Object.fromEntries(Object.entries(updated.unlocked).filter(([module]) => !foreign.includes(module)))
+  const unguardedPaths = unguardedShellPaths(changedSources, unlockedHere, path => policyFor(config, path))
 
   const output = result.text ?? ''
   // A workspace run (`npm test -w server`) runs in its package: the runner prints paths from there.
@@ -1983,7 +1987,7 @@ async function checkShell(
   // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
   let alreadyFailing: string[] = []
   // Which module's own test file a red run is: shellVerdict.ts's.
-  const working = ownTestRun(command, outcome, start, root, config)
+  const working = ownTestRun(command, outcome, start, root, config, foreign)
   if (working !== null) {
     let names = failedTestsIn(output)
     // A tail kept the summary and lost the names: run the file once, locally, to read them all.
@@ -2008,6 +2012,7 @@ async function checkShell(
   let ownCycleClosed = false
   // A green of another module's test is not this module's run: it neither closes its cycle nor starts its check.
   let countsForCurrent = true
+  let otherCheckout = false
   let ownTestOf: string | null = null
   let elsewhere: string[] = []
   let redUnlocked: string[] = []
@@ -2036,7 +2041,7 @@ async function checkShell(
         }
       }
     }
-    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther, errorsOnly, namesFailedFiles: outcome === 'fail' && namesFailedFiles(output) }
+    const facts = { outcome, named, filtered: filtersTests(command), namedImports, failed, importsOf, ownTest, wholeFolder: runsWholeFolder(command), namedOther, errorsOnly, namesFailedFiles: outcome === 'fail' && namesFailedFiles(output), foreign }
     let plan = null as RunPlan | null
     afterRun = await change($, s => {
       plan = applyRun(s, facts, root, config, nowMs)
@@ -2046,7 +2051,7 @@ async function checkShell(
       for (const { module, testPath } of plan.remember) {
         await rememberUnlock($, root, module, testPath, nowMs)
       }
-      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent, ownTestOf } = plan)
+      ;({ redUnlocked, carriedOn, elsewhere, ownCycleClosed, countsForCurrent, otherCheckout, ownTestOf } = plan)
     }
     // Idea 17: a run of one named test file is the loop; how long it took goes on the band and into the record.
     if (named !== undefined) {
@@ -2085,7 +2090,7 @@ async function checkShell(
       ? null
       : outcome === 'unknown'
         ? unreadRunAdvice(isTruncated(output), isNodeTestRun(command) ? 'node-test' : undefined, nodeRunnerCrashed(output))
-        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, errorsOnly: outcome === 'fail' && failedOnlyOnErrors(output), ...(afterRun.sameRed !== null && afterRun.sameRed.module === runModule ? { stuck: afterRun.sameRed } : {}), ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }) })
+        : runAdvice(updated, afterRun, check === 'unchecked' ? undefined : check, { elsewhere, testChanged, sourcePath, label: runModule === undefined ? undefined : moduleLabel(config, runModule), cycleCompleted: ownCycleClosed, errorsOnly: outcome === 'fail' && failedOnlyOnErrors(output), ...(afterRun.sameRed !== null && afterRun.sameRed.module === runModule ? { stuck: afterRun.sameRed } : {}), ...(ownTestOf === null ? {} : { ownTestOf: moduleLabel(config, ownTestOf) }), ...(otherCheckout && afterRun.current !== null ? { otherCheckout: relativePath(sessionRoot, afterRun.current.testPath) } : {}) })
 
   const reminders = shellReminders(
     {
@@ -2107,7 +2112,8 @@ async function checkShell(
   )
   // #238: a test run, or a code file written, outside the project. A run's folder ends in a slash to mark it a folder.
   const outsideRun = runLocation !== null && !isInsideRoot(root, runLocation) && isTestRun(command) ? [`${runLocation}/`] : []
-  const outside = await noteOutside($, root, [...outsideRun, ...writes.map(({ path }) => path)])
+  // A write in the session's own checkout, beside a run judged in a worktree, is inside the project all the same.
+  const outside = await noteOutside($, root, [...outsideRun, ...writes.map(({ path }) => path).filter(path => !isInsideRoot(scene.base, path))])
   return tell(quiet, result, [...reminders, ...outside])
 }
 

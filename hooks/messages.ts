@@ -64,6 +64,9 @@ export const MESSAGES = {
   'run.crashed': entry({}, () =>
     'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'),
   // VibeCast field test (2026-10-18): a 40 KB `npm test` was cut before its summary; said as too long, never "pipe it".
+  // #250: the run read as this module's by name, and the module's test and change are in another checkout.
+  'run.otherCheckout': entry({ module: 'utils/a', testPath: '.claude/worktrees/w/tests/utils/a.test.ts' }, f =>
+    `dope-tdd: that run does not count for ${f.module}: its test is in another checkout, ${f.testPath}. Run it there.`),
   'run.truncated': entry({}, () =>
     'dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.'),
   'run.unread': entry({ nodeTest: false }, f =>

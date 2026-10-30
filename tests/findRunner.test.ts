@@ -19,6 +19,17 @@ describe('Python: pytest where it is set up, else unittest', () => {
 
   // Verified review A15 (2026-10-20): the search walked above the repository with no bound, so a .venv or a marker in a
   // folder above it could become the program the check runs. It stops at the repository's top, or at the root outside git.
+  // #250: a worktree nested at <main>/.claude/worktrees/<name> has a `.git` file of its own and usually no node_modules.
+  // `npx vitest` from there walks up to the main checkout's, so the catch check must find that one too.
+  test('a worktree under .claude/worktrees finds the runner of the checkout it is nested in, and goes no further', async () => {
+    const nested = 'C:/mono/.claude/worktrees/w'
+    const files = { [`${nested}/.git`]: 'gitdir: C:/mono/.git/worktrees/w', 'C:/mono/.git': '', 'C:/mono/package.json': '{}', 'C:/mono/node_modules/vitest/vitest.mjs': '' }
+    const { exists, read } = disk(files)
+    expect(await findRunner(nested, 'node', `${nested}/tests/a.test.ts`, exists, read)).toEqual({ kind: 'vitest', root: 'C:/mono', tool: 'C:/mono/node_modules/vitest/vitest.mjs' })
+    const above = disk({ [`${nested}/.git`]: '', 'C:/mono/.git': '', 'C:/node_modules/vitest/vitest.mjs': '', 'C:/package.json': '{}' })
+    expect(await findRunner(nested, 'node', `${nested}/tests/a.test.ts`, above.exists, above.read)).toBeNull()
+  })
+
   test('a runner above the repository is never used; one hoisted to the repository top still is', async () => {
     const above = disk({ 'C:/work/package.json': '{}', 'C:/work/node_modules/vitest/vitest.mjs': '', 'C:/work/app/.git': '' })
     expect(await findRunner('C:/work/app', 'node', 'C:/work/app/tests/a.test.ts', above.exists, above.read)).toBeNull()

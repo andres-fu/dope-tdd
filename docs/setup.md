@@ -15,8 +15,9 @@ Two questions decide whether an edit is guarded, in this order:
    runs, so nothing is refused and nothing is logged.
 2. **What does it guard?** Dope TDD decides, from the session root: the folder
    Claude Code was opened in. It reads `dope-tdd.json` there, and pairs and
-   guards source and tests by the layout. A subagent's worktree is guarded with
-   that worktree's own `dope-tdd.json` and tests, both under
+   guards source and tests by the layout. A subagent's worktree, or one the
+   session's own shell works in, is guarded with that worktree's own
+   `dope-tdd.json` and tests, both under
    `.claude/worktrees/` in the session root and, when the session root is
    itself a git worktree, under the main checkout's `.claude/worktrees/`, where
    Claude Code puts them in that case. Files anywhere else are left alone.

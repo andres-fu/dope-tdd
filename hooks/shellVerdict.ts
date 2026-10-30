@@ -86,11 +86,12 @@ export function readShellRun(output: string, runLocation: string | null, root: s
  * The red run of one named test file, which is judged by which tests fail (judgeFailures): the module whose test file
  * the command names, whichever was touched last. A run filtered to some tests by name says nothing about the rest, so
  * it is never judged this way. `start` is where the shell is; `root` is the checkout the file is classified against.
+ * `foreign`: the modules unlocked in another checkout, whose failures this run cannot add to (#250).
  */
-export function ownTestRun(command: string, outcome: RunOutcome, start: string, root: string, config: GuardConfig): { module: string; testPath: string } | null {
+export function ownTestRun(command: string, outcome: RunOutcome, start: string, root: string, config: GuardConfig, foreign: readonly string[] = []): { module: string; testPath: string } | null {
   const ownFile = outcome === 'fail' && !filtersTests(command) ? namedTestFile(command, config.stack, start) : null
   const ownTarget = ownFile === null ? null : classifyPath(root, ownFile, config)
-  return ownFile !== null && ownTarget?.kind === 'test' ? { module: ownTarget.module, testPath: ownFile } : null
+  return ownFile !== null && ownTarget?.kind === 'test' && !foreign.includes(ownTarget.module) ? { module: ownTarget.module, testPath: ownFile } : null
 }
 
 export type FailureJudgement = {

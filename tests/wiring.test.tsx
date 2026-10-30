@@ -163,6 +163,19 @@ describe('work outside the project is said once, never refused', () => {
   })
 })
 
+// #239: a redirect quoted in a commit message was read as a write and refused as an untested edit.
+describe('quoted text in a command is data', () => {
+  test('a commit message that mentions a redirect into untested source is not refused; the real redirect is', async ($, on) => {
+    fakeEngine(on)
+
+    const message = await runBash($, 'git commit -m "note: echo x >> src/utils/calculateDuration.ts"')
+    const real = await runBash($, 'echo x >> "src/utils/calculateDuration.ts"')
+
+    expect(message.deny).toBeUndefined()
+    expect(real.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+})
+
 // #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
 // session. A subagent refused after the main session never saw option (3), though it holds the tool.
 describe('each agent is offered the override on its own first refusal', () => {

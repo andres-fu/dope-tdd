@@ -21,6 +21,7 @@ import {
   recordGitIn,
   recordOutside,
   recordCarriedRun,
+  recordRedUnlock,
   recordCarryWait,
   recordImporter,
   recordStaleUnlocks,
@@ -225,6 +226,22 @@ describe('edits', () => {
     const s = recordSourceEdit(touch(), MODULE, true, T0 + 1)
     expect(s.testFirst).toBe(1)
     expect(s.current?.module).toBe(MODULE)
+  })
+
+  // #236 (tester round 7): one green run reopens a carried-over unlock (#54), and the untested edit after it read as
+  // test-first: `test-first: 1/1` for code no test covered. It is counted on its own, and is not a miss either.
+  test('an edit under a carried-over unlock is counted on its own, not as test-first', () => {
+    const carried = recordCarriedRun(seedUnlocks(INITIAL_STATS, { [MODULE]: { testPath: TEST_PATH, atMs: 1 } }), [MODULE], T0)
+    const s = recordSourceEdit(carried, MODULE, true, T0 + 1)
+    expect(s.testFirst).toBe(0)
+    expect(s.unguarded).toBe(0)
+    expect(s.carriedEdits).toBe(1)
+  })
+
+  test('once its test is touched or seen red this session, an edit there is test-first again', () => {
+    const carried = recordCarriedRun(seedUnlocks(INITIAL_STATS, { [MODULE]: { testPath: TEST_PATH, atMs: 1 } }), [MODULE], T0)
+    expect(recordSourceEdit(touch(carried, T0 + 1), MODULE, true, T0 + 2).testFirst).toBe(1)
+    expect(recordSourceEdit(recordRedUnlock(carried, MODULE, TEST_PATH, true), MODULE, true, T0 + 2).testFirst).toBe(1)
   })
 
   test('an unguarded edit is counted separately', () => {

@@ -166,7 +166,8 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     ...openLine(s, label),
     runsLine(s),
     cycleLine(s),
-    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    // #236: edits under a carried-over unlock are neither test-first nor misses, so they sit apart from the ratio.
+    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
     ...workaroundLine(s),
     ...pinsLine(s),

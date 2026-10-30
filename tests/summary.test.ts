@@ -149,6 +149,12 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
   })
 
   // #234 (tester round 7): under an unread dope-tdd.json an untested edit landed while /tdd led with a bare "guard: ON".
+  // #236: edits under a carried-over unlock are neither test-first nor misses; the line counts them apart.
+  test('the test-first line counts edits under an earlier session\'s unlock on their own', () => {
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · blocked 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · blocked 0$/m)
+  })
+
   test('the guard line says when dope-tdd.json was not read', () => {
     expect(formatStatus(INITIAL_STATS, T0, parseConfig('{"mode":"strict"}'))).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read \(see config below\)$/m)
   })

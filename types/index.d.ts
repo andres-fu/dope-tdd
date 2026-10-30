@@ -153,6 +153,13 @@ export type TddStats = {
    * for one run of the test this session; that run removes the entry and the unlock is active.
    */
   inherited: Readonly<Record<string, number>>
+  /**
+   * #236: modules active only by a carried-over unlock, after its run. Their edits count under an earlier session's
+   * unlock, not as test-first; a touch or a red run of the test this session takes the module off.
+   */
+  carriedOn: readonly string[]
+  /** #236: source edits made under a carried-over unlock: neither test-first nor a miss. */
+  carriedEdits: number
   /** Carried-over unlocks dropped because the test changed since, by when they were stored: the refusal says why (#54). */
   stale: Readonly<Record<string, number>>
   reminded: readonly string[]

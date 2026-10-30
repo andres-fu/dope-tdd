@@ -80,7 +80,10 @@ refused, and a shell change to it is put back and counted as a workaround.
   resort it is. The refusal ends with the band's own "last run" line.
 - A module unlocked in an earlier session (up to 7 days) waits for one run of
   its test this session, red or green, before its first edit; the carry-over
-  is dropped if that test changed since.
+  is dropped if that test changed since. Edits under it are not counted as
+  test-first, since the test came first in an earlier session: `/tdd` counts
+  them apart (`under an earlier session's unlock`) until the test is touched
+  or seen failing this session.
 - A module still red when a session ends is kept (up to 7 days), and the
   next session's briefing in that project leads with it: the module, the
   failing test, and to start there. A later session that leaves it green

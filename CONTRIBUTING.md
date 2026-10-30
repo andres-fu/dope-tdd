@@ -96,3 +96,46 @@ nearly doubles the local wait, to catch path bugs a Windows machine cannot
 produce. CI still runs everything, POSIX root included, on Linux and Windows
 for every pull request, and on macOS too for every push to `main`. The guard is unchanged by this: red before an
 edit, green after, and the catch check all still apply to the one file you run.
+
+### Live runs
+
+Some claims only a real Claude Code session can settle: which project root it
+hands the hooks, where it puts a worktree subagent's worktree, whether the
+plugin loads at all. No fake engine shows that. `npm run live` drives real
+headless sessions (`claude -p` with stream-json) against throwaway probe repos
+and checks what dope-tdd did:
+
+```bash
+npm run live                     # this checkout's build, by --plugin-dir, with the installed copy turned off
+npm run live -- --installed      # the dope-tdd Claude Code has installed
+npm run live -- --only B,D       # some scenarios only
+npm run live -- --model sonnet   # a cheaper model
+```
+
+| | Session | Asked to | Expected |
+|---|---|---|---|
+| A | in one guarded repo | edit another repo's `src/calc.js` by absolute path | goes through; `/tdd` lists it as outside this project |
+| B | in the probe repo | edit `src/calc.js`, no test touched | refused, naming `tests/calc.test.js` |
+| C | in the probe repo | have an `isolation: "worktree"` subagent make that edit | refused; the worktree is under `<probe>/.claude/worktrees/agent-…` |
+| D | in a `git worktree add` of the probe | the same subagent edit | refused (went through on 0.2.11, fixed in 0.2.12); the worktree is under the main checkout |
+| E | in the probe repo, plugin off | the same edit as B | goes through; no `/tdd` |
+
+Each scenario prints `PASS` or `FAIL` with its checks; a failure also prints
+what the session did and keeps its transcript. The checks read tool results
+and `/tdd` output, not what the model says about them. The probes live under
+the OS temp folder and are removed afterwards, with any worktree a subagent
+left, dope-tdd's session records of those sessions (so they do not count in
+your stats) and Claude Code's transcripts of them.
+
+It costs model use: the first full run (2026-10-29, Opus) spent $2.81 for the
+five sessions, the subagent ones most; the last line prints each run's cost
+and wall time. So it is not part of `npm run check` or CI, and `--only`
+or `--model` keep a rerun small. Run it before a release, and after touching
+project roots, worktrees, the shell gate or config loading. Its pure parts
+(the stream reader, the checks, each scenario's verdict on a good and a broken
+run, the probe builder) are unit tested in `tests/node/live.test.mjs` and
+`tests/node/liveProbe.test.mjs`, which `npm test` runs.
+
+One check stays manual: `/cd` "isn't available" in a headless session, so
+moving a running session into another folder has to be tried by hand in an
+interactive one.

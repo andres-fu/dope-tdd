@@ -142,11 +142,12 @@ guards there.
 
 ### Is it on?
 
-The band above the prompt tells you. With no warning word, it is guarding.
-One word in capitals means it is not refusing right now, and says why. No band
-and no `/tdd` command means the plugin is not running in this folder.
+The band above the prompt tells you. With no word in capitals, it is guarding.
+A word in capitals means something differs from plain guarding, and the rest of
+the line says what and what to do. No band and no `/tdd` command means the
+plugin is not running in this folder.
 
-![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS while guarding nothing; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
+![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS when something needs a fix, which the band names; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
 
 To check it for real, ask Claude to change a source file whose test you have
 not touched. It should be refused, and the refusal names the test to write.

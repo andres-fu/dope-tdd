@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="634" viewBox="0 0 760 634" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 760 634" style="max-width: 760px; height: auto" role="img" aria-labelledby="t d">
   <title id="t">Where Dope TDD applies</title>
   <desc id="d">Two questions in order. First, Claude Code's install scope decides whether dope-tdd runs in a folder: user scope covers every project, project scope the repo and its worktrees, local scope this folder only; where it is not enabled no hook runs. Second, dope-tdd guards what sits in the session root: its dope-tdd.json, source and tests by the layout, and agent worktrees under .claude/worktrees with their own rules. Agent worktrees in the parent repo, when the session root is itself a worktree, are guarded the same way. Another repo or folder is not guarded: its tests and rules belong to its own project, which this session does not load; open a Claude Code session there.</desc>
   <defs>

@@ -23,7 +23,8 @@ Two questions decide whether an edit is guarded, in this order:
 
 **Another repository is not guarded**, even when Claude works in it from your
 session: editing its files, running its tests, or `cd`-ing into it. Dope TDD
-neither refuses nor counts anything there. To work test-first in it, open a
+neither refuses nor counts anything there, and says so the first time it
+happens in a session (`/tdd` lists it too). To work test-first in it, open a
 Claude Code session in that repository, with its own `dope-tdd.json`.
 
 ## Where your tests live

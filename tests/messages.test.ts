@@ -37,6 +37,11 @@ describe('outside.project', () => {
     expect(text).toMatch(/not guarded or counted/)
     expect(text).toMatch(/open a Claude Code session in it/)
   })
+
+  // A live run on Windows (2026-10-29) printed the file with forward slashes and the project with backslashes.
+  test('spells the project with forward slashes, as the path is', () => {
+    expect(say('outside.project', { path: 'C:/work/other/src/a.ts', root: 'C:\\work\\app' })).toContain('(C:/work/app)')
+  })
 })
 
 // Idea 18 (2026-10-26): a catch that kept the test's failure message quotes it; one without stays as it was.

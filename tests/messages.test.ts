@@ -29,6 +29,16 @@ describe('the message catalogue', () => {
   })
 })
 
+// #238: the first code file or test run outside the project in a session is said: not guarded, and what to do instead.
+describe('outside.project', () => {
+  test('names the path and the project, says it is not guarded or counted, and how to guard it', () => {
+    const text = say('outside.project', { path: 'C:/work/other/src/a.ts', root: 'C:/work/app' })
+    expect(text).toMatch(/^dope-tdd: C:\/work\/other\/src\/a\.ts is outside this project \(C:\/work\/app\)/)
+    expect(text).toMatch(/not guarded or counted/)
+    expect(text).toMatch(/open a Claude Code session in it/)
+  })
+})
+
 // Idea 18 (2026-10-26): a catch that kept the test's failure message quotes it; one without stays as it was.
 describe('green.caught', () => {
   test('quotes the failure message when the catch kept one', () => {

@@ -37,6 +37,7 @@ import {
   unguardedAdvice,
   unreadRunAdvice,
 } from './advice.ts'
+import { say } from './messages.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
 import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
@@ -75,6 +76,7 @@ import {
   recordConfigChange,
   recordGuardFailure,
   recordGitIn,
+  recordOutside,
   recordImportUnlock,
   recordImporter,
   recordKnownFailures,
@@ -1620,7 +1622,25 @@ async function guardFileWrite(
   }
   const result = await checkFileWrite($, tool, filePath, proceed, agentId)
   await noteSaved($, root)
-  return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
+  const outside = result.deny === undefined ? await noteOutside($, root, [await projectPath($, root, filePath)]) : []
+  return tell((await configForRender($, root)).mode === 'observe', result, [...git.lines, ...outside])
+}
+
+/**
+ * #238: Dope TDD guards the project the session was opened in and leaves the rest alone. The first code file written
+ * or test run outside it this session is said, and logged for /tdd, so work in another repository is never taken for
+ * guarded work. Notes, temp files and other non-code files say nothing. `paths` are files, or folders ending in a
+ * slash (where a test run ran). Returns the line to add, if any.
+ */
+async function noteOutside($: EngineInterface, root: string, paths: readonly string[]): Promise<string[]> {
+  const path = paths.find(candidate => !isInsideRoot(root, candidate) && (candidate.endsWith('/') || isCodeFile(candidate)))
+  if (path === undefined || (await readStats($)).events.some(e => e.kind === 'outside')) {
+    return []
+  }
+  const shown = path.replace(/\\/g, '/').replace(/\/$/, '')
+  const nowMs = await $.clock.now()
+  await change($, s => recordOutside(s, shown, nowMs))
+  return [say('outside.project', { path: shown, root })]
 }
 
 async function checkFileWrite(
@@ -2131,7 +2151,10 @@ async function checkShell(
     config,
     root,
   )
-  return tell(quiet, result, reminders)
+  // #238: a test run, or a code file written, outside the project. A run's folder ends in a slash to mark it a folder.
+  const outsideRun = runLocation !== null && !isInsideRoot(root, runLocation) && isTestRun(command) ? [`${runLocation}/`] : []
+  const outside = await noteOutside($, root, [...outsideRun, ...writes.map(({ path }) => path)])
+  return tell(quiet, result, [...reminders, ...outside])
 }
 
 /** The modified time now of each path that left the snapshot, null for one that is gone; quiet, since gone is expected. */

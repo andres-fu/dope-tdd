@@ -31,6 +31,13 @@ describe('briefingText', () => {
     expect(briefingText({ ...DEFAULT_CONFIG, mode: 'observe' }, null)).not.toMatch(/override_request/)
   })
 
+  // #238: another repository worked from this session is not guarded; the agent knows, so it can tell the user.
+  test('says another repository is not guarded from this session, in enforce and warn', () => {
+    const line = /Another repository is not guarded from this session: to work test-first there, the user opens a Claude Code session in it\./
+    expect(briefingText(DEFAULT_CONFIG, 'npx vitest run <test file>')).toMatch(line)
+    expect(briefingText({ ...DEFAULT_CONFIG, mode: 'warn' }, null)).toMatch(line)
+  })
+
   test('in observe mode says nothing is refused, and without a runner gives no command', () => {
     const text = briefingText({ ...DEFAULT_CONFIG, mode: 'observe' }, null)
     expect(text).toMatch(/watches and records only; nothing is refused/)

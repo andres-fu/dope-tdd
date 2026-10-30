@@ -45,6 +45,8 @@ export type EventKind =
   | 'comment-touch'
   /** A git command wrote code from another branch, commit, stash or remote into a guarded file: said, not charged. */
   | 'git-in'
+  /** #238: the first code file or test run outside the project this session: not guarded, said once. */
+  | 'outside'
   /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */
   | 'spike'
 

@@ -117,6 +117,52 @@ describe('an agent worktree under the main checkout is guarded when the session 
   })
 })
 
+// #238: Dope TDD guards the project the session was opened in. Work in another repository from the same session is
+// left alone, and said once a session so nobody takes it for guarded work.
+describe('work outside the project is said once, never refused', () => {
+  const OTHER = `${FIXTURE_DRIVE}work/other-repo`
+  const outsideLine = (result: { context?: string[] }) => (result.context ?? []).filter(line => /is outside this project/.test(line))
+
+  test('the first Edit to a code file outside the project goes through and says so; the next one is quiet', async ($, on) => {
+    fakeEngine(on)
+
+    const first = await $.tool.call({ tool: 'Edit', file_path: `${OTHER}/src/a.ts`, old_string: 'a', new_string: 'b' } as never)
+    const second = await $.tool.call({ tool: 'Edit', file_path: `${OTHER}/src/b.ts`, old_string: 'a', new_string: 'b' } as never)
+    const status = await runCommand($, 'tdd')
+
+    expect(first.deny).toBeUndefined()
+    expect(outsideLine(first)).toHaveLength(1)
+    expect(outsideLine(first)[0]).toContain(`${OTHER}/src/a.ts`)
+    expect(outsideLine(second)).toHaveLength(0)
+    expect(status.text).toMatch(/outside this project, not guarded/)
+  })
+
+  test('a file that is not code, such as notes, says nothing', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await $.tool.call({ tool: 'Write', file_path: `${OTHER}/notes.md`, content: 'x' } as never)
+
+    expect(outsideLine(result)).toHaveLength(0)
+  })
+
+  test('a test run in another repository says so too', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runBash($, `cd ${OTHER} && npx vitest run tests/a.test.ts`)
+
+    expect(outsideLine(result)).toHaveLength(1)
+  })
+
+  test("the project's own edits say nothing about it", async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+    const result = await editAt($, 'src/utils/calculateDuration.ts')
+
+    expect(outsideLine(result)).toHaveLength(0)
+  })
+})
+
 // #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
 // session. A subagent refused after the main session never saw option (3), though it holds the tool.
 describe('each agent is offered the override on its own first refusal', () => {

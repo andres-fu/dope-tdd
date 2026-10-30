@@ -198,3 +198,34 @@ describe('the heredoc false positive (2026-10-18)', () => {
     expect(findSourceWrites(command)).toContain('hooks/a.ts')
   })
 })
+
+// #239 (2026-10-29): a redirect or write word inside a quoted argument was read as a real write, so a commit message,
+// an echoed sentence or a node -e script that mentioned `>> hooks/fileGate.ts` was refused as an edit to fileGate.
+describe('quoted text is data: a redirect inside it writes nothing', () => {
+  test('a redirect, sed -i, cp or tee quoted in a message or a string is not a write', () => {
+    expect(findSourceWrites('git commit -m "echo x >> hooks/fileGate.ts"')).toEqual([])
+    expect(findSourceWrites("echo 'run: echo x >> hooks/fileGate.ts' > notes.txt")).toEqual([])
+    expect(findSourceWrites(`node -e 'console.log("echo x >> hooks/fileGate.ts")'`)).toEqual([])
+    expect(findSourceWrites('git commit -m "sed -i s/a/b/ src/a.ts"')).toEqual([])
+    expect(findSourceWrites('git commit -m "cp src/a.ts src/b.ts; tee src/c.ts"')).toEqual([])
+  })
+
+  test('a quoted target after an unquoted redirect, tee or cp is still a write', () => {
+    expect(findSourceWrites('echo x > "src/a.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites("echo 'a > b' >> 'src/a.ts'")).toEqual(['src/a.ts'])
+    expect(findSourceWrites('printf x | tee "src/a.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('cp "src/a.ts" "src/b.ts"')).toEqual(['src/b.ts'])
+    expect(findSourceWrites("sed -i 's/a/b/' \"src/a.ts\"")).toEqual(['src/a.ts'])
+  })
+
+  test('a shell that runs its quoted argument still has its writes seen', () => {
+    expect(findSourceWrites(`ssh host "echo x > src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`eval "echo x >> src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`docker exec app sh -c "echo x > src/a.ts"`)).toEqual(['src/a.ts'])
+  })
+
+  test('the same holds with a root: paths resolve, quoted text still writes nothing', () => {
+    expect(findSourceWrites('git commit -m "echo x >> hooks/fileGate.ts"', 'C:/r')).toEqual([])
+    expect(findSourceWrites('echo x > "src/a.ts"', 'C:/r')).toEqual(['C:/r/src/a.ts'])
+  })
+})

@@ -26,6 +26,13 @@ describe('parseConfig', () => {
     expect(parseConfig('{"layout":{"source":"lib/{module}.ts","test":"x"}}').error).toMatch(/must contain \{ext\}/)
   })
 
+  // #234 (tester round 7): "Warn" with a capital W threw the whole file away, layout and all, and nothing was guarded.
+  test('reads mode in any case', () => {
+    expect(parseConfig('{"mode":"Warn"}')).toMatchObject({ mode: 'warn', error: null })
+    expect(parseConfig('{"mode":"ENFORCE"}')).toMatchObject({ mode: 'enforce', error: null })
+    expect(parseConfig('{"mode":" observe "}').error).toMatch(/mode must be one of/)
+  })
+
   test('a bad file falls back to enforce and says why', () => {
     expect(parseConfig('{"mode":"strict"}').error).toMatch(/mode must be one of enforce, warn, observe/)
     expect(parseConfig('not json').mode).toBe('enforce')
@@ -182,7 +189,7 @@ describe('overrides in dope-tdd.json: who approves (2026-10-18)', () => {
 describe('describeConfigChange when the file turns invalid', () => {
   test('says the whole file is ignored and names the defaults in force, not field changes', () => {
     const before = parseConfig('{"mode":"warn","stack":"python"}')
-    const text = describeConfigChange(before, parseConfig('{"mode":"Warn","stack":"python"}'))
+    const text = describeConfigChange(before, parseConfig('{"mode":"strict","stack":"python"}'))
     expect(text).toMatch(/^now invalid: dope-tdd\.json: mode must be one of enforce, warn, observe; the whole file is ignored, so the defaults apply: mode enforce, stack \w+, layout \w+$/)
     expect(text).not.toMatch(/→/)
   })

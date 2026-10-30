@@ -231,7 +231,9 @@ export function parseConfig(text: string | null, detected?: StackName): GuardCon
       throw new Error('must be an object')
     }
     const fields = raw as Record<string, unknown>
-    const mode = fields.mode === undefined ? 'enforce' : fields.mode
+    // #234 (tester round 7): "Warn" threw the whole file away and nothing was guarded. The case of a word is no reason
+    // to ignore the user's file; spaces or other words still are.
+    const mode = fields.mode === undefined ? 'enforce' : typeof fields.mode === 'string' ? fields.mode.toLowerCase() : fields.mode
     if (!isMode(mode)) {
       throw new Error(`mode must be one of ${MODES.join(', ')}`)
     }

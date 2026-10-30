@@ -48,6 +48,15 @@ describe('gateShellWrites', () => {
     expect(gateShellWrites([worktree], fromWorktree, {}, 'C:/r')).toEqual({ locked: [], waiting: [] })
     expect(gateShellWrites([worktree], unlocked, {}, 'C:/r')).toEqual({ locked: ['utils/open'], waiting: [] })
   })
+
+  // #233: the same holds for agent worktrees under the main checkout, when the session root is a linked worktree.
+  test('a test in an agent worktree under the main checkout unlocks that worktree only', () => {
+    const fromWorktree = { 'utils/open': 'C:/main/.claude/worktrees/agent-x/tests/utils/open.test.ts' }
+    const session = { module: 'utils/open', policy: 'enforce', path: 'C:/r/src/utils/open.ts' } as const
+    const worktree = { module: 'utils/open', policy: 'enforce', path: 'C:/main/.claude/worktrees/agent-x/src/utils/open.ts' } as const
+    expect(gateShellWrites([session], fromWorktree, {}, 'C:/r', 'C:/main')).toEqual({ locked: ['utils/open'], waiting: [] })
+    expect(gateShellWrites([worktree], fromWorktree, {}, 'C:/r', 'C:/main')).toEqual({ locked: [], waiting: [] })
+  })
 })
 
 describe('judgeFailures', () => {

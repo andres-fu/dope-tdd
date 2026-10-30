@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 760 596" style="max-width: 760px; height: auto" role="img" aria-labelledby="t d">
+  <title id="t">Is Dope TDD on?</title>
+  <desc id="d">How to read the band above the prompt. Guarding: the band reads "ready" before anything happens, or "refused" after it stops an untested edit. On but not refusing, on purpose: PAUSED, WARN ONLY, OBSERVING or STANDING DOWN. On but needing a fix, which the band names: NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS. GUARD FAILING: an internal error let calls through. Not running here: no band and no /tdd command, so the plugin is not enabled for this folder. Any time, /tdd shows the guard, mode, stack and layout.</desc>
+  <style>
+    .display { font-family: Anton, 'Arial Narrow', sans-serif; font-size: 28px; letter-spacing: 0.5px; fill: #181818; }
+    .serif { font-family: Georgia, 'Times New Roman', serif; fill: #181818; }
+    .dim { font-family: Georgia, 'Times New Roman', serif; fill: #6B655C; }
+    .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; fill: #181818; }
+    .kicker { font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12px; letter-spacing: 1.5px; fill: #B83D01; }
+    .card { fill: #FFFFFF; stroke: #181818; stroke-width: 1; }
+  </style>
+
+  <rect x="0.75" y="0.75" width="758.5" height="594.5" rx="16" fill="#FBF9F5" stroke="#181818" stroke-width="1.5"/>
+
+  <text class="display" x="32" y="56">IS IT ON?</text>
+  <text class="dim" x="32" y="80" font-size="15" font-style="italic">Read the band above the prompt.</text>
+  <text class="kicker" x="50" y="112">STATE</text>
+  <text class="kicker" x="214" y="112">THE BAND SAYS</text>
+  <text class="kicker" x="534" y="112">WHAT IT MEANS</text>
+
+  <rect x="32" y="139" width="8" height="8" fill="#B83D01"/>
+  <text class="serif" x="50" y="147" font-size="15">Guarding</text>
+  <text class="dim" x="50" y="165" font-size="13">nothing done yet</text>
+  <rect class="card" x="214" y="128" width="300" height="48" rx="6"/>
+  <text class="mono" x="228" y="156" font-size="11.5">ready · write a failing test, or edit code</text>
+  <text class="dim" x="534" y="148" font-size="13">Every untested edit to this</text>
+  <text class="dim" x="534" y="165" font-size="13">project&#39;s code is refused.</text>
+
+  <rect x="32" y="207" width="8" height="8" fill="#B83D01"/>
+  <text class="serif" x="50" y="215" font-size="15">Guarding</text>
+  <text class="dim" x="50" y="233" font-size="13">it stopped an edit</text>
+  <rect class="card" x="214" y="196" width="300" height="48" rx="6"/>
+  <text class="mono" x="228" y="224" font-size="11.5">refused: stats · write its test first</text>
+  <text class="dim" x="534" y="216" font-size="13">It refused an untested edit:</text>
+  <text class="dim" x="534" y="233" font-size="13">this is it doing its job.</text>
+
+  <rect x="32.5" y="275.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
+  <text class="serif" x="50" y="283" font-size="15">On, not refusing</text>
+  <text class="dim" x="50" y="301" font-size="13">on purpose</text>
+  <rect class="card" x="214" y="264" width="300" height="48" rx="6"/>
+  <text class="mono" x="228" y="284" font-size="11.5">PAUSED · WARN ONLY · OBSERVING</text>
+  <text class="mono" x="228" y="301" font-size="11.5">STANDING DOWN</text>
+  <text class="dim" x="534" y="284" font-size="13">Edits go through. The band</text>
+  <text class="dim" x="534" y="301" font-size="13">says why, and when it&#39;s back.</text>
+
+  <rect x="32.5" y="343.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
+  <text class="serif" x="50" y="351" font-size="15">On, needs a fix</text>
+  <text class="dim" x="50" y="369" font-size="13">something is off</text>
+  <rect class="card" x="214" y="332" width="300" height="48" rx="6"/>
+  <text class="mono" x="228" y="352" font-size="11.5">NOT WATCHING · CONFIG INVALID</text>
+  <text class="mono" x="228" y="369" font-size="11.5">CAN&#39;T READ RUNS</text>
+  <text class="dim" x="534" y="352" font-size="13">The band names what is wrong</text>
+  <text class="dim" x="534" y="369" font-size="13">and how to fix it.</text>
+
+  <rect x="32.5" y="411.5" width="7" height="7" fill="none" stroke="#B83D01" stroke-width="1.5"/>
+  <text class="serif" x="50" y="419" font-size="15">Guard failing</text>
+  <text class="dim" x="50" y="437" font-size="13">an internal error</text>
+  <rect class="card" x="214" y="400" width="300" height="48" rx="6"/>
+  <text class="mono" x="228" y="428" font-size="11.5">GUARD FAILING</text>
+  <text class="dim" x="534" y="420" font-size="13">Calls went through unguarded.</text>
+  <text class="dim" x="534" y="437" font-size="13">The band says how many.</text>
+
+  <rect x="32.5" y="479.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
+  <text class="serif" x="50" y="487" font-size="15">Not running here</text>
+  <text class="dim" x="50" y="505" font-size="13">the plugin is off</text>
+  <rect x="214" y="468" width="300" height="48" rx="6" fill="#FBF9F5" stroke="#181818" stroke-width="1" stroke-dasharray="4 3"/>
+  <text class="dim" x="228" y="497" font-size="13" font-style="italic">no band, and no /tdd command</text>
+  <text class="dim" x="534" y="488" font-size="13">Not enabled for this folder:</text>
+  <text class="dim" x="534" y="505" font-size="13">check the install scope.</text>
+
+  <line x1="32" y1="540" x2="728" y2="540" stroke="#181818" stroke-width="0.75"/>
+  <text class="dim" x="32" y="568" font-size="14">Not sure? Run <tspan class="mono" font-size="13">/tdd</tspan>: it shows the guard, the mode, the stack and the layout, and any error in dope-tdd.json.</text>
+</svg>

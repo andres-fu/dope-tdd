@@ -31,6 +31,12 @@ describe('learnRoot: an agent in a worktree is placed there by the paths it name
     const known = { a1: WORKTREE }
     expect(learnRoot(known, 'a1', ROOT, `${WORKTREE}/tests/a.test.ts`)).toBe(known)
   })
+
+  // #233: a session root that is itself a linked worktree has its agents' worktrees under the main checkout.
+  test("a path in an agent worktree under the main checkout places the agent there", () => {
+    const main = 'C:/work/main'
+    expect(learnRoot({}, 'a1', ROOT, `${main}/.claude/worktrees/agent-a1/api.py`, main)).toEqual({ a1: `${main}/.claude/worktrees/agent-a1` })
+  })
 })
 
 describe('rootOfAgent: where an agent works', () => {

@@ -60,9 +60,13 @@ export function relativePath(root: string, path: string): string {
  * A subagent with isolation: worktree works in <root>/.claude/worktrees/<name>, a checkout of its own whose paths
  * match no layout when read from the session root. The engine names no root for a subagent's call, so the path
  * says it. Spelled as the path spells it, so classifyPath finds the file inside it.
+ *
+ * `mainCheckout` is set when the session root is itself a linked git worktree (#233, tester round 7): Claude Code then
+ * puts its agents' worktrees under the main checkout's .claude/worktrees, outside the session root. A file inside the
+ * session root is still read against it first, so a session that is one of those worktrees keeps its own files.
  */
-export function worktreeRootFor(root: string, path: string): string {
-  const rest = relativeTo(root, path)
+export function worktreeRootFor(root: string, path: string, mainCheckout?: string): string {
+  const rest = relativeTo(root, path) ?? (mainCheckout === undefined ? undefined : relativeTo(mainCheckout, path))
   const worktree = rest === undefined ? null : /^\.claude\/worktrees\/[^/]+(?=\/)/.exec(rest)
   if (rest === undefined || worktree === null) {
     return root
@@ -76,11 +80,10 @@ export function worktreeRootFor(root: string, path: string): string {
  * (#198). Unlocks are kept by module name, so a test touched in one checkout would otherwise unlock the same module in
  * another, and "a test before this code" would be met by a test in a different copy of the code.
  */
-export function sameCheckout(root: string, a: string, b: string): boolean {
-  // A path in no worktree, even a relative one from a runner's output, is the main checkout (''): a session with no
-  // worktrees is judged exactly as before.
-  const checkout = (path: string): string => /^\.claude\/worktrees\/([^/]+)\//.exec(relativeTo(root, path) ?? '')?.[1] ?? ''
-  return checkout(a) === checkout(b)
+export function sameCheckout(root: string, a: string, b: string, mainCheckout?: string): boolean {
+  // A path in no worktree, even a relative one from a runner's output, is the session's own checkout: a session with
+  // no worktrees is judged exactly as before.
+  return pathKey(worktreeRootFor(root, a, mainCheckout)) === pathKey(worktreeRootFor(root, b, mainCheckout))
 }
 
 /** Splits `packages/app/src/a.ts` into the package root that a root glob names and the rest; null when under no root. */

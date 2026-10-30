@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordRun, recordSpike, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordRun, recordSpike, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -140,6 +140,12 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
   test('code brought in by git reads as such, with the command', () => {
     const s = recordGitIn(INITIAL_STATS, ['api'], 'git stash pop', T0)
     expect(formatStatus(s, T0)).toMatch(/: brought in by git, not guarded api \(git stash pop\)$/m)
+  })
+
+  // #238
+  test('work outside the project reads as not guarded, with the path', () => {
+    const s = recordOutside(INITIAL_STATS, 'C:/work/other/src/a.ts', T0)
+    expect(formatStatus(s, T0)).toMatch(/: outside this project, not guarded \(C:\/work\/other\/src\/a\.ts\)$/m)
   })
 
   test('a comments-only touch reads as such (decided 2026-10-20)', () => {

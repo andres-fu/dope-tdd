@@ -19,6 +19,7 @@ import {
   recordConfigChange,
   recordGuardFailure,
   recordGitIn,
+  recordOutside,
   recordCarriedRun,
   recordCarryWait,
   recordImporter,
@@ -760,6 +761,17 @@ describe('code brought in by git', () => {
     ])
     // Only the log moves: the events and when the last one was.
     expect({ ...s, events: [], lastEventMs: null }).toEqual({ ...INITIAL_STATS, events: [], lastEventMs: null })
+  })
+})
+
+// #238: work outside the project is not guarded. It is said once a session, and kept on the record for /tdd.
+describe('work outside the project', () => {
+  test('is logged once a session with the first path, and changes nothing else', () => {
+    const once = recordOutside(INITIAL_STATS, 'C:/work/other/src/a.ts', 5)
+    const twice = recordOutside(once, 'C:/work/other/src/b.ts', 6)
+    expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['outside', 'C:/work/other/src/a.ts']])
+    expect(twice).toBe(once)
+    expect({ ...once, events: [], lastEventMs: null }).toEqual({ ...INITIAL_STATS, events: [], lastEventMs: null })
   })
 })
 

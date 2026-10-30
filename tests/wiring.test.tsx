@@ -71,6 +71,98 @@ describe('an agent worktree is guarded like the main checkout', () => {
   })
 })
 
+// #233 (tester round 7): a session opened in a linked git worktree has its subagents' worktrees put under the main
+// checkout's .claude/worktrees, outside the session root. Read as outside the project, an untested edit there went
+// through and nothing was counted.
+describe('an agent worktree under the main checkout is guarded when the session root is a linked worktree', () => {
+  const MAIN = `${FIXTURE_DRIVE}work/main`
+  const AGENT = `${MAIN}/.claude/worktrees/agent-a179`
+
+  test('an Edit to untested source there is refused, naming the test in that worktree', async ($, on) => {
+    const world = fakeEngine(on)
+    world.mainCheckout = MAIN
+
+    const result = await $.tool.call({ tool: 'Edit', file_path: `${AGENT}/src/utils/calculateDuration.ts`, old_string: 'a', new_string: 'b', agentId: 'a1' } as never)
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a shell write there by absolute path is refused too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.mainCheckout = MAIN
+
+    const result = await $.tool.call({ tool: 'Bash', command: `printf 'x' >> ${AGENT}/src/utils/calculateDuration.ts`, agentId: 'a1' } as never)
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('touching the test in that worktree unlocks the edit there, and only there', async ($, on) => {
+    const world = fakeEngine(on)
+    world.mainCheckout = MAIN
+
+    await $.tool.call({ tool: 'Edit', file_path: `${AGENT}/tests/utils/calculateDuration.test.ts`, old_string: 'a', new_string: 'b', agentId: 'a1' } as never)
+    const there = await $.tool.call({ tool: 'Edit', file_path: `${AGENT}/src/utils/calculateDuration.ts`, old_string: 'a', new_string: 'b', agentId: 'a1' } as never)
+    const session = await editAt($, 'src/utils/calculateDuration.ts')
+
+    expect(there.deny).toBeUndefined()
+    expect(session.deny).toBeDefined()
+  })
+
+  test('with no linked worktree, a path under another checkout stays outside the project', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await $.tool.call({ tool: 'Edit', file_path: `${AGENT}/src/utils/calculateDuration.ts`, old_string: 'a', new_string: 'b', agentId: 'a1' } as never)
+
+    expect(result.deny).toBeUndefined()
+  })
+})
+
+// #238: Dope TDD guards the project the session was opened in. Work in another repository from the same session is
+// left alone, and said once a session so nobody takes it for guarded work.
+describe('work outside the project is said once, never refused', () => {
+  const OTHER = `${FIXTURE_DRIVE}work/other-repo`
+  const outsideLine = (result: { context?: string[] }) => (result.context ?? []).filter(line => /is outside this project/.test(line))
+
+  test('the first Edit to a code file outside the project goes through and says so; the next one is quiet', async ($, on) => {
+    fakeEngine(on)
+
+    const first = await $.tool.call({ tool: 'Edit', file_path: `${OTHER}/src/a.ts`, old_string: 'a', new_string: 'b' } as never)
+    const second = await $.tool.call({ tool: 'Edit', file_path: `${OTHER}/src/b.ts`, old_string: 'a', new_string: 'b' } as never)
+    const status = await runCommand($, 'tdd')
+
+    expect(first.deny).toBeUndefined()
+    expect(outsideLine(first)).toHaveLength(1)
+    expect(outsideLine(first)[0]).toContain(`${OTHER}/src/a.ts`)
+    expect(outsideLine(second)).toHaveLength(0)
+    expect(status.text).toMatch(/outside this project, not guarded/)
+  })
+
+  test('a file that is not code, such as notes, says nothing', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await $.tool.call({ tool: 'Write', file_path: `${OTHER}/notes.md`, content: 'x' } as never)
+
+    expect(outsideLine(result)).toHaveLength(0)
+  })
+
+  test('a test run in another repository says so too', async ($, on) => {
+    fakeEngine(on)
+
+    const result = await runBash($, `cd ${OTHER} && npx vitest run tests/a.test.ts`)
+
+    expect(outsideLine(result)).toHaveLength(1)
+  })
+
+  test("the project's own edits say nothing about it", async ($, on) => {
+    fakeEngine(on)
+
+    await editAt($, 'tests/utils/calculateDuration.test.ts')
+    const result = await editAt($, 'src/utils/calculateDuration.ts')
+
+    expect(outsideLine(result)).toHaveLength(0)
+  })
+})
+
 // #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
 // session. A subagent refused after the main session never saw option (3), though it holds the tool.
 describe('each agent is offered the override on its own first refusal', () => {

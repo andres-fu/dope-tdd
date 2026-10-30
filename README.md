@@ -116,7 +116,9 @@ Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`
 (and the usual layouts for Python and Godot). If your tests live elsewhere,
 run `/tdd setup`: it reads the repo and shows the stack, the layout and the
 JSON to use, and `/tdd setup write` saves it. Monorepos, per-folder layouts
-and presets are in [docs/setup.md](docs/setup.md).
+and presets are in [docs/setup.md](docs/setup.md), which starts with a picture
+of [where Dope TDD applies](docs/setup.md#where-dope-tdd-applies): what the
+install scope decides, and what Dope TDD guards from there.
 
 | Stack | Status |
 | --- | --- |
@@ -128,6 +130,57 @@ The project must be a git repository. A subagent in its own worktree sees only
 what is committed, so commit `dope-tdd.json` and your tests to the branch
 worktrees are created from; see
 [subagents in their own worktree](docs/setup.md#subagents-in-their-own-worktree).
+
+## What it guards
+
+It guards **Claude's** edits to **this project's** source: the folder you
+opened Claude Code in, and its subagents' worktrees. Two things decide it, in
+order: whether the plugin runs in that folder at all, then what Dope TDD
+guards there.
+
+![Where Dope TDD applies: Claude Code's install scope decides whether it runs in a folder, then it guards what sits in the folder the session was opened in.](assets/where-it-applies.svg)
+
+### Is it on?
+
+The band above the prompt tells you. With no word in capitals, it is guarding.
+A word in capitals means something differs from plain guarding, and the rest of
+the line says what and what to do. No band and no `/tdd` command means the
+plugin is not running in this folder.
+
+![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS when something needs a fix, which the band names; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
+
+To check it for real, ask Claude to change a source file whose test you have
+not touched. It should be refused, and the refusal names the test to write.
+
+## What it doesn't guard
+
+Dope TDD guards one project, from inside one Claude Code session. These are
+left alone on purpose:
+
+- **Another repository.** Its tests and `dope-tdd.json` belong to its own
+  project, and a Claude Code session loads only the project it was opened in.
+  So pulling a second repo into the session, editing its files or running its
+  tests is not guarded or counted. Dope TDD says so the first time it happens
+  in a session. To work test-first there, open a Claude Code session in that
+  repository.
+- **Your own edits.** Dope TDD sits in Claude's tool calls, and your editor
+  never passes through them. The [pull-request check](docs/pr-check.md) covers
+  code whoever wrote it.
+- **Code the layout doesn't match.** Dope TDD pairs source with tests by the
+  layout. With no `dope-tdd.json`, or one with a mistake, the defaults apply and
+  may pair nothing: the band reads NOT WATCHING or CONFIG INVALID. `/tdd setup`
+  finds the right layout.
+- **A folder where the plugin is off.** Claude Code decides where a plugin
+  runs. A local-scope install covers only the folder it was installed in; install
+  at user scope, or at project scope, to cover more.
+- **Files a program changes.** Dope TDD can't see inside a script, formatter or
+  code generator before it runs, so it can't refuse it. Changes it makes to
+  source are noticed afterwards and counted as unguarded.
+- **While it stands aside.** In `warn` or `observe` mode, during `/tdd pause`,
+  and during a git merge, rebase or cherry-pick, nothing is refused. The band
+  says which.
+- **A determined agent.** It keeps an agent honest and on the record; it is not
+  a sandbox. Workarounds are recorded, and overrides need a person.
 
 ## Settings
 

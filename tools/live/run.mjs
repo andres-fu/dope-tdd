@@ -57,9 +57,9 @@ export function parseArgs(argv) {
  * The flags for one session. Branch mode loads this checkout by --plugin-dir and turns the installed copy off, so the
  * two cannot both answer; installed mode adds neither. A scenario with the plugin off only turns the installed copy off.
  */
-export function claudeArgs({ mode, plugin, checkout, settings, model }) {
+export function claudeArgs({ mode, plugin, checkout, settings, model, tools = [], maxTurns = 10 }) {
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits']
-  args.push('--allowedTools', 'Read', 'Edit', 'Agent', '--max-turns', '10')
+  args.push('--allowedTools', 'Read', 'Edit', 'Agent', ...tools, '--max-turns', String(maxTurns))
   if (plugin === 'off' || mode === 'branch') args.push('--settings', settings)
   if (plugin === 'on' && mode === 'branch') args.push('--plugin-dir', checkout)
   if (model !== null) args.push('--model', model)
@@ -93,12 +93,12 @@ function runClaude(cwd, args, input) {
 }
 
 async function runScenario(scenario, options, checkoutSha, transcripts) {
-  const { root, probe } = makeRoot(scenario.cwd)
+  const { root, probe } = makeRoot(scenario.setup ?? scenario.cwd)
   try {
     const settings = join(root, 'settings.json')
     writeFileSync(settings, OFF_SETTINGS)
     const ctx = { mode: options.mode, checkout: CHECKOUT, checkoutSha, root, probe, calcBefore: readCalc(probe) }
-    const args = claudeArgs({ mode: options.mode, plugin: scenario.plugin, checkout: CHECKOUT, settings, model: options.model })
+    const args = claudeArgs({ mode: options.mode, plugin: scenario.plugin, checkout: CHECKOUT, settings, model: options.model, tools: scenario.tools, maxTurns: scenario.maxTurns })
     const { code, stdout, stderr } = await runClaude(dirOf(ctx, scenario.cwd), args, userMessages(scenario.messages(ctx)))
     const run = readRun(stdout)
     ctx.calcAfter = readCalc(probe)

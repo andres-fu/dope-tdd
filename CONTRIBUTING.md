@@ -119,6 +119,7 @@ npm run live -- --model sonnet   # a cheaper model
 | C | in the probe repo | have an `isolation: "worktree"` subagent make that edit | refused; the worktree is under `<probe>/.claude/worktrees/agent-…` |
 | D | in a `git worktree add` of the probe | the same subagent edit | refused (went through on 0.2.11, fixed in 0.2.12); the worktree is under the main checkout |
 | E | in the probe repo, plugin off | the same edit as B | goes through; no `/tdd` |
+| F | in the probe repo, with a worktree at `.claude/worktrees/nested` | red, fix and green there by `cd`, then a run in the main checkout | the red and green count on `calc` and the catch check proves it there; the main checkout's run does not count |
 
 Each scenario prints `PASS` or `FAIL` with its checks; a failure also prints
 what the session did and keeps its transcript. The checks read tool results

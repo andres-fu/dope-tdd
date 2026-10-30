@@ -116,7 +116,9 @@ Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`
 (and the usual layouts for Python and Godot). If your tests live elsewhere,
 run `/tdd setup`: it reads the repo and shows the stack, the layout and the
 JSON to use, and `/tdd setup write` saves it. Monorepos, per-folder layouts
-and presets are in [docs/setup.md](docs/setup.md).
+and presets are in [docs/setup.md](docs/setup.md), which starts with a picture
+of [where Dope TDD applies](docs/setup.md#where-dope-tdd-applies): what the
+install scope decides, and what Dope TDD guards from there.
 
 | Stack | Status |
 | --- | --- |

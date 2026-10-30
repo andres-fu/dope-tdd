@@ -5,7 +5,7 @@ import type { CatchOutcome, TddStats } from '../types'
 import { beforeText, captureEdit, recordFileEdit, recordShellChanges, unguardedShellPaths } from './afterWrite.ts'
 import type { FileRead } from './afterWrite.ts'
 import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
-import { findRunner } from './findRunner.ts'
+import { findRunner, parentDir } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
 import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spike.ts'
@@ -152,13 +152,36 @@ const agentRootsAtom = atom({ plugin: 'dope-tdd', key: 'agent-roots' } as const,
 /** Where each subagent's shells are, by `<agentId>:<shell>`: one agent's `cd` must not move another's (#198). */
 const agentCwds = atom({ plugin: 'dope-tdd', key: 'agent-cwds' } as const, {} as Readonly<Record<string, string>>)
 
+/** The main checkout by session root, or undefined when the root is no linked worktree: one git call a root. */
+const mainCheckouts = new Map<string, string | undefined>()
+
+/**
+ * The main checkout when the session root is itself a linked git worktree (#233, tester round 7). Claude Code puts the
+ * subagents' worktrees under the main checkout's .claude/worktrees then, outside the session root (mirror.ts).
+ * Undefined in a main checkout, outside git, or when git cannot say.
+ */
+async function mainCheckoutOf($: EngineInterface, sessionRoot: string): Promise<string | undefined> {
+  if (mainCheckouts.has(sessionRoot)) {
+    return mainCheckouts.get(sessionRoot)
+  }
+  const said = await runGit($, sessionRoot, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])
+  const [gitDir, commonDir] = (said ?? '').split(/\r?\n/).map(line => line.trim())
+  // A linked worktree's git dir is <main>/.git/worktrees/<name>; the common one is <main>/.git, beside the checkout.
+  const main =
+    gitDir === undefined || commonDir === undefined || commonDir === '' || pathKey(gitDir) === pathKey(commonDir) || !/[\\/]\.git$/.test(commonDir)
+      ? undefined
+      : (parentDir(commonDir) ?? undefined)
+  mainCheckouts.set(sessionRoot, main)
+  return main
+}
+
 async function placeAgent($: EngineInterface, agentId: string | undefined, path: string | undefined): Promise<void> {
   if (agentId === undefined || path === undefined) {
     return
   }
   const sessionRoot = await $.session.root()
   const roots = await read($, agentRootsAtom)
-  const next = learnRoot(roots, agentId, sessionRoot, path)
+  const next = learnRoot(roots, agentId, sessionRoot, path, await mainCheckoutOf($, sessionRoot))
   if (next !== roots) {
     await update($, agentRootsAtom, () => next)
   }
@@ -1589,7 +1612,8 @@ async function guardFileWrite(
   agentId?: string,
 ): Promise<ToolCallResult> {
   // A file in an agent worktree is judged against that worktree, the checkout it belongs to (#198).
-  const root = worktreeRootFor(await $.session.root(), filePath)
+  const sessionRoot = await $.session.root()
+  const root = worktreeRootFor(sessionRoot, filePath, await mainCheckoutOf($, sessionRoot))
   const git = await noteGitOperation($, root)
   if (git.operation !== null) {
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
@@ -1607,7 +1631,8 @@ async function checkFileWrite(
   agentId?: string,
 ): Promise<ToolCallResult> {
   const sessionRoot = await $.session.root()
-  const root = worktreeRootFor(sessionRoot, writtenPath)
+  const mainCheckout = await mainCheckoutOf($, sessionRoot)
+  const root = worktreeRootFor(sessionRoot, writtenPath, mainCheckout)
   const filePath = await projectPath($, root, writtenPath)
   await ensureRepaired($, root, await $.clock.now())
   const config = await loadConfig($, root)
@@ -1623,7 +1648,7 @@ async function checkFileWrite(
   // #198: unlocks are kept by module name, so one counts only if its test is in this file's checkout; a test touched
   // in an agent worktree must not unlock the main checkout's module, nor the other way round.
   const unlockedBy = target.kind === 'source' ? current.unlocked[target.module] : undefined
-  const isLocked = target.kind === 'source' && (unlockedBy === undefined || !sameCheckout(sessionRoot, filePath, unlockedBy))
+  const isLocked = target.kind === 'source' && (unlockedBy === undefined || !sameCheckout(sessionRoot, filePath, unlockedBy, mainCheckout))
   const gateNowMs = await $.clock.now()
   const record = await read($, overrideRecord)
   const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
@@ -1849,16 +1874,18 @@ async function checkShell(
   const carried = await readCwd($, shell, agentId)
   const start = carried !== '' && isInsideRoot(root, carried) ? carried : root
 
+  const sessionRoot = await $.session.root()
+  const mainCheckout = await mainCheckoutOf($, sessionRoot)
   // Paths come back resolved against the directory their segment runs in; one in another repository classifies as other.
   const writes = await Promise.all(
     findSourceWrites(command, start).map(async written => {
       const path = await projectPath($, root, absolutePath(root, written))
       // A write into an agent worktree is judged against that worktree, as Edit and Write are (#198).
-      const home = worktreeRootFor(root, path)
+      const home = worktreeRootFor(root, path, mainCheckout)
       return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
     }),
   )
-  const gated = gateShellWrites(writes, current.unlocked, current.inherited, await $.session.root())
+  const gated = gateShellWrites(writes, current.unlocked, current.inherited, sessionRoot, mainCheckout)
   const writesRecord = writesFileNamed(command, OVERRIDES_FILE)
   const covered = writesRecord || gated.locked.length === 0 || current.paused ? gated.locked : await coverShellWrites($, root, gated.locked, writes)
   // The verdict is shellVerdict.ts's; this words the refusal and records it.

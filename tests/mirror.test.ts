@@ -184,6 +184,48 @@ describe('worktreeRootFor: a file in an agent worktree is judged against that wo
   })
 })
 
+// #233 (tester round 7): when the session root is itself a linked git worktree, Claude Code puts a subagent's
+// worktree under the main checkout's .claude/worktrees/, outside the session root. Read as outside the project, an
+// untested edit there went through and was never counted.
+describe('worktreeRootFor: agent worktrees under the main checkout, when the session root is a linked worktree', () => {
+  const MAIN = 'C:/work/main'
+  const SESSION = 'C:/work/trial'
+
+  test("a file in an agent worktree under the main checkout belongs to that worktree", () => {
+    expect(worktreeRootFor(SESSION, `${MAIN}/.claude/worktrees/agent-a179/api.py`, MAIN)).toBe(`${MAIN}/.claude/worktrees/agent-a179`)
+  })
+
+  test('a session that is itself one of those worktrees keeps its own root for its own files', () => {
+    const own = `${MAIN}/.claude/worktrees/session-1`
+    expect(worktreeRootFor(own, `${own}/src/a.ts`, MAIN)).toBe(own)
+    expect(worktreeRootFor(own, `${MAIN}/.claude/worktrees/agent-x/src/a.ts`, MAIN)).toBe(`${MAIN}/.claude/worktrees/agent-x`)
+  })
+
+  test("the main checkout's own files are not an agent worktree: they stay outside", () => {
+    expect(worktreeRootFor(SESSION, `${MAIN}/src/a.ts`, MAIN)).toBe(SESSION)
+    expect(worktreeRootFor(SESSION, `${MAIN}/.claude/worktrees/notes.md`, MAIN)).toBe(SESSION)
+  })
+
+  test('spelling does not matter: slashes and the case of a Windows path', () => {
+    expect(worktreeRootFor(SESSION, 'c:\\WORK\\main\\.claude\\worktrees\\agent-x\\src\\a.ts', MAIN)).toBe('c:/WORK/main/.claude/worktrees/agent-x')
+  })
+})
+
+describe('sameCheckout: agent worktrees under the main checkout (#233)', () => {
+  const MAIN = 'C:/work/main'
+  const SESSION = 'C:/work/trial'
+
+  test('two files in one such worktree are in the same checkout', () => {
+    expect(sameCheckout(SESSION, `${MAIN}/.claude/worktrees/agent-x/src/a.ts`, `${MAIN}/.claude/worktrees/agent-x/tests/a.test.ts`, MAIN)).toBe(true)
+  })
+
+  test('the session root and such a worktree, or two of them, are not', () => {
+    expect(sameCheckout(SESSION, `${SESSION}/src/a.ts`, `${MAIN}/.claude/worktrees/agent-x/tests/a.test.ts`, MAIN)).toBe(false)
+    expect(sameCheckout(SESSION, `${MAIN}/.claude/worktrees/agent-x/src/a.ts`, 'tests/a.test.ts', MAIN)).toBe(false)
+    expect(sameCheckout(SESSION, `${MAIN}/.claude/worktrees/agent-x/src/a.ts`, `${MAIN}/.claude/worktrees/agent-y/tests/a.test.ts`, MAIN)).toBe(false)
+  })
+})
+
 // #198: an unlock counts only in the checkout its test was touched in. A test in an agent worktree must not unlock
 // the main checkout's module, nor the other way round.
 describe('sameCheckout: whether two files sit in the same checkout of the session', () => {

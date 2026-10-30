@@ -131,6 +131,31 @@ what is committed, so commit `dope-tdd.json` and your tests to the branch
 worktrees are created from; see
 [subagents in their own worktree](docs/setup.md#subagents-in-their-own-worktree).
 
+## What it guards, and what it doesn't
+
+![Where Dope TDD applies: Claude Code's install scope decides whether it runs in a folder, then it guards what sits in the folder the session was opened in.](assets/where-it-applies.svg)
+
+It guards **Claude's** edits to **this project's** source: the folder you
+opened Claude Code in, and its subagents' worktrees. It does not guard:
+
+- **Another repository.** Pulling a second repo into the session, editing its
+  files or `cd`-ing into it is not guarded or counted. Open a Claude Code session
+  in that repository instead.
+- **Your own edits.** It sees Claude's tool calls, not your editor.
+- **Code the layout doesn't match.** With no `dope-tdd.json`, or one with a
+  mistake, the defaults apply and may pair nothing. `/tdd` shows the layout and
+  any file error; `/tdd setup` finds the right one.
+- **A folder where the plugin is off.** A local-scope install covers only the
+  folder it was installed in.
+- **Files a program changes.** A script, formatter or code generator run from
+  the shell can't be refused before it runs. Changes it makes to source are
+  noticed afterwards and counted as unguarded.
+- **While it stands aside.** In `warn` or `observe` mode, during `/tdd pause`,
+  and during a git merge, rebase or cherry-pick, nothing is refused. The band says
+  which.
+- **A determined agent.** It keeps an agent honest and on the record; it is not
+  a sandbox. Workarounds are recorded, and overrides need a person.
+
 ## Settings
 
 An optional `dope-tdd.json` at the repo root, committed with the code. Every

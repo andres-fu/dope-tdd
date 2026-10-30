@@ -21,6 +21,11 @@ Two questions decide whether an edit is guarded, in this order:
    itself a git worktree, under the main checkout's `.claude/worktrees/`, where
    Claude Code puts them in that case. Files anywhere else are left alone.
 
+**Another repository is not guarded**, even when Claude works in it from your
+session: editing its files, running its tests, or `cd`-ing into it. Dope TDD
+neither refuses nor counts anything there. To work test-first in it, open a
+Claude Code session in that repository, with its own `dope-tdd.json`.
+
 ## Where your tests live
 
 Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`

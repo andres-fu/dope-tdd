@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="600" viewBox="0 0 760 600" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="620" viewBox="0 0 760 620" role="img" aria-labelledby="t d">
   <title id="t">Where Dope TDD applies</title>
-  <desc id="d">Two questions in order. First, Claude Code's install scope decides whether dope-tdd runs in a folder: user scope covers every project, project scope the repo and its worktrees, local scope this folder only; where it is not enabled no hook runs. Second, dope-tdd guards what sits in the session root: its dope-tdd.json, source and tests by the layout, and agent worktrees under .claude/worktrees with their own rules. Agent worktrees in the parent repo, when the session root is itself a worktree, are guarded the same way. Other folders are ignored, never blocked.</desc>
+  <desc id="d">Two questions in order. First, Claude Code's install scope decides whether dope-tdd runs in a folder: user scope covers every project, project scope the repo and its worktrees, local scope this folder only; where it is not enabled no hook runs. Second, dope-tdd guards what sits in the session root: its dope-tdd.json, source and tests by the layout, and agent worktrees under .claude/worktrees with their own rules. Agent worktrees in the parent repo, when the session root is itself a worktree, are guarded the same way. Another repo or folder is not guarded, even when Claude works there; to guard it, open a Claude Code session in it.</desc>
   <defs>
     <marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#181818" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
   </defs>
@@ -13,7 +13,7 @@
     .card { fill: #FFFFFF; stroke: #181818; stroke-width: 1; }
   </style>
 
-  <rect x="0.75" y="0.75" width="758.5" height="598.5" rx="16" fill="#FBF9F5" stroke="#181818" stroke-width="1.5"/>
+  <rect x="0.75" y="0.75" width="758.5" height="618.5" rx="16" fill="#FBF9F5" stroke="#181818" stroke-width="1.5"/>
 
   <text class="display" x="32" y="56">WHERE DOPE TDD APPLIES</text>
   <text class="dim" x="32" y="80" font-size="15" font-style="italic">Two questions, answered in order.</text>
@@ -40,39 +40,41 @@
   <text class="kicker" x="32" y="318">2 · DOPE TDD</text>
   <text class="serif" x="32" y="342" font-size="19">What does it guard?</text>
 
-  <rect x="32" y="358" width="440" height="180" rx="10" fill="none" stroke="#181818" stroke-width="1.5"/>
+  <rect x="32" y="358" width="440" height="198" rx="10" fill="none" stroke="#181818" stroke-width="1.5"/>
   <text class="mono" x="48" y="382" font-size="12" letter-spacing="1.5">SESSION ROOT</text>
   <text class="dim" x="48" y="402" font-size="14">the folder Claude Code was opened in</text>
 
-  <rect class="card" x="48" y="414" width="408" height="34" rx="6"/>
-  <rect x="62" y="427" width="8" height="8" fill="#B83D01"/>
-  <text class="mono" x="82" y="436" font-size="13">dope-tdd.json</text>
-  <text class="dim" x="196" y="436" font-size="14">the rules for this folder</text>
+  <rect class="card" x="48" y="420" width="408" height="34" rx="6"/>
+  <rect x="62" y="433" width="8" height="8" fill="#B83D01"/>
+  <text class="mono" x="82" y="442" font-size="13">dope-tdd.json</text>
+  <text class="dim" x="196" y="442" font-size="14">the rules for this folder</text>
 
-  <rect class="card" x="48" y="454" width="408" height="34" rx="6"/>
-  <rect x="62" y="467" width="8" height="8" fill="#B83D01"/>
-  <text class="mono" x="82" y="476" font-size="13">source, tests</text>
-  <text class="dim" x="196" y="476" font-size="14">paired and guarded by the layout</text>
+  <rect class="card" x="48" y="464" width="408" height="34" rx="6"/>
+  <rect x="62" y="477" width="8" height="8" fill="#B83D01"/>
+  <text class="mono" x="82" y="486" font-size="13">source, tests</text>
+  <text class="dim" x="196" y="486" font-size="14">paired and guarded by the layout</text>
 
-  <rect class="card" x="48" y="494" width="408" height="34" rx="6"/>
-  <rect x="62" y="507" width="8" height="8" fill="#B83D01"/>
-  <text class="mono" x="82" y="516" font-size="13">.claude/worktrees/*</text>
-  <text class="dim" x="252" y="516" font-size="14">agents, their own rules</text>
+  <rect class="card" x="48" y="508" width="408" height="34" rx="6"/>
+  <rect x="62" y="521" width="8" height="8" fill="#B83D01"/>
+  <text class="mono" x="82" y="530" font-size="13">.claude/worktrees/*</text>
+  <text class="dim" x="252" y="530" font-size="14">agents, their own rules</text>
 
-  <rect class="card" x="490" y="358" width="238" height="104" rx="8"/>
+  <rect class="card" x="490" y="358" width="238" height="92" rx="8"/>
   <rect x="506" y="374" width="8" height="8" fill="#B83D01"/>
   <text class="serif" x="524" y="383" font-size="15">Agent worktrees in</text>
   <text class="serif" x="524" y="403" font-size="15">the parent repo</text>
-  <text class="dim" x="506" y="428" font-size="13">when the session root is itself a</text>
-  <text class="dim" x="506" y="446" font-size="13">worktree: guarded the same way</text>
+  <text class="dim" x="506" y="426" font-size="13">when the session root is itself a</text>
+  <text class="dim" x="506" y="442" font-size="13">worktree: guarded the same way</text>
 
-  <rect x="490" y="478" width="238" height="60" rx="8" fill="#FBF9F5" stroke="#181818" stroke-width="1" stroke-dasharray="4 3"/>
-  <rect x="506.5" y="494.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
-  <text class="serif" x="524" y="503" font-size="15">Other folders</text>
-  <text class="dim" x="506" y="526" font-size="13">ignored, never blocked</text>
+  <rect x="490" y="466" width="238" height="90" rx="8" fill="#FBF9F5" stroke="#181818" stroke-width="1" stroke-dasharray="4 3"/>
+  <rect x="506.5" y="482.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
+  <text class="serif" x="524" y="491" font-size="15">Another repo or folder</text>
+  <text class="dim" x="506" y="514" font-size="13">not guarded, even when Claude</text>
+  <text class="dim" x="506" y="531" font-size="13">works there. To guard it, open</text>
+  <text class="dim" x="506" y="548" font-size="13">a Claude Code session in it.</text>
 
-  <rect x="32" y="562" width="8" height="8" fill="#B83D01"/>
-  <text class="dim" x="48" y="570" font-size="13">guarded</text>
-  <rect x="120.5" y="562.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
-  <text class="dim" x="136" y="570" font-size="13">not guarded</text>
+  <rect x="32" y="582" width="8" height="8" fill="#B83D01"/>
+  <text class="dim" x="48" y="590" font-size="13">guarded</text>
+  <rect x="120.5" y="582.5" width="7" height="7" fill="none" stroke="#181818" stroke-width="1"/>
+  <text class="dim" x="136" y="590" font-size="13">not guarded</text>
 </svg>

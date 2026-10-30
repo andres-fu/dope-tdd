@@ -100,7 +100,8 @@ refused, and a shell change to it is put back and counted as a workaround.
 - Phases: idle → WRITING (test touched) → RED (a run reported failures) →
   GREEN (a run passed). A run is a `vitest`, `jest`, `npm test`-style command
   at the start of a shell command; its result is read from the runner's own
-  summary line, not the exit code.
+  summary line, not the exit code. A command that runs its tests more than
+  once is read from its last summary: red, a fix, then green is green.
 - The same failure on the module you are on three runs in a row (the same
   assertion message, or the same failing tests) is trying things without
   traction. The red then tells Claude so, and to step back or say BLOCKED,

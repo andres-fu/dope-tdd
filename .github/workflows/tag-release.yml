@@ -1,0 +1,32 @@
+# A push to main is a release merging (CONTRIBUTING.md, Releases; ci.yml fails any other pull request into main), so
+# it tags the version main now holds and publishes its tester note as the GitHub release. A version already tagged is
+# left alone, so a re-run does nothing.
+name: tag release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag the version and publish its note
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./.claude-plugin/plugin.json').version")
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+            echo "$tag already exists"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "dope-tdd $version"
+          git push origin "$tag"
+          gh release create "$tag" --title "dope-tdd $version" --notes-file "docs/testers/rounds/release-$version.md"

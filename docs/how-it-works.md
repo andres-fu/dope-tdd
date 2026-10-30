@@ -80,7 +80,10 @@ refused, and a shell change to it is put back and counted as a workaround.
   resort it is. The refusal ends with the band's own "last run" line.
 - A module unlocked in an earlier session (up to 7 days) waits for one run of
   its test this session, red or green, before its first edit; the carry-over
-  is dropped if that test changed since.
+  is dropped if that test changed since. Edits under it are not counted as
+  test-first, since the test came first in an earlier session: `/tdd` counts
+  them apart (`under an earlier session's unlock`) until the test is touched
+  or seen failing this session.
 - A module still red when a session ends is kept (up to 7 days), and the
   next session's briefing in that project leads with it: the module, the
   failing test, and to start there. A later session that leaves it green
@@ -97,7 +100,8 @@ refused, and a shell change to it is put back and counted as a workaround.
 - Phases: idle → WRITING (test touched) → RED (a run reported failures) →
   GREEN (a run passed). A run is a `vitest`, `jest`, `npm test`-style command
   at the start of a shell command; its result is read from the runner's own
-  summary line, not the exit code.
+  summary line, not the exit code. A command that runs its tests more than
+  once is read from its last summary: red, a fix, then green is green.
 - The same failure on the module you are on three runs in a row (the same
   assertion message, or the same failing tests) is trying things without
   traction. The red then tells Claude so, and to step back or say BLOCKED,
@@ -113,6 +117,11 @@ refused, and a shell change to it is put back and counted as a workaround.
 - After every shell command, `git diff` under `src/` and `tests/` is the
   source of truth: source files changed without a test touched count as
   unguarded, and tests written through the shell count as touched.
+- Before a shell command runs, its writes are read from the command: a
+  redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
+  write. Quoted text is data, so a commit message or an echoed sentence that
+  mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read.
 - Git putting files back to a saved state (`git restore`, `git checkout --
   <file>`, `git reset --hard`, `git stash`) is not an edit: nothing is counted.
   Git bringing code in from elsewhere (`git checkout main -- <file>`, `git
@@ -162,7 +171,11 @@ verdict (PROVEN; CHANGED when the code moved since the green; MISSED when the
 test passes without your change; UNPROVEN with the reason otherwise), and
 the last run. A run of one test file says how long it took (`passed in 4S`),
 and from 30 seconds calls itself slow (`failed in 45S, slow for one file`):
-a loop that slow is where you and the agent drift. Line 2 is the next step.
+a loop that slow is where you and the agent drift. A red counts how long it
+has been open (`RED 2MIN`, an alarm from ten minutes); after half an hour with
+nothing happening it reads `RED · open 45MIN · nothing for 30MIN`, left rather
+than in progress. A module whose test file is deleted is dropped, with its
+unlock, and `/tdd` lists it once. Line 2 is the next step.
 A third line appears only when you must act, such as an override waiting for you, with APPROVE and DENY. While
 the guard enforces it says nothing about itself; when it does not, one word
 says so: PAUSED, STANDING DOWN, WARN ONLY, OBSERVING, NOT WATCHING or CAN'T

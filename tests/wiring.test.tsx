@@ -163,6 +163,61 @@ describe('work outside the project is said once, never refused', () => {
   })
 })
 
+// #234 (tester round 7): with dope-tdd.json unread, an untested edit to code the default layout pairs with nothing
+// landed, and /tdd afterwards was unchanged: a bare "guard: ON", no events.
+describe('an edit the guard did not look at shows in /tdd', () => {
+  test('under an unread dope-tdd.json, /tdd leads with the defaults, and the edit is an event', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"strict"}')
+
+    const edit = await editAt($, 'api.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(edit.deny).toBeUndefined()
+    expect(status.text).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read/m)
+    expect(status.text).toMatch(/edited, no test layout, not guarded \(api\.ts\)/)
+  })
+
+  test('"Warn" in any case is read as warn, so the file is not thrown away', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"Warn"}')
+
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/^mode: warn/m)
+    expect(status.text).not.toMatch(/was not read/)
+  })
+})
+
+// #239: a redirect quoted in a commit message was read as a write and refused as an untested edit.
+describe('quoted text in a command is data', () => {
+  test('a commit message that mentions a redirect into untested source is not refused; the real redirect is', async ($, on) => {
+    fakeEngine(on)
+
+    const message = await runBash($, 'git commit -m "note: echo x >> src/utils/calculateDuration.ts"')
+    const real = await runBash($, 'echo x >> "src/utils/calculateDuration.ts"')
+
+    expect(message.deny).toBeUndefined()
+    expect(real.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+})
+
+// #244: a red whose test file was deleted sat in /tdd as "also open" for good, since nothing could close it.
+describe('a red whose test file is gone', () => {
+  test('is dropped when /tdd is read, and said once', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/calculateDuration')
+    await runTests($, world, 'fail')
+    world.fileContents.delete(`${ROOT}/tests/utils/calculateDuration.test.ts`)
+    world.existingFiles.delete(`${ROOT}/tests/utils/calculateDuration.test.ts`)
+
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/^phase: IDLE$/m)
+    expect(status.text).toMatch(/test file gone, cycle and unlock dropped utils\/calculateDuration/)
+  })
+})
+
 // #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
 // session. A subagent refused after the main session never saw option (3), though it holds the tool.
 describe('each agent is offered the override on its own first refusal', () => {
@@ -364,6 +419,8 @@ describe('bash bypass', () => {
     world.onBash = command => {
       if (command.includes('tests/utils/calculateDuration.test.ts')) {
         world.untracked = 'tests/utils/calculateDuration.test.ts\n'
+        // The shell wrote the file, so it exists: /tdd drops an unlock whose test file is gone (#244).
+        world.existingFiles.add(`${ROOT}/tests/utils/calculateDuration.test.ts`)
       }
     }
 

@@ -47,7 +47,7 @@ import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
@@ -77,6 +77,7 @@ import {
   recordGuardFailure,
   recordGitIn,
   recordOutside,
+  dropGoneTests,
   recordImportUnlock,
   recordImporter,
   recordKnownFailures,
@@ -1701,7 +1702,7 @@ async function checkFileWrite(
   }
   if (verdict.kind === 'go' && verdict.unwatched) {
     // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
-    await change($, s => recordUnwatchedEdit(s, relative))
+    await change($, s => recordUnwatchedEdit(s, relative, gateNowMs))
   }
   if (verdict.kind === 'go' && verdict.spend !== null) {
     // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
@@ -2418,31 +2419,47 @@ async function lockedFacts($: EngineInterface, root: string, config: GuardConfig
   return { ...(command === null ? {} : { command }), testExists: await $.fs.exists(testPath), lastRun: lastRunLine(s, nowMs) }
 }
 
-/** The test file the briefing reads its runner from, by root and stack: one git call a session, not one a prompt. */
-const briefingSamples = new Map<string, string | null>()
+/** The test files the briefing reads its runner from, by root and stack: one git call a session, not one a prompt. */
+const briefingSamples = new Map<string, readonly string[]>()
+/** How many of the project's test files the briefing reads: enough to find the one that says pytest, cheap at start. */
+const BRIEFING_SAMPLES = 50
 
 /**
- * One of the project's own test files, or null. Karl's round 4 (2026-10-20): a made-up `example.py` could not say
- * `import pytest`, so a project that says pytest only in its tests was briefed `python -m unittest`.
+ * The project's own test files, sorted, at most fifty. Karl's round 4 (2026-10-20): a made-up `example.py` could not
+ * say `import pytest`, so a project that says pytest only in its tests was briefed `python -m unittest`.
  */
-async function sampleTestFile($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
+async function sampleTestFiles($: EngineInterface, root: string, config: GuardConfig): Promise<readonly string[]> {
   const key = `${root}\n${config.stack}`
-  if (briefingSamples.has(key)) {
-    return briefingSamples.get(key) ?? null
+  const known = briefingSamples.get(key)
+  if (known !== undefined) {
+    return known
   }
   const listed = await runGit($, root, ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
   const paths = (listed ?? '').split(/\r?\n/).filter(path => path !== '')
-  const sample = changedOfKind(root, paths, 'test', config)[0]?.path ?? null
-  briefingSamples.set(key, sample)
-  return sample
+  const samples = changedOfKind(root, paths, 'test', config).map(({ path }) => path).sort().slice(0, BRIEFING_SAMPLES)
+  briefingSamples.set(key, samples)
+  return samples
 }
 
-/** The command with a placeholder, for the briefing: a real test file picks the runner, else the layout's own extension. */
+/**
+ * The command with a placeholder, for the briefing: the project's test files pick the runner, else the layout's own
+ * extension. #235 (tester round 7): it read only the first file git listed, so one project was briefed pytest in one
+ * session and unittest in the next, while refusals named pytest. Now the runner the stack prefers most, among those its
+ * tests point at, wins: one test that says pytest makes it pytest, since pytest runs unittest tests too.
+ */
 async function briefingCommand($: EngineInterface, root: string, config: GuardConfig): Promise<string | null> {
   const ext = config.layout.displayExt ?? stackOf(config.stack).exts[0] ?? 'ts'
-  const sample = await sampleTestFile($, root, config)
-  const runner = await detectRunner($, root, config, `${root}/${sample ?? `example.${ext}`}`)
-  return runner === null ? null : runnerNamed(runner.kind).describe('<test file>', runner.launcher)
+  const samples = await sampleTestFiles($, root, config)
+  const found: Runner[] = []
+  for (const sample of samples.length === 0 ? [`example.${ext}`] : samples) {
+    const runner = await detectRunner($, root, config, `${root}/${sample}`)
+    if (runner !== null) {
+      found.push(runner)
+    }
+  }
+  const preference = runnersFor(config.stack).map(({ kind }) => kind)
+  const runner = [...found].sort((a, b) => preference.indexOf(a.kind) - preference.indexOf(b.kind))[0]
+  return runner === undefined ? null : runnerNamed(runner.kind).describe('<test file>', runner.launcher)
 }
 
 /**
@@ -2605,10 +2622,30 @@ async function storeLeftRed($: EngineInterface): Promise<void> {
   await (entries.length === 0 ? $.store.delete(key) : $.store.set(key, entries))
 }
 
+/**
+ * #244: drops open modules whose test file is gone (stats.ts, dropGoneTests). Asked at session start, every minute
+ * with the band, and on /tdd: one exists check per open module, and there are rarely more than a few.
+ */
+async function dropGoneOpenTests($: EngineInterface, nowMs: number): Promise<void> {
+  const s = await readStats($)
+  const open = Object.entries(s.modules).filter(([, state]) => state.cycleStartMs !== null).map(([module]) => module)
+  const paths = [...new Set([...open, ...(s.current === null ? [] : [s.current.module])].map(module => s.unlocked[module]).filter(path => path !== undefined))]
+  const gone: string[] = []
+  for (const path of paths) {
+    if (!(await $.fs.exists(path))) {
+      gone.push(path)
+    }
+  }
+  if (gone.length > 0) {
+    await change($, current => dropGoneTests(current, gone, nowMs))
+  }
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   const root = await $.session.root()
   const config = await loadConfig($, root)
   await endExpiredPauses($, root, await $.clock.now())
+  await dropGoneOpenTests($, await $.clock.now())
   const s = await readStats($)
   const status = formatStatus(s, await $.clock.now(), config, (await read($, buildAtom)) || undefined)
   const overrides = formatOverrides(await readOverrides($, root), s.cycles)
@@ -2672,6 +2709,7 @@ export const register: Register = on => {
     $.clock.every(MINUTE, () => {
       void $.clock.now().then(async nowMs => {
         await endExpiredPauses($, await $.session.root(), nowMs)
+        await dropGoneOpenTests($, nowMs)
         const s = await change($, s => expireCurrent(s, nowMs))
         return hasActivity(s) ? update($, tick, n => n + 1) : undefined
       })
@@ -2682,6 +2720,7 @@ export const register: Register = on => {
     await update($, buildAtom, () => build)
     await rememberSessionId($)
     await seedFromStore($)
+    await dropGoneOpenTests($, await $.clock.now())
     await $.command.register({
       name: 'tdd',
       description:
@@ -2716,6 +2755,7 @@ export const register: Register = on => {
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     await rememberSessionId($)
     await seedFromStore($)
+    await dropGoneOpenTests($, await $.clock.now())
     return next(e)
   }).catch(($, e, next) => {
     reportGuardFailure($, 'session re-seed', next.error)

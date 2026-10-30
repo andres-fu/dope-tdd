@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordRun, recordSpike, recordTestTouch, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordRun, recordSpike, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -148,6 +148,25 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
     expect(formatStatus(s, T0)).toMatch(/: outside this project, not guarded \(C:\/work\/other\/src\/a\.ts\)$/m)
   })
 
+  // #234 (tester round 7): under an unread dope-tdd.json an untested edit landed while /tdd led with a bare "guard: ON".
+  // #236: edits under a carried-over unlock are neither test-first nor misses; the line counts them apart.
+  test('the test-first line counts edits under an earlier session\'s unlock on their own', () => {
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · blocked 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · blocked 0$/m)
+  })
+
+  test('the guard line says when dope-tdd.json was not read', () => {
+    expect(formatStatus(INITIAL_STATS, T0, parseConfig('{"mode":"strict"}'))).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read \(see config below\)$/m)
+  })
+
+  test('the guard line says when edited code matched no test layout, and the edit is an event', () => {
+    const s = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'api.py', T0), 'run.py', T0)
+    const text = formatStatus(s, T0)
+    expect(text).toMatch(/^guard: ON, but 2 edited code files match no test layout and were not guarded \(api\.py, run\.py\) · fix: \/tdd setup$/m)
+    expect(text).toMatch(/: edited, no test layout, not guarded \(api\.py\)$/m)
+    expect(formatStatus(recordUnwatchedEdit(INITIAL_STATS, 'api.py', T0), T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(api\.py\)/m)
+  })
+
   test('a comments-only touch reads as such (decided 2026-10-20)', () => {
     const s = recordCommentTouch(INITIAL_STATS, 'utils/a', T0)
     expect(formatStatus(s, T0)).toMatch(/: touched, comments only utils\/a$/m)
@@ -221,7 +240,9 @@ describe('formatStatus spikes', () => {
   // and the event say only that one started; "then rebuilt test-first" read as done while the copy still existed.
   test('a spike is its own line with the last question, and says only that it started', () => {
     const text = formatStatus(recordSpike(INITIAL_STATS, 'can the parser stream?', T0), T0 + 1000)
-    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?), each in a throwaway copy outside the project')
+    // #237 (tester round 7): the line claimed a throwaway copy for a spike abandoned before any copy was made.
+    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?)')
+    expect(text).not.toMatch(/throwaway copy/)
     expect(text).not.toMatch(/rebuilt/)
     expect(text).not.toMatch(/workarounds/)
     expect(text).toContain('spike started (can the parser stream?)')

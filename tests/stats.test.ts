@@ -20,7 +20,9 @@ import {
   recordGuardFailure,
   recordGitIn,
   recordOutside,
+  dropGoneTests,
   recordCarriedRun,
+  recordRedUnlock,
   recordCarryWait,
   recordImporter,
   recordStaleUnlocks,
@@ -225,6 +227,34 @@ describe('edits', () => {
     const s = recordSourceEdit(touch(), MODULE, true, T0 + 1)
     expect(s.testFirst).toBe(1)
     expect(s.current?.module).toBe(MODULE)
+  })
+
+  // #236 (tester round 7): one green run reopens a carried-over unlock (#54), and the untested edit after it read as
+  // test-first: `test-first: 1/1` for code no test covered. It is counted on its own, and is not a miss either.
+  test('an edit under a carried-over unlock is counted on its own, not as test-first', () => {
+    const carried = recordCarriedRun(seedUnlocks(INITIAL_STATS, { [MODULE]: { testPath: TEST_PATH, atMs: 1 } }), [MODULE], T0)
+    const s = recordSourceEdit(carried, MODULE, true, T0 + 1)
+    expect(s.testFirst).toBe(0)
+    expect(s.unguarded).toBe(0)
+    expect(s.carriedEdits).toBe(1)
+  })
+
+  // #244 (2026-10-29): a red whose test file was deleted stayed in /tdd as "also open" for good: nothing could close it.
+  test('a module whose test file is gone is dropped, with its unlock, and said once', () => {
+    const open = touch(INITIAL_STATS, T0)
+    const dropped = dropGoneTests(open, [TEST_PATH], T0 + 5)
+    expect(dropped.modules[MODULE]).toBeUndefined()
+    expect(dropped.unlocked[MODULE]).toBeUndefined()
+    expect(dropped.current).toBeNull()
+    expect(dropped.phase).toBe('idle')
+    expect(dropped.events.at(-1)).toMatchObject({ kind: 'test-gone', module: MODULE, detail: TEST_PATH })
+    expect(dropGoneTests(open, [], T0 + 5)).toBe(open)
+  })
+
+  test('once its test is touched or seen red this session, an edit there is test-first again', () => {
+    const carried = recordCarriedRun(seedUnlocks(INITIAL_STATS, { [MODULE]: { testPath: TEST_PATH, atMs: 1 } }), [MODULE], T0)
+    expect(recordSourceEdit(touch(carried, T0 + 1), MODULE, true, T0 + 2).testFirst).toBe(1)
+    expect(recordSourceEdit(recordRedUnlock(carried, MODULE, TEST_PATH, true), MODULE, true, T0 + 2).testFirst).toBe(1)
   })
 
   test('an unguarded edit is counted separately', () => {
@@ -656,6 +686,12 @@ describe('code edited outside the layout is remembered, so the band can say it i
   test('starts empty, and an old stored record without the field reads as empty', () => {
     expect(INITIAL_STATS.unwatched).toEqual([])
     expect(normalizeStats({ ...INITIAL_STATS, unwatched: undefined }).unwatched).toEqual([])
+  })
+
+  // #234: /tdd showed no trace of an edit the guard never looked at. Its first edit is now on the record.
+  test('the first edit to each file is logged as not watched, with the path; a repeat is not', () => {
+    const twice = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'api.py', 5), 'api.py', 6)
+    expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['not-watched', 'api.py']])
   })
 
   test('each file once, newest kept, at most twenty', () => {

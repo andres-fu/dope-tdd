@@ -47,6 +47,10 @@ export type EventKind =
   | 'git-in'
   /** #238: the first code file or test run outside the project this session: not guarded, said once. */
   | 'outside'
+  /** #244: a module's test file is gone, so its open cycle and its unlock were dropped. */
+  | 'test-gone'
+  /** #234: the first edit to a code file the layout pairs with no test: not guarded, on the record. */
+  | 'not-watched'
   /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */
   | 'spike'
 
@@ -151,6 +155,13 @@ export type TddStats = {
    * for one run of the test this session; that run removes the entry and the unlock is active.
    */
   inherited: Readonly<Record<string, number>>
+  /**
+   * #236: modules active only by a carried-over unlock, after its run. Their edits count under an earlier session's
+   * unlock, not as test-first; a touch or a red run of the test this session takes the module off.
+   */
+  carriedOn: readonly string[]
+  /** #236: source edits made under a carried-over unlock: neither test-first nor a miss. */
+  carriedEdits: number
   /** Carried-over unlocks dropped because the test changed since, by when they were stored: the refusal says why (#54). */
   stale: Readonly<Record<string, number>>
   reminded: readonly string[]

@@ -78,15 +78,58 @@ export function literalWriteTargets(segment: string): string[] | null {
   return targets
 }
 
+// A command that runs a quoted argument as shell: what is quoted there is commands, so its redirects are real.
+const RUNS_QUOTED_SHELL = /(?:^|[\s;&|(])(?:bash|sh|zsh|dash|ksh|fish|eval|ssh|su|pwsh|powershell|cmd|wsl)(?:\.exe)?(?=\s|$)/i
+// Where a quoted span is a redirect's or tee's target, not text: `> "src/a.ts"`.
+const BEFORE_TARGET = /(?:>>?|\btee\s+(?:-a\s+)?)\s*$/
+
+/**
+ * #239: the shell words of a segment, with the text inside quotes blanked. A redirect, `sed -i`, `cp`, `mv` or `tee`
+ * quoted in a commit message, an echoed sentence or a script's string is data and writes nothing; one outside quotes
+ * is the shell's. A quoted redirect target stays, and a segment that hands its quotes to a shell (`ssh host "…"`,
+ * `eval "…"`, `sh -c "…"`) is left whole, so its writes are still seen. Same length as the segment.
+ */
+function shellWords(segment: string): string {
+  if (RUNS_QUOTED_SHELL.test(segment)) {
+    return segment
+  }
+  let out = ''
+  let quote: '"' | "'" | null = null
+  let keep = false
+  for (let i = 0; i < segment.length; i++) {
+    const char = segment[i] ?? ''
+    if (quote === null) {
+      if (char === '"' || char === "'") {
+        quote = char
+        keep = BEFORE_TARGET.test(out)
+      }
+      out += char
+    } else if (char === '\\' && quote === '"' && i + 1 < segment.length) {
+      out += keep ? char + (segment[i + 1] ?? '') : '  '
+      i++
+    } else if (char === quote) {
+      quote = null
+      out += char
+    } else {
+      out += keep || char === '\n' ? char : ' '
+    }
+  }
+  return out
+}
+
 function writesIn(whole: string): string[] {
   // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
   const segment = writableText(whole)
+  const words = shellWords(segment)
   const scriptTargets = SCRIPT_WRITE.test(segment) ? literalWriteTargets(segment) : null
-  const writesEveryMention = IN_PLACE_SED.test(segment) || POWERSHELL_WRITE.test(segment) || (SCRIPT_WRITE.test(segment) && scriptTargets === null)
+  // A script's writes live in its quoted code, so SCRIPT_WRITE and PowerShell read the whole segment; sed -i must be
+  // the shell's own word.
+  const writesEveryMention = IN_PLACE_SED.test(words) || POWERSHELL_WRITE.test(segment) || (SCRIPT_WRITE.test(segment) && scriptTargets === null)
   return [
     ...(writesEveryMention ? captures(SOURCE_PATH, segment) : (scriptTargets ?? [])),
-    ...captures(REDIRECT_TARGET, segment),
-    ...captures(COPY_OR_MOVE_TARGET, segment),
+    ...captures(REDIRECT_TARGET, words),
+    // cp and mv take quoted paths, so their targets come from the segment, once the verb is seen outside quotes.
+    ...(/\b(?:cp|mv)\b/.test(words) ? captures(COPY_OR_MOVE_TARGET, segment) : []),
   ]
 }
 

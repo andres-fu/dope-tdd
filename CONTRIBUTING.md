@@ -46,12 +46,19 @@ on `main`, which is what actually enforces the rule.
 
 From 0.2.6, `main` only moves when a version ships:
 
-1. Feature and fix pull requests target the `release` branch.
-2. When a version is ready, one pull request bumps `version` in
-   `.claude-plugin/plugin.json`, adds the tester note under
-   `docs/testers/rounds/`, and merges `release` into `main`.
-3. The merge on `main` is tagged `vX.Y.Z`. The plugin directory and the
-   pull-request check's `uses:` line follow tags, so only a tagged release
+1. Feature and fix pull requests target the `release` branch. `Fixes #N` there
+   does not close the issue: GitHub closes issues only on the default branch.
+2. The last pull request of a batch also bumps `version` in
+   `.claude-plugin/plugin.json` and the version line in
+   `docs/security-and-data.md`, and adds the tester note
+   `docs/testers/rounds/release-X.Y.Z.md`. A bump can go in a pull request of
+   its own if the batch ended without one.
+3. One release pull request merges `release` into `main`, and lists `Fixes #N`
+   for every issue the batch closes. CI (`tools/release/check.mjs`) fails it
+   unless the version is above the latest tag and its tester note exists.
+4. The merge tags itself: `.github/workflows/tag-release.yml` tags `vX.Y.Z` and
+   publishes the tester note as the GitHub release. The plugin directory and
+   the pull-request check's `uses:` line follow tags, so only a tagged release
    reaches users.
 
 `release` is protected like `main` (pull requests, green CI, no deletion), so

@@ -40,6 +40,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # In the required job too: a release must ship a new version with its tester note.
+      - name: A release ships a new version with its note
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: node tools/release/check.mjs
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
       - name: Claude Code version

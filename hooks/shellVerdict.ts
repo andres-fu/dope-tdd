@@ -3,8 +3,11 @@
 // result; what is decided lives here, where a unit test reaches it without the fake engine.
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
 import type { Policy } from './config.ts'
-import { moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
+import { isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
 import type { LayoutConfig } from './mirror.ts'
+import { neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
+import type { RunOutcome } from './runOutcome.ts'
+import { readRun } from './runners.ts'
 
 /** `path`: the file written, so an unlock counts only in its own checkout (#198). */
 export type ShellWrite = { readonly module: string | null; readonly policy: Policy; readonly path?: string }
@@ -55,6 +58,28 @@ export function shellGate(input: ShellGateInput): ShellGateVerdict {
     return { kind: 'go' }
   }
   return { kind: 'refuse', locked: [...input.locked], waiting: [...new Set(input.waiting)] }
+}
+
+export type ShellRunReading = {
+  /** What the run says for this project; 'none' for no run here, a runner that never started, or one not read yet. */
+  readonly outcome: RunOutcome
+  /** Why the runner never started, when it did not: the agent is told, and it is not an unread run. */
+  readonly notStarted: string | null
+  /** A runner dope-tdd recognises but cannot read yet: named once, its runs not counted. */
+  readonly unreadable: string | null
+}
+
+/**
+ * A shell command's output as a run of this project's tests. `runLocation` is where the run ran (null when the command
+ * ran no tests): a run is this project's only when it executes inside the root, so `cd ../other && npx vitest run` is
+ * another repository's. A command held for approval or refused never ran: no run to read, nothing to count.
+ */
+export function readShellRun(output: string, runLocation: string | null, root: string): ShellRunReading {
+  const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
+  const read = ran ? readRun(output) : 'none'
+  const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
+  const unreadable = read === 'unknown' && notStarted === null ? unreadableRunner(output) : null
+  return { outcome: notStarted === null && unreadable === null ? read : 'none', notStarted, unreadable }
 }
 
 export type FailureJudgement = {

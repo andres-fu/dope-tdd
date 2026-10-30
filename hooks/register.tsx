@@ -47,12 +47,12 @@ import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
-import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
-import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
+import { gateShellWrites, judgeFailures, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
@@ -1999,20 +1999,15 @@ async function checkShell(
   const unguardedPaths = unguardedShellPaths(changedSources, updated.unlocked, path => policyFor(config, path))
 
   const output = result.text ?? ''
-  // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
-  // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
   // A workspace run (`npm test -w server`) runs in its package: the runner prints paths from there.
   const plainLocation = testRunLocation(command, start)
   const target = plainLocation === null ? null : workspaceTarget(command)
   const runLocation = target === null ? plainLocation : ((await packageDirFor($, root, start, config, target)) ?? plainLocation)
-  const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
-  const read = ran ? readRun(output) : 'none'
-  // A runner that never started ran no test: not an unread run, and the agent is told it did not start.
-  const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
-  // A runner dope-tdd recognises but cannot read yet ran no unread run: it is named once and its runs are not counted.
-  const unreadable = read === 'unknown' && notStarted === null ? unreadableRunner(output) : null
+  // Whether it ran here, started, and can be read is shellVerdict.ts's reading; the hold text is the signal, flagged or not.
+  const reading = readShellRun(output, runLocation, root)
+  const { notStarted, unreadable } = reading
   const firstUnreadable = unreadable !== null && (await noteUnreadRunner($, unreadable))
-  let outcome = notStarted === null && unreadable === null ? read : 'none'
+  let outcome = reading.outcome
   // Tests that were failing before the change neither hide a red nor block a green: judge a run of the current
   // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
   let alreadyFailing: string[] = []

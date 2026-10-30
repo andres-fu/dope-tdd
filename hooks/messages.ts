@@ -55,6 +55,10 @@ export const MESSAGES = {
   }),
   'test.noAssertion': entry({ testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.testPath} has no assertion. A test that asserts nothing passes no matter what the code does.`),
+  // #238: once a session, the first code file or test run outside the project. Claude can work in another repository
+  // from this session; it is left alone, and said, so nobody takes it for guarded work.
+  'outside.project': entry({ path: 'C:/work/other/src/a.ts', root: 'C:/work/app' }, f =>
+    `dope-tdd: ${f.path} is outside this project (${f.root.replace(/\\/g, '/')}), so it is not guarded or counted, and nor is anything else outside it this session. To work test-first in another repository, open a Claude Code session in it.`),
   'edit.unguarded': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.sourcePath} was edited with no test touched first. Write ${f.testPath} next and see it fail.`),
   'run.crashed': entry({}, () =>

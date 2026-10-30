@@ -12,6 +12,7 @@ export const GOLDEN: Record<string, string> = {
   "touch.commentsOnly": "dope-tdd: tests/utils/a.test.ts changed only comments or blank lines, so no test changed. It still unlocks utils/a; the touch is on the record as comments only, not as a workaround.",
   "touch.imports": "dope-tdd: tests/utils/a.test.ts imports utils/b, utils/c, so it is the test for those modules too: they are unlocked, and their catch check runs this file.",
   "test.noAssertion": "dope-tdd: tests/utils/a.test.ts has no assertion. A test that asserts nothing passes no matter what the code does.",
+  "outside.project": "dope-tdd: C:/work/other/src/a.ts is outside this project (C:/work/app), so it is not guarded or counted, and nor is anything else outside it this session. To work test-first in another repository, open a Claude Code session in it.",
   "edit.unguarded": "dope-tdd: src/utils/a was edited with no test touched first. Write tests/utils/a.test.ts next and see it fail.",
   "run.crashed": "dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.",
   "run.truncated": "dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.",

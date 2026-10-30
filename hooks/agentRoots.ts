@@ -8,11 +8,12 @@ export type AgentRoots = Readonly<Record<string, string>>
  * subagent's call, but Read, Edit, Write, Glob and Grep all take absolute paths, so the first one in its worktree
  * says where it works. Returns `roots` itself when nothing changes, so the state is not written for nothing.
  */
-export function learnRoot(roots: AgentRoots, agentId: string | undefined, sessionRoot: string, path: string): AgentRoots {
+export function learnRoot(roots: AgentRoots, agentId: string | undefined, sessionRoot: string, path: string, mainCheckout?: string): AgentRoots {
   if (agentId === undefined) {
     return roots
   }
-  const root = worktreeRootFor(sessionRoot, path)
+  // #233: under the main checkout too, when the session root is itself a linked worktree (mirror.ts).
+  const root = worktreeRootFor(sessionRoot, path, mainCheckout)
   if (root === sessionRoot || roots[agentId] === root) {
     return roots
   }

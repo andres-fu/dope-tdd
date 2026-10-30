@@ -28,6 +28,14 @@ jobs:
       matrix:
         os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     steps:
+      # main moves only when a version ships (CONTRIBUTING.md, Releases). #240 went into main from a feature branch
+      # and shipped unreleased code under the old version; this step is in the required job, so such a PR can't merge.
+      - name: Only the release branch merges into main
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'release'
+        shell: bash
+        run: |
+          echo "::error::Pull requests into main come from the release branch (CONTRIBUTING.md, Releases). Retarget this one to release."
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

@@ -82,6 +82,8 @@ export type FakeWorld = {
   gitUnavailable: boolean
   /** Remote URLs by name, answered to `git config --get remote.<name>.url`. */
   remotes: Map<string, string>
+  /** The main checkout when the session root is a linked git worktree of it (#233), as `git rev-parse --git-common-dir` says. */
+  mainCheckout: string | null
   /** When true the engine cannot say where the project is, so every guard throws before it decides. */
   rootFails: boolean
   writes: [string, string][]
@@ -177,6 +179,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     sessionId: 'session-1',
     sessionIdCalls: 0,
     pluginGit: '',
+    mainCheckout: null,
     diffText: '',
     readOnly: false,
     onCatchRun: () => {},
@@ -275,6 +278,14 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
       if (!ok) return answer(expected === '' ? 128 : 1)
       world.refs.set(ref, next)
       return answer(0)
+    }
+    if (verb === 'rev-parse' && rest.includes('--git-common-dir')) {
+      const main = world.mainCheckout
+      return main === null ? answer(0, `${ROOT}/.git
+${ROOT}/.git
+`) : answer(0, `${main}/.git/worktrees/throughline
+${main}/.git
+`)
     }
     if (verb === 'rev-parse') {
       const ref = rest[rest.length - 1] ?? ''

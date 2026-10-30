@@ -35,6 +35,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'pin-corrected': 'pin corrected',
   pinning: 'pin skill in use',
   'git-in': 'brought in by git, not guarded',
+  outside: 'outside this project, not guarded',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
 }

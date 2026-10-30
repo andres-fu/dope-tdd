@@ -420,6 +420,14 @@ export function recordGitIn(s: TddStats, modules: readonly string[], command: st
   return modules.reduce((acc, module) => logged(acc, 'git-in', nowMs, module, command), s)
 }
 
+/**
+ * #238: a code file or test run outside the project, which Dope TDD leaves alone. Logged once a session, with the
+ * first path, so /tdd shows that work went on elsewhere; the same object back once it is logged, so nothing is written.
+ */
+export function recordOutside(s: TddStats, path: string, nowMs: number): TddStats {
+  return s.events.some(e => e.kind === 'outside') ? s : logged(s, 'outside', nowMs, undefined, path)
+}
+
 /** A guard that threw let a call through unguarded: counted, so the band and /tdd stop looking guarded (verified review A13). */
 export function recordGuardFailure(s: TddStats, guard: string, nowMs: number): TddStats {
   return logged({ ...s, guardFailures: s.guardFailures + 1 }, 'guard-failed', nowMs, undefined, guard)

@@ -55,7 +55,9 @@ From 0.2.6, `main` only moves when a version ships:
    reaches users.
 
 `release` is protected like `main` (pull requests, green CI, no deletion), so
-merging it into `main` doesn't delete it.
+merging it into `main` doesn't delete it. CI fails any pull request into `main`
+whose branch is not `release`, so a feature branch can't reach `main` by
+mistake: retarget it to `release`.
 
 ### The loop
 
@@ -68,7 +70,16 @@ minutes. Once, before opening a pull request, run everything:
 npm run check            # validate, plugin test and node --test, all at once
 npm run check -- --all   # the same, plus the POSIX-root run
 npm run golden           # after changing a message's words: rewrite the golden file
+npm run diagrams         # after changing tools/diagrams/is-it-on.mjs: redraw assets/is-it-on.svg
 ```
+
+The README's two diagrams say what the plugin does, so they change with it.
+`assets/is-it-on.svg` is drawn by `tools/diagrams/is-it-on.mjs` from the band's
+words, and `tests/node/diagrams.test.mjs` fails when the band gains a word the diagram
+or the README does not name, or when the file was edited by hand.
+`assets/where-it-applies.svg` is drawn by hand: when what Dope TDD guards
+changes, update it with the README's "What it guards" and "What it doesn't
+guard" and `docs/setup.md`'s "Where Dope TDD applies", in the same pull request.
 
 Every sentence dope-tdd says to the agent lives in `hooks/messages.ts`, by id,
 with an example. Its exact words are pinned once, in

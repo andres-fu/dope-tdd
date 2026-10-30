@@ -19,10 +19,11 @@ export function gateShellWrites(
   unlocked: Readonly<Record<string, string>>,
   inherited: Readonly<Record<string, number>>,
   root?: string,
+  mainCheckout?: string,
 ): { locked: string[]; waiting: string[] } {
   const isUnlocked = ({ module, path }: ShellWrite): boolean => {
     const testPath = module === null ? undefined : unlocked[module]
-    return testPath !== undefined && (root === undefined || path === undefined || sameCheckout(root, path, testPath))
+    return testPath !== undefined && (root === undefined || path === undefined || sameCheckout(root, path, testPath, mainCheckout))
   }
   const locked = writes.flatMap(write =>
     write.module !== null && write.policy === 'enforce' && !isUnlocked(write) ? [write.module] : [],

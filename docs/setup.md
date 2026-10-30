@@ -2,6 +2,31 @@
 
 Where Dope TDD looks for your tests, how to change that, and which languages it reads. `/tdd setup` does most of this for you.
 
+## Where Dope TDD applies
+
+![Two layers: Claude Code's install scope decides whether dope-tdd runs in a folder; dope-tdd then guards what sits in the session root, including agent worktrees.](../assets/where-it-applies.svg)
+
+Two questions decide whether an edit is guarded, in this order:
+
+1. **Does dope-tdd run in this folder?** Claude Code decides, by where the
+   plugin is installed. A user-scope install covers every project; a project
+   scope covers the repository and its worktrees; a local scope covers only
+   the folder it was installed in. Where the plugin is not enabled no hook
+   runs, so nothing is refused and nothing is logged.
+2. **What does it guard?** Dope TDD decides, from the session root: the folder
+   Claude Code was opened in. It reads `dope-tdd.json` there, and pairs and
+   guards source and tests by the layout. A subagent's worktree is guarded with
+   that worktree's own `dope-tdd.json` and tests, both under
+   `.claude/worktrees/` in the session root and, when the session root is
+   itself a git worktree, under the main checkout's `.claude/worktrees/`, where
+   Claude Code puts them in that case. Files anywhere else are left alone.
+
+**Another repository is not guarded**, even when Claude works in it from your
+session: editing its files, running its tests, or `cd`-ing into it. Dope TDD
+neither refuses nor counts anything there, and says so the first time it
+happens in a session (`/tdd` lists it too). To work test-first in it, open a
+Claude Code session in that repository, with its own `dope-tdd.json`.
+
 ## Where your tests live
 
 Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`
@@ -57,7 +82,13 @@ So commit `dope-tdd.json` and your tests to the branch worktrees are created
 from, usually `main`. If they are untracked, or committed only on a local
 branch, the subagent's worktree has neither: the default layout applies there,
 and if it matches none of the code, the subagent's edits go through unguarded
-and nothing says so.
+and nothing says so. To cut worktrees from the branch you are on instead, set
+`worktree.baseRef` to `"head"` in Claude Code's settings.
+
+The plugin must also be enabled where the worktree lands. When the session
+root is itself a git worktree, subagent worktrees land under the main
+checkout, so a local-scope install in the session root does not reach them;
+install at user scope, or at project scope from the main checkout.
 
 To check, have a subagent read a source file and try an untested edit to it. It
 should be refused, naming the test.

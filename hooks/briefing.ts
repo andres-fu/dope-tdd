@@ -35,6 +35,8 @@ export function briefingText(config: GuardConfig, runCommand: string | null, lay
     ...(leftRed === null ? [] : [`- ${leftRed}`]),
     `- ${gate} Tests pair with sources by this layout: ${describeLayout(config.layout)}.`,
     ...(layoutNote === null ? [] : [`- ${layoutNote}`]),
+    // #238: said up front, so the agent can tell the user before working in another repository from here.
+    '- Another repository is not guarded from this session: to work test-first there, the user opens a Claude Code session in it.',
     runCommand === null
       ? '- Run one test file at a time, and keep the runner\'s summary line in the output: it reads that line, never the exit code.'
       : `- Run one test file at a time: \`${runCommand}\`. Keep the runner's summary line in the output: it reads that line, never the exit code.`,

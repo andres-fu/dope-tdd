@@ -47,10 +47,11 @@ function pinsLine(s: TddStats): string[] {
 }
 
 // Idea 19: a spike keeps none of its code, so it is not a workaround; said on its own line, with the last question.
-// #213: it is recorded when the skill starts, and nothing tracks the copy or a rebuild, so the line claims only a start.
+// #213, #237: it is recorded when the skill starts, and nothing tracks the copy or a rebuild, so the line claims only a
+// start: not a rebuild, and not that a copy was made.
 function spikesLine(s: TddStats): string[] {
   const last = s.spikes.at(-1)
-  return last === undefined ? [] : [`spikes started: ${s.spikes.length} (last: ${last.question}), each in a throwaway copy outside the project`]
+  return last === undefined ? [] : [`spikes started: ${s.spikes.length} (last: ${last.question})`]
 }
 
 function cycleLine(s: TddStats): string {

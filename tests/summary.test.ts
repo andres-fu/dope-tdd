@@ -234,7 +234,9 @@ describe('formatStatus spikes', () => {
   // and the event say only that one started; "then rebuilt test-first" read as done while the copy still existed.
   test('a spike is its own line with the last question, and says only that it started', () => {
     const text = formatStatus(recordSpike(INITIAL_STATS, 'can the parser stream?', T0), T0 + 1000)
-    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?), each in a throwaway copy outside the project')
+    // #237 (tester round 7): the line claimed a throwaway copy for a spike abandoned before any copy was made.
+    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?)')
+    expect(text).not.toMatch(/throwaway copy/)
     expect(text).not.toMatch(/rebuilt/)
     expect(text).not.toMatch(/workarounds/)
     expect(text).toContain('spike started (can the parser stream?)')

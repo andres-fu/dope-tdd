@@ -2,12 +2,12 @@
 // follows `$` only into functions declared in register.tsx, so that file gathers the inputs and carries out the
 // result; what is decided lives here, where a unit test reaches it without the fake engine.
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
-import type { Policy } from './config.ts'
-import { isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
+import type { GuardConfig, Policy } from './config.ts'
+import { classifyPath, isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
 import type { LayoutConfig } from './mirror.ts'
 import { neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
 import type { RunOutcome } from './runOutcome.ts'
-import { readRun } from './runners.ts'
+import { filtersTests, namedTestFile, readRun } from './runners.ts'
 
 /** `path`: the file written, so an unlock counts only in its own checkout (#198). */
 export type ShellWrite = { readonly module: string | null; readonly policy: Policy; readonly path?: string }
@@ -80,6 +80,17 @@ export function readShellRun(output: string, runLocation: string | null, root: s
   const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
   const unreadable = read === 'unknown' && notStarted === null ? unreadableRunner(output) : null
   return { outcome: notStarted === null && unreadable === null ? read : 'none', notStarted, unreadable }
+}
+
+/**
+ * The red run of one named test file, which is judged by which tests fail (judgeFailures): the module whose test file
+ * the command names, whichever was touched last. A run filtered to some tests by name says nothing about the rest, so
+ * it is never judged this way. `start` is where the shell is; `root` is the checkout the file is classified against.
+ */
+export function ownTestRun(command: string, outcome: RunOutcome, start: string, root: string, config: GuardConfig): { module: string; testPath: string } | null {
+  const ownFile = outcome === 'fail' && !filtersTests(command) ? namedTestFile(command, config.stack, start) : null
+  const ownTarget = ownFile === null ? null : classifyPath(root, ownFile, config)
+  return ownFile !== null && ownTarget?.kind === 'test' ? { module: ownTarget.module, testPath: ownFile } : null
 }
 
 export type FailureJudgement = {

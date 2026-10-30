@@ -37,6 +37,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'git-in': 'brought in by git, not guarded',
   outside: 'outside this project, not guarded',
   'not-watched': 'edited, no test layout, not guarded',
+  'test-gone': 'test file gone, cycle and unlock dropped',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
 }

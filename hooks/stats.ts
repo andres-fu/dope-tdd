@@ -707,6 +707,27 @@ export function otherOpenModules(s: TddStats): { module: string; phase: ModuleSt
     .map(([module, state]) => ({ module, phase: state.phase }))
 }
 
+/**
+ * #244 (2026-10-29): modules whose test file is gone. A red whose test was deleted could never close, and sat in /tdd
+ * as "also open" for good. The module, its unlock and its cycle are dropped, once each, on the record. `gone` holds
+ * test paths as the unlocks store them; the same object comes back when none is open.
+ */
+export function dropGoneTests(s: TddStats, gone: readonly string[], nowMs: number): TddStats {
+  const modules = Object.entries(s.unlocked).filter(([, testPath]) => gone.includes(testPath)).map(([module]) => module)
+  return modules.reduce((acc, module) => {
+    const testPath = acc.unlocked[module] ?? ''
+    const isCurrent = acc.current?.module === module
+    const dropped: TddStats = {
+      ...acc,
+      modules: without(acc.modules, module),
+      unlocked: without(acc.unlocked, module),
+      carriedOn: acc.carriedOn.filter(entry => entry !== module),
+      ...(isCurrent ? { current: null, phase: 'idle' as const, cycleStartMs: null, sawRed: false, testChangedAfterRed: false } : {}),
+    }
+    return logged(dropped, 'test-gone', nowMs, module, testPath)
+  }, s)
+}
+
 /** /tdd reset: the counts start over, but the workarounds stay and the reset itself is logged: nothing silent. */
 export function resetStats(s: TddStats, nowMs: number): TddStats {
   return logged(

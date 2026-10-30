@@ -47,6 +47,8 @@ export type EventKind =
   | 'git-in'
   /** #238: the first code file or test run outside the project this session: not guarded, said once. */
   | 'outside'
+  /** #244: a module's test file is gone, so its open cycle and its unlock were dropped. */
+  | 'test-gone'
   /** #234: the first edit to a code file the layout pairs with no test: not guarded, on the record. */
   | 'not-watched'
   /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */

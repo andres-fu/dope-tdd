@@ -20,6 +20,7 @@ import {
   recordGuardFailure,
   recordGitIn,
   recordOutside,
+  dropGoneTests,
   recordCarriedRun,
   recordRedUnlock,
   recordCarryWait,
@@ -236,6 +237,18 @@ describe('edits', () => {
     expect(s.testFirst).toBe(0)
     expect(s.unguarded).toBe(0)
     expect(s.carriedEdits).toBe(1)
+  })
+
+  // #244 (2026-10-29): a red whose test file was deleted stayed in /tdd as "also open" for good: nothing could close it.
+  test('a module whose test file is gone is dropped, with its unlock, and said once', () => {
+    const open = touch(INITIAL_STATS, T0)
+    const dropped = dropGoneTests(open, [TEST_PATH], T0 + 5)
+    expect(dropped.modules[MODULE]).toBeUndefined()
+    expect(dropped.unlocked[MODULE]).toBeUndefined()
+    expect(dropped.current).toBeNull()
+    expect(dropped.phase).toBe('idle')
+    expect(dropped.events.at(-1)).toMatchObject({ kind: 'test-gone', module: MODULE, detail: TEST_PATH })
+    expect(dropGoneTests(open, [], T0 + 5)).toBe(open)
   })
 
   test('once its test is touched or seen red this session, an edit there is test-first again', () => {

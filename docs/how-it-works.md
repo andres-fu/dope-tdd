@@ -171,7 +171,11 @@ verdict (PROVEN; CHANGED when the code moved since the green; MISSED when the
 test passes without your change; UNPROVEN with the reason otherwise), and
 the last run. A run of one test file says how long it took (`passed in 4S`),
 and from 30 seconds calls itself slow (`failed in 45S, slow for one file`):
-a loop that slow is where you and the agent drift. Line 2 is the next step.
+a loop that slow is where you and the agent drift. A red counts how long it
+has been open (`RED 2MIN`, an alarm from ten minutes); after half an hour with
+nothing happening it reads `RED · open 45MIN · nothing for 30MIN`, left rather
+than in progress. A module whose test file is deleted is dropped, with its
+unlock, and `/tdd` lists it once. Line 2 is the next step.
 A third line appears only when you must act, such as an override waiting for you, with APPROVE and DENY. While
 the guard enforces it says nothing about itself; when it does not, one word
 says so: PAUSED, STANDING DOWN, WARN ONLY, OBSERVING, NOT WATCHING or CAN'T

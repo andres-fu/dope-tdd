@@ -233,6 +233,9 @@ function guardOf(s: TddStats, config: Pick<GuardConfig, 'mode' | 'error' | 'stac
   return null
 }
 
+/** #244: how long a red may sit with nothing happening before the band calls it left, not in progress. */
+const RED_STALE_MS = 30 * 60_000
+
 /** The red and green steps as words: what the chain says, plus how long RED has been open. */
 function tokensOf(s: TddStats, chain: Step[] | null, nowMs: number): Token[] {
   if (chain === null) {
@@ -241,8 +244,13 @@ function tokensOf(s: TddStats, chain: Step[] | null, nowMs: number): Token[] {
   const red = chain.find(step => step.name === 'red')
   const green = chain.find(step => step.name === 'green')
   const openMs = s.cycleStartMs === null ? null : nowMs - s.cycleStartMs
+  // #244: a red with nothing happening for half an hour was left, not worked on: said in whole minutes, not ticking.
+  const idleMs = s.lastEventMs === null ? null : nowMs - s.lastEventMs
+  const stale = s.phase === 'red' && openMs !== null && idleMs !== null && idleMs >= RED_STALE_MS
   const redToken: Token =
-    s.phase === 'red'
+    stale
+      ? { text: `RED · open ${formatAgo(openMs).replace(/ AGO$/, '')} · nothing for ${formatAgo(idleMs).replace(/ AGO$/, '')}`, tone: 'dim' }
+      : s.phase === 'red'
       ? { text: openMs === null ? 'RED' : `RED ${formatSpan(openMs)}`, tone: openMs !== null && openMs >= RED_TIMER_ALARM_MS ? 'alarm' : 'ember' }
       : red?.state === 'done'
         ? { text: 'red ✓', tone: 'pass' }

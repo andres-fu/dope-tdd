@@ -77,6 +77,7 @@ import {
   recordGuardFailure,
   recordGitIn,
   recordOutside,
+  dropGoneTests,
   recordImportUnlock,
   recordImporter,
   recordKnownFailures,
@@ -2621,10 +2622,30 @@ async function storeLeftRed($: EngineInterface): Promise<void> {
   await (entries.length === 0 ? $.store.delete(key) : $.store.set(key, entries))
 }
 
+/**
+ * #244: drops open modules whose test file is gone (stats.ts, dropGoneTests). Asked at session start, every minute
+ * with the band, and on /tdd: one exists check per open module, and there are rarely more than a few.
+ */
+async function dropGoneOpenTests($: EngineInterface, nowMs: number): Promise<void> {
+  const s = await readStats($)
+  const open = Object.entries(s.modules).filter(([, state]) => state.cycleStartMs !== null).map(([module]) => module)
+  const paths = [...new Set([...open, ...(s.current === null ? [] : [s.current.module])].map(module => s.unlocked[module]).filter(path => path !== undefined))]
+  const gone: string[] = []
+  for (const path of paths) {
+    if (!(await $.fs.exists(path))) {
+      gone.push(path)
+    }
+  }
+  if (gone.length > 0) {
+    await change($, current => dropGoneTests(current, gone, nowMs))
+  }
+}
+
 async function currentStatus($: EngineInterface): Promise<string> {
   const root = await $.session.root()
   const config = await loadConfig($, root)
   await endExpiredPauses($, root, await $.clock.now())
+  await dropGoneOpenTests($, await $.clock.now())
   const s = await readStats($)
   const status = formatStatus(s, await $.clock.now(), config, (await read($, buildAtom)) || undefined)
   const overrides = formatOverrides(await readOverrides($, root), s.cycles)
@@ -2688,6 +2709,7 @@ export const register: Register = on => {
     $.clock.every(MINUTE, () => {
       void $.clock.now().then(async nowMs => {
         await endExpiredPauses($, await $.session.root(), nowMs)
+        await dropGoneOpenTests($, nowMs)
         const s = await change($, s => expireCurrent(s, nowMs))
         return hasActivity(s) ? update($, tick, n => n + 1) : undefined
       })
@@ -2698,6 +2720,7 @@ export const register: Register = on => {
     await update($, buildAtom, () => build)
     await rememberSessionId($)
     await seedFromStore($)
+    await dropGoneOpenTests($, await $.clock.now())
     await $.command.register({
       name: 'tdd',
       description:
@@ -2732,6 +2755,7 @@ export const register: Register = on => {
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     await rememberSessionId($)
     await seedFromStore($)
+    await dropGoneOpenTests($, await $.clock.now())
     return next(e)
   }).catch(($, e, next) => {
     reportGuardFailure($, 'session re-seed', next.error)

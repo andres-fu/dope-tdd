@@ -48,6 +48,8 @@ export const INITIAL_STATS: TddStats = {
   unlocked: {},
   importers: {},
   inherited: {},
+  carriedOn: [],
+  carriedEdits: 0,
   stale: {},
   reminded: [],
   changes: {},
@@ -138,6 +140,8 @@ export function normalizeStats(stored: unknown): TddStats {
     // Each module's importers a list of paths, or none: a bad value must never reach the catch check.
     importers: pick('importers', v => isRecord(v) && Object.values(v).every(list => Array.isArray(list) && list.every(path => typeof path === 'string'))),
     inherited: pick('inherited', isRecord),
+    carriedOn: strings(pick('carriedOn', isStringList)),
+    carriedEdits: pick('carriedEdits', isNumber),
     stale: pick('stale', isRecord),
     reminded: strings(pick('reminded', isStringList)),
     changes: pick('changes', isRecord),
@@ -223,6 +227,7 @@ export function recordTestTouch(s: TddStats, touched: CurrentTest, nowMs: number
     unlocked: { ...s.unlocked, [touched.module]: touched.testPath },
     unproven: s.unproven.filter(module => module !== touched.module),
     inherited: without(s.inherited, touched.module),
+    carriedOn: s.carriedOn.filter(module => module !== touched.module),
     stale: without(s.stale, touched.module),
     reminded: s.reminded.filter(module => module !== touched.module),
   }
@@ -463,6 +468,10 @@ export function recordSourceEdit(s: TddStats, module: string, isGuarded: boolean
   const state: ModuleState = { ...moduleState(s, module), editedSinceRun: true }
   const edited = withModule(s, module, state)
   const followed = testPath === undefined ? edited : mirrored({ ...edited, current: { module, testPath } }, state)
+  // #236: a carried-over unlock was proven in an earlier session, not this one: on the record, but not test-first.
+  if (isGuarded && s.carriedOn.includes(module)) {
+    return logged({ ...followed, carriedEdits: s.carriedEdits + 1 }, 'edited', nowMs, module, "under an earlier session's unlock")
+  }
   return isGuarded
     ? logged({ ...followed, testFirst: s.testFirst + 1 }, 'edited', nowMs, module)
     : logged({ ...followed, unguarded: s.unguarded + 1 }, 'unguarded', nowMs, module)
@@ -484,6 +493,7 @@ export function recordRedUnlock(s: TddStats, module: string, testPath: string, m
     unlocked: { ...s.unlocked, [module]: testPath },
     unproven: s.unproven.filter(entry => entry !== module),
     stale: without(s.stale, module),
+    carriedOn: s.carriedOn.filter(entry => entry !== module),
   }
   return makeCurrent ? mirrored({ ...unlocked, current: { module, testPath } }, moduleState(s, module)) : unlocked
 }
@@ -579,7 +589,8 @@ export function seedUnlocks(
  */
 export function recordCarriedRun(s: TddStats, modules: readonly string[], nowMs: number): TddStats {
   return modules.reduce(
-    (acc, module) => logged({ ...acc, inherited: without(acc.inherited, module) }, 'carried-on', nowMs, module),
+    (acc, module) =>
+      logged({ ...acc, inherited: without(acc.inherited, module), carriedOn: [...acc.carriedOn.filter(entry => entry !== module), module] }, 'carried-on', nowMs, module),
     s,
   )
 }
@@ -694,6 +705,27 @@ export function otherOpenModules(s: TddStats): { module: string; phase: ModuleSt
   return Object.entries(s.modules)
     .filter(([module, state]) => module !== s.current?.module && state.cycleStartMs !== null)
     .map(([module, state]) => ({ module, phase: state.phase }))
+}
+
+/**
+ * #244 (2026-10-29): modules whose test file is gone. A red whose test was deleted could never close, and sat in /tdd
+ * as "also open" for good. The module, its unlock and its cycle are dropped, once each, on the record. `gone` holds
+ * test paths as the unlocks store them; the same object comes back when none is open.
+ */
+export function dropGoneTests(s: TddStats, gone: readonly string[], nowMs: number): TddStats {
+  const modules = Object.entries(s.unlocked).filter(([, testPath]) => gone.includes(testPath)).map(([module]) => module)
+  return modules.reduce((acc, module) => {
+    const testPath = acc.unlocked[module] ?? ''
+    const isCurrent = acc.current?.module === module
+    const dropped: TddStats = {
+      ...acc,
+      modules: without(acc.modules, module),
+      unlocked: without(acc.unlocked, module),
+      carriedOn: acc.carriedOn.filter(entry => entry !== module),
+      ...(isCurrent ? { current: null, phase: 'idle' as const, cycleStartMs: null, sawRed: false, testChangedAfterRed: false } : {}),
+    }
+    return logged(dropped, 'test-gone', nowMs, module, testPath)
+  }, s)
 }
 
 /** /tdd reset: the counts start over, but the workarounds stay and the reset itself is logged: nothing silent. */

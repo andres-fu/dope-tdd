@@ -160,6 +160,15 @@ const NODE_TEST_SUMMARY = /^.{0,4}tests (\d+)\r?\n.{0,4}suites \d+\r?\n.{0,4}pas
 const NODE_TEST_NOT_FOUND = /^Could not find '[^'\n]+'\s*$/m
 // A summary a filter thinned (`| grep -E "ℹ (tests|pass|fail)"`): each count on a line of its own, nothing after it.
 const NODE_TEST_COUNT = (word: string): RegExp => new RegExp(String.raw`^.{0,4}${word} (\d+)\s*$`, 'm')
+
+/**
+ * The last match of a summary pattern. #243 (2026-10-29): a command can run its tests more than once (red, then a fix,
+ * then green); the first summary was read, so the module stayed red. The last summary is where things stand.
+ */
+function lastMatch(pattern: RegExp, text: string): RegExpExecArray | null {
+  const all = [...text.matchAll(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`))]
+  return all.at(-1) ?? null
+}
 // Node's runner failing to read a test file's child process (Node 24, a test that prints non-ASCII text): it reports
 // the file as one failed test. The stack line is Node's own, so a test printing the message does not look like it.
 const NODE_RUNNER_CRASH = /Unable to deserialize cloned data[^\n]*\r?\n\s+at #processRawBuffer \(node:internal\/test_runner\//
@@ -220,7 +229,7 @@ function readNodeTest(output: string): RunOutcome {
   if (NODE_RUNNER_CRASH.test(text)) {
     return 'unknown'
   }
-  const summary = NODE_TEST_SUMMARY.exec(text)
+  const summary = lastMatch(NODE_TEST_SUMMARY, text)
   if (summary === null) {
     return NODE_TEST_NOT_FOUND.test(text) ? 'none' : readThinnedNodeTest(text)
   }
@@ -238,7 +247,7 @@ function readNodeTest(output: string): RunOutcome {
  */
 function readThinnedNodeTest(text: string): RunOutcome {
   const count = (word: string): number | undefined => {
-    const found = NODE_TEST_COUNT(word).exec(text)?.[1]
+    const found = lastMatch(NODE_TEST_COUNT(word), text)?.[1]
     return found === undefined ? undefined : Number(found)
   }
   const tests = count('tests')
@@ -280,7 +289,7 @@ function readPytest(output: string): RunOutcome {
   if (PYTEST_NONE.test(text)) {
     return 'none'
   }
-  const counts = PYTEST_SUMMARY.exec(text)?.[1]
+  const counts = lastMatch(PYTEST_SUMMARY, text)?.[1]
   if (counts === undefined) {
     return 'unknown'
   }
@@ -473,7 +482,7 @@ const PLUGIN_KIT_FILE = /^(\S[^\n]*?\.(?:test|spec)\.[cm]?[jt]sx?):\s*$/
 const PLUGIN_KIT_COMMAND = commandOf(String.raw`${PATHED}claude(?:\.exe)?\s+plugin\s+test(?=\s|$)`)
 
 function readPluginKit(output: string): RunOutcome {
-  const summary = PLUGIN_KIT_SUMMARY.exec(stripAnsi(output))
+  const summary = lastMatch(PLUGIN_KIT_SUMMARY, stripAnsi(output))
   if (summary === null) {
     return 'unknown'
   }

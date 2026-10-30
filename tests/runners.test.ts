@@ -775,3 +775,19 @@ describe('failureMessage', () => {
     expect(message?.endsWith('…')).toBe(true)
   })
 })
+
+// #243 (2026-10-29): one command ran a test red, then green (`node --test x ; fix && node --test x`). The first summary
+// was read, so the module stayed RED with its timer counting. A command's last summary is where things stand.
+describe('a command that ran its tests more than once', () => {
+  test('the last summary decides: red then green is green, green then red is red', () => {
+    expect(readRun(NODE_TEST_REAL_TAP_FAIL + NODE_TEST_REAL_TAP_PASS)).toBe('pass')
+    expect(readRun(NODE_TEST_REAL_TAP_PASS + NODE_TEST_REAL_TAP_FAIL)).toBe('fail')
+    expect(readRun(NODE_TEST_REAL_FAIL + NODE_TEST_REAL_PASS)).toBe('pass')
+    expect(readRun(`${PYTEST_FAIL}\n${PYTEST_PASS}`)).toBe('pass')
+    expect(readRun(`${PLUGIN_KIT_FAIL}\n${PLUGIN_KIT_PASS}`)).toBe('pass')
+  })
+
+  test('so does the last of two filtered summaries', () => {
+    expect(readRun('# tests 4\n# pass 3\n# fail 1\n# tests 4\n# pass 4\n# fail 0\n')).toBe('pass')
+  })
+})

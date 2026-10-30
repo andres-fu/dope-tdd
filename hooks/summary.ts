@@ -37,6 +37,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'git-in': 'brought in by git, not guarded',
   outside: 'outside this project, not guarded',
   'not-watched': 'edited, no test layout, not guarded',
+  'test-gone': 'test file gone, cycle and unlock dropped',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
 }
@@ -47,10 +48,11 @@ function pinsLine(s: TddStats): string[] {
 }
 
 // Idea 19: a spike keeps none of its code, so it is not a workaround; said on its own line, with the last question.
-// #213: it is recorded when the skill starts, and nothing tracks the copy or a rebuild, so the line claims only a start.
+// #213, #237: it is recorded when the skill starts, and nothing tracks the copy or a rebuild, so the line claims only a
+// start: not a rebuild, and not that a copy was made.
 function spikesLine(s: TddStats): string[] {
   const last = s.spikes.at(-1)
-  return last === undefined ? [] : [`spikes started: ${s.spikes.length} (last: ${last.question}), each in a throwaway copy outside the project`]
+  return last === undefined ? [] : [`spikes started: ${s.spikes.length} (last: ${last.question})`]
 }
 
 function cycleLine(s: TddStats): string {
@@ -165,7 +167,8 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     ...openLine(s, label),
     runsLine(s),
     cycleLine(s),
-    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    // #236: edits under a carried-over unlock are neither test-first nor misses, so they sit apart from the ratio.
+    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
     ...workaroundLine(s),
     ...pinsLine(s),

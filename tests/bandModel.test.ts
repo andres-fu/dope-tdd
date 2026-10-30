@@ -248,6 +248,14 @@ describe('band v3: the chain as words, and one verdict', () => {
     expect(tokens(on({ phase: 'red', sawRed: true, cycleStartMs: 0 }), 11 * 60_000)[0]).toBe('RED 11MIN|alarm')
   })
 
+  // #244 (2026-10-29): a red left open with nothing happening read as work in progress, its seconds still ticking
+  // (`RED 45MIN06S`). After half an hour with no activity it says it is stale, in whole minutes.
+  test('a red with nothing happening for half an hour says so, in whole minutes', () => {
+    const idle = on({ phase: 'red', sawRed: true, cycleStartMs: 0, lastEventMs: 15 * 60_000 })
+    expect(tokens(idle, (45 * 60 + 6) * 1000)[0]).toBe('RED · open 45MIN · nothing for 30MIN|dim')
+    expect(tokens(idle, 40 * 60_000)[0]).toBe('RED 40MIN|alarm')
+  })
+
   test('proven, by either kind of catch check', () => {
     expect(tokens(on({ phase: 'green', ...closed, ...catchOf({ kind: 'proven' }) }))).toEqual(['red ✓|pass', 'green ✓|pass'])
     expect(verdict(on({ phase: 'green', ...closed, ...catchOf({ kind: 'proven' }) }))).toEqual({ text: 'PROVEN', tone: 'pass' })

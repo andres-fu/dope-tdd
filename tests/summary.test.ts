@@ -149,6 +149,12 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
   })
 
   // #234 (tester round 7): under an unread dope-tdd.json an untested edit landed while /tdd led with a bare "guard: ON".
+  // #236: edits under a carried-over unlock are neither test-first nor misses; the line counts them apart.
+  test('the test-first line counts edits under an earlier session\'s unlock on their own', () => {
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · blocked 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · blocked 0$/m)
+  })
+
   test('the guard line says when dope-tdd.json was not read', () => {
     expect(formatStatus(INITIAL_STATS, T0, parseConfig('{"mode":"strict"}'))).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read \(see config below\)$/m)
   })
@@ -234,7 +240,9 @@ describe('formatStatus spikes', () => {
   // and the event say only that one started; "then rebuilt test-first" read as done while the copy still existed.
   test('a spike is its own line with the last question, and says only that it started', () => {
     const text = formatStatus(recordSpike(INITIAL_STATS, 'can the parser stream?', T0), T0 + 1000)
-    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?), each in a throwaway copy outside the project')
+    // #237 (tester round 7): the line claimed a throwaway copy for a spike abandoned before any copy was made.
+    expect(text.split('\n')).toContain('spikes started: 1 (last: can the parser stream?)')
+    expect(text).not.toMatch(/throwaway copy/)
     expect(text).not.toMatch(/rebuilt/)
     expect(text).not.toMatch(/workarounds/)
     expect(text).toContain('spike started (can the parser stream?)')

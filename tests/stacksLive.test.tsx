@@ -190,6 +190,19 @@ describe('the briefing names the runner the project\'s own tests point at', () =
     expect(await briefing($)).toMatch(/Run one test file at a time: `python -m pytest <test file>`/)
   })
 
+  // #235 (tester round 7): the briefing read whichever test file git listed first, so the same project was told pytest
+  // in one session and unittest in the next, while the refusal named pytest. Any test that says pytest makes it
+  // pytest, since pytest runs unittest tests too, whatever order the files come in.
+  test('one pytest test among unittest ones makes it pytest, whichever is listed first', async ($, on) => {
+    const world = fakeEngine(on)
+    pythonTests(world, 'import pytest\nfrom pkg.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
+    world.fileContents.set(`${ROOT}/tests/pkg/test_a.py`, 'import unittest\n\nclass A(unittest.TestCase):\n    def test_a(self):\n        self.assertEqual(1, 1)\n')
+    world.untracked = 'tests/pkg/test_a.py\nsrc/pkg/calc.py\ntests/pkg/test_calc.py\n'
+    await startSession($)
+
+    expect(await briefing($)).toMatch(/Run one test file at a time: `python -m pytest <test file>`/)
+  })
+
   test('a unittest test keeps it unittest', async ($, on) => {
     const world = fakeEngine(on)
     pythonTests(world, 'import unittest\n\nclass CalcTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(1, 1)\n')

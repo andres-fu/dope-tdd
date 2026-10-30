@@ -1,5 +1,5 @@
 import type { TddStats } from '../types'
-import { describeConfig } from './config.ts'
+import { CONFIG_FILE, describeConfig } from './config.ts'
 import type { GuardConfig } from './config.ts'
 import { moduleLabel } from './mirror.ts'
 import { otherOpenModules } from './stats.ts'
@@ -36,6 +36,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   pinning: 'pin skill in use',
   'git-in': 'brought in by git, not guarded',
   outside: 'outside this project, not guarded',
+  'not-watched': 'edited, no test layout, not guarded',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
 }
@@ -131,6 +132,20 @@ function inheritedLine(s: TddStats, nowMs: number, label: Label): string[] {
 
 type Label = (module: string) => string
 
+/**
+ * #234 (tester round 7): a bare "ON" read as guarded while an unread dope-tdd.json, or a layout that pairs nothing,
+ * let edits through. The guard line says so first; the details stay where they were (the config line, the events).
+ */
+function guardCaveat(s: TddStats, config: GuardConfig | undefined): string {
+  if (config !== undefined && config.error !== null) {
+    return ` with the defaults: ${CONFIG_FILE} was not read (see config below)`
+  }
+  const count = s.unwatched.length
+  return count === 0
+    ? ''
+    : `, but ${count} edited code file${count === 1 ? ' matches' : 's match'} no test layout and ${count === 1 ? 'was' : 'were'} not guarded (${s.unwatched.join(', ')}) · fix: /tdd setup`
+}
+
 /** `build`: which dope-tdd is running (build.ts), the first row; the app already names the plugin. */
 export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, build?: string): string {
   const label: Label = module => (config === undefined ? module : moduleLabel(config, module))
@@ -142,7 +157,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
         ? `FAILING (${s.guardFailures} call${s.guardFailures === 1 ? '' : 's'} went through unguarded after an internal error; see the log)`
         : s.paused
           ? 'PAUSED'
-          : 'ON'
+          : `ON${guardCaveat(s, config)}`
     }`,
     ...(config === undefined ? [] : describeConfig(config)),
     phaseLine(s, nowMs),

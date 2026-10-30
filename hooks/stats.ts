@@ -372,9 +372,11 @@ const MAX_UNWATCHED = 20
 /**
  * A code file edited that the layout pairs with no test: dope-tdd cannot guard it. Remembered once, newest last, so the
  * band can say it is not watching instead of showing calm zeros (2026-10-18, when it was blind to its own repository).
+ * #234: the first edit to each file is also an event, so /tdd shows that it happened.
  */
-export function recordUnwatchedEdit(s: TddStats, path: string): TddStats {
-  return { ...s, unwatched: [...s.unwatched.filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
+export function recordUnwatchedEdit(s: TddStats, path: string, nowMs: number): TddStats {
+  const kept = { ...s, unwatched: [...s.unwatched.filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
+  return s.unwatched.includes(path) ? kept : logged(kept, 'not-watched', nowMs, undefined, path)
 }
 
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */

@@ -168,8 +168,9 @@ left alone on purpose:
   code whoever wrote it.
 - **Code the layout doesn't match.** Dope TDD pairs source with tests by the
   layout. With no `dope-tdd.json`, or one with a mistake, the defaults apply and
-  may pair nothing: the band reads NOT WATCHING or CONFIG INVALID. `/tdd setup`
-  finds the right layout.
+  may pair nothing: the band reads NOT WATCHING or CONFIG INVALID, and `/tdd`
+  says so on its first line and lists each such edit. `/tdd setup` finds the
+  right layout.
 - **A folder where the plugin is off.** Claude Code decides where a plugin
   runs. A local-scope install covers only the folder it was installed in; install
   at user scope, or at project scope, to cover more.

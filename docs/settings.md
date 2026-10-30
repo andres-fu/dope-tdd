@@ -9,8 +9,10 @@ is and where. Every setting shows in `/tdd`, so nothing is hidden. If the file
 doesn't parse or a value is invalid, Dope TDD uses the defaults (`enforce`,
 the default layout) for all of it, and says so: the band shows **CONFIG
 INVALID** with the file and the error, Claude's session briefing says the file
-was not read and why so it can tell you, and `/tdd` shows a
-`config: … (using defaults)` line. Some stacks add
+was not read and why so it can tell you, and `/tdd` leads with
+`guard: ON with the defaults` and shows a `config: … (using defaults)` line.
+An edit to code that no layout pairs with a test goes through unguarded; `/tdd`
+says so on its guard line and lists the edit as an event. Some stacks add
 exemptions of their own: Godot exempts `addons/**`, .NET `bin/**` and `obj/**`.
 
 ```json
@@ -21,7 +23,7 @@ exemptions of their own: Godot exempts `addons/**`, .NET `bin/**` and `obj/**`.
 }
 ```
 
-- `mode`: `enforce` (default) denies a source edit until its test is
+- `mode`, in any case (`"Warn"` is `warn`): `enforce` (default) denies a source edit until its test is
   touched; `warn` allows it, counts it as unguarded, and tells Claude what to
   write next; `observe` allows it, counts it, and says nothing: no advice,
   no briefing, no catch check and no test run of its own, so nothing on disk

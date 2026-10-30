@@ -658,6 +658,12 @@ describe('code edited outside the layout is remembered, so the band can say it i
     expect(normalizeStats({ ...INITIAL_STATS, unwatched: undefined }).unwatched).toEqual([])
   })
 
+  // #234: /tdd showed no trace of an edit the guard never looked at. Its first edit is now on the record.
+  test('the first edit to each file is logged as not watched, with the path; a repeat is not', () => {
+    const twice = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'api.py', 5), 'api.py', 6)
+    expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['not-watched', 'api.py']])
+  })
+
   test('each file once, newest kept, at most twenty', () => {
     const once = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'scripts/a.ts'), 'scripts/a.ts')
     expect(once.unwatched).toEqual(['scripts/a.ts'])

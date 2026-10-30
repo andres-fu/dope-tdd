@@ -163,6 +163,32 @@ describe('work outside the project is said once, never refused', () => {
   })
 })
 
+// #234 (tester round 7): with dope-tdd.json unread, an untested edit to code the default layout pairs with nothing
+// landed, and /tdd afterwards was unchanged: a bare "guard: ON", no events.
+describe('an edit the guard did not look at shows in /tdd', () => {
+  test('under an unread dope-tdd.json, /tdd leads with the defaults, and the edit is an event', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"strict"}')
+
+    const edit = await editAt($, 'api.ts')
+    const status = await runCommand($, 'tdd')
+
+    expect(edit.deny).toBeUndefined()
+    expect(status.text).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read/m)
+    expect(status.text).toMatch(/edited, no test layout, not guarded \(api\.ts\)/)
+  })
+
+  test('"Warn" in any case is read as warn, so the file is not thrown away', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"Warn"}')
+
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/^mode: warn/m)
+    expect(status.text).not.toMatch(/was not read/)
+  })
+})
+
 // #212 (tester round 6): the override is offered on a module's first refusal only, and that was counted for the whole
 // session. A subagent refused after the main session never saw option (3), though it holds the tool.
 describe('each agent is offered the override on its own first refusal', () => {

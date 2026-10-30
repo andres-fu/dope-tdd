@@ -1701,7 +1701,7 @@ async function checkFileWrite(
   }
   if (verdict.kind === 'go' && verdict.unwatched) {
     // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
-    await change($, s => recordUnwatchedEdit(s, relative))
+    await change($, s => recordUnwatchedEdit(s, relative, gateNowMs))
   }
   if (verdict.kind === 'go' && verdict.spend !== null) {
     // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.

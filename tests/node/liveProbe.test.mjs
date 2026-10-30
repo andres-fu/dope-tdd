@@ -21,8 +21,9 @@ test('a probe is a committed git repo, guarded with the mirror layout, whose tes
     assert.equal(git(dirs.probe, 'status', '--porcelain'), '', 'everything is committed')
     // Without NODE_TEST_CONTEXT, or node:test skips a run started from inside a test.
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT'))
-    const out = execFileSync(process.execPath, ['--test'], { cwd: dirs.probe, encoding: 'utf8', env })
-    assert.match(out, /ℹ pass 1/)
+    // The reporter named: without a terminal, CI's node prints TAP where a local one prints spec.
+    const out = execFileSync(process.execPath, ['--test', '--test-reporter=tap'], { cwd: dirs.probe, encoding: 'utf8', env })
+    assert.match(out, /^# pass 1$/m)
   } finally {
     cleanup(dirs.root)
   }

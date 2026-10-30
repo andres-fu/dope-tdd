@@ -113,6 +113,11 @@ refused, and a shell change to it is put back and counted as a workaround.
 - After every shell command, `git diff` under `src/` and `tests/` is the
   source of truth: source files changed without a test touched count as
   unguarded, and tests written through the shell count as touched.
+- Before a shell command runs, its writes are read from the command: a
+  redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
+  write. Quoted text is data, so a commit message or an echoed sentence that
+  mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read.
 - Git putting files back to a saved state (`git restore`, `git checkout --
   <file>`, `git reset --hard`, `git stash`) is not an edit: nothing is counted.
   Git bringing code in from elsewhere (`git checkout main -- <file>`, `git

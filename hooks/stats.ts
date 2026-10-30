@@ -528,14 +528,15 @@ export function recordRedFor(s: TddStats, module: string, nowMs: number, errorsO
  * A cycle closed this way counts as a cycle of its own if it saw red, unless its test is the current module's test: that is
  * one piece of work. One that never saw red just closes (#41): the run was not about that module, so it proves nothing
  * either way, and a cycle left open (a test touched hours ago) would count its idle hours and a never-saw-red.
+ * `foreign`: modules unlocked in another checkout than the run's, which stay as they are (#250).
  */
-export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number): TddStats {
+export function closeCyclesForTest(s: TddStats, testPath: string | null, except: string | undefined, nowMs: number, foreign: readonly string[] = []): TddStats {
   const norm = pathKey
   const same = (path: string) => testPath === null || norm(path) === norm(testPath)
   const exceptTest = except === undefined ? undefined : s.unlocked[except]
   return Object.entries(s.modules).reduce((acc, [module, state]) => {
     const path = acc.unlocked[module]
-    if (module === except || path === undefined || !same(path) || state.cycleStartMs === null) {
+    if (module === except || foreign.includes(module) || path === undefined || !same(path) || state.cycleStartMs === null) {
       return acc
     }
     const closed = withModule(acc, module, { ...state, phase: 'green', cycleStartMs: null, sawRed: false, testTouchedAfterRed: false })

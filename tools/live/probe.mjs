@@ -3,6 +3,7 @@
 // `<root>/probe` is a tiny guarded repo: dope-tdd.json `{ "layout": "mirror" }`, src/calc.js and its passing test.
 // `<root>/home` is a second one, for a session whose edit lands outside its own project (scenario A).
 // `<root>/linked` is a `git worktree add` of the probe (scenario D).
+// `<probe>/.claude/worktrees/nested` is one under the probe, as the desktop app makes for a session (scenario F).
 // A worktree subagent's worktree lands in `<probe>/.claude/worktrees/agent-…` with a branch of its own; cleanup
 // removes those too, wherever they landed, so nothing is left on disk.
 import { execFileSync } from 'node:child_process'
@@ -47,6 +48,11 @@ export function makeRoot(where) {
     makeRepo(join(root, 'home'))
   }
   if (where === 'linked') git(probe, 'worktree', 'add', '-q', join(root, 'linked'), '-b', 'linked')
+  if (where === 'nested') {
+    git(probe, 'worktree', 'add', '-q', join(probe, '.claude', 'worktrees', 'nested'), '-b', 'nested')
+    // A real project ignores the folder, so a check built from the main checkout has neither the change nor the test.
+    appendFileSync(join(probe, '.git', 'info', 'exclude'), '.claude/\n')
+  }
   return { root, probe }
 }
 

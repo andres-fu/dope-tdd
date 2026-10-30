@@ -125,6 +125,8 @@ test('claudeArgs: branch loads the checkout and turns the installed copy off; in
   assert.deepEqual(claudeArgs({ ...opts, mode: 'branch', plugin: 'off' }), [...base, '--settings', 'S.json'])
   assert.deepEqual(claudeArgs({ ...opts, mode: 'installed', plugin: 'off' }), [...base, '--settings', 'S.json'])
   assert.deepEqual(claudeArgs({ ...opts, mode: 'installed', plugin: 'on', model: 'sonnet' }), [...base, '--model', 'sonnet'])
+  const withShell = claudeArgs({ ...opts, mode: 'installed', plugin: 'on', tools: ['Bash'], maxTurns: 14 })
+  assert.deepEqual(withShell, [...base.slice(0, 12), 'Bash', '--max-turns', '14'])
   assert.deepEqual(JSON.parse(OFF_SETTINGS), { enabledPlugins: { 'dope-tdd@dope-tdd': false } })
 })
 
@@ -184,7 +186,7 @@ const CALC = `${PROBE}\\src\\calc.js`
 const WORKTREE_CALC = `${PROBE}\\.claude\\worktrees\\agent-a1b2\\src\\calc.js`
 
 test('every scenario has an id, a title, a place to run, messages and checks', () => {
-  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E'])
+  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F'])
   for (const s of scenarios) {
     assert.ok(['home', 'probe', 'linked'].includes(s.cwd), `${s.id} cwd`)
     assert.ok(['on', 'off'].includes(s.plugin), `${s.id} plugin`)
@@ -253,6 +255,40 @@ for (const [id, cwd] of [
     assert.ok(failed(s.check(readRun(parentEdit), ctxFor())).length > 0, 'an edit by the main session, not a subagent, fails')
   })
 }
+
+const NESTED = `${PROBE}\\.claude\\worktrees\\nested`
+const nestedRun = (tdd, { greenIn = NESTED } = {}) =>
+  stream([
+    init(),
+    use('t1', 'Edit', { file_path: `${NESTED}\\tests\\calc.test.js` }),
+    answer('t1', UPDATED('the test')),
+    use('t2', 'Bash', { command: `cd "${NESTED.replaceAll('\\', '/')}" && node --test tests/calc.test.js` }),
+    answer('t2', 'fail 1', true),
+    use('t3', 'Edit', { file_path: `${NESTED}\\src\\calc.js` }),
+    answer('t3', UPDATED('the code')),
+    use('t4', 'Bash', { command: `cd "${greenIn.replaceAll('\\', '/')}" && node --test tests/calc.test.js` }),
+    answer('t4', 'pass 1'),
+    use('t5', 'Bash', { command: `cd "${PROBE.replaceAll('\\', '/')}" && node --test tests/calc.test.js` }),
+    answer('t5', 'pass 1'),
+    end('done'),
+    init(),
+    end(report(tdd), true),
+  ])
+const GOOD_TDD = 'catch check: proven 1 · missed 0 · not checked 0\n3s AGO: passed\n5s AGO: proven calc\n5s AGO: passed calc\n9s AGO: failed calc\n'
+
+test('F: red, green and the catch check in a nested worktree count there; the main checkout\'s run does not', () => {
+  const F = byId('F')
+  assert.equal(F.setup, 'nested')
+  assert.deepEqual(F.tools, ['Bash'])
+  assert.ok(F.messages(ctxFor()).some(m => m.includes('C:/tmp/dope-tdd-live-x/probe/.claude/worktrees/nested')), 'F names the worktree by its absolute path')
+  assert.deepEqual(failed(F.check(readRun(nestedRun(GOOD_TDD)), ctxFor())), [])
+  const seen = (tdd, over) => failed(F.check(readRun(nestedRun(tdd, over)), ctxFor()))
+  assert.ok(seen(GOOD_TDD.replace('failed calc', 'failed, not this module calc')).length > 0, 'the red read against the main checkout fails')
+  assert.ok(seen(GOOD_TDD.replace('proven 1 · missed 0 · not checked 0', 'proven 0 · missed 0 · not checked 1')).length > 0, 'an UNPROVEN catch check fails')
+  assert.ok(seen(GOOD_TDD.replace('3s AGO: passed\n', '3s AGO: passed calc\n')).length > 0, "the main checkout's run counted for the module fails")
+  assert.ok(seen(GOOD_TDD, { greenIn: PROBE }).length > 0, 'a green that was not in the worktree fails')
+  assert.ok(failed(F.check(readRun(nestedRun(GOOD_TDD)), ctxFor({ calcAfter: 'a + b + 1' }))).length > 0, "a change in the main checkout's file fails")
+})
 
 test('E: with the plugin off the edit goes through and /tdd is not there', () => {
   const E = byId('E')

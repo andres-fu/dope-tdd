@@ -279,3 +279,74 @@ describe('a red of errors only', () => {
     expect(run(s, facts).state.modules['utils/c']?.redErrorsOnly).toBe(false)
   })
 })
+
+// #250: unlocks are kept by module name, and a run reads a test file by its module. A run in the main checkout of the
+// same test the worktree's unlock names read as GREEN on that module, and a suite green closed the worktree's cycle.
+describe('applyRun: a run counts for a module only in the checkout its unlock belongs to', () => {
+  const WORKTREE_TEST = `${ROOT}/.claude/worktrees/w/tests/utils/a.test.ts`
+  const inWorktree = workingOn('utils/a', WORKTREE_TEST)
+  const elsewhereRun = (s: TddStats, over: Partial<RunFacts>) => run(s, { foreign: ['utils/a'], ...over })
+
+  test("a green of the same test in another checkout starts no check, closes no cycle, and says it did not count", () => {
+    const s = recordRedFor(inWorktree, 'utils/a', 500)
+    const plan = elsewhereRun(s, { outcome: 'pass', named: A_TEST })
+    expect(plan.countsForCurrent).toBe(false)
+    expect(plan.otherCheckout).toBe(true)
+    expect(plan.ownCycleClosed).toBe(false)
+    expect(plan.state.phase).toBe(s.phase)
+    expect(plan.state.lastRun?.module).toBeNull()
+  })
+
+  test('a red of the same test in another checkout is a red elsewhere: no red on the module, its unlock left alone', () => {
+    const plan = elsewhereRun(inWorktree, { named: A_TEST, failed: ['tests/utils/a.test.ts'] })
+    expect(plan.otherCheckout).toBe(true)
+    expect(plan.elsewhere).toEqual(['tests/utils/a.test.ts'])
+    expect(plan.redUnlocked).toEqual([])
+    expect(plan.remember).toEqual([])
+    expect(plan.state.unlocked['utils/a']).toBe(WORKTREE_TEST)
+    expect(plan.state.current?.testPath).toBe(WORKTREE_TEST)
+    expect(plan.state.sawRed).toBe(false)
+  })
+
+  test('a red in another checkout whose runner named no file is a red elsewhere too', () => {
+    expect(elsewhereRun(inWorktree, { named: A_TEST }).elsewhere).toEqual(['tests/utils/a.test.ts'])
+    expect(elsewhereRun(inWorktree, {}).elsewhere).toEqual([UNNAMED_FAILURE])
+  })
+
+  test('a suite run in another checkout does not count for the current module, green or red', () => {
+    expect(elsewhereRun(inWorktree, { outcome: 'pass' }).countsForCurrent).toBe(false)
+    expect(elsewhereRun(inWorktree, { failed: ['tests/utils/b.test.ts'] }).state.sawRed).toBe(false)
+  })
+
+  test('a failing test that imports a module unlocked elsewhere is no red for it, and no importer of it', () => {
+    const s = { ...workingOn('utils/b', B_TEST), unlocked: { 'utils/a': WORKTREE_TEST, 'utils/b': B_TEST } }
+    const plan = elsewhereRun(s, { named: B_TEST, failed: ['tests/utils/b.test.ts'], importsOf: { [B_TEST]: ['utils/a', 'utils/b'] } })
+    expect(plan.state.modules['utils/a']).toBeUndefined()
+    expect(plan.state.importers['utils/a']).toBeUndefined()
+    expect(plan.state.sawRed).toBe(true)
+  })
+
+  test('a test named here that imports the current module of another checkout does not keep the band there', () => {
+    const plan = elsewhereRun(inWorktree, { outcome: 'pass', named: B_TEST, namedImports: ['utils/a'] })
+    expect(plan.countsForCurrent).toBe(false)
+  })
+
+  test("a run of another module's test in its own checkout still moves the band there", () => {
+    const s = { ...inWorktree, unlocked: { 'utils/a': WORKTREE_TEST, 'utils/b': B_TEST } }
+    // Importing the other checkout's module does not hold the band there: without this run's own module it would not count.
+    const plan = elsewhereRun(s, { outcome: 'pass', named: B_TEST, namedImports: ['utils/a'] })
+    expect(plan.state.current?.module).toBe('utils/b')
+    expect(plan.otherCheckout).toBe(false)
+    expect(plan.countsForCurrent).toBe(true)
+  })
+
+  test('a suite green here leaves the cycle of a module unlocked elsewhere open', () => {
+    const s = recordRedFor({ ...workingOn('utils/b', B_TEST), unlocked: { 'utils/a': WORKTREE_TEST, 'utils/b': B_TEST } }, 'utils/a', 500)
+    expect(elsewhereRun(s, { outcome: 'pass' }).state.modules['utils/a']?.cycleStartMs).toBe(500)
+    expect(run(s, { outcome: 'pass' }).state.modules['utils/a']?.cycleStartMs).toBeNull()
+  })
+
+  test('with nothing unlocked elsewhere, a run counts as it did', () => {
+    expect(run(inWorktree, { outcome: 'pass' }).otherCheckout).toBe(false)
+  })
+})

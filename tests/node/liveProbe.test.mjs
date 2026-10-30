@@ -43,6 +43,19 @@ test('home is a second guarded repo, and linked is a git worktree of the probe',
   }
 })
 
+test('nested is a git worktree under the probe, ignored there as a real project ignores it', () => {
+  const dirs = makeRoot('nested')
+  const nested = join(dirs.probe, '.claude', 'worktrees', 'nested')
+  try {
+    assert.equal(readFileSync(join(nested, '.git'), 'utf8').startsWith('gitdir: '), true, 'nested is a worktree, not a clone')
+    assert.ok(existsSync(join(nested, 'tests', 'calc.test.js')))
+    assert.equal(git(dirs.probe, 'status', '--porcelain'), '', 'the main checkout does not see it')
+    assert.equal(cleanup(dirs.root).length, 1)
+  } finally {
+    cleanup(dirs.root)
+  }
+})
+
 test('cleanup removes every worktree a run left, even one outside the root, then the whole folder', () => {
   const dirs = makeRoot('linked')
   const agent = join(dirs.probe, '.claude', 'worktrees', 'agent-a1b2')

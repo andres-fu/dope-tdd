@@ -1,9 +1,10 @@
 // The live suite's scenarios: what a real headless Claude Code session is asked to do in a probe repo, and what
 // dope-tdd must then have done. Each was first seen by hand on 2026-10-29; D is the tester's worktree subagent
-// finding, which went through on 0.2.11 and is refused from 0.2.12 (#233).
+// finding, which went through on 0.2.11 and is refused from 0.2.12 (#233). F is #250, reproduced headless on 0.2.13.
 //
 // A run's folders (tools/live/probe.mjs): `<root>/probe` is the guarded probe repo whose src/calc.js is edited,
-// `<root>/home` a second guarded repo (A's session runs there), `<root>/linked` a `git worktree add` of the probe.
+// `<root>/home` a second guarded repo (A's session runs there), `<root>/linked` a `git worktree add` of the probe,
+// `<probe>/.claude/worktrees/nested` one under it (F's `setup`). `tools` and `maxTurns` add to the session's defaults.
 // `ctx` holds them and the build expected: { mode: 'branch' | 'installed', checkout, checkoutSha, root, probe,
 // calcBefore, calcAfter }, where calcBefore and calcAfter are the probe's src/calc.js before and after the run.
 import { buildOf, check, dopePlugin, isRefusal, isUnder, samePath, tddReport } from './checks.mjs'
@@ -74,6 +75,46 @@ function subagentChecks(run, ctx) {
     ),
     ...refusalChecks(edit),
     check("the main checkout's src/calc.js is unchanged", ctx.calcAfter === ctx.calcBefore),
+  ]
+}
+
+const nestedFolder = ctx => `${fwd(ctx.probe)}/.claude/worktrees/nested`
+
+/** Every command is `cd <absolute> && …`: headless Claude Code puts the shell back at the project between commands. */
+const nestedPrompt = ctx => {
+  const nested = nestedFolder(ctx)
+  const run = folder => `cd "${folder}" && node --test tests/calc.test.js`
+  return `Do these steps in this order, one at a time. Change nothing else, and do not fix anything that goes wrong.
+1. Read ${nested}/tests/calc.test.js, then use the Edit tool once on that file to change "add(1, 2), 3" to "add(1, 2), 4".
+2. Use the Bash tool to run exactly: ${run(nested)}
+3. Read ${nested}/src/calc.js, then use the Edit tool once on that file to change "return a + b" to "return a + b + 1".
+4. Use the Bash tool to run exactly: ${run(nested)}
+5. Use the Bash tool to run exactly: ${run(fwd(ctx.probe))}
+Then say done and stop.`
+}
+
+/** The three `node --test` runs, in order: where each ran, and whether it failed. */
+function testRuns(run, ctx) {
+  return run.calls
+    .filter(call => call.name === 'Bash' && String(call.input?.command).includes('node --test'))
+    .map(call => ({ nested: fwd(call.input.command).includes(nestedFolder(ctx)), failed: call.result?.error === true }))
+}
+
+function nestedChecks(run, ctx) {
+  const report = tddReport(run) ?? ''
+  const edited = edits(run, { subagent: false })
+  const runs = JSON.stringify(testRuns(run, ctx))
+  const passes = report.match(/: passed calc$/gm)?.length ?? 0
+  return [
+    ...buildChecks(run, ctx),
+    sessionCheck(run, ctx, 'probe'),
+    check('the test and the code were edited in the worktree', edited.length === 2 && edited.every(e => isUnder(e.path, nestedFolder(ctx)) && e.result?.error === false), edited.map(e => `${e.path}: ${e.result?.text.split('\n')[0]}`).join('; ')),
+    check('it ran red and green in the worktree, then green in the main checkout', runs === JSON.stringify([{ nested: true, failed: true }, { nested: true, failed: false }, { nested: false, failed: false }]), runs),
+    check("the main checkout's src/calc.js is unchanged", ctx.calcAfter === ctx.calcBefore),
+    check('the red counted on calc', /: failed calc$/m.test(report), report === '' ? 'no /tdd output' : 'no such row'),
+    check('no run read as a red elsewhere', !report.includes('failed, not this module')),
+    check('the catch check proved it', report.includes('catch check: proven 1 · missed 0 · not checked 0'), /^catch check: .*$/m.exec(report)?.[0] ?? 'no catch check line'),
+    check("only the worktree's green counted for calc", passes === 1 && /: passed$/m.test(report), `${passes} passed calc rows`),
   ]
 }
 
@@ -150,5 +191,16 @@ export const scenarios = [
         check('/tdd printed nothing', tddReport(run) === null),
       ]
     },
+  },
+  {
+    id: 'F',
+    title: "in a worktree nested under the session root, runs and the catch check are that worktree's; the main checkout's run is not (#250)",
+    cwd: 'probe',
+    setup: 'nested',
+    plugin: 'on',
+    tools: ['Bash'],
+    maxTurns: 14,
+    messages: ctx => [nestedPrompt(ctx), '/tdd'],
+    check: nestedChecks,
   },
 ]

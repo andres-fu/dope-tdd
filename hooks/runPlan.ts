@@ -60,6 +60,8 @@ export type RunFacts = {
   readonly errorsOnly?: boolean
   /** The runner names the files that failed in its full output (runners.ts, namesFailedFiles). */
   readonly namesFailedFiles?: boolean
+  /** The modules unlocked in another checkout than this run's (shellCheckout.ts): it says nothing about them (#250). */
+  readonly foreign?: readonly string[]
 }
 
 /** The red elsewhere of a whole-folder run that did not say which files failed. */
@@ -79,6 +81,8 @@ export type RunPlan = {
   readonly ownCycleClosed: boolean
   /** False for a green that is not about the current module: it must not close its cycle or start its catch check. */
   readonly countsForCurrent: boolean
+  /** The current module's unlock is in another checkout than this run's, so the run did not count for it (#250). */
+  readonly otherCheckout: boolean
   /**
    * The open module whose own test this run was, when the band stayed on the current module because the test imports
    * it (2026-10-19): runners' own test imports shell, so its red read "RED on shell" alone. Null otherwise.
@@ -95,14 +99,18 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
   let elsewhere: string[] = []
   let targeted = s
   const current = s.current
+  const foreign = facts.foreign ?? []
   // The run is the current module's test, or a test that imports it: the band stays on the module being worked on.
   const keepsCurrent =
-    current !== null && named !== undefined && (pathKey(current.testPath) === pathKey(named) || namedImports.includes(current.module))
+    current !== null &&
+    named !== undefined &&
+    !foreign.includes(current.module) &&
+    (pathKey(current.testPath) === pathKey(named) || namedImports.includes(current.module))
   // A run that names only files outside the layout (`node --test tools/x.spec-node.ts`) is about those files, unless
   // one imports the current module. Seen live 2026-10-18: such a run gave the current module a red and a cycle it never had.
   const outsideFiles = named === undefined ? (facts.namedOther ?? []) : []
   const outside = outsideFiles.length > 0 && !(current !== null && namedImports.includes(current.module))
-  if (target?.kind === 'test' && named !== undefined && !keepsCurrent) {
+  if (target?.kind === 'test' && named !== undefined && !keepsCurrent && !foreign.includes(target.module)) {
     // A red on the module's own test is the evidence a touch stands for: it unlocks the module, and the band follows it.
     const testPath = named
     if (outcome === 'fail' && s.unlocked[target.module] === undefined) {
@@ -113,6 +121,8 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
       targeted = recordRunTarget(targeted, target.module)
     }
   }
+  // The band may stay on a module whose work is in another checkout: this run is about neither its test nor its code.
+  const ownElsewhere = targeted.current !== null && foreign.includes(targeted.current.module)
   if (outcome === 'fail') {
     const { failed } = facts
     // Every test file the runner named as failed unlocks its module the same way, without becoming current.
@@ -128,7 +138,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     const failingTests = failingTestFiles(root, config, failed, named)
     const coveredByFailure: string[] = []
     for (const testFile of failingTests) {
-      for (const module of facts.importsOf[testFile] ?? []) {
+      for (const module of (facts.importsOf[testFile] ?? []).filter(module => !foreign.includes(module))) {
         coveredByFailure.push(module)
         targeted = recordImporter(targeted, module, testFile)
         if (targeted.unlocked[module] === undefined && facts.ownTest[module] === false) {
@@ -144,7 +154,7 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
       targeted = recordRedFor(targeted, module, nowMs, facts.errorsOnly === true)
     }
     // The suite is red; the module is red only if its own test, or a test that imports it, is among the files that failed.
-    const ownFailed = own !== undefined && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
+    const ownFailed = own !== undefined && !ownElsewhere && (failedModules(root, failed, config).includes(own) || coveredByFailure.includes(own))
     elsewhere = failed.length > 0 && own !== undefined && !ownFailed ? [...failed] : []
     // A whole-folder run that named no failed file says only that something failed somewhere: it is not the current
     // module's red (seen live, 2026-10-18: a kit run read without its file headers turned the band RED). A run of the
@@ -160,12 +170,16 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
     if (outside && own !== undefined) {
       elsewhere = outsideFiles.map(path => relativePath(root, path))
     }
+    // No file named is not the module's old reading here: whatever failed was in this checkout, not in its own.
+    if (ownElsewhere && failed.length === 0) {
+      elsewhere = [named === undefined ? UNNAMED_FAILURE : relativePath(root, named)]
+    }
   }
   // A green of another module's own test, when the band could not follow it there (that module is not unlocked) and
   // the test does not import the current module, says nothing about the current module (seen on dope-tdd, 2026-10-18).
   const otherGreen =
     outcome === 'pass' && target?.kind === 'test' && !keepsCurrent && targeted.current?.module !== target.module ? target.module : null
-  const outsideGreen = outcome === 'pass' && outside
+  const outsideGreen = outcome === 'pass' && (outside || ownElsewhere)
   const countsForCurrent = otherGreen === null && !outsideGreen
   let afterRun = outsideGreen
     ? recordOtherPass(targeted, null, nowMs)
@@ -188,9 +202,9 @@ export function applyRun(s: TddStats, facts: RunFacts, root: string, config: Gua
   }
   if (outcome === 'pass' && !outsideGreen && (named !== undefined || !filtered)) {
     // The test file passed, or the whole suite did: no other module it is the test for stays red behind it.
-    afterRun = closeCyclesForTest(afterRun, named ?? null, afterRun.current?.module, nowMs)
+    afterRun = closeCyclesForTest(afterRun, named ?? null, afterRun.current?.module, nowMs, foreign)
   }
   const ownTestOf =
     keepsCurrent && target?.kind === 'test' && target.module !== current?.module && afterRun.unlocked[target.module] !== undefined ? target.module : null
-  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed, countsForCurrent, ownTestOf }
+  return { state: afterRun, redUnlocked, remember, elsewhere, carriedOn, ownCycleClosed, countsForCurrent, otherCheckout: ownElsewhere, ownTestOf }
 }

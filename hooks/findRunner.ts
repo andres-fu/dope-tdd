@@ -44,10 +44,11 @@ export async function findRunner(
   }
   // The walk stops at the repository's top (the nearest folder with a .git), or at the root outside git: a monorepo
   // hoists its runner to its top, but a program in a folder above the repository is nobody's to run (verified review
-  // A15, 2026-10-20: the walk had no bound).
+  // A15, 2026-10-20: the walk had no bound). A worktree nested under the checkout it came from is no top: its shell
+  // walks up to that checkout's node_modules, so its catch check must too (#250).
   let repoTop = root
   for (let dir: string | null = root; dir !== null; dir = parentDir(dir)) {
-    if (await exists(`${dir}/.git`)) {
+    if (!/[\\/]\.claude[\\/]worktrees[\\/][^\\/]+$/.test(dir) && (await exists(`${dir}/.git`))) {
       repoTop = dir
       break
     }

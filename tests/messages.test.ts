@@ -24,6 +24,10 @@ describe('the message catalogue', () => {
     )
   })
 
+  test('a run in another checkout names the test that would count', () => {
+    expect(say('run.otherCheckout', { module: 'calc', testPath: '.claude/worktrees/w/tests/calc.test.js' })).toContain('.claude/worktrees/w/tests/calc.test.js')
+  })
+
   test('say renders one message from its facts', () => {
     expect(say('red.again', { module: 'runPlan' })).toBe(MESSAGES['red.again'].say({ module: 'runPlan' }))
   })

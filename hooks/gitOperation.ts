@@ -1,3 +1,6 @@
+import { parentDir } from './findRunner.ts'
+import { pathKey } from './mirror.ts'
+
 /**
  * A git operation that stops part-way and hands the tree back: to resolve a conflict, to amend a commit, or to test
  * an old one. The code it leaves on disk was written before this session, not by the agent now, so the guard steps
@@ -61,4 +64,18 @@ export function gitDirFromFile(text: string, folder: string): string | null {
     return null
   }
   return normalized(ABSOLUTE.test(target) ? target : `${folder.replace(/\\/g, '/')}/${target}`)
+}
+
+/**
+ * The main checkout when the session root is itself a linked git worktree (#233, tester round 7), from what
+ * `git rev-parse --path-format=absolute --git-dir --git-common-dir` printed there (null when git could not run).
+ * Claude Code puts the subagents' worktrees under the main checkout's .claude/worktrees then, outside the session root
+ * (mirror.ts, worktreeRootFor). Undefined in a main checkout, outside git, or when git cannot say.
+ */
+export function mainCheckoutFrom(said: string | null): string | undefined {
+  const [gitDir, commonDir] = (said ?? '').split(/\r?\n/).map(line => line.trim())
+  // A linked worktree's git dir is <main>/.git/worktrees/<name>; the common one is <main>/.git, beside the checkout.
+  return gitDir === undefined || commonDir === undefined || commonDir === '' || pathKey(gitDir) === pathKey(commonDir) || !/[\\/]\.git$/.test(commonDir)
+    ? undefined
+    : (parentDir(commonDir) ?? undefined)
 }

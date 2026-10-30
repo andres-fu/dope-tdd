@@ -5,7 +5,7 @@ import type { CatchOutcome, TddStats } from '../types'
 import { beforeText, captureEdit, recordFileEdit, recordShellChanges, unguardedShellPaths } from './afterWrite.ts'
 import type { FileRead } from './afterWrite.ts'
 import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
-import { findRunner, parentDir } from './findRunner.ts'
+import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
 import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spike.ts'
@@ -42,7 +42,7 @@ import { drawBand, drawTestPane } from './draw.tsx'
 import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
-import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
+import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
@@ -158,22 +158,12 @@ const agentCwds = atom({ plugin: 'dope-tdd', key: 'agent-cwds' } as const, {} as
 /** The main checkout by session root, or undefined when the root is no linked worktree: one git call a root. */
 const mainCheckouts = new Map<string, string | undefined>()
 
-/**
- * The main checkout when the session root is itself a linked git worktree (#233, tester round 7). Claude Code puts the
- * subagents' worktrees under the main checkout's .claude/worktrees then, outside the session root (mirror.ts).
- * Undefined in a main checkout, outside git, or when git cannot say.
- */
+/** The main checkout when the session root is itself a linked git worktree (#233); the decision is gitOperation.ts's. */
 async function mainCheckoutOf($: EngineInterface, sessionRoot: string): Promise<string | undefined> {
   if (mainCheckouts.has(sessionRoot)) {
     return mainCheckouts.get(sessionRoot)
   }
-  const said = await runGit($, sessionRoot, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])
-  const [gitDir, commonDir] = (said ?? '').split(/\r?\n/).map(line => line.trim())
-  // A linked worktree's git dir is <main>/.git/worktrees/<name>; the common one is <main>/.git, beside the checkout.
-  const main =
-    gitDir === undefined || commonDir === undefined || commonDir === '' || pathKey(gitDir) === pathKey(commonDir) || !/[\\/]\.git$/.test(commonDir)
-      ? undefined
-      : (parentDir(commonDir) ?? undefined)
+  const main = mainCheckoutFrom(await runGit($, sessionRoot, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']))
   mainCheckouts.set(sessionRoot, main)
   return main
 }

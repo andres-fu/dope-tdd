@@ -55,7 +55,9 @@ From 0.2.6, `main` only moves when a version ships:
    reaches users.
 
 `release` is protected like `main` (pull requests, green CI, no deletion), so
-merging it into `main` doesn't delete it.
+merging it into `main` doesn't delete it. CI fails any pull request into `main`
+whose branch is not `release`, so a feature branch can't reach `main` by
+mistake: retarget it to `release`.
 
 ### The loop
 

@@ -110,7 +110,7 @@ import { gateWrite } from './fileGate.ts'
 import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, keptPathFor, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, afterRevert, repairStep, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -769,12 +769,7 @@ async function keepAside($: EngineInterface, root: string, path: string, text: s
   }
 }
 
-/**
- * A journal left behind means a check died between revert and restore. A file
- * still at `before` gets `after` back; a file that moved since is left alone
- * and its `after` text is kept beside it, because the hand that moved it knew
- * more than the journal does.
- */
+/** A journal left behind means a check died between revert and restore; what each file needs is checkJournal.ts's (repairStep). */
 async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
@@ -782,11 +777,11 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
   for (const key of await journalKeys($, root)) {
     const files = journalFiles(await $.store.get(key)) ?? []
     for (const file of files) {
-      const onDisk = await readWhole($, file.path)
-      if (onDisk === file.after) {
+      const step = repairStep(await readWhole($, file.path), file)
+      if (step === 'as-is') {
         continue
       }
-      if (onDisk !== file.before) {
+      if (step === 'keep-aside') {
         left.push((await keepAside($, root, file.path, file.after)) ?? file.path)
         continue
       }
@@ -1316,14 +1311,14 @@ async function checkAgainst(
     $.ui.log(`dope-tdd: could not revert ${path} for the catch check: ${String(error)}`)
   } finally {
     if (reverted) {
-      const onDisk = await readWhole($, path)
-      if (onDisk === before) {
+      const step = afterRevert(await readWhole($, path), before, after)
+      if (step === 'restore') {
         try {
           await $.fs.write(path, after)
         } catch (error) {
           $.ui.log(`dope-tdd: could not restore ${path}: ${String(error)}`)
         }
-      } else if (onDisk !== after) {
+      } else if (step === 'moved') {
         movedWhileReverted = true
       }
     }

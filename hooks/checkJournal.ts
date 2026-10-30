@@ -9,6 +9,30 @@ export function isJournalFile(value: unknown): value is JournalFile {
   return typeof file === 'object' && file !== null && typeof file.path === 'string' && typeof file.before === 'string' && typeof file.after === 'string'
 }
 
+/**
+ * What a file the catch check reverted needs once the check's run is over, from what is on disk now (null: unreadable
+ * or gone). Still the old code: the change goes back. Anything but the change: it moved while reverted (an editor's
+ * save, another hand), so it is left as it is and the change is kept aside.
+ */
+export function afterRevert(onDisk: string | null, before: string, after: string): 'restore' | 'as-is' | 'moved' {
+  if (onDisk === before) {
+    return 'restore'
+  }
+  return onDisk === after ? 'as-is' : 'moved'
+}
+
+/**
+ * A journal left behind means a check died between revert and restore. A file already holding the change needs
+ * nothing; one still at the old code gets the change back; one that moved since is left alone and the change is kept
+ * aside, because the hand that moved it knew more than the journal does.
+ */
+export function repairStep(onDisk: string | null, file: { before: string; after: string }): 'as-is' | 'restore' | 'keep-aside' {
+  if (onDisk === file.after) {
+    return 'as-is'
+  }
+  return onDisk === file.before ? 'restore' : 'keep-aside'
+}
+
 /** The journal as stored: the files, and when it was written, so its age is on record. */
 export function journalEntry(files: JournalFile[], atMs: number): { files: JournalFile[]; atMs: number } {
   return { files, atMs }

@@ -98,6 +98,17 @@ describe('runAdvice when the red is elsewhere', () => {
   })
 })
 
+// #250: the run read as the module's by name, and its test and change are in another checkout.
+describe('runAdvice when the run was in another checkout', () => {
+  const testPath = '.claude/worktrees/w/tests/money/formatCents.test.ts'
+
+  test('says it did not count, green or red, and where the test is', () => {
+    const said = say('run.otherCheckout', { module: MODULE, testPath })
+    expect(runAdvice(touched, touched, undefined, { otherCheckout: testPath })).toBe(said)
+    expect(runAdvice(touched, recordRun(touched, false, at(1), ['tests/a.test.ts']), undefined, { otherCheckout: testPath, elsewhere: ['tests/a.test.ts'] })).toBe(said)
+  })
+})
+
 describe('runAdvice when the test changed after red and the code did not', () => {
   test('says the green came from the test', () => {
     const retouched = recordTestTouch(recordRun(touched, false, at(1)), { module: MODULE, testPath: 'tests/money/formatCents.test.ts' }, at(2))

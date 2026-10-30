@@ -134,7 +134,8 @@ worktrees are created from; see
 ## What it guards
 
 It guards **Claude's** edits to **this project's** source: the folder you
-opened Claude Code in, and its subagents' worktrees. Two things decide it, in
+opened Claude Code in, and the worktrees under its `.claude/worktrees/`, a
+subagent's or the session's own. Two things decide it, in
 order: whether the plugin runs in that folder at all, then what Dope TDD
 guards there.
 

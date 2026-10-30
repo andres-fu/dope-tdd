@@ -652,6 +652,14 @@ describe('closeCyclesForTest: what a run closes for other modules (#41)', () => 
     expect(closed.neverSawRed).toBe(s.neverSawRed)
     expect(closed.unproven).not.toContain('utils/stale')
   })
+
+  // #250: a suite green says nothing about a module unlocked in another checkout.
+  test('a module the run says nothing about stays open', () => {
+    const s = open('utils/worktree', true)(INITIAL_STATS)
+    const closed = closeCyclesForTest({ ...s, current: null }, null, undefined, T0 + 60_000, ['utils/worktree'])
+    expect(closed.modules['utils/worktree']?.cycleStartMs).toBe(T0)
+    expect(closed.cycles).toBe(s.cycles)
+  })
 })
 
 describe("a green of another module's test, not about the current one (seen on dope-tdd itself, 2026-10-18)", () => {

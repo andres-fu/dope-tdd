@@ -1,8 +1,9 @@
 import { describe, expect } from 'claude-code/testing'
 
+import { say } from '../hooks/messages'
 import { contentHash, unlockKey } from '../hooks/unlocks'
 
-import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, TEST_SOURCE, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
+import { BAND, FAIL_SUMMARY, FIXTURE_DRIVE, MINUTE, ROOT, SOURCE, T0, TEST_SOURCE, editAt, failOutput, fakeEngine, runBash, runCommand, runPowerShell, runTests, startSession, test, touchTest, writeAt } from './engine'
 
 // #198 (2026-10-28): a subagent with isolation: worktree edits under <root>/.claude/worktrees/<name>/. Read from the
 // session root those paths matched no layout, and a live probe's edit to untested code went through without a word.
@@ -68,6 +69,303 @@ describe('an agent worktree is guarded like the main checkout', () => {
     const result = await editAt($, '.claude/worktrees/agent-x/src/utils/calculateDuration.ts')
 
     expect(result.deny).toBeUndefined()
+  })
+})
+
+// #250 (2026-10-29): the main loop has no agentId, so nothing placed its shell. A session working in a worktree nested
+// under its root, as the desktop app sets up, had every run read against the main checkout: "RED, but not on calc", a
+// catch check built from a checkout with neither the change nor the test, and a main-checkout run counted as the module's.
+describe('a shell working in a nested worktree is judged against that worktree', () => {
+  const NESTED = `${ROOT}/.claude/worktrees/nested`
+  const GIT_DIR = `${ROOT}/.git/worktrees/nested`
+  const COPY = `${GIT_DIR}/dope-tdd/wt`
+  const MODULE = 'utils/calculateDuration'
+  const TEST = 'tests/utils/calculateDuration.test.ts'
+  const CODE = 'src/utils/calculateDuration.ts'
+  const IN_NESTED = `cd ${NESTED}`
+  const RUN = `${IN_NESTED} && npx vitest run ${TEST}`
+  const OLD_CODE = 'export const a = 1'
+
+  function nested(world: ReturnType<typeof fakeEngine>) {
+    world.existingFiles.add(NESTED)
+    world.existingFiles.add(`${ROOT}/.git`)
+    world.fileContents.set(`${NESTED}/.git`, `gitdir: ${GIT_DIR}\n`)
+    world.fileContents.set(`${NESTED}/${TEST}`, TEST_SOURCE)
+    world.fileContents.set(`${NESTED}/${CODE}`, OLD_CODE)
+  }
+
+  async function seeRed($: Parameters<typeof editAt>[0], world: ReturnType<typeof fakeEngine>) {
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = failOutput(TEST)
+    const red = await runBash($, RUN)
+    world.bashFails = false
+    world.bashText = ''
+    return red
+  }
+
+  test('a red from inside the worktree is a red on the module, by the file the runner names', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = failOutput(TEST)
+
+    const red = await runBash($, `cd .claude/worktrees/nested && npx vitest run ${TEST}`)
+
+    expect(red.context).toContain(say('red.first', { module: MODULE }))
+  })
+
+  test('the same relative cd twice reads the same, when Claude Code put the shell back between them', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = failOutput(TEST)
+    const relative = `cd .claude/worktrees/nested && npx vitest run ${TEST}`
+
+    await runBash($, relative)
+    const again = await runBash($, relative)
+
+    expect(again.context).toContain(say('red.first', { module: MODULE }))
+  })
+
+  test('so is a red whose runner named no file', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = failOutput(null)
+
+    const red = await runBash($, RUN)
+
+    expect(red.context).toContain(say('red.first', { module: MODULE }))
+  })
+
+  test('a red by absolute path is that worktree\'s too', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    const red = await seeRed($, world)
+
+    expect(red.context).toContain(say('red.first', { module: MODULE }))
+  })
+
+  test('a shell left in the worktree by the last command stays judged there', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    await runBash($, IN_NESTED)
+    world.bashFails = true
+    world.bashText = failOutput(TEST)
+
+    const red = await runBash($, `npx vitest run ${TEST}`)
+
+    expect(red.context).toContain(say('red.first', { module: MODULE }))
+  })
+
+  test('the catch check builds its copy from the worktree, with the change and the test in', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await seeRed($, world)
+    await editAt($, `.claude/worktrees/nested/${CODE}`)
+
+    await runBash($, RUN)
+
+    const added = world.gitCalls.findIndex(argv => argv.includes('add') && argv.includes('--detach'))
+    expect(world.runCwds[added]).toBe(NESTED)
+    expect(world.gitCalls[added]).toContain(COPY)
+    expect(world.writes).toContainEqual([`${COPY}/${CODE}`, OLD_CODE])
+    expect((await runCommand($, 'tdd')).text).toMatch(/proven 1/)
+  })
+
+  test("a run of the main checkout's own test does not count for a module unlocked in the worktree", async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await seeRed($, world)
+    await editAt($, `.claude/worktrees/nested/${CODE}`)
+
+    const main = await runBash($, `cd ${ROOT} && npx vitest run ${TEST}`)
+    const inNested = await runBash($, RUN)
+
+    expect(main.context).toContain(say('run.otherCheckout', { module: MODULE, testPath: `.claude/worktrees/nested/${TEST}` }))
+    // The green in the main checkout closed nothing: the worktree's own green still closes the cycle and checks it.
+    expect(inNested.context?.join('\n')).toMatch(/PROVEN/)
+    expect(world.writes.filter(([path]) => path === `${COPY}/${CODE}`)).toContainEqual([`${COPY}/${CODE}`, OLD_CODE])
+    expect((await runCommand($, 'tdd')).text).toMatch(/proven 1/)
+  })
+
+  test("a red of the main checkout's own test leaves the worktree's unlock alone", async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = failOutput(TEST)
+
+    const main = await runBash($, `npx vitest run ${TEST}`)
+    const edit = await editAt($, `.claude/worktrees/nested/${CODE}`)
+    const mainEdit = await editAt($, CODE)
+
+    expect(main.context).toContain(say('run.otherCheckout', { module: MODULE, testPath: `.claude/worktrees/nested/${TEST}` }))
+    expect(edit.deny).toBeUndefined()
+    expect(mainEdit.deny).toBeDefined()
+  })
+
+  test('a cd back to the main checkout from the worktree is a run of the main checkout', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await seeRed($, world)
+
+    const back = await runBash($, `cd ../../.. && npx vitest run ${TEST}`)
+
+    expect(back.context).toContain(say('run.otherCheckout', { module: MODULE, testPath: `.claude/worktrees/nested/${TEST}` }))
+  })
+
+  test('a run in the worktree does not count for a module unlocked in the main checkout', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.existingFiles.add(`${ROOT}/${TEST}`)
+    await editAt($, TEST)
+
+    const run = await runBash($, RUN)
+
+    expect(run.context).toContain(say('run.otherCheckout', { module: MODULE, testPath: TEST }))
+  })
+
+  test("an agent's run in its worktree does not count for a module unlocked in the main checkout", async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.existingFiles.add(`${ROOT}/${TEST}`)
+    await editAt($, TEST)
+    await $.tool.call({ tool: 'Read', file_path: `${NESTED}/${CODE}`, agentId: 'a1' } as never)
+
+    const run = await $.tool.call({ tool: 'Bash', command: `npx vitest run ${TEST}`, agentId: 'a1' } as never)
+
+    expect(run.context).toContain(say('run.otherCheckout', { module: MODULE, testPath: TEST }))
+  })
+
+  test('a shell write in the worktree is refused until its test is touched there, naming that test', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, TEST)
+
+    const refused = await runBash($, `${IN_NESTED} && sed -i 's/a/b/' ${CODE}`)
+
+    expect(refused.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a shell write in the worktree is seen by git there, and its catch check builds from there', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await seeRed($, world)
+    world.onBash = command => {
+      if (command.includes('sed')) {
+        world.numstat = `1\t1\t${CODE}\n`
+        world.fileContents.set(`${NESTED}/${CODE}`, 'export const b = 2')
+      }
+    }
+
+    const write = await runBash($, `${IN_NESTED} && sed -i 's/a/b/' ${CODE}`)
+    const numstat = world.gitCalls.findIndex(argv => argv.includes('--numstat'))
+    await runBash($, RUN)
+
+    expect(write.deny).toBeUndefined()
+    expect(world.runCwds[numstat]).toBe(NESTED)
+    expect(world.writes).toContainEqual([`${COPY}/${CODE}`, OLD_CODE])
+  })
+
+  test('a script that changes a source in the worktree is said, when its unlock is in the main checkout', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.existingFiles.add(`${ROOT}/${TEST}`)
+    await editAt($, TEST)
+    world.onBash = command => {
+      if (command.includes('fix.py')) {
+        world.numstat = `1\t1\t${CODE}\n`
+      }
+    }
+
+    const script = await runBash($, `${IN_NESTED} && python fix.py`)
+
+    expect(script.context?.join('\n')).toMatch(/changed through a shell command without a test touched first/)
+  })
+
+  test("a shell in the worktree goes by the worktree's own dope-tdd.json", async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.fileContents.set(`${NESTED}/dope-tdd.json`, '{"exempt":["src/**"]}')
+
+    const inNested = await runBash($, `${IN_NESTED} && sed -i 's/a/b/' ${CODE}`)
+    const inMain = await runBash($, `cd ${ROOT} && sed -i 's/a/b/' ${CODE}`)
+
+    expect(inNested.deny).toBeUndefined()
+    expect(inMain.deny).toBeDefined()
+  })
+
+  test('a git operation in the worktree stands the guard down for its shell, not the main checkout\'s', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.existingFiles.add(`${GIT_DIR}/MERGE_HEAD`)
+
+    const inNested = await runBash($, `${IN_NESTED} && sed -i 's/a/b/' ${CODE}`)
+    const inMain = await runBash($, `cd ${ROOT} && sed -i 's/a/b/' ${CODE}`)
+
+    expect(inNested.deny).toBeUndefined()
+    expect(inMain.deny).toBeDefined()
+  })
+
+  test('a shell the guard stood down for stays in the worktree for the next command', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    world.existingFiles.add(`${GIT_DIR}/MERGE_HEAD`)
+
+    await runBash($, `${IN_NESTED} && git status`)
+    const next = await runBash($, `sed -i 's/a/b/' ${CODE}`)
+
+    expect(next.deny).toBeUndefined()
+  })
+
+  test('a shell left in a sibling worktree stays there, when the session root is itself a linked worktree (#233)', async ($, on) => {
+    const world = fakeEngine(on)
+    const main = `${FIXTURE_DRIVE}work/main`
+    const sibling = `${main}/.claude/worktrees/sibling`
+    world.mainCheckout = main
+    world.fileContents.set(`${sibling}/dope-tdd.json`, '{"exempt":["src/**"]}')
+
+    await runBash($, `cd ${sibling}`)
+    const next = await runBash($, `sed -i 's/a/b/' ${CODE}`)
+
+    expect(next.deny).toBeUndefined()
+  })
+
+  test("a red in the main checkout does not gather failures for a module unlocked in the worktree", async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+    await editAt($, `.claude/worktrees/nested/${TEST}`)
+    world.bashFails = true
+    world.bashText = FAIL_SUMMARY
+
+    await runBash($, `npx vitest run ${TEST}`)
+
+    expect(world.namesCalls).toBe(0)
+  })
+
+  test('a write into the main checkout beside a run in the worktree is still refused', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+
+    const result = await runBash($, `${IN_NESTED} && sed -i 's/a/b/' ${ROOT}/${CODE} && npx vitest run ${TEST}`)
+
+    expect(result.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test('a file in the main checkout, written beside a run in the worktree, is not outside the project', async ($, on) => {
+    const world = fakeEngine(on)
+    nested(world)
+
+    const result = await runBash($, `${IN_NESTED} && echo x >> ${ROOT}/scripts/a.ts && npx vitest run ${TEST}`)
+
+    expect((result.context ?? []).filter(line => /is outside this project/.test(line))).toEqual([])
   })
 })
 

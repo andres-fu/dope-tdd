@@ -8,6 +8,8 @@ export type Check = CatchOutcome | 'refactor'
 export type RunContext = {
   /** Test files that failed when the current module's own test did not. */
   elsewhere?: readonly string[]
+  /** The run did not count for the module: its test is here, in another checkout (runPlan.ts, otherCheckout). */
+  otherCheckout?: string
   /** The test was edited after this cycle's red and the code did not change. */
   testChanged?: boolean
   /** How messages name the module's source under the project's layout; `src/<module>` by default. */
@@ -165,6 +167,9 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   }
   const module = context.label ?? id
   const sourcePath = context.sourcePath ?? defaultSource(module)
+  if (context.otherCheckout !== undefined) {
+    return say('run.otherCheckout', { module, testPath: context.otherCheckout })
+  }
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
     return say('red.elsewhere', { module, sourcePath, files: context.elsewhere, sawRed: before.sawRed })
   }

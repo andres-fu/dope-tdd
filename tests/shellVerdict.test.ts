@@ -2,8 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
-import { gateShellWrites, judgeFailures, shellGate, shellReminders } from '../hooks/shellVerdict'
+import { ELSEWHERE } from '../hooks/shell'
+import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
+import { MOCHA_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 describe('gateShellWrites', () => {
   const unlocked = { 'utils/open': 'C:/r/tests/utils/open.test.ts', 'utils/carried': 'C:/r/tests/utils/carried.test.ts' }
@@ -191,5 +193,87 @@ describe('shellGate', () => {
 
   test('nothing locked: it goes', () => {
     expect(shellGate(none)).toEqual({ kind: 'go' })
+  })
+})
+
+// Out of register.tsx (checkShell): whether a shell command was a run of this project's tests, and what its summary
+// says. register.tsx finds where the run ran (a workspace run's package included) and acts on the reading.
+describe('readShellRun', () => {
+  const ROOT = 'C:/work/app'
+  const quiet = { notStarted: null, unreadable: null }
+
+  test('a run inside the project is read from its summary', () => {
+    expect(readShellRun(PYTEST_PASS, ROOT, ROOT)).toEqual({ outcome: 'pass', ...quiet })
+    expect(readShellRun(PYTEST_FAIL, `${ROOT}/server`, ROOT)).toEqual({ outcome: 'fail', ...quiet })
+  })
+
+  test('a command that ran no tests, or ran them in another repository, is no run of this project', () => {
+    expect(readShellRun(PYTEST_PASS, null, ROOT)).toEqual({ outcome: 'none', ...quiet })
+    expect(readShellRun(PYTEST_PASS, 'C:/work/other', ROOT)).toEqual({ outcome: 'none', ...quiet })
+    expect(readShellRun(PYTEST_PASS, ELSEWHERE, ROOT)).toEqual({ outcome: 'none', ...quiet })
+    // Nor is a runner there that dope-tdd cannot read yet named as one of this session's.
+    expect(readShellRun(MOCHA_PASS, 'C:/work/other', ROOT)).toEqual({ outcome: 'none', ...quiet })
+  })
+
+  test('a command held for approval or refused never ran, whatever else its text says', () => {
+    expect(readShellRun(`This command requires approval\n${PYTEST_PASS}`, ROOT, ROOT)).toEqual({ outcome: 'none', ...quiet })
+  })
+
+  test('output with no summary is an unread run', () => {
+    expect(readShellRun('something printed, no summary\n', ROOT, ROOT)).toEqual({ outcome: 'unknown', ...quiet })
+  })
+
+  test('a runner that never started ran no test: no unread run, and it says why', () => {
+    expect(readShellRun("/usr/bin/python: No module named pytest\n", ROOT, ROOT)).toEqual({ outcome: 'none', notStarted: 'No module named pytest', unreadable: null })
+  })
+
+  test('a runner recognised but not read yet is named, and its run is not counted', () => {
+    expect(readShellRun(MOCHA_PASS, ROOT, ROOT)).toEqual({ outcome: 'none', notStarted: null, unreadable: 'mocha' })
+  })
+
+  test('a runner that did not start is said first, over one not read yet', () => {
+    expect(readShellRun(`mocha: command not found\n${MOCHA_PASS}`, ROOT, ROOT)).toEqual({ outcome: 'none', notStarted: 'command not found', unreadable: null })
+  })
+
+  test('a summary that was read wins: an import error inside a real run is still red', () => {
+    expect(readShellRun(PYTEST_FAIL.replace('FAILED', "No module named 'x'\nFAILED"), ROOT, ROOT)).toEqual({ outcome: 'fail', ...quiet })
+  })
+})
+
+// Out of register.tsx (checkShell): the red run of one named test file, which is then judged by which tests fail.
+describe('ownTestRun', () => {
+  const ROOT = 'C:/r'
+  const run = 'npx vitest run tests/utils/a.test.ts'
+
+  test('a red run naming one test file in the layout counts for that file and its module', () => {
+    expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG)).toEqual({ module: 'utils/a', testPath: 'C:/r/tests/utils/a.test.ts' })
+  })
+
+  test('the named file is found from where the shell is', () => {
+    expect(ownTestRun('npx vitest run utils/a.test.ts', 'fail', 'C:/r/tests', ROOT, DEFAULT_CONFIG)).toEqual({ module: 'utils/a', testPath: 'C:/r/tests/utils/a.test.ts' })
+  })
+
+  test('only a red run is judged this way', () => {
+    expect(ownTestRun(run, 'pass', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
+    expect(ownTestRun(run, 'unknown', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
+  })
+
+  test('a run filtered to some tests by name says nothing about the rest', () => {
+    expect(ownTestRun(`${run} -t adds`, 'fail', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
+  })
+
+  test('a run that names no test file, or a file outside the layout, has no own test', () => {
+    expect(ownTestRun('npx vitest run', 'fail', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
+    expect(ownTestRun('npx vitest run src/utils/a.ts', 'fail', ROOT, ROOT, DEFAULT_CONFIG)).toBeNull()
+  })
+
+  // Pins today's behaviour, which is #250: a run in a worktree nested under the root is classified against the root,
+  // so it counts for no module. The fix gives this the run's own checkout as `root` (mirror.ts, worktreeRootFor).
+  test('#250 as it stands: a run in a nested worktree is classified against the session root', () => {
+    expect(ownTestRun(run, 'fail', 'C:/r/.claude/worktrees/w', ROOT, DEFAULT_CONFIG)).toBeNull()
+    expect(ownTestRun(run, 'fail', 'C:/r/.claude/worktrees/w', 'C:/r/.claude/worktrees/w', DEFAULT_CONFIG)).toEqual({
+      module: 'utils/a',
+      testPath: 'C:/r/.claude/worktrees/w/tests/utils/a.test.ts',
+    })
   })
 })

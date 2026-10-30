@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { findGitOperation, gitDirFromFile } from '../hooks/gitOperation'
+import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from '../hooks/gitOperation'
 
 const GIT_DIR = '/work/app/.git'
 
@@ -55,5 +55,34 @@ describe('gitDirFromFile', () => {
   test('anything else is not a gitdir file', () => {
     expect(gitDirFromFile('', '/work/app')).toBeNull()
     expect(gitDirFromFile('ref: refs/heads/main\n', '/work/app')).toBeNull()
+  })
+})
+
+// #233 (tester round 7): a session root that is itself a linked worktree has its agents' worktrees under the main
+// checkout. Out of register.tsx (mainCheckoutOf), which runs `git rev-parse --path-format=absolute --git-dir
+// --git-common-dir` and hands the answer here.
+describe('mainCheckoutFrom', () => {
+  test('a linked worktree: the main checkout is the folder that holds the common .git', () => {
+    expect(mainCheckoutFrom('/work/main/.git/worktrees/feature\n/work/main/.git\n')).toBe('/work/main')
+    expect(mainCheckoutFrom('C:/work/main/.git/worktrees/feature\r\nC:/work/main/.git\r\n')).toBe('C:/work/main')
+  })
+
+  test('a Windows common dir keeps its own slashes', () => {
+    expect(mainCheckoutFrom('C:\\work\\main\\.git\\worktrees\\feature\nC:\\work\\main\\.git\n')).toBe('C:\\work\\main')
+  })
+
+  test('a main checkout has one git dir, however it is spelled, so there is no other checkout', () => {
+    expect(mainCheckoutFrom('/work/app/.git\n/work/app/.git\n')).toBeUndefined()
+    expect(mainCheckoutFrom('C:/Work/App/.git\nc:\\work\\app\\.git\n')).toBeUndefined()
+  })
+
+  test('a common dir that is not a .git folder beside a checkout (a bare repository) names none', () => {
+    expect(mainCheckoutFrom('/srv/repo.git/worktrees/feature\n/srv/repo.git\n')).toBeUndefined()
+  })
+
+  test('git could not say: outside git, a failed call, or half an answer', () => {
+    expect(mainCheckoutFrom(null)).toBeUndefined()
+    expect(mainCheckoutFrom('')).toBeUndefined()
+    expect(mainCheckoutFrom('/work/main/.git/worktrees/feature\n')).toBeUndefined()
   })
 })

@@ -5,14 +5,14 @@ import type { CatchOutcome, TddStats } from '../types'
 import { beforeText, captureEdit, recordFileEdit, recordShellChanges, unguardedShellPaths } from './afterWrite.ts'
 import type { FileRead } from './afterWrite.ts'
 import { findSourceWrites, writesFileNamed } from './bashWrites.ts'
-import { findRunner, parentDir } from './findRunner.ts'
+import { findRunner } from './findRunner.ts'
 import type { FoundRunner } from './findRunner.ts'
 import { briefingText } from './briefing.ts'
 import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spike.ts'
 import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
-import { catchOutcome, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
+import { catchOutcome, catchPlan, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
 import type { WorktreeFailure } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
@@ -42,17 +42,17 @@ import { drawBand, drawTestPane } from './draw.tsx'
 import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
-import { findGitOperation, gitDirFromFile } from './gitOperation.ts'
+import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
 import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, readRun, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
-import { isTruncated, neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
 import { ELSEWHERE, cwdAfter, isPureRead } from './shell.ts'
-import { gateShellWrites, judgeFailures, shellGate, shellReminders } from './shellVerdict.ts'
+import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
@@ -100,7 +100,7 @@ import {
   togglePause,
 } from './stats.ts'
 import { formatGlossary, formatStatus } from './summary.ts'
-import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import type { LockedFacts } from './refusals.ts'
@@ -110,7 +110,7 @@ import { gateWrite } from './fileGate.ts'
 import type { Override, OverrideRequest, Review } from '../types'
 import { succeeded, tell, withContext } from './toolResult.ts'
 import { isExpired, keptNotice, keptPathFor, pruneArgv, PRUNED_FOLDERS } from './retention.ts'
-import { JOURNAL_PREFIX, SHARED_LOCK_REF, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
+import { JOURNAL_PREFIX, SHARED_LOCK_REF, afterRevert, repairStep, elsewhereNotice, journalEntry, journalFiles, journalKeyFor, parseLock, sharedLockKey } from './checkJournal.ts'
 import type { SharedLock } from './checkJournal.ts'
 
 const MINUTE = 60_000
@@ -158,22 +158,12 @@ const agentCwds = atom({ plugin: 'dope-tdd', key: 'agent-cwds' } as const, {} as
 /** The main checkout by session root, or undefined when the root is no linked worktree: one git call a root. */
 const mainCheckouts = new Map<string, string | undefined>()
 
-/**
- * The main checkout when the session root is itself a linked git worktree (#233, tester round 7). Claude Code puts the
- * subagents' worktrees under the main checkout's .claude/worktrees then, outside the session root (mirror.ts).
- * Undefined in a main checkout, outside git, or when git cannot say.
- */
+/** The main checkout when the session root is itself a linked git worktree (#233); the decision is gitOperation.ts's. */
 async function mainCheckoutOf($: EngineInterface, sessionRoot: string): Promise<string | undefined> {
   if (mainCheckouts.has(sessionRoot)) {
     return mainCheckouts.get(sessionRoot)
   }
-  const said = await runGit($, sessionRoot, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])
-  const [gitDir, commonDir] = (said ?? '').split(/\r?\n/).map(line => line.trim())
-  // A linked worktree's git dir is <main>/.git/worktrees/<name>; the common one is <main>/.git, beside the checkout.
-  const main =
-    gitDir === undefined || commonDir === undefined || commonDir === '' || pathKey(gitDir) === pathKey(commonDir) || !/[\\/]\.git$/.test(commonDir)
-      ? undefined
-      : (parentDir(commonDir) ?? undefined)
+  const main = mainCheckoutFrom(await runGit($, sessionRoot, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']))
   mainCheckouts.set(sessionRoot, main)
   return main
 }
@@ -779,12 +769,7 @@ async function keepAside($: EngineInterface, root: string, path: string, text: s
   }
 }
 
-/**
- * A journal left behind means a check died between revert and restore. A file
- * still at `before` gets `after` back; a file that moved since is left alone
- * and its `after` text is kept beside it, because the hand that moved it knew
- * more than the journal does.
- */
+/** A journal left behind means a check died between revert and restore; what each file needs is checkJournal.ts's (repairStep). */
 async function repairInterruptedCheck($: EngineInterface, root: string): Promise<void> {
   const restored: string[] = []
   const left: string[] = []
@@ -792,11 +777,11 @@ async function repairInterruptedCheck($: EngineInterface, root: string): Promise
   for (const key of await journalKeys($, root)) {
     const files = journalFiles(await $.store.get(key)) ?? []
     for (const file of files) {
-      const onDisk = await readWhole($, file.path)
-      if (onDisk === file.after) {
+      const step = repairStep(await readWhole($, file.path), file)
+      if (step === 'as-is') {
         continue
       }
-      if (onDisk !== file.before) {
+      if (step === 'keep-aside') {
         left.push((await keepAside($, root, file.path, file.after)) ?? file.path)
         continue
       }
@@ -1159,53 +1144,29 @@ async function verifyCatch(
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
-  if (cycleChange === undefined) {
-    // The backstop saw an edit (a patch, a formatter, a copy) that the text capture did not: say so, never stay silent.
-    return editedSinceRun && testPath !== undefined ? { kind: 'unverified', reason: 'change not captured' } : 'unchecked'
+  const policy = cycleChange === undefined ? null : policyFor(config, relativePath(root, cycleChange.path))
+  // The decisions are catchCheck.ts's (catchPlan); this runs what the plan names.
+  const plan = catchPlan({
+    change: cycleChange,
+    hasTest: testPath !== undefined,
+    editedSinceRun,
+    provedByRed,
+    redErrorsOnly,
+    checkable: policy !== 'observe' && policy !== 'exempt' && config.catchCheck !== false,
+  })
+  // Past `done` there is always a change and a test; the rest of this condition only tells the type checker so.
+  if (plan.kind === 'done' || cycleChange === undefined || testPath === undefined) {
+    return plan.kind === 'done' ? plan.result : 'unchecked'
   }
-  if (testPath === undefined) {
-    return 'unchecked'
-  }
-  // #57: on Windows a checkout keeps CRLF, and Git Bash's `sed -i` writes the whole file back with LF. A restore by
-  // shell is then the code from before the break with other line endings. That changes nothing the code does, so it
-  // counts as restored; reverting it would "undo" only line endings and read as MISSED. The agent is told why.
-  const lineEndingsOnly =
-    cycleChange.before !== null && cycleChange.before !== cycleChange.after && sameIgnoringLineEndings(cycleChange.before, cycleChange.after)
-  if (cycleChange.before === cycleChange.after || lineEndingsOnly) {
-    // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
-    // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
-    if (!provedByRed) {
-      return 'unchecked'
-    }
-    // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
-    // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).
-    if (redErrorsOnly) {
-      return { kind: 'unverified', reason: 'the red was an error, not a failed assertion: no assertion ran' }
-    }
-    const eol = lineEndingsOnly ? { lineEndings: true } : {}
-    // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
-    // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way,
-    // and a check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
-    const pinPolicy = policyFor(config, relativePath(root, cycleChange.path))
-    if (pinPolicy === 'observe' || pinPolicy === 'exempt' || config.catchCheck === false) {
-      return { kind: 'proven', ...eol }
-    }
+  if (plan.kind === 'pin') {
+    const eol = plan.lineEndings ? { lineEndings: true } : {}
+    // A check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
     const pinCheck = await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)
     const mutation = pinCheck !== null && (pinCheck.kind === 'proven' || pinCheck.kind === 'missed') ? pinCheck.mutation : undefined
     return mutation === undefined ? { kind: 'proven', ...eol } : { kind: 'proven', mutation, pinned: true, ...eol }
   }
-  if (cycleChange.kind === 'refactor') {
-    return 'refactor'
-  }
-  // Observe touches nothing on disk: a module the config only watches (observe mode, or outside the scope) is never reverted.
-  const policy = policyFor(config, relativePath(root, cycleChange.path))
-  if (policy === 'observe' || policy === 'exempt' || config.catchCheck === false) {
-    return 'unchecked'
-  }
-  if (cycleChange.before === null) {
-    if (cycleChange.beforeState === 'unreadable') {
-      return { kind: 'unverified', reason: 'could not read the file before the edit' }
-    }
+  // A new file's plan always has no old code; the second half only tells the type checker so.
+  if (plan.kind === 'new-file' || cycleChange.before === null) {
     return (await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)) ?? { kind: 'unverified', reason: 'new file' }
   }
   const undone = { path: cycleChange.path, before: cycleChange.before, after: cycleChange.after }
@@ -1350,14 +1311,14 @@ async function checkAgainst(
     $.ui.log(`dope-tdd: could not revert ${path} for the catch check: ${String(error)}`)
   } finally {
     if (reverted) {
-      const onDisk = await readWhole($, path)
-      if (onDisk === before) {
+      const step = afterRevert(await readWhole($, path), before, after)
+      if (step === 'restore') {
         try {
           await $.fs.write(path, after)
         } catch (error) {
           $.ui.log(`dope-tdd: could not restore ${path}: ${String(error)}`)
         }
-      } else if (onDisk !== after) {
+      } else if (step === 'moved') {
         movedWhileReverted = true
       }
     }
@@ -2009,28 +1970,20 @@ async function checkShell(
   const unguardedPaths = unguardedShellPaths(changedSources, updated.unlocked, path => policyFor(config, path))
 
   const output = result.text ?? ''
-  // A command held for approval or refused never ran: no run to read, nothing to count. The hold text is the signal, flagged or not.
-  // A run is this project's only when it executes inside the root: `cd ../other && npx vitest run` is another repository's run.
   // A workspace run (`npm test -w server`) runs in its package: the runner prints paths from there.
   const plainLocation = testRunLocation(command, start)
   const target = plainLocation === null ? null : workspaceTarget(command)
   const runLocation = target === null ? plainLocation : ((await packageDirFor($, root, start, config, target)) ?? plainLocation)
-  const ran = runLocation !== null && isInsideRoot(root, runLocation) && !neverRan(output)
-  const read = ran ? readRun(output) : 'none'
-  // A runner that never started ran no test: not an unread run, and the agent is told it did not start.
-  const notStarted = read === 'unknown' ? runnerDidNotStart(output) : null
-  // A runner dope-tdd recognises but cannot read yet ran no unread run: it is named once and its runs are not counted.
-  const unreadable = read === 'unknown' && notStarted === null ? unreadableRunner(output) : null
+  // Whether it ran here, started, and can be read is shellVerdict.ts's reading; the hold text is the signal, flagged or not.
+  const reading = readShellRun(output, runLocation, root)
+  const { notStarted, unreadable } = reading
   const firstUnreadable = unreadable !== null && (await noteUnreadRunner($, unreadable))
-  let outcome = notStarted === null && unreadable === null ? read : 'none'
+  let outcome = reading.outcome
   // Tests that were failing before the change neither hide a red nor block a green: judge a run of the current
   // module's own test file by which tests fail. Only the known failures, or fewer than the red with none new, is green.
   let alreadyFailing: string[] = []
-  // The run counts for the module whose test file it names, whichever was touched last. A run filtered to some tests
-  // by name says nothing about the rest, so it is never judged this way.
-  const ownFile = outcome === 'fail' && !filtersTests(command) ? namedTestFile(command, config.stack, start) : null
-  const ownTarget = ownFile === null ? null : classifyPath(root, ownFile, config)
-  const working = ownFile !== null && ownTarget?.kind === 'test' ? { module: ownTarget.module, testPath: ownFile } : null
+  // Which module's own test file a red run is: shellVerdict.ts's.
+  const working = ownTestRun(command, outcome, start, root, config)
   if (working !== null) {
     let names = failedTestsIn(output)
     // A tail kept the summary and lost the names: run the file once, locally, to read them all.

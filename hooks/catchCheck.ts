@@ -1,9 +1,80 @@
-import type { CatchOutcome } from '../types'
+import type { CatchOutcome, CycleChange } from '../types'
 import { failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, nodeRunnerCrashed, readRun, runnerNamed } from './runners.ts'
 import type { RunnerKind, RunnerOptions } from './runners.ts'
 import { runnerDidNotStart, stripAnsi } from './runOutcome.ts'
+import { sameIgnoringLineEndings } from './unlocks.ts'
 
 export type { RunnerKind, RunnerOptions } from './runners.ts'
+
+export type CatchPlanInput = {
+  /** This cycle's change to the module's source, if one was captured. */
+  change: CycleChange | undefined
+  /** The module has a test on record. */
+  hasTest: boolean
+  /** The backstop saw an edit since the last run (a patch, a formatter, a copy). */
+  editedSinceRun: boolean
+  /** The module saw red in this cycle and its test was not edited after that red. */
+  provedByRed: boolean
+  /** That red never reached an assertion: an import, a collection or a compile broke (#132). */
+  redErrorsOnly: boolean
+  /** The config lets the check touch the changed file: not observe, not exempt, and catchCheck is not false. */
+  checkable: boolean
+}
+
+/**
+ * `done`: the verdict, with nothing to run. `pin`: proven by a deliberate break; the pinned file then gets the small
+ * changes a new file gets. `new-file`: those small changes, as there is no old code. `revert`: the old code against the test.
+ */
+export type CatchPlan =
+  | { kind: 'done'; result: CatchOutcome | 'unchecked' | 'refactor' }
+  | { kind: 'pin'; lineEndings: boolean }
+  | { kind: 'new-file' }
+  | { kind: 'revert' }
+
+/** What a green asks of the catch check, before anything is run or reverted (out of register.tsx, verifyCatch). */
+export function catchPlan(input: CatchPlanInput): CatchPlan {
+  const { change } = input
+  if (change === undefined) {
+    // The backstop saw an edit that the text capture did not: say so, never stay silent.
+    return { kind: 'done', result: input.editedSinceRun && input.hasTest ? { kind: 'unverified', reason: 'change not captured' } : 'unchecked' }
+  }
+  if (!input.hasTest) {
+    return { kind: 'done', result: 'unchecked' }
+  }
+  // #57: on Windows a checkout keeps CRLF, and Git Bash's `sed -i` writes the whole file back with LF. A restore by
+  // shell is then the code from before the break with other line endings. That changes nothing the code does, so it
+  // counts as restored; reverting it would "undo" only line endings and read as MISSED. The agent is told why.
+  const lineEndingsOnly = change.before !== null && change.before !== change.after && sameIgnoringLineEndings(change.before, change.after)
+  if (change.before === change.after || lineEndingsOnly) {
+    // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
+    // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
+    if (!input.provedByRed) {
+      return { kind: 'done', result: 'unchecked' }
+    }
+    // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
+    // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).
+    if (input.redErrorsOnly) {
+      return { kind: 'done', result: { kind: 'unverified', reason: 'the red was an error, not a failed assertion: no assertion ran' } }
+    }
+    // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
+    // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way.
+    if (!input.checkable) {
+      return { kind: 'done', result: { kind: 'proven', ...(lineEndingsOnly ? { lineEndings: true } : {}) } }
+    }
+    return { kind: 'pin', lineEndings: lineEndingsOnly }
+  }
+  if (change.kind === 'refactor') {
+    return { kind: 'done', result: 'refactor' }
+  }
+  // Observe touches nothing on disk: a module the config only watches (observe mode, or outside the scope) is never reverted.
+  if (!input.checkable) {
+    return { kind: 'done', result: 'unchecked' }
+  }
+  if (change.before === null) {
+    return change.beforeState === 'unreadable' ? { kind: 'done', result: { kind: 'unverified', reason: 'could not read the file before the edit' } } : { kind: 'new-file' }
+  }
+  return { kind: 'revert' }
+}
 
 // The runners whose check runs in a throwaway copy. The others are experimental: their check undoes the change on
 // disk, so it runs only with "catchCheck": true. One list for the plugin and the pull-request check (#192).

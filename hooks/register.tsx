@@ -12,7 +12,7 @@ import { SPIKE_SKILL, removeFolderArgv, spikeQuestion, staleSpikes } from './spi
 import { freshLeftRed, leftRedAtEnd, leftRedKey, leftRedNote } from './leftRed.ts'
 import { importCandidates, testsItsOwnModule } from './imports.ts'
 import { changedLines } from './changedLines.ts'
-import { catchOutcome, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
+import { catchOutcome, catchPlan, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from './catchCheck.ts'
 import type { WorktreeFailure } from './catchCheck.ts'
 import { CONFIG_FILE, approverOf, describeConfigChange, isLoosening, parseConfig, pauseLimit, policyFor } from './config.ts'
 import type { Approver } from './config.ts'
@@ -100,7 +100,7 @@ import {
   togglePause,
 } from './stats.ts'
 import { formatGlossary, formatStatus } from './summary.ts'
-import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, sameIgnoringLineEndings, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
+import { contentHash, freshUnlocks, hasAssertion, legacyUnlockKey, staleUnlockKeys, storeRoot, unlockEntry, unlockKey } from './unlocks.ts'
 import { commentedOutLines, testEditSignals } from './workarounds.ts'
 import { checkingMessage, experimentalCheckReason, lockedFor, standingDownLine } from './refusals.ts'
 import type { LockedFacts } from './refusals.ts'
@@ -1149,53 +1149,29 @@ async function verifyCatch(
 ): Promise<CatchOutcome | 'unchecked' | 'refactor'> {
   const cycleChange = s.changes[module]
   const testPath = s.unlocked[module]
-  if (cycleChange === undefined) {
-    // The backstop saw an edit (a patch, a formatter, a copy) that the text capture did not: say so, never stay silent.
-    return editedSinceRun && testPath !== undefined ? { kind: 'unverified', reason: 'change not captured' } : 'unchecked'
+  const policy = cycleChange === undefined ? null : policyFor(config, relativePath(root, cycleChange.path))
+  // The decisions are catchCheck.ts's (catchPlan); this runs what the plan names.
+  const plan = catchPlan({
+    change: cycleChange,
+    hasTest: testPath !== undefined,
+    editedSinceRun,
+    provedByRed,
+    redErrorsOnly,
+    checkable: policy !== 'observe' && policy !== 'exempt' && config.catchCheck !== false,
+  })
+  // Past `done` there is always a change and a test; the rest of this condition only tells the type checker so.
+  if (plan.kind === 'done' || cycleChange === undefined || testPath === undefined) {
+    return plan.kind === 'done' ? plan.result : 'unchecked'
   }
-  if (testPath === undefined) {
-    return 'unchecked'
-  }
-  // #57: on Windows a checkout keeps CRLF, and Git Bash's `sed -i` writes the whole file back with LF. A restore by
-  // shell is then the code from before the break with other line endings. That changes nothing the code does, so it
-  // counts as restored; reverting it would "undo" only line endings and read as MISSED. The agent is told why.
-  const lineEndingsOnly =
-    cycleChange.before !== null && cycleChange.before !== cycleChange.after && sameIgnoringLineEndings(cycleChange.before, cycleChange.after)
-  if (cycleChange.before === cycleChange.after || lineEndingsOnly) {
-    // Broken on purpose, red, restored byte for byte: the red was the check, so there is nothing left to revert.
-    // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
-    if (!provedByRed) {
-      return 'unchecked'
-    }
-    // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
-    // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).
-    if (redErrorsOnly) {
-      return { kind: 'unverified', reason: 'the red was an error, not a failed assertion: no assertion ran' }
-    }
-    const eol = lineEndingsOnly ? { lineEndings: true } : {}
-    // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
-    // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way,
-    // and a check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
-    const pinPolicy = policyFor(config, relativePath(root, cycleChange.path))
-    if (pinPolicy === 'observe' || pinPolicy === 'exempt' || config.catchCheck === false) {
-      return { kind: 'proven', ...eol }
-    }
+  if (plan.kind === 'pin') {
+    const eol = plan.lineEndings ? { lineEndings: true } : {}
+    // A check that cannot run here (no checkout, an experimental runner) leaves the plain PROVEN.
     const pinCheck = await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)
     const mutation = pinCheck !== null && (pinCheck.kind === 'proven' || pinCheck.kind === 'missed') ? pinCheck.mutation : undefined
     return mutation === undefined ? { kind: 'proven', ...eol } : { kind: 'proven', mutation, pinned: true, ...eol }
   }
-  if (cycleChange.kind === 'refactor') {
-    return 'refactor'
-  }
-  // Observe touches nothing on disk: a module the config only watches (observe mode, or outside the scope) is never reverted.
-  const policy = policyFor(config, relativePath(root, cycleChange.path))
-  if (policy === 'observe' || policy === 'exempt' || config.catchCheck === false) {
-    return 'unchecked'
-  }
-  if (cycleChange.before === null) {
-    if (cycleChange.beforeState === 'unreadable') {
-      return { kind: 'unverified', reason: 'could not read the file before the edit' }
-    }
+  // A new file's plan always has no old code; the second half only tells the type checker so.
+  if (plan.kind === 'new-file' || cycleChange.before === null) {
     return (await newFileCheck($, root, config, module, cycleChange.path, cycleChange.after, testPath, greenRunMs, nowMs, known)) ?? { kind: 'unverified', reason: 'new file' }
   }
   const undone = { path: cycleChange.path, before: cycleChange.before, after: cycleChange.after }

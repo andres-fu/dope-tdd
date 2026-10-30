@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
+import { catchOutcome, catchPlan, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
 import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR, VITEST_REAL_FAIL } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
@@ -174,5 +174,87 @@ describe('isIsolatedRunner', () => {
     for (const kind of ['pytest', 'unittest', 'gdunit4', 'maven', 'gradle', 'dotnet', 'plugin-kit'] as const) {
       expect(isIsolatedRunner(kind)).toBe(false)
     }
+  })
+})
+
+// Out of register.tsx (verifyCatch): what a green asks of the catch check, before anything is run or reverted.
+// register.tsx gathers the module's change and the config's word on it, then runs what the plan names.
+describe('catchPlan', () => {
+  const fix = { path: 'C:/r/src/a.ts', before: 'return 1\n', after: 'return 2\n', kind: 'fix' as const }
+  const input = (over: Partial<Parameters<typeof catchPlan>[0]> = {}): Parameters<typeof catchPlan>[0] => ({
+    change: fix,
+    hasTest: true,
+    editedSinceRun: false,
+    provedByRed: false,
+    redErrorsOnly: false,
+    checkable: true,
+    ...over,
+  })
+
+  test('a change of code is reverted against its test', () => {
+    expect(catchPlan(input())).toEqual({ kind: 'revert' })
+  })
+
+  test('no change captured: nothing to check, but an edit the capture missed is said, never silent', () => {
+    expect(catchPlan(input({ change: undefined }))).toEqual({ kind: 'done', result: 'unchecked' })
+    expect(catchPlan(input({ change: undefined, editedSinceRun: true }))).toEqual({ kind: 'done', result: { kind: 'unverified', reason: 'change not captured' } })
+    expect(catchPlan(input({ change: undefined, editedSinceRun: true, hasTest: false }))).toEqual({ kind: 'done', result: 'unchecked' })
+  })
+
+  test('no test on record: nothing to check', () => {
+    expect(catchPlan(input({ hasTest: false }))).toEqual({ kind: 'done', result: 'unchecked' })
+  })
+
+  describe('code back byte for byte after a break', () => {
+    const restored = { ...fix, after: fix.before }
+
+    test('without a red after it, there was no check', () => {
+      expect(catchPlan(input({ change: restored }))).toEqual({ kind: 'done', result: 'unchecked' })
+    })
+
+    test('after a red, the red was the check: proven, then the pin gets small changes', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true }))).toEqual({ kind: 'pin', lineEndings: false })
+    })
+
+    test('a red that never reached an assertion proves nothing (#132)', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true, redErrorsOnly: true }))).toEqual({
+        kind: 'done',
+        result: { kind: 'unverified', reason: 'the red was an error, not a failed assertion: no assertion ran' },
+      })
+    })
+
+    test('where the config allows no check, it is plain proven, with no small changes', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true, checkable: false }))).toEqual({ kind: 'done', result: { kind: 'proven' } })
+    })
+
+    // #57: Git Bash's `sed -i` writes a CRLF file back with LF; the code is the same, so it counts as restored.
+    test('restored with other line endings counts as restored, and says so', () => {
+      const lf = { ...fix, before: 'a\r\nb\r\n', after: 'a\nb\n' }
+      expect(catchPlan(input({ change: lf, provedByRed: true }))).toEqual({ kind: 'pin', lineEndings: true })
+      expect(catchPlan(input({ change: lf, provedByRed: true, checkable: false }))).toEqual({ kind: 'done', result: { kind: 'proven', lineEndings: true } })
+      expect(catchPlan(input({ change: lf }))).toEqual({ kind: 'done', result: 'unchecked' })
+    })
+  })
+
+  test('a refactor is not reverted', () => {
+    expect(catchPlan(input({ change: { ...fix, kind: 'refactor' } }))).toEqual({ kind: 'done', result: 'refactor' })
+    expect(catchPlan(input({ change: { ...fix, kind: 'refactor' }, checkable: false }))).toEqual({ kind: 'done', result: 'refactor' })
+  })
+
+  test('where the config allows no check (observe, exempt, catchCheck false), nothing on disk is touched', () => {
+    expect(catchPlan(input({ checkable: false }))).toEqual({ kind: 'done', result: 'unchecked' })
+    expect(catchPlan(input({ change: { ...fix, before: null }, checkable: false }))).toEqual({ kind: 'done', result: 'unchecked' })
+  })
+
+  test('a new file has no old code: it gets the small-change check instead', () => {
+    expect(catchPlan(input({ change: { ...fix, before: null, beforeState: 'missing' } }))).toEqual({ kind: 'new-file' })
+    expect(catchPlan(input({ change: { ...fix, before: null } }))).toEqual({ kind: 'new-file' })
+  })
+
+  test('a file that could not be read before the edit has nothing to put back', () => {
+    expect(catchPlan(input({ change: { ...fix, before: null, beforeState: 'unreadable' } }))).toEqual({
+      kind: 'done',
+      result: { kind: 'unverified', reason: 'could not read the file before the edit' },
+    })
   })
 })

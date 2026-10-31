@@ -1,6 +1,6 @@
 # A push to main is a release merging (CONTRIBUTING.md, Releases; ci.yml fails any other pull request into main), so
-# it tags the version main now holds and publishes its tester note as the GitHub release. A version already tagged is
-# left alone, so a re-run does nothing.
+# it tags the version main now holds and publishes the "What X.Y.Z changes" part of its tester note as the GitHub
+# release (tools/release/notes.mjs). A version already tagged is left alone, so a re-run does nothing.
 name: tag release
 
 on:
@@ -28,5 +28,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "dope-tdd $version"
+          node tools/release/notes.mjs "$version" > "$RUNNER_TEMP/release-notes.md"
           git push origin "$tag"
-          gh release create "$tag" --title "dope-tdd $version" --notes-file "docs/testers/rounds/release-$version.md"
+          gh release create "$tag" --title "dope-tdd $version" --notes-file "$RUNNER_TEMP/release-notes.md"

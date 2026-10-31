@@ -68,14 +68,17 @@ From 0.2.6, `main` only moves when a version ships:
 2. The last pull request of a batch also bumps `version` in
    `.claude-plugin/plugin.json` and the version line in
    `docs/security-and-data.md`, and adds the tester note
-   `docs/testers/rounds/release-X.Y.Z.md`. A bump can go in a pull request of
+   `docs/testers/rounds/release-X.Y.Z.md`, with a `## What X.Y.Z changes` heading,
+   which is what the release page publishes. A bump can go in a pull request of
    its own if the batch ended without one.
 3. Pull `release`, run `/security-review` on it, and fix or answer every finding. Then
    one release pull request merges `release` into `main`, and lists `Fixes #N`
    for every issue the batch closes. CI (`tools/release/check.mjs`) fails it
-   unless the version is above the latest tag and its tester note exists.
+   unless the version is above the latest tag and its tester note exists with
+   that heading.
 4. The merge tags itself: `.github/workflows/tag-release.yml` tags `vX.Y.Z` and
-   publishes the tester note as the GitHub release. The plugin directory and
+   publishes the note's "What X.Y.Z changes" section, with a link to the rest,
+   as the GitHub release. The plugin directory and
    the pull-request check's `uses:` line follow tags, so only a tagged release
    reaches users.
 

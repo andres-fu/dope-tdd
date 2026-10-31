@@ -60,6 +60,8 @@ export const BAND = {
 } as const
 
 export type FakeWorld = {
+  /** Every folder listed, in order: how a test counts walks of the project. */
+  listed: string[]
   clock: MockClock
   bashFails: boolean
   bashText: string
@@ -143,6 +145,7 @@ export type FakeOptions = { store?: Readonly<Record<string, unknown>>; env?: Rea
 export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
     clock: mock.clock(on, { now: T0 }),
+    listed: [],
     bashFails: false,
     bashText: '',
     lastTest: null,
@@ -342,6 +345,7 @@ ${main}/.git
   })
   on('fs.list', (_$, e) => {
     const dir = fakePath(e.path ?? ROOT).replace(/\/$/, '')
+    world.listed.push(dir)
     const names = new Map<string, 'file' | 'dir'>()
     for (const path of [...world.fileContents.keys(), ...world.existingFiles]) {
       if (!path.startsWith(`${dir}/`)) {

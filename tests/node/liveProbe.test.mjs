@@ -109,3 +109,26 @@ test('cleanup of a folder that is not a git repo just removes it', () => {
   assert.deepEqual(cleanup(dir), [])
   assert.equal(existsSync(dir), false)
 })
+
+test('the no-marker projects hold their language and no config or marker for it (#268)', () => {
+  for (const [where, source] of [['pyapp', 'api.py'], ['csapp', 'src/App.cs']]) {
+    const dirs = makeRoot(where)
+    try {
+      assert.ok(existsSync(join(dirs.root, where, source)), source)
+      assert.equal(existsSync(join(dirs.root, where, 'dope-tdd.json')), false)
+      assert.equal(existsSync(join(dirs.root, where, 'package.json')), false)
+    } finally {
+      cleanup(dirs.root)
+    }
+  }
+})
+
+test('the C# project has a solution and no csproj, the normal shape release treats as Node (#268)', () => {
+  const dirs = makeRoot('csapp')
+  try {
+    assert.ok(existsSync(join(dirs.root, 'csapp', 'MyApp.sln')))
+    assert.equal(existsSync(join(dirs.root, 'csapp', 'MyApp.csproj')), false)
+  } finally {
+    cleanup(dirs.root)
+  }
+})

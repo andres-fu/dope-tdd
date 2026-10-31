@@ -254,6 +254,7 @@ default. Setup and the move check: [docs/pr-check.md](docs/pr-check.md).
 - [How it works](docs/how-it-works.md): every step, how it decides, the band.
 - [Testers' guide](docs/testers.md): a first session, and the rough edges.
 - [Contributing](CONTRIBUTING.md): build, test and change Dope TDD.
+- [Project rules](.claude/CLAUDE.md): how we work and what review looks for.
 - `DOGFOOD.md` and `docs/decisions/`: what was learned along the way.
 
 Status: early, public, and used daily on its own code and on real projects.

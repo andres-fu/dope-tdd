@@ -16,7 +16,7 @@ const PLUGIN = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const NODE = process.execPath
 
 export const SUITES = [
-  { name: 'validate', command: 'claude', args: ['plugin', 'validate', '.'] },
+  { name: 'validate', command: 'claude', args: ['plugin', 'validate', '--strict', '.'] },
   { name: 'plugin test', command: 'claude', args: ['plugin', 'test', '.'] },
   {
     name: 'node --test',

@@ -39,6 +39,61 @@ test('a word that only mentions git or main is not a git command', () => {
   assert.equal(blockedBy('gh pr create --base main', 'fix'), null)
 })
 
+test('merging a pull request is for a person, on any branch and in the usual spellings', () => {
+  const merges = [
+    'gh pr merge 261',
+    'gh pr merge 261 --squash',
+    'gh pr merge --auto --merge',
+    'git status && gh pr merge',
+    'GH_TOKEN=x gh pr merge 1',
+    'gh -R o/r pr merge 1',
+    'gh pr -R o/r merge 1',
+    '/opt/homebrew/bin/gh pr merge 1',
+    'gh.exe pr merge 1',
+    'command gh pr merge 1',
+    'if gh pr checks 261; then gh pr merge 261; fi',
+    'for n in 261 262; do gh pr merge $n; done',
+    'gh api -X PUT repos/o/r/pulls/261/merge',
+    'gh api --method PUT repos/o/r/pulls/$PR/merge',
+    'gh api -X PUT "repos/o/r/pulls/261/merge"',
+    `gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'`,
+    `gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'`,
+    `# it's green\ngh pr merge 261`,
+    'gh pr merge 1 --body "see --help for this"',
+    'gh pr merge 1 --subject "read -h first"',
+  ]
+  for (const command of merges) {
+    assert.match(blockedBy(command, 'fix') ?? '', /for a person/, command)
+  }
+})
+
+test('reading, opening or mentioning a merge is not merging', () => {
+  const others = [
+    'gh pr view 261',
+    'gh pr view 261 --json mergeable',
+    'gh pr create --base release',
+    'gh pr checks 261',
+    'gh pr merge --help',
+    'gh pr merge -h',
+    'gh pr merge 1 --disable-auto',
+    `gh api repos/o/r/issues/1/comments -f body='Use the mergePullRequest mutation'`,
+    'gh api -X PUT repos/o/r/contents/docs/pulls/1/merge.md',
+    'gh api repos/o/r/pulls/261',
+    'gh api repos/o/r/pulls/261/merge',
+    'gh api -X GET repos/o/r/pulls/261/merge',
+    'echo gh pr merge 261',
+    'hub pr merge 261',
+    'git commit -m "docs: note it; gh pr merge is now for a person"',
+    'git commit -m "first line\n\ngh pr merge is for a person"',
+    'gh pr comment 261 --body "green; gh pr merge 261 is yours"',
+    'grep -E "foo|gh pr merge|bar" CONTRIBUTING.md',
+    `gh pr create --body "$(cat <<'EOF'\ngh pr merge is refused\nEOF\n)"`,
+  ]
+  for (const command of others) {
+    assert.equal(blockedBy(command, 'fix'), null, command)
+  }
+})
+
 // End to end: the script as the hook runs it, against a throwaway repository.
 const repo = mkdtempSync(join(tmpdir(), 'branch-guard-')).replace(/\\/g, '/')
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
@@ -54,6 +109,16 @@ after(() => rmSync(repo, { recursive: true, force: true }))
 const script = new URL('./branch-guard.ts', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 const hook = (input: unknown) => spawnSync(process.execPath, [script], { input: JSON.stringify(input), encoding: 'utf8' })
 
+test('the git rules read the whole command, so a comment or a heredoc for a shell hides nothing', () => {
+  for (const command of [`# don't stop\ngit commit -m x`, 'bash <<EOF\ngit commit -m x\nEOF', `$m = @'\nhi\n'@\ngit commit -m $m`, 'cd "C:\\repo\\"; git commit -m x']) {
+    assert.match(blockedBy(command, 'main') ?? '', /on main/, command)
+  }
+})
+
+test('outside a checkout only the merge rule applies', () => {
+  assert.equal(blockedBy('git push origin main', null), null)
+})
+
 test('the hook blocks a commit in a checkout on main with exit 2 and says why on stderr', () => {
   const run = hook({ tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, cwd: repo })
   assert.equal(run.status, 2)
@@ -65,6 +130,18 @@ test('the hook lets the same commit through on a branch', () => {
   const run = hook({ tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, cwd: repo })
   git('checkout', '-q', 'main')
   assert.equal(run.status, 0)
+})
+
+test('the hook blocks a pull request merge with exit 2 and says why on stderr', () => {
+  const run = hook({ tool_name: 'Bash', tool_input: { command: 'gh pr merge 261' }, cwd: repo })
+  assert.equal(run.status, 2)
+  assert.match(run.stderr, /for a person/)
+})
+
+test('the merge rule needs no checkout, since gh can merge from any folder with -R', () => {
+  const run = hook({ tool_name: 'Bash', tool_input: { command: 'gh pr merge 1 -R o/r' }, cwd: tmpdir() })
+  assert.equal(run.status, 2)
+  assert.match(run.stderr, /for a person/)
 })
 
 test('input it cannot read, or a folder that is not a git checkout, lets the command through', () => {

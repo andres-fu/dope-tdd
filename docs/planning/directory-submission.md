@@ -25,8 +25,8 @@ Sources (read in full 2026-10-28):
   scanned again, with a security scan. A first submission that fails the security scan is
   rejected.
 - **Updates:** each merge to `main` becomes a new version, so raise `version` with every release
-  (already the rule). Pushes to `main` that aren't releases will also be scanned: consider
-  tracking a release tag or branch instead (see open questions).
+  (already the rule). Every commit on `main` is scanned, and `main` only moves at a release
+  (see Decisions).
 
 ## Automated checks
 

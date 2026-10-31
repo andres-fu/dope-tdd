@@ -56,7 +56,11 @@ Then, in Claude Code, `/reload-plugins` and `/tdd`. It answers with
 plugin did not load; check the Claude Code version first.
 
 Later, `claude plugin update dope-tdd@dope-tdd` pulls the newest version, and
-`claude plugin uninstall dope-tdd@dope-tdd` removes it.
+`claude plugin uninstall dope-tdd@dope-tdd` removes it. Add `--scope project` or
+`--scope local` to match your install. With the plugin installed in several
+projects, an update can land on a different one, so check the first line of
+`/tdd`. If the version didn't change, uninstall and install it again from inside
+the project, with the same `--scope`.
 
 ## Point it at your project
 

@@ -150,6 +150,9 @@ plugin is not running in this folder.
 
 ![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS when something needs a fix, which the band names; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
 
+The picture answers only "is it on?". The band shows more, such as the next step
+and the last run, and `/tdd why` explains its words.
+
 To check it for real, ask Claude to change a source file whose test you have
 not touched. It should be refused, and the refusal names the test to write.
 

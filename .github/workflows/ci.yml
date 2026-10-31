@@ -5,7 +5,7 @@
 # testers get an update only when a release bumps it.
 name: ci
 
-# Cost (Actions minutes are billed on a private repository; macOS counts 10x, Windows 2x):
+# Cost (the repository is public, so Actions minutes are free, but every run is still a wait):
 # - one run per change: pull requests, and pushes to main only, not every branch push as well;
 # - a new push to a pull request cancels the run still going for the one before it;
 # - macOS runs on main, not on every pull request; Linux and Windows run on both, Windows being where

@@ -11,6 +11,10 @@ test('the four suites CI runs, by name', () => {
   assert.deepEqual(SUITES.map(suite => suite.name), ['validate', 'plugin test', 'node --test', 'posix root'])
 })
 
+test('validate is as strict here as in CI, so a warning fails before a push does', () => {
+  assert.ok(SUITES.find(suite => suite.name === 'validate').args.includes('--strict'))
+})
+
 test('by default skips the POSIX-root pass, which CI runs on every pull request; --all puts it back', () => {
   assert.deepEqual(selectSuites([]).map(suite => suite.name), ['validate', 'plugin test', 'node --test'])
   assert.deepEqual(selectSuites(['--all']).map(suite => suite.name), SUITES.map(suite => suite.name))

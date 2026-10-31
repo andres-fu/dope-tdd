@@ -16,7 +16,7 @@ const PLUGIN = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const NODE = process.execPath
 
 export const SUITES = [
-  { name: 'validate', command: 'claude', args: ['plugin', 'validate', '.'] },
+  { name: 'validate', command: 'claude', args: ['plugin', 'validate', '--strict', '.'] },
   { name: 'plugin test', command: 'claude', args: ['plugin', 'test', '.'] },
   {
     name: 'node --test',
@@ -27,7 +27,7 @@ export const SUITES = [
 ]
 
 /**
- * The suites to run for these arguments. The POSIX-root pass is left to CI by default: it runs the same ~1000 kit
+ * The suites to run for these arguments. The POSIX-root pass is left to CI by default: it runs the same ~1400 kit
  * tests again, and beside `plugin test` the two compete for the CPU, so it doubles the local wait (about 35 s to 60 s)
  * to catch path bugs a Windows machine cannot produce anyway. CI runs it on every pull request; `--all` runs it here.
  */

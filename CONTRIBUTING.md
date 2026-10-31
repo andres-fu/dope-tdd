@@ -7,7 +7,7 @@ How to build, test and change Dope TDD itself. Bugs become issues first, using t
 ```bash
 claude plugin test .
 node tools/posix-root.mjs   # the same tests with a macOS/Linux-shaped fixture root
-claude plugin validate .
+claude plugin validate --strict .
 node tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
 ```
 
@@ -31,16 +31,33 @@ by `tests/node/kit.test.mjs`), so the same files also run in
 only through the live tests, which no one file pairs with. #59 keeps moving
 their decisions into pure modules that are guarded.
 
+### How we work
+
+The project's rules are in [.claude/CLAUDE.md](.claude/CLAUDE.md): how we work,
+what failure looks like here, and what review needs. Every Claude Code session
+and review loads that file, and the rules apply to people too.
+
+### Review
+
+Every change gets one review before its pull request opens, from the `reviewer`
+agent (`.claude/agents/reviewer.md`). In Claude Code, ask for it: "use the
+reviewer agent on this branch". Listed paths also need a person.
+[.claude/CLAUDE.md](.claude/CLAUDE.md) has the paths and how to report, and
+[the decision](docs/decisions/2026-10-30_risk-tiers.md) says why.
+
 ### Branches
 
 Work on a branch and open a pull request; nothing lands on `main` directly.
 In this repository Claude Code is held to that by a hook in
 `.claude/settings.json`: `tools/guard/branch-guard.ts` refuses `git commit`,
 `merge`, `cherry-pick`, `revert`, `rebase`, `am` and `push` while on `main`,
-and any push aimed at `main` from another branch (its tests:
+any push aimed at `main` from another branch, and `gh pr merge` on any branch,
+since only a person merges (its tests:
 `node --test tools/guard/branch-guard.spec-node.ts`). The hook reads the
 command's text, so a spelling it misses still meets GitHub's branch protection
-on `main`, which is what actually enforces the rule.
+on `main`, which is what actually enforces the branch rule. Nothing on GitHub
+enforces who merges: that rests on this hook, which reads only the Bash and
+PowerShell tools and has no backstop for a spelling it misses.
 
 ### Releases
 
@@ -51,13 +68,17 @@ From 0.2.6, `main` only moves when a version ships:
 2. The last pull request of a batch also bumps `version` in
    `.claude-plugin/plugin.json` and the version line in
    `docs/security-and-data.md`, and adds the tester note
-   `docs/testers/rounds/release-X.Y.Z.md`. A bump can go in a pull request of
+   `docs/testers/rounds/release-X.Y.Z.md`, with a `## What X.Y.Z changes` heading,
+   which is what the release page publishes. A bump can go in a pull request of
    its own if the batch ended without one.
-3. One release pull request merges `release` into `main`, and lists `Fixes #N`
+3. Pull `release`, run `/security-review` on it, and fix or answer every finding. Then
+   one release pull request merges `release` into `main`, and lists `Fixes #N`
    for every issue the batch closes. CI (`tools/release/check.mjs`) fails it
-   unless the version is above the latest tag and its tester note exists.
+   unless the version is above the latest tag and its tester note exists with
+   that heading.
 4. The merge tags itself: `.github/workflows/tag-release.yml` tags `vX.Y.Z` and
-   publishes the tester note as the GitHub release. The plugin directory and
+   publishes the note's "What X.Y.Z changes" section, with a link to the rest,
+   as the GitHub release. The plugin directory and
    the pull-request check's `uses:` line follow tags, so only a tagged release
    reaches users.
 
@@ -98,7 +119,7 @@ agent will read differently.
 `npm run check` starts the suites at the same time, prints each one's output whole as it
 finishes (its own summary line included), then one PASS/FAIL line per suite
 and a combined verdict; it exits non-zero if any suite failed. The POSIX-root
-run is left to CI by default: it runs the same ~1000 kit tests again, which
+run is left to CI by default: it runs the same ~1400 kit tests again, which
 nearly doubles the local wait, to catch path bugs a Windows machine cannot
 produce. CI still runs everything, POSIX root included, on Linux and Windows
 for every pull request, and on macOS too for every push to `main`. The guard is unchanged by this: red before an

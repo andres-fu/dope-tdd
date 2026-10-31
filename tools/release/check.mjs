@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { hasChangesSection } from './notes.mjs'
+
 const parts = version => version.split('.').map(Number)
 
 /** Whether `a` is above `b`, part by part as numbers: 0.2.10 is above 0.2.9. */
@@ -25,18 +27,20 @@ export function tagsFrom(output) {
 }
 
 /** What stops this version shipping, in words; empty when it is ready. */
-export function releaseProblems({ version, tags, noteExists }) {
+export function releaseProblems({ version, tags, note }) {
   const latest = tags.map(tag => tag.slice(1)).reduce((best, tag) => (best === null || isNewer(tag, best) ? tag : best), null)
   return [
     ...(latest === null || isNewer(version, latest) ? [] : [`version ${version} in .claude-plugin/plugin.json is not above the latest tag, v${latest}`]),
-    ...(noteExists ? [] : [`the tester note docs/testers/rounds/release-${version}.md is missing`]),
+    ...(note === null ? [`the tester note docs/testers/rounds/release-${version}.md is missing`] : []),
+    ...(note === null || hasChangesSection(note, version) ? [] : [`the tester note docs/testers/rounds/release-${version}.md has no "## What ${version} changes" heading`]),
   ]
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { version } = JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8'))
   const tags = tagsFrom(execFileSync('git', ['ls-remote', '--tags', 'origin'], { encoding: 'utf8' }))
-  const problems = releaseProblems({ version, tags, noteExists: existsSync(`docs/testers/rounds/release-${version}.md`) })
+  const notePath = `docs/testers/rounds/release-${version}.md`
+  const problems = releaseProblems({ version, tags, note: existsSync(notePath) ? readFileSync(notePath, 'utf8') : null })
   for (const problem of problems) {
     console.error(`::error::${problem} (CONTRIBUTING.md, Releases)`)
   }

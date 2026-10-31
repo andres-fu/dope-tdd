@@ -37,10 +37,13 @@ Work on a branch and open a pull request; nothing lands on `main` directly.
 In this repository Claude Code is held to that by a hook in
 `.claude/settings.json`: `tools/guard/branch-guard.ts` refuses `git commit`,
 `merge`, `cherry-pick`, `revert`, `rebase`, `am` and `push` while on `main`,
-and any push aimed at `main` from another branch (its tests:
+any push aimed at `main` from another branch, and `gh pr merge` on any branch,
+since only a person merges (its tests:
 `node --test tools/guard/branch-guard.spec-node.ts`). The hook reads the
 command's text, so a spelling it misses still meets GitHub's branch protection
-on `main`, which is what actually enforces the rule.
+on `main`, which is what actually enforces the branch rule. Nothing on GitHub
+enforces who merges: that rests on this hook, which reads only the Bash and
+PowerShell tools and has no backstop for a spelling it misses.
 
 ### Releases
 

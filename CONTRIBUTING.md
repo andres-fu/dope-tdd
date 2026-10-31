@@ -7,7 +7,7 @@ How to build, test and change Dope TDD itself. Bugs become issues first, using t
 ```bash
 claude plugin test .
 node tools/posix-root.mjs   # the same tests with a macOS/Linux-shaped fixture root
-claude plugin validate .
+claude plugin validate --strict .
 node tools/replay/replay.ts   # your own sessions through the detectors: what they read, what they missed
 ```
 
@@ -31,6 +31,20 @@ by `tests/node/kit.test.mjs`), so the same files also run in
 only through the live tests, which no one file pairs with. #59 keeps moving
 their decisions into pure modules that are guarded.
 
+### How we work
+
+The project's rules are in [.claude/CLAUDE.md](.claude/CLAUDE.md): how we work,
+what failure looks like here, and what review needs. Every Claude Code session
+and review loads that file, and the rules apply to people too.
+
+### Review
+
+Every change gets one review before its pull request opens, from the `reviewer`
+agent (`.claude/agents/reviewer.md`). In Claude Code, ask for it: "use the
+reviewer agent on this branch". Listed paths also need a person.
+[.claude/CLAUDE.md](.claude/CLAUDE.md) has the paths and how to report, and
+[the decision](docs/decisions/2026-10-30_risk-tiers.md) says why.
+
 ### Branches
 
 Work on a branch and open a pull request; nothing lands on `main` directly.
@@ -53,7 +67,8 @@ From 0.2.6, `main` only moves when a version ships:
    `docs/security-and-data.md`, and adds the tester note
    `docs/testers/rounds/release-X.Y.Z.md`. A bump can go in a pull request of
    its own if the batch ended without one.
-3. One release pull request merges `release` into `main`, and lists `Fixes #N`
+3. Pull `release`, run `/security-review` on it, and fix or answer every finding. Then
+   one release pull request merges `release` into `main`, and lists `Fixes #N`
    for every issue the batch closes. CI (`tools/release/check.mjs`) fails it
    unless the version is above the latest tag and its tester note exists.
 4. The merge tags itself: `.github/workflows/tag-release.yml` tags `vX.Y.Z` and

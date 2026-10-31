@@ -102,6 +102,8 @@ The person reads the pull request's Evidence and Risk sections, which carry the 
 report, and writes what the checks would miss, in their own words. An agent leaves that line empty. An
 agent's approval never counts as a person's.
 
+**Only a person merges.** An agent stops once a pull request is green and reviewed, whatever it touches.
+
 **Each release**, pull `release`, run `/security-review` on it before opening the release pull request,
 and fix or answer every finding. It compares against `main`, so one run covers the batch. The release pull
 request adds no other review.

@@ -59,10 +59,10 @@ import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './run
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
-import { formatSetup, inferLayout, isCodeFile, layoutMismatch, suggestedConfig } from './setup.ts'
+import { activeLayoutNote, answerFrom, briefingNote, formatSetup, isCodeFile, isUnreadLanguage, layoutMismatch, needsWalk, projectStack, setupInference, suggestedConfig, withInference } from './setup.ts'
 import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
 import type { Saved } from './bandModel.ts'
-import type { Survey } from './setup.ts'
+import type { ProjectAnswer, Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
   INITIAL_STATS,
@@ -206,11 +206,13 @@ async function writeCwd($: EngineInterface, shell: ShellName, cwd: string, agent
 }
 
 /** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
-let cachedConfig: { root: string; config: GuardConfig } | null = null
+let cachedConfig: { root: string; config: GuardConfig; answer: ProjectAnswer | null } | null = null
 /** The stack each root's files pointed at when first listed; `/tdd setup` looks again. */
 const detectedStacks = new Map<string, StackName | undefined>()
 /** What the briefing says about a default layout that matches none of the code (#167), per root; `/tdd setup` looks again. */
 const layoutNotes = new Map<string, string | null>()
+/** What a walk of a project with no config and no marker settled, per root (#268); `/tdd setup` looks again. */
+const projectAnswers = new Map<string, ProjectAnswer>()
 /** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
 const repairedRoots = new Set<string>()
 let guardFailureToasted = false
@@ -251,6 +253,17 @@ async function detectStack($: EngineInterface, root: string): Promise<StackName 
   return detected
 }
 
+/** The repo's answer, from one walk per root (#268). */
+async function projectAnswer($: EngineInterface, root: string): Promise<ProjectAnswer> {
+  const known = projectAnswers.get(root)
+  if (known !== undefined) {
+    return known
+  }
+  const answer = answerFrom(await surveyProject($, root))
+  projectAnswers.set(root, answer)
+  return answer
+}
+
 /** GODOT_BIN, the variable gdUnit4's own wrapper reads, when the config does not name the binary. */
 async function godotFromEnv($: EngineInterface): Promise<string | null> {
   try {
@@ -262,8 +275,11 @@ async function godotFromEnv($: EngineInterface): Promise<string | null> {
 }
 
 async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
-  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`), await detectStack($, root))
-  cachedConfig = { root, config }
+  const text = await readWhole($, `${root}/${CONFIG_FILE}`)
+  const marked = await detectStack($, root)
+  const answer = needsWalk(text, marked) ? await projectAnswer($, root) : null
+  const config = withInference(parseConfig(text, marked ?? (answer === null ? undefined : projectStack(answer.reading))), answer?.inferred ?? null)
+  cachedConfig = { root, config, answer }
   return config
 }
 
@@ -274,14 +290,20 @@ async function briefing($: EngineInterface): Promise<string | null> {
   if (config.mode === 'observe') {
     return null
   }
+  const answer = activeAnswer(root)
   // #167: with no dope-tdd.json the project is walked once per root, so a default that pairs nothing is said.
   if (config.layoutGuessed === true && !layoutNotes.has(root)) {
-    layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
+    layoutNotes.set(root, answer === null ? layoutMismatch(await surveyProject($, root), config) : answer.defaultNote)
   }
-  const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
+  const layoutNote = activeLayoutNote(answer, config, layoutNotes.get(root) ?? null)
   // Idea 15: the store changes only when a session ends, so the briefing stays the same all session.
   const leftRed = leftRedNote(freshLeftRed(await $.store.get(leftRedKey(root)), await $.clock.now()))
-  return briefingText(config, await briefingCommand($, root, config), layoutNote, leftRed)
+  return briefingText(config, await briefingCommand($, root, config), briefingNote(answer?.reading ?? null, layoutNote), leftRed)
+}
+
+/** The answer behind the config in force, when the repo decided it. */
+function activeAnswer(root: string): ProjectAnswer | null {
+  return cachedConfig?.root === root ? cachedConfig.answer : null
 }
 
 async function configForRender($: EngineInterface, root: string): Promise<GuardConfig> {
@@ -1367,6 +1389,7 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
   const files: string[] = []
   const packageDirs: string[] = []
   const rootEntries: string[] = []
+  const unread: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > SURVEY_DEPTH || files.length >= SURVEY_CAP) {
       return
@@ -1391,12 +1414,14 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
           packageDirs.push(dir)
         } else if (isCodeFile(relative)) {
           files.push(relative)
+        } else if (isUnreadLanguage(relative)) {
+          unread.push(relative)
         }
       }
     }
   }
   await walk('', 0)
-  return { files, packageDirs, rootEntries }
+  return { files, packageDirs, rootEntries, unread }
 }
 
 function parsedJson(text: string | null): Record<string, unknown> {
@@ -1412,11 +1437,14 @@ function parsedJson(text: string | null): Record<string, unknown> {
 async function setupText($: EngineInterface, root: string, write: boolean, nowMs: number): Promise<string> {
   detectedStacks.delete(root)
   layoutNotes.delete(root)
+  projectAnswers.delete(root)
   const survey = await surveyProject($, root)
   const configPath = `${root}/${CONFIG_FILE}`
   const existing = await readWhole($, configPath)
-  const current = parseConfig(existing, await detectStack($, root))
-  const inferred = inferLayout(survey, current.stackSource === 'config' ? current.stack : undefined)
+  const marked = await detectStack($, root)
+  const answer = needsWalk(existing, marked) ? answerFrom(survey) : null
+  const current = parseConfig(existing, marked ?? (answer === null ? undefined : projectStack(answer.reading)))
+  const inferred = setupInference(survey, current, answer?.reading ?? null)
   // The runner under the detected config, which is what saving it gives (Karl's round 4: setup never named one).
   const testCommand = await briefingCommand($, root, { ...current, stack: inferred.stack, layout: inferred.layout, roots: inferred.roots })
   const text = formatSetup(current, inferred, survey, existing !== null, testCommand ?? undefined)

@@ -171,10 +171,13 @@ left alone on purpose:
   never passes through them. The [pull-request check](docs/pr-check.md) covers
   code whoever wrote it.
 - **Code the layout doesn't match.** Dope TDD pairs source with tests by the
-  layout. With no `dope-tdd.json`, or one with a mistake, the defaults apply and
-  may pair nothing: the band reads NOT WATCHING or CONFIG INVALID, and `/tdd`
-  says so on its first line and lists each such edit. `/tdd setup` finds the
-  right layout.
+  layout. With no `dope-tdd.json` and no marker such as `package.json`, it reads
+  the code to work out the language, and guards with that until you save it with
+  `/tdd setup write`. When the code doesn't make it clear, or it's a language
+  Dope TDD doesn't read yet, such as Go or Rust, Claude is told, and that code
+  isn't guarded. With a marker, a default layout that pairs nothing is said the
+  same way. A `dope-tdd.json` with a mistake isn't read: the band reads
+  CONFIG INVALID, `/tdd` says so on its first line, and the defaults apply.
 - **A folder where the plugin is off.** Claude Code decides where a plugin
   runs. A local-scope install covers only the folder it was installed in; install
   at user scope, or at project scope, to cover more.

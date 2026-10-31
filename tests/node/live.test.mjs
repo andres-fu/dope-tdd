@@ -186,9 +186,9 @@ const CALC = `${PROBE}\\src\\calc.js`
 const WORKTREE_CALC = `${PROBE}\\.claude\\worktrees\\agent-a1b2\\src\\calc.js`
 
 test('every scenario has an id, a title, a place to run, messages and checks', () => {
-  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F'])
+  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
   for (const s of scenarios) {
-    assert.ok(['home', 'probe', 'linked'].includes(s.cwd), `${s.id} cwd`)
+    assert.ok(['home', 'probe', 'linked', 'pyapp', 'csapp'].includes(s.cwd), `${s.id} cwd`)
     assert.ok(['on', 'off'].includes(s.plugin), `${s.id} plugin`)
     const messages = s.messages(ctxFor())
     assert.ok(messages.length >= 1 && messages.every(m => typeof m === 'string' && m !== ''), `${s.id} messages`)
@@ -227,6 +227,21 @@ test('B: in branch mode the build must be the checkout, by path and by sha', () 
   assert.deepEqual(failed(B.check(readRun(run(installed)), ctxFor({ mode: 'installed', checkoutSha: null }))), [], 'installed mode takes the installed copy')
   assert.ok(failed(B.check(readRun(run(branch)), ctxFor({ mode: 'installed', checkoutSha: null }))).length > 0, 'a --plugin-dir copy in installed mode fails')
 })
+
+for (const [id, where, source, testPath] of [
+  ['G', 'pyapp', 'api.py', 'tests/test_api.py'],
+  ['H', 'csapp', 'src/App.cs', 'tests/AppTests.cs'],
+]) {
+  test(`${id}: a project with no marker for its language is read from its code, and an untested edit is refused (#268)`, () => {
+    const scenario = byId(id)
+    const file = `${ROOT}\\${where}\\${source.replace(/\//g, '\\')}`
+    const refused = `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail.`
+    const run = edit => stream([init({ cwd: `${ROOT}\\${where}` }), use('t1', 'Edit', { file_path: file }), edit, end('x')])
+    assert.deepEqual(failed(scenario.check(readRun(run(answer('t1', refused, true))), ctxFor())), [])
+    assert.ok(failed(scenario.check(readRun(run(answer('t1', UPDATED(file)))), ctxFor())).length > 0, 'an edit that went through fails it')
+    assert.ok(failed(scenario.check(readRun(run(answer('t1', 'dope-tdd: write the failing test first. Touch tests/other.test.ts', true))), ctxFor())).length > 0, 'a refusal naming the wrong test fails it')
+  })
+}
 
 const subagentRun = (cwd, editResult) =>
   stream([

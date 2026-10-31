@@ -118,6 +118,26 @@ function nestedChecks(run, ctx) {
   ]
 }
 
+/** #268: a project with no marker for its language is read from its code, so an untested edit is refused. */
+function noMarkerScenario(id, where, language, source, testPath) {
+  return {
+    id,
+    title: `${language} with no config and no usual marker is read from its code, and an untested edit is refused (#268)`,
+    cwd: where,
+    plugin: 'on',
+    messages: () => [`Read ${source}, then use the Edit tool once to change "return a + b" to "return a + b + 0". Do not touch any test. Then quote the tool result word for word and stop.`],
+    check(run, ctx) {
+      const edit = edits(run, { subagent: false }).find(e => samePath(e.path, `${dirOf(ctx, where)}/${source}`))
+      return [
+        sessionCheck(run, ctx, where),
+        check(`the model called Edit on ${source}`, edit !== undefined, 'no such Edit'),
+        check('dope-tdd refused it', isRefusal(edit?.result), edit?.result?.text.split('\n')[0] ?? 'no result'),
+        check(`the refusal names ${testPath}`, edit?.result?.text.includes(testPath) === true),
+      ]
+    },
+  }
+}
+
 export const scenarios = [
   {
     id: 'A',
@@ -203,4 +223,6 @@ export const scenarios = [
     messages: ctx => [nestedPrompt(ctx), '/tdd'],
     check: nestedChecks,
   },
+  noMarkerScenario('G', 'pyapp', 'Python', 'api.py', 'tests/test_api.py'),
+  noMarkerScenario('H', 'csapp', 'C#', 'src/App.cs', 'tests/AppTests.cs'),
 ]

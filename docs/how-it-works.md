@@ -90,9 +90,9 @@ refused, and a shell change to it is put back and counted as a workaround.
   clears it; one that never touches it leaves it be.
 - A shell write lands where the command sends it: after `cd` (also through a
   variable the command set, `R=/tmp/x; cd $R`), a file outside the project is
-  not refused. A destination it cannot expand (`$HOME`, `$(mktemp -d)`) is not
-  refused either; the `git` check after the command still records any project
-  file that changed.
+  not refused. A destination it cannot expand, such as an unknown variable or a
+  command substitution, is not refused either; the `git` check after the command
+  still records any project file that changed.
 - A test that imports a module is its test too, but only when the module has
   no test of its own. When a module's own test misses a change, the catch
   check tries the tests seen importing it and names the one that catches it

@@ -28,6 +28,6 @@ export function releaseNotes(note, version, repoUrl) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const version = process.argv[2] ?? ''
-  const note = readFileSync(`docs/testers/rounds/release-${version}.md`, 'utf8')
-  process.stdout.write(releaseNotes(note, version, `https://github.com/${process.env.GITHUB_REPOSITORY}`))
+  const { repository } = JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8'))
+  process.stdout.write(releaseNotes(readFileSync(`docs/testers/rounds/release-${version}.md`, 'utf8'), version, repository))
 }

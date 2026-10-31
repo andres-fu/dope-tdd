@@ -45,7 +45,7 @@ test('merging a pull request is for a person, on any branch and in the usual spe
     'gh pr merge 261 --squash',
     'gh pr merge --auto --merge',
     'git status && gh pr merge',
-    'GH_TOKEN=x gh pr merge 1',
+    'PAGER=cat gh pr merge 1',
     'gh -R o/r pr merge 1',
     'gh pr -R o/r merge 1',
     '/opt/homebrew/bin/gh pr merge 1',

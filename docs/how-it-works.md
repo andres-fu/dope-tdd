@@ -121,7 +121,13 @@ refused, and a shell change to it is put back and counted as a workaround.
   redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
   write. Quoted text is data, so a commit message or an echoed sentence that
   mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
-  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read.
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read. A path
+  spelled `./src/a.ts`, `src//a.ts` or `lib/../src/a.ts` is the file it names, for
+  a shell write and for Edit, Write and NotebookEdit. A `..` is resolved by
+  reading the path, so through a symbolic link it can land elsewhere. In a script's
+  text, or in quotes in PowerShell, a dotted path is left as text, since import
+  paths are spelled that way
+  ([#272](https://github.com/andres-fu/dope-tdd/issues/272)).
 - Code the guard can't pair with a test goes through, and isn't guarded. There
   are two kinds, each told to Claude once a session, whichever tool wrote the
   file, and `/tdd` lists each file

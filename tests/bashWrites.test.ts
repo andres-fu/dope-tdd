@@ -114,6 +114,101 @@ describe('findSourceWrites', () => {
   })
 })
 
+// #272: `./src/a.ts` kept its dot, matched no layout, and went through unrefused.
+describe('a path spelled another way is the same file', () => {
+  test('with no root', () => {
+    for (const command of ['echo 1 > ./src/a.ts', 'echo 1 > src/./a.ts', 'echo 1 > src//a.ts', 'cp x ./src/a.ts', "sed -i s/a/b/ ./src/a.ts", 'echo 1 | tee ./src/a.ts']) {
+      expect(findSourceWrites(command)).toEqual(['src/a.ts'])
+    }
+  })
+
+  test('a Windows path spelled with a dot', () => {
+    expect(findSourceWrites('Set-Content .\\src\\a.ts x')).toEqual(['src/a.ts'])
+  })
+
+  test('two spellings of one file are one write', () => {
+    expect(findSourceWrites('echo 1 > src/a.ts; echo 2 > ./src/a.ts')).toEqual(['src/a.ts'])
+  })
+
+  test('with a root, a folder a cd moved to, and an absolute path', () => {
+    expect(findSourceWrites('echo 1 > ./src/a.ts', '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites('cd src && echo 1 > ./a.ts', '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites('echo 1 > /r/./src/a.ts', '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('a parent folder that lands back in the project is that file, and one that leaves it is outside it', () => {
+    expect(findSourceWrites('echo 1 > src/../src/a.ts', '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites('cd src && echo 1 > ../lib/a.ts', '/r')).toEqual(['/r/lib/a.ts'])
+    expect(findSourceWrites('echo 1 > ../other/src/a.ts', '/r/app')).toEqual(['/r/other/src/a.ts'])
+  })
+
+  test('a parent folder from a folder this cannot see stays unknown, never taken for a file of this project', () => {
+    expect(findSourceWrites('cd "$UNKNOWN" && echo 1 > ../src/a.ts', '/r')).toEqual([])
+    expect(findSourceWrites('cd "$UNKNOWN" && echo 1 > ./src/a.ts', '/r')).toEqual([`${ELSEWHERE}/./src/a.ts`])
+    expect(findSourceWrites('echo 1 > $OUT/../src/a.ts', '/r')).toEqual([])
+    expect(findSourceWrites('echo 1 > src/$OUT/../a.ts', '/r')).toEqual([])
+    expect(findSourceWrites('echo 1 > ~/../src/a.ts')).toEqual([])
+    expect(findSourceWrites('echo 1 > ~user/../src/b.ts', '/r')).toEqual([])
+  })
+
+  // Import paths are nearly always spelled with dots: resolving a quoted one turned a text replace into a refusal.
+  test('a dotted path in quoted text is data, as it always was', () => {
+    expect(findSourceWrites(`cd src/app && sed -i "s|'../lib/old.ts'|'../lib/new.ts'|" x.tsx`, '/r')).toEqual(['/r/src/app/x.tsx'])
+    expect(findSourceWrites(`sed -i "s|'./src/old.ts'|'./src/new.ts'|" src/app/x.tsx`, '/r')).toEqual(['/r/src/app/x.tsx'])
+    expect(findSourceWrites(`node -e "const f=require('fs');f.writeFileSync(p,s.replace('../lib/old.ts','../lib/new.ts'))"`, '/r/src')).toEqual([])
+  })
+
+  // Round 3 of #272: being outside quotes doesn't tell a target from text, so sed's own shape does: the files follow its script.
+  test('the files a sed names are read from its arguments, quoted or not, whatever its script says', () => {
+    expect(findSourceWrites(`sed -i "s|a|b|" ./src/a.ts`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites(`sed -i 's/a/b/' "./src/a.ts"`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites('cd src/app && sed -i s/a/b/ ../lib/a.ts', '/r')).toEqual(['/r/src/lib/a.ts'])
+    expect(findSourceWrites(`sed -i -e 's/a/b/' -e 's/c/d/' ./src/a.ts ./src/b.ts`, '/r')).toEqual(['/r/src/a.ts', '/r/src/b.ts'])
+    expect(findSourceWrites('/usr/bin/sed -i.bak -E s/a/b/ ./src/a.ts', '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('text in a sed script is text, even where the quote reader gives up', () => {
+    expect(findSourceWrites(`cd src/app && sed -i "s|import cmd from '../lib/cmd.ts'|import cmd from '../lib/run.ts'|" x.tsx`, '/r')).toEqual(['/r/src/app/x.tsx'])
+    expect(findSourceWrites(`sed -i "s|from cmd in './src/old.ts'|from cmd in './src/new.ts'|" src/app/x.tsx`, '/r')).toEqual(['/r/src/app/x.tsx'])
+  })
+
+  test("a parent folder inside a sed script is text, and so is the script when it reads like a path", () => {
+    expect(findSourceWrites(`sed -i "s|'src/../old.ts'|'other'|" src/app/x.tsx`, '/r')).toEqual(['/r/src/app/x.tsx'])
+    expect(findSourceWrites('sed -i ./src/old.ts src/app/x.tsx', '/r')).toEqual(['/r/src/app/x.tsx'])
+  })
+
+  test('a script is text too, so a dotted path in it stays out unless a write call names it', () => {
+    const heredoc = "cd src/app && python3 - x.tsx <<'EOF'\n# don't touch the rest\ns = s.replace('../lib/old.ts', '../lib/new.ts')\nopen(sys.argv[1], 'w').write(s)\nEOF"
+    expect(findSourceWrites(heredoc, '/r').filter(path => path.includes('lib/'))).toEqual([])
+    expect(findSourceWrites(`python3 -c "open('./src/a.ts','w').write('x')"`, '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('a path release found stays found, however it is quoted', () => {
+    expect(findSourceWrites(`sed -i s/a/b/ "src//a.ts"`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites(`sed -i s/a/b/ "src/./a.ts"`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites(`OUT=src/; sed -i s/a/b/ "$OUT/a.ts"`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites(`Set-Content "src\\.\\a.ts" x`, '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites(`python3 -c "from pathlib import Path; p=Path('src/./a.ts'); p.write_text('x')"`, '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('a PowerShell path outside quotes is resolved', () => {
+    expect(findSourceWrites('Set-Content ./src/a.ts x', '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('a project under a folder starting with a tilde is resolved like any other', () => {
+    expect(findSourceWrites('echo 1 > ./src/a.ts', '/home/me/~work/proj')).toEqual(['/home/me/~work/proj/src/a.ts'])
+  })
+
+  test('a quoted target of a redirect or a copy is a real target, dots and all', () => {
+    expect(findSourceWrites('echo 1 > "./src/a.ts"', '/r')).toEqual(['/r/src/a.ts'])
+    expect(findSourceWrites('cp x "./src/a.ts"', '/r')).toEqual(['/r/src/a.ts'])
+  })
+
+  test('a test file spelled with a dot is still not source', () => {
+    expect(findSourceWrites('echo 1 > ./tests/a.test.ts')).toEqual([])
+  })
+})
+
 describe('findSourceWrites with a root', () => {
   test('resolves a write against the directory its segment runs in, so a cd into a package or out of the repo is followed', () => {
     expect(findSourceWrites("cd server && sed -i 's/a/b/' src/x.ts", 'C:/work')).toEqual(['C:/work/server/src/x.ts'])

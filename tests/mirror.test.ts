@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { LAYOUTS } from '../hooks/layout'
-import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
+import { classifyPath, withoutDots, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
 
 const ROOT = 'C:/work/throughline'
@@ -47,6 +47,38 @@ describe('isTestRun', () => {
 
 // #259: a helper in a test folder isn't code left unguarded, and only the classifier knows the folder once a package or a
 // folder layout is split off.
+// #272: a path spelled another way is the same file.
+describe('withoutDots: a path as the shell would resolve it', () => {
+  test('dots and doubled slashes go', () => {
+    expect(withoutDots('./src/a.ts')).toBe('src/a.ts')
+    expect(withoutDots('.//src/a.ts')).toBe('src/a.ts')
+    expect(withoutDots('src/./a.ts')).toBe('src/a.ts')
+    expect(withoutDots('src//a.ts')).toBe('src/a.ts')
+    expect(withoutDots('C:/r/./src/a.ts')).toBe('C:/r/src/a.ts')
+    expect(withoutDots('/r/./src//a.ts')).toBe('/r/src/a.ts')
+  })
+
+  test('a parent folder is walked up, and stays when there is nothing to walk up from', () => {
+    expect(withoutDots('src/../lib/a.ts')).toBe('lib/a.ts')
+    expect(withoutDots('/r/src/../lib/a.ts')).toBe('/r/lib/a.ts')
+    expect(withoutDots('../other/a.ts')).toBe('../other/a.ts')
+    expect(withoutDots('../../a.ts')).toBe('../../a.ts')
+    expect(withoutDots('/../a.ts')).toBe('/a.ts')
+  })
+
+  test('backslashes are read as slashes, and a path with nothing to resolve comes back as spelled', () => {
+    expect(withoutDots('C:\\r\\.\\src\\a.ts')).toBe('C:/r/src/a.ts')
+    expect(withoutDots('C:\\r\\src\\a.ts')).toBe('C:\\r\\src\\a.ts')
+  })
+
+  test('a plain path, a network path and a name holding dots stay as they are', () => {
+    expect(withoutDots('src/a.ts')).toBe('src/a.ts')
+    expect(withoutDots('//server/share/a.ts')).toBe('//server/share/a.ts')
+    expect(withoutDots('//server/./share/a.ts')).toBe('//server/share/a.ts')
+    expect(withoutDots('src/.hidden/a..b.ts')).toBe('src/.hidden/a..b.ts')
+  })
+})
+
 describe('classifyPath says when other code sits in a test folder', () => {
   const config = (json: string) => parseConfig(json)
 

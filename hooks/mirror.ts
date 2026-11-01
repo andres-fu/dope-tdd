@@ -46,6 +46,29 @@ export function pathKey(path: string): string {
   return foldsCase(slashed) ? slashed.toLowerCase() : slashed
 }
 
+/**
+ * #272: a path with its dots resolved by reading it, so `./src/a.ts`, `src//a.ts` and `lib/../src/a.ts` are the file they
+ * name. Done where a write comes in, so what judges it sees one spelling. It doesn't follow links, so through one a
+ * `..` can land elsewhere. A `..` with nothing to walk up from stays, to say the path leaves where it started. A path
+ * with nothing to resolve comes back as spelled.
+ */
+export function withoutDots(path: string): string {
+  const slashed = path.replace(/\\/g, '/')
+  if (!/(?:^|\/)\.\.?(?:\/|$)|.\/\//.test(slashed)) {
+    return path
+  }
+  const head = /^(?:[A-Za-z]:\/|\/\/?)/.exec(slashed)?.[0] ?? ''
+  const kept: string[] = []
+  for (const segment of slashed.slice(head.length).split('/')) {
+    if (segment === '..' && kept.length > 0 && kept[kept.length - 1] !== '..') {
+      kept.pop()
+    } else if (segment !== '' && segment !== '.' && !(segment === '..' && head !== '')) {
+      kept.push(segment)
+    }
+  }
+  return `${head}${kept.join('/')}`
+}
+
 function relativeTo(root: string, path: string): string | undefined {
   const base = pathKey(root)
   const normalized = toForwardSlashes(path)

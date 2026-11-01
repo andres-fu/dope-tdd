@@ -114,9 +114,20 @@ refused, and a shell change to it is put back and counted as a workaround.
   phase. Run the module's own test file to see its red. Maven and Gradle pick
   their test by class name and never name files, so their red is still the
   module's.
-- After every shell command, `git diff` under `src/` and `tests/` is the
-  source of truth: source files changed without a test touched count as
-  unguarded, and tests written through the shell count as touched.
+- After every shell command, reads and test runs included, `git diff` under
+  `src/` and `tests/` is the source of truth: source files changed without a test
+  touched count as unguarded, and tests written through the shell count as
+  touched. The command's text only decides whose change it was. One Claude Code
+  held read-only can't have made it. One that only looks read-only, a read or a
+  test run, may hide a write (`echo "$(sed -i ...)"`), so each code or test file
+  changed around it is said once and listed in `/tdd` under **changed during a
+  read or test run**. Nobody is charged or credited. The change also counts
+  against the module's next verdict where it can, though a verdict can still miss
+  it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
+  names, as it does `ls 2> src/a.ts`, is the command's as usual
+  ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). Beside a git rewrite
+  changes still count as git's, so a write hidden there isn't seen
+  ([#284](https://github.com/andres-fu/dope-tdd/issues/284)).
 - Before a shell command runs, its writes are read from the command: a
   redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
   write. Quoted text is data, so a commit message or an echoed sentence that

@@ -1055,6 +1055,24 @@ describe('bash bypass', () => {
     expect(status.text).toMatch(/unguarded 1/)
   })
 
+  test('a change around a read-only command is recorded and said once, the same as around one that looks it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.readOnly = true
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    const first = await runBash($, './scripts/inspect.sh')
+    world.onBash = () => {
+      world.numstat = '4\t1\tsrc/App.tsx\n'
+    }
+    const second = await runBash($, './scripts/inspect.sh')
+
+    expect(first.context?.join(' ')).toMatch(/cannot have changed it/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(/cannot have changed it/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/^changed during a read or test run: src\/App\.tsx \(charged to nobody\)$/m)
+  })
+
   test('a change seen during a read-only command was not made by it: not charged, and said', async ($, on) => {
     const world = fakeEngine(on)
     world.readOnly = true
@@ -1084,19 +1102,142 @@ describe('bash bypass', () => {
     expect(charged.text).toMatch(/unguarded [12]/)
   })
 
-  test('reads and pure test runs cost no git snapshot; a command that may write still gets one', async ($, on) => {
+  // #281: reads once skipped the check to save a git call, and working out which could skip it took three designs and
+  // nineteen findings, so every command gets it.
+  test('every shell command gets a git snapshot before and after', async ($, on) => {
     const world = fakeEngine(on)
     const snapshots = () => world.gitCalls.filter(argv => argv.includes('--numstat')).length
 
     await runBash($, 'ls src && cat src/App.tsx | head -20')
-    await runBash($, 'git status && git diff src/App.tsx')
     await runBash($, 'npx vitest run tests/App.test.tsx | tail -5')
-    const afterReads = snapshots()
     await runBash($, './scripts/codemod.sh')
-    await runBash($, 'cat src/App.tsx > /tmp/copy.tsx')
 
-    expect(afterReads).toBe(0)
-    expect(snapshots()).toBe(4)
+    expect(snapshots()).toBe(6)
+  })
+
+  for (const command of ['echo "$(sed -i s/a/b/ src/a.ts)"', 'ls >& src/a.ts', 'sort -o src/a.ts src/b.ts', 'npx vitest run "$(sed -i s/a/b/ src/a.ts)"']) {
+    test(`a write in a command that looks read-only is said and recorded, not charged: ${command}`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+      world.onBash = () => {
+        world.numstat = '1\t1\tsrc/a.ts\n'
+      }
+
+      const run = await runBash($, command)
+      const status = await runCommand($, 'tdd')
+
+      expect(run.context?.join(' ')).toMatch(/src\/a\.ts changed while a command that looks read-only ran/)
+      expect(run.context?.join(' ')).not.toMatch(/cannot have changed it/)
+      expect(status.text).toMatch(/changed during a read or test run, charged to nobody \(src\/a\.ts\)/)
+      expect(status.text).toMatch(/unguarded 0/)
+    })
+  }
+
+  test('a write a read command names in plain sight is charged to it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror","mode":"warn"}')
+    world.onBash = () => {
+      world.numstat = '1\t1\tsrc/a.ts\n'
+    }
+
+    const run = await runBash($, 'ls 2> src/a.ts')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(/looks read-only/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
+  for (const path of ['tests/a.test.ts', 'src/tool.py']) {
+    test(`a hidden write to ${path} is said and recorded too`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+      world.onBash = () => {
+        world.numstat = `1\t1\t${path}\n`
+      }
+
+      const run = await runBash($, `echo "$(sed -i s/a/b/ ${path})"`)
+
+      expect(run.context?.join(' ')).toMatch(/changed while a command that looks read-only ran/)
+      expect((await runCommand($, 'tdd')).text).toMatch(/charged to nobody/)
+    })
+  }
+
+  test('an exempt file changed around a command held read-only says nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror","exempt":["src/a.ts"]}')
+    world.readOnly = true
+    world.onBash = () => {
+      world.numstat = '1\t1\tsrc/a.ts\n'
+    }
+
+    const run = await runBash($, 'cat src/a.ts')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(/changed while/)
+  })
+
+  test('a tracked file gone from disk stays out of the log around a read', async ($, on) => {
+    const world = fakeEngine(on)
+    world.numstat = '0\t5\tsrc/gone.ts\n'
+    world.gone.add(`${ROOT}/src/gone.ts`)
+
+    await runBash($, 'ls src')
+
+    expect(world.logs.join(' ')).not.toMatch(/could not stat/)
+  })
+
+  test('the same file is said once a session, and a second file is said too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.onBash = () => {
+      world.numstat = `1\t1\tsrc/a.ts\n${world.numstat.includes('a.ts') ? '1\t1\tsrc/b.ts\n' : ''}`
+    }
+
+    await runBash($, 'cat src/a.ts')
+    world.onBash = () => {
+      world.numstat = '2\t1\tsrc/a.ts\n'
+    }
+    const again = await runBash($, 'cat src/a.ts')
+    world.onBash = () => {
+      world.numstat = '2\t1\tsrc/a.ts\n1\t1\tsrc/b.ts\n'
+    }
+    const other = await runBash($, 'cat src/a.ts')
+
+    expect(again.context?.join(' ') ?? '').not.toMatch(/looks read-only/)
+    expect(other.context?.join(' ')).toMatch(/src\/b\.ts changed while a command that looks read-only ran/)
+    expect(other.context?.join(' ')).not.toMatch(/src\/a\.ts changed while/)
+  })
+
+  test('a test file changed around a read unlocks nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.onBash = () => {
+      world.numstat = '1\t1\ttests/a.test.ts\n'
+    }
+
+    await runBash($, 'cat src/a.ts')
+    const edit = await editAt($, 'src/a.ts')
+
+    expect(edit.deny).toBeDefined()
+  })
+
+  test('an exempt file changed around a read says nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror","exempt":["src/a.ts"]}')
+    world.onBash = () => {
+      world.numstat = '1\t1\tsrc/a.ts\n'
+    }
+
+    const run = await runBash($, 'cat src/a.ts')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(/looks read-only/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/changed during a read/)
+  })
+
+  test('nothing changed around a read says nothing', async ($, on) => {
+    fakeEngine(on)
+
+    const run = await runBash($, 'cat src/a.ts')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(/looks read-only/)
   })
 
   test('counts a shell change to an unlocked module as test-first', async ($, on) => {

@@ -38,6 +38,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   outside: 'outside this project, not guarded',
   'not-watched': 'edited, no test layout, not guarded',
   'other-stack': 'edited, another stack, not guarded',
+  unclaimed: 'changed during a read or test run, charged to nobody',
   'test-gone': 'test file gone, cycle and unlock dropped',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
@@ -106,6 +107,9 @@ function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
   return ['recent events: newest first', ...rows]
 }
 
+// Generated code can change hundreds of files, and this row reaches the agent through the status tool.
+const MAX_UNCLAIMED_NAMED = 10
+
 function catchLine(s: TddStats): string[] {
   const verdicts =
     s.caught + s.proven + s.missed + s.unverified === 0
@@ -115,6 +119,15 @@ function catchLine(s: TddStats): string[] {
   // A refactor is a fact about the change, not a verdict on the test, so it never sits beside caught and proven.
   const refactors = s.refactors === 0 ? [] : [`refactors: ${s.refactors} (changed while green with the test untouched; not re-checked)`]
   return [...verdicts, ...refactors]
+}
+
+function unclaimedLine(s: TddStats): string[] {
+  if (s.unclaimed.length === 0) {
+    return []
+  }
+  const named = s.unclaimed.slice(-MAX_UNCLAIMED_NAMED).join(', ')
+  const rest = s.unclaimed.length - MAX_UNCLAIMED_NAMED
+  return [`changed during a read or test run: ${named}${rest > 0 ? ` and ${rest} more` : ''} (charged to nobody)`]
 }
 
 function workaroundLine(s: TddStats): string[] {
@@ -173,6 +186,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     // #236: edits under a carried-over unlock are neither test-first nor misses, so they sit apart from the ratio.
     `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
     ...catchLine(s),
+    ...unclaimedLine(s),
     ...workaroundLine(s),
     ...pinsLine(s),
     ...spikesLine(s),

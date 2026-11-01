@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { catchOutcome, runnerArgv } from '../hooks/catchCheck'
-import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, failureMessage, isTestRun, namedOtherFiles, namesFailedFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
+import { failedCountIn, failedFilesIn, filtersTests, failedOnlyOnErrors, failedTestsIn, fallbackTool, failureMessage, isTestRun, looksReadOnly, namedOtherFiles, namesFailedFiles, namedTestFile, nodeRunnerCrashed, nodeTestLauncher, readRun, runnerNamed, runsWholeFolder, testRunLocation, workspaceTarget } from '../hooks/runners'
 import { ELSEWHERE } from '../hooks/shell'
 import {
   AVA_REAL_FAIL,
@@ -773,6 +773,20 @@ describe('failureMessage', () => {
     const message = failureMessage(`AssertionError: expected ${'x'.repeat(300)} to be 1\n`)
     expect(message?.length).toBeLessThanOrEqual(120)
     expect(message?.endsWith('…')).toBe(true)
+  })
+})
+
+describe('looksReadOnly', () => {
+  test('a read or a test run does, whatever may be hidden in it', () => {
+    for (const command of ['cat src/a.ts', 'git log --oneline', 'npx vitest run tests/a.test.ts | tail -5', 'echo "$(sed -i s/a/b/ src/a.ts)"']) {
+      expect(looksReadOnly(command)).toBe(true)
+    }
+  })
+
+  test('anything that says it writes does not', () => {
+    for (const command of ['sed -i s/a/b/ src/a.ts', 'python3 fix.py', 'ls > out.txt', 'npx vitest run && npm run format']) {
+      expect(looksReadOnly(command)).toBe(false)
+    }
   })
 })
 

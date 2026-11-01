@@ -66,6 +66,10 @@ export const MESSAGES = {
     `dope-tdd: ${f.path} isn't ${f.stack} code, so it is not guarded, and nor is other code like it this session. One dope-tdd.json guards one stack. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
   'edit.unguarded': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.sourcePath} was edited with no test touched first. Write ${f.testPath} next and see it fail.`),
+  // #281: the guard can't tell who made this change, so it says both and charges nobody.
+  'shell.unclaimed': entry({ path: 'src/a.ts' }, f =>
+    `dope-tdd: ${f.path} changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.`),
+  'shell.moreChanged': entry({ count: 2 }, f => `dope-tdd: and ${f.count} more changed the same way.`),
   'run.crashed': entry({}, () =>
     'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'),
   // VibeCast field test (2026-10-18): a 40 KB `npm test` was cut before its summary; said as too long, never "pipe it".

@@ -52,6 +52,8 @@ export type EventKind =
   /** #234: the first edit to a code file the layout pairs with no test: not guarded, on the record. */
   | 'not-watched'
   | 'other-stack'
+  /** #281: files changed around a command that can't have, or only looks that way: said, and charged to nobody. */
+  | 'unclaimed'
   /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */
   | 'spike'
 
@@ -192,6 +194,8 @@ export type TddStats = {
   shellUnwatched: readonly string[]
   /** Code of another stack edited this session: not guarded, and no layout could cover it (#259). */
   otherStack: readonly string[]
+  /** Code and tests changed around a command that can't have, or only looks that way (#281), newest last, at most 200: said once each. */
+  unclaimed: readonly string[]
   lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' }; path?: string } | null
   lastCycle: CycleVerdict | null
   current: CurrentTest | null

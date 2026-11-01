@@ -3,8 +3,38 @@ import { describe, expect, test } from 'claude-code/testing'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import { ELSEWHERE } from '../hooks/shell'
-import { leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from '../hooks/shellVerdict'
+import { changeOwner, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
+
+describe('changeOwner', () => {
+  test('a command Claude Code held read-only did not make the change', () => {
+    expect(changeOwner(true, false)).toBe('elsewhere')
+    expect(changeOwner(true, true)).toBe('elsewhere')
+  })
+
+  test('a command that only looks read-only may have: nobody is charged', () => {
+    expect(changeOwner(false, true)).toBe('unclaimed')
+  })
+
+  test('anything else is the command', () => {
+    expect(changeOwner(false, false)).toBe('command')
+  })
+})
+
+describe('splitChanges', () => {
+  test("a command's changes are all charged to it", () => {
+    expect(splitChanges(['a', 'b'], 'command', [])).toEqual({ charged: ['a', 'b'], said: [] })
+  })
+
+  test('changes from elsewhere are said, even one the text names', () => {
+    expect(splitChanges(['a'], 'elsewhere', ['a'])).toEqual({ charged: [], said: ['a'] })
+  })
+
+  // `ls 2> src/a.ts` looks read-only and says in plain sight what it writes.
+  test('around a command that looks read-only, a file it names is charged, and the rest are said', () => {
+    expect(splitChanges(['a', 'b'], 'unclaimed', ['a'])).toEqual({ charged: ['a'], said: ['b'] })
+  })
+})
 import { MOCHA_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 describe('gateShellWrites', () => {
@@ -96,12 +126,32 @@ describe('shellReminders', () => {
     notStarted: null,
     unreadableRunner: null,
     bystanders: [],
+    unclaimed: [],
     commented: [],
     redUnlocked: [],
     carriedOn: [],
     passed: false,
     advice: null,
   }
+
+  // #281: the text can't prove a command wrote nothing, so a change around one that looks read-only is said, not charged.
+  test('a change around a command that looks read-only names both ways it could have happened, and is not counted', () => {
+    expect(shellReminders({ ...none, unclaimed: ['src/utils/b.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
+      'dope-tdd: src/utils/b.ts changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.',
+    ])
+  })
+
+  test('a run that rewrites many files names three, and says how many more', () => {
+    const lines = shellReminders({ ...none, unclaimed: ['a', 'b', 'c', 'd', 'e'] }, DEFAULT_CONFIG, 'C:/r')
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe('dope-tdd: and 2 more changed the same way.')
+  })
+
+  test('so does a read-only command', () => {
+    const lines = shellReminders({ ...none, bystanders: ['a', 'b', 'c', 'd'] }, DEFAULT_CONFIG, 'C:/r')
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe('dope-tdd: and 1 more changed the same way.')
+  })
 
   test('a run with nothing to report adds no reminder lines', () => {
     expect(shellReminders(none, DEFAULT_CONFIG, 'C:/r')).toEqual([])
@@ -135,6 +185,7 @@ describe('shellReminders', () => {
       notStarted: 'command not found',
       unreadableRunner: 'mocha',
       bystanders: ['src/utils/b.ts'],
+      unclaimed: ['src/utils/e.ts'],
       commented: ['dope-tdd: commented out'],
       redUnlocked: ['utils/c'],
       carriedOn: [{ module: 'utils/d', testPath: 'C:/r/tests/utils/d.test.ts' }],
@@ -147,6 +198,7 @@ describe('shellReminders', () => {
       'dope-tdd: the test runner did not start (command not found); nothing was counted. Run it the way this project runs its tests.',
       unreadableRunnerAdvice('mocha'),
       'dope-tdd: src/utils/b.ts changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.',
+      'dope-tdd: src/utils/e.ts changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.',
       'dope-tdd: commented out',
       redUnlockAdvice('utils/c', 'src/utils/c'),
       carriedOnAdvice('src/utils/d', 'tests/utils/d.test.ts', true),

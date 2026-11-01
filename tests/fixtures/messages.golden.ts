@@ -16,6 +16,8 @@ export const GOLDEN: Record<string, string> = {
   "edit.unwatched": "dope-tdd: scripts/build.ts matches no test layout, so it is not guarded, and nor is other code like it this session. If a different layout would cover it, the user can check with /tdd setup. To stop counting it, add it to \"exempt\" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.",
   "edit.otherStack": "dope-tdd: tools/gen.py isn't node code, so it is not guarded, and nor is other code like it this session. One dope-tdd.json guards one stack. To stop counting it, add it to \"exempt\" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.",
   "edit.unguarded": "dope-tdd: src/utils/a was edited with no test touched first. Write tests/utils/a.test.ts next and see it fail.",
+  "shell.unclaimed": "dope-tdd: src/a.ts changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.",
+  "shell.moreChanged": "dope-tdd: and 2 more changed the same way.",
   "run.crashed": "dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.",
   "run.otherCheckout": "dope-tdd: that run does not count for utils/a: its test is in another checkout, .claude/worktrees/w/tests/utils/a.test.ts. Run it there.",
   "run.truncated": "dope-tdd: a test run happened but the output was too long and was cut before its summary line, so nothing was counted. Run one test file, or the runner with a quieter reporter, so the summary fits.",

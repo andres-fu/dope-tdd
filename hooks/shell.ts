@@ -266,7 +266,7 @@ const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|whe
 // An output redirect writes, whatever the command: `echo x > src/a.ts`. Stderr to a file descriptor or /dev/null does not.
 const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
 
-/** Only commands that read: nothing in it can change a file, so there is nothing to snapshot around it. */
+/** Only commands that read, by what it says: a write can still hide in one (#281), so this can never clear a command. */
 export function isPureRead(command: string): boolean {
   const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
   return segments.length > 0 && segments.every(segment => READS.test(segment) && !WRITES_OUTPUT.test(segment))

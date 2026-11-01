@@ -46,6 +46,11 @@ export function leftOutBy(relativePath: string, target: ClassifiedPath, config: 
   return anotherStack && policyFor(config, relativePath) !== 'exempt' ? 'stack' : null
 }
 
+/** Worth a line when it changes around a command: code or a test, and not an exempt file. */
+export function worthSaying(relativePath: string, target: ClassifiedPath, config: GuardConfig): boolean {
+  return policyFor(config, relativePath) !== 'exempt' && (target.kind !== 'other' || leftOutBy(relativePath, target, config) !== null)
+}
+
 export type Watch = { kind: 'watching'; where: string } | { kind: 'not-watching'; files: number; example: string } | { kind: 'cannot-read' }
 
 // The chain had a `test` step that was always done and nothing read (2026-10-18): band v3 draws red and green only.

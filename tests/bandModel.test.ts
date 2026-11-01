@@ -1,9 +1,26 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandView, catchWord, countsAsUnwatched, lastRunLine, lastRunTarget, leftOutBy } from '../hooks/bandModel'
+import { bandView, catchWord, countsAsUnwatched, lastRunLine, lastRunTarget, leftOutBy, worthSaying } from '../hooks/bandModel'
 import { DEFAULT_CONFIG, parseConfig } from '../hooks/config'
 import { classifyPath } from '../hooks/mirror'
 import type { Override } from '../hooks/overrides'
+
+describe('worthSaying', () => {
+  const config = parseConfig('{"layout":"mirror","exempt":["src/gen.ts"]}')
+  const says = (path: string) => worthSaying(path, classifyPath('R:', `R:/${path}`, config), config)
+
+  test('source, a test, and code no layout covers', () => {
+    for (const path of ['src/a.ts', 'tests/a.test.ts', 'src/tool.py']) {
+      expect(says(path)).toBe(true)
+    }
+  })
+
+  test('an exempt file or something that is not code is not', () => {
+    for (const path of ['src/gen.ts', 'src/a.md']) {
+      expect(says(path)).toBe(false)
+    }
+  })
+})
 import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
 import type { TddStats } from '../types'
 

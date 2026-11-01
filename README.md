@@ -187,12 +187,15 @@ left alone on purpose:
   at user scope, or at project scope, to cover more.
 - **Files a program changes.** Dope TDD can't see inside a script, formatter or
   code generator before it runs, so it can't refuse it. Changes it makes to
-  source are noticed afterwards and counted as unguarded.
+  source are noticed afterwards and counted as unguarded, unless the same command
+  stages them.
 - **While it stands aside.** In `warn` or `observe` mode, during `/tdd pause`,
   and during a git merge, rebase or cherry-pick, nothing is refused. The band
   says which.
 - **A determined agent.** It keeps an agent honest and on the record; it is not
-  a sandbox. Workarounds are recorded, and overrides need a person.
+  a sandbox or a security boundary. A script can get past a refusal, and an agent
+  with a shell can forge the override record. [What gets past it](docs/what-gets-past.md)
+  says how, why that can't be closed, and what to do about it.
 
 ## Settings
 
@@ -262,6 +265,7 @@ default. Setup and the move check: [docs/pr-check.md](docs/pr-check.md).
 ## More
 
 - [How it works](docs/how-it-works.md): every step, how it decides, the band.
+- [What gets past it](docs/what-gets-past.md): its limits, and why it can't be a wall.
 - [Testers' guide](docs/testers.md): a first session, and the rough edges.
 - [Contributing](CONTRIBUTING.md): build, test and change Dope TDD.
 - [Project rules](.claude/CLAUDE.md): how we work and what review looks for.

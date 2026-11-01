@@ -66,7 +66,9 @@ approved what, and the receipt lists them. A pause reason must say what and
 why (at least 30 characters; "need to proceed" is refused), only one request
 can wait at a time, and a module override open for more than 7 days blocks
 new ones. Claude's Edit and Write calls to `dope-tdd.overrides.json` are
-refused, and a shell change to it is put back and counted as a workaround.
+refused, and a shell change to it is put back and counted as a workaround. A
+command of git alone is left alone, since a pull can bring in other people's
+overrides, and [what gets past it](what-gets-past.md) says what that leaves open.
 
 ## How it decides
 
@@ -115,8 +117,10 @@ refused, and a shell change to it is put back and counted as a workaround.
   their test by class name and never name files, so their red is still the
   module's.
 - After every shell command, reads and test runs included, `git diff` under
-  `src/` and `tests/` is the source of truth: source files changed without a test
-  touched count as unguarded, and tests written through the shell count as
+  `src/` and `tests/` is the source of truth, so a change the same command stages
+  isn't seen ([#292](https://github.com/andres-fu/dope-tdd/issues/292)). Source
+  files changed without a test touched count as unguarded, and tests written
+  through the shell count as
   touched. The command's text only decides whose change it was. One Claude Code
   held read-only can't have made it. One that only looks read-only, a read or a
   test run, may hide a write (`echo "$(sed -i ...)"`), so each code or test file

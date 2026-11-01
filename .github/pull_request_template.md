@@ -11,6 +11,7 @@ on this line instead. -->
 <!-- Only what you saw in this session's output; leave a line out rather than guess. -->
 - Test seen failing first:
 - Passing: `npm run check` and the POSIX-root pass, or the CI run link
+- Compared: the counts from `npm run compare -- --sessions`, never its commands, or why it doesn't apply
 - Docs: README / docs/testers.md updated, or why none were needed
 - Receipt: paste `/tdd receipt`, or say why there is none
 

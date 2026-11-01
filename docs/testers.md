@@ -247,7 +247,7 @@ What it does **not** do: it never writes code or tests for Claude. It runs
 your test runner on one test file, plus `git` and small `node -e` helpers
 (the full list is in [docs/security-and-data.md](security-and-data.md)). In
 your project it writes only `dope-tdd.json` (on `/tdd setup write`) and
-`dope-tdd.overrides.json`, puts that file back if a shell command changes it,
-and, for an in-place catch check, undoes and restores Claude's change. From a clone of the
+`dope-tdd.overrides.json`, puts that file back if a shell command other than git
+alone changes it, and, for an in-place catch check, undoes and restores Claude's change. From a clone of the
 repository, `claude plugin validate .` lists every action it steps into
 (`hooks:`) and everything it touches (`calls:`).

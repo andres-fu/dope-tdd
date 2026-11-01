@@ -47,7 +47,7 @@ import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperati
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
-import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
+import { withoutDots, classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
 import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
@@ -1602,10 +1602,11 @@ type FileTool = 'Edit' | 'Write' | 'NotebookEdit'
 async function guardFileWrite(
   $: EngineInterface,
   tool: FileTool,
-  filePath: string,
+  spelledPath: string,
   proceed: () => Promise<ToolCallResult>,
   agentId?: string,
 ): Promise<ToolCallResult> {
+  const filePath = withoutDots(spelledPath)
   // A file in an agent worktree is judged against that worktree, the checkout it belongs to (#198).
   const sessionRoot = await $.session.root()
   const root = worktreeRootFor(sessionRoot, filePath, await mainCheckoutOf($, sessionRoot))

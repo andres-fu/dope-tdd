@@ -463,6 +463,84 @@ describe('work outside the project is said once, never refused', () => {
 
 // #234 (tester round 7): with dope-tdd.json unread, an untested edit to code the default layout pairs with nothing
 // landed, and /tdd afterwards was unchanged: a bare "guard: ON", no events.
+// #272: a shell write spelled `./src/a.ts` got past the refusal: an untested edit landed with a dot in front of it.
+describe('a write is judged however its path is spelled', () => {
+  for (const [name, run, command] of [
+    ['a redirect', runBash, 'echo 1 > ./src/a.ts'],
+    ['a copy', runBash, 'cp x.ts ./src/a.ts'],
+    ['an in-place sed', runBash, 'sed -i s/a/b/ ./src/a.ts'],
+    ['a doubled slash', runBash, 'echo 1 > src//a.ts'],
+    ['a dot inside', runBash, 'echo 1 > src/./a.ts'],
+    ['a parent folder', runBash, 'echo 1 > lib/../src/a.ts'],
+    ['PowerShell', runPowerShell, 'Set-Content .\\src\\a.ts x'],
+  ] as const) {
+    test(`${name} is refused as the plain path is`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+      expect((await run($, command)).deny).toMatch(/write the failing test first\. Touch tests\/a\.test\.ts/)
+    })
+  }
+
+  test('an Edit spelled with a dot is refused too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    expect((await editAt($, './src/a.ts')).deny).toMatch(/write the failing test first\. Touch tests\/a\.test\.ts/)
+  })
+
+  test('an Edit that leaves the project by a parent folder is outside it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    const edit = await editAt($, 'src/../../other/src/a.ts')
+
+    expect(edit.deny).toBeUndefined()
+    expect(edit.context?.join(' ')).toMatch(/is outside this project/)
+  })
+
+  for (const spelled of ['src/./utils/a.ts', 'src/x/../utils/a.ts', './/src/utils/a.ts']) {
+    test(`an Edit in a worktree spelled ${spelled} is refused there`, async ($, on) => {
+      const world = fakeEngine(on)
+      const worktree = '.claude/worktrees/agent-x'
+      world.fileContents.set(`${ROOT}/${worktree}/dope-tdd.json`, '{"layout":"mirror"}')
+
+      expect((await editAt($, `${worktree}/${spelled}`)).deny).toMatch(/write the failing test first/)
+    })
+  }
+
+  test('a dotted Read does not misplace an agent: its next shell write is judged in its worktree', async ($, on) => {
+    const world = fakeEngine(on)
+    const worktree = `${ROOT}/.claude/worktrees/agent-x`
+    world.fileContents.set(`${worktree}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    await $.tool.call({ tool: 'Read', file_path: `${worktree}/src/./utils/a.ts`, agentId: 'a1' } as never)
+    const write = await $.tool.call({ tool: 'Bash', command: `cd ${worktree} && echo 1 > src/utils/a.ts`, agentId: 'a1' } as never)
+
+    expect(write.deny).toMatch(/write the failing test first/)
+  })
+
+  test('a test written with a dot unlocks its module', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    await writeAt($, './tests/a.test.ts', "it('x', () => { expect(1).toBe(1) })")
+
+    expect((await editAt($, 'src/a.ts')).deny).toBeUndefined()
+  })
+
+  test('exempt holds with a dot, and a left-out file is named plainly', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror","exempt":["src/gen.ts"]}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    expect((await runBash($, 'echo 1 > ./src/gen.ts')).deny).toBeUndefined()
+    expect((await runBash($, 'echo 1 > ./helpers.js')).context?.join(' ')).toMatch(/dope-tdd: helpers\.js matches no test layout/)
+  })
+})
+
 // #259: an edit to code no layout pairs went through with nothing said, and a shell write was not even recorded.
 describe('code no layout pairs is said once a session', () => {
   const NOTICE = /dope-tdd: .* (?:matches no test layout|isn't \w+ code)/

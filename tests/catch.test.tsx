@@ -521,6 +521,37 @@ describe('what the check cannot see is said, not skipped', () => {
     expect(status.text).toMatch(/not checked 1/)
   })
 
+  test('a test changed by a write hidden in a read leaves no proof standing', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    world.onBash = command => {
+      world.numstat = command.includes('sed -i') ? '1\t1\ttests/utils/formatDuration.test.ts\n' : world.numstat
+    }
+    await runBash($, 'echo "$(sed -i s/toBe/not.toBe/ tests/utils/formatDuration.test.ts)"')
+
+    const result = await runTests($, world, 'pass')
+
+    expect(result.context?.join(' ')).toMatch(/saw red, but the test changed after red/)
+  })
+
+  // #281: the guard has just said the file changed, so no verdict may read as if it hadn't.
+  test('a source change hidden in a read is unverified too, and charges nobody', async ($, on) => {
+    const world = fakeEngine(on)
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'fail')
+    world.onBash = command => {
+      world.numstat = command.includes('sed -i') ? '1\t1\tsrc/utils/formatDuration.ts\n' : world.numstat
+    }
+    await runBash($, 'echo "$(sed -i s/a/b/ src/utils/formatDuration.ts)"')
+
+    const result = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/UNPROVEN: not checked.*change not captured/)
+    expect(status.text).toMatch(/unguarded 0/)
+  })
+
   test('a file that exists but cannot be read before the edit is unverified with that reason', async ($, on) => {
     const world = fakeEngine(on)
     world.unreadable.add(SOURCE)

@@ -237,6 +237,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
 | Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
 | Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **UNPROVEN · not checked: change not captured** |
+| Change a code or test file during something that looks read-only (`echo "$(sed -i ...)"`, or another editor saving during a test run) | Says so once for that file and charges nobody, since it can't tell which | a `changed during a read or test run` row in `/tdd` |
 | Put a file back with git (`git restore`, `git checkout -- <file>`, `git stash`) | Nothing: code put back to a saved state is not an edit | no change |
 | Bring code in with git (`git checkout main -- <file>`, `git pull`, `git stash pop`) | Does not count it as Claude's edit, but records it, with the git verb only | `brought in by git, not guarded` in `/tdd` |
 | Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, pause the guard, or edit a session record in `~/.dope-tdd/sessions/` from the shell | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |

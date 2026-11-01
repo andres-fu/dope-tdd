@@ -1,6 +1,7 @@
 import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, LastRun, LeftOutList, ModuleState, TddEvent, TddStats } from '../types'
 import type { WorkaroundKind } from './workarounds.ts'
 import { pathKey } from './mirror.ts'
+import type { ClassifiedPath } from './mirror.ts'
 
 const EVENT_LOG_LENGTH = 50
 const CURRENT_EXPIRY_MS = 15 * 60_000
@@ -68,6 +69,7 @@ export const INITIAL_STATS: TddStats = {
   unwatched: [],
   shellUnwatched: [],
   otherStack: [],
+  unclaimed: [],
   lastCatch: null,
   lastCycle: null,
   current: null,
@@ -163,6 +165,7 @@ export function normalizeStats(stored: unknown): TddStats {
     unwatched: strings(pick('unwatched', isStringList)),
     shellUnwatched: strings(pick('shellUnwatched', isStringList)),
     otherStack: strings(pick('otherStack', isStringList)),
+    unclaimed: strings(pick('unclaimed', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
@@ -377,6 +380,8 @@ export function recordReportedElsewhere(s: TddStats, detail: string, nowMs: numb
 }
 
 const MAX_UNWATCHED = 20
+// Larger: past it a file is said again, and generated code can rewrite many around every run.
+const MAX_UNCLAIMED = 200
 
 /**
  * A code file edited that the layout pairs with no test: dope-tdd cannot guard it. Remembered once, newest last, so the
@@ -396,6 +401,30 @@ export function recordLeftOut(s: TddStats, path: string, list: LeftOutList, nowM
   const field = list === 'shell' ? 'shellUnwatched' : 'otherStack'
   const kept = { ...s, [field]: [...s[field].filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
   return s[field].includes(path) ? kept : logged(kept, list === 'shell' ? 'not-watched' : 'other-stack', nowMs, undefined, path)
+}
+
+/** Source is no longer what its last run tested. A test changed after its red no longer shows that red meant anything. */
+function changedUnseen(s: TddStats, { target }: { target: ClassifiedPath }): TddStats {
+  if (target.kind === 'source') {
+    return withModule(s, target.module, { ...moduleState(s, target.module), editedSinceRun: true })
+  }
+  if (target.kind === 'test' && moduleState(s, target.module).sawRed) {
+    return withModule(s, target.module, { ...moduleState(s, target.module), testTouchedAfterRed: true })
+  }
+  return s
+}
+
+/**
+ * #281: files that changed around a command that can't have, or only looks that way. Nobody is charged or credited, and
+ * one command is one event, since a rewrite of generated code would otherwise push the rest of the log out.
+ */
+export function recordUnclaimed(s: TddStats, files: readonly { path: string; target: ClassifiedPath }[], nowMs: number): TddStats {
+  const paths = files.map(({ path }) => path)
+  const marked = s.paused ? s : files.reduce(changedUnseen, s)
+  const kept = { ...marked, unclaimed: [...s.unclaimed.filter(entry => !paths.includes(entry)), ...paths].slice(-MAX_UNCLAIMED) }
+  const fresh = paths.filter(path => !s.unclaimed.includes(path))
+  const [first] = fresh
+  return first === undefined ? kept : logged(kept, 'unclaimed', nowMs, undefined, fresh.length === 1 ? first : `${first} and ${fresh.length - 1} more`)
 }
 
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */

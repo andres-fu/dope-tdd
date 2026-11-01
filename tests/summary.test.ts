@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordLeftOut, recordRun, recordSpike, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordLeftOut, recordRun, recordSpike, recordUnclaimed, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -164,6 +164,56 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
     expect(formatStatus(both, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(a\.ts\)/m)
     const shell = recordLeftOut(INITIAL_STATS, 'b.ts', 'shell', T0)
     expect(formatStatus(shell, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(b\.ts\)/m)
+  })
+
+  const other = (path: string) => ({ path, target: { kind: 'other' as const } })
+  const test_ = (module: string) => ({ path: `tests/${module}.test.ts`, target: { kind: 'test' as const, module } })
+
+  test('a change around a command that looks read-only is an event once, and leaves the guard line alone', () => {
+    const twice = recordUnclaimed(recordUnclaimed(INITIAL_STATS, [other('src/a.ts')], T0), [other('src/a.ts')], T0)
+    expect(twice.unclaimed).toEqual(['src/a.ts'])
+    expect(twice.events.filter(({ kind }) => kind === 'unclaimed')).toHaveLength(1)
+    expect(formatStatus(twice, T0)).toMatch(/: changed during a read or test run, charged to nobody \(src\/a\.ts\)$/m)
+    expect(formatStatus(twice, T0)).toMatch(/^guard: ON$/m)
+  })
+
+  test('its own row lasts after the event has scrolled away', () => {
+    const seen = recordUnclaimed(INITIAL_STATS, [other('src/a.ts'), other('src/b.ts')], T0)
+    const later = Array.from({ length: 40 }, (_, i) => `s${i}`).reduce((acc, name) => recordSpike(acc, name, T0), seen)
+    expect(formatStatus(later, T0)).not.toMatch(/charged to nobody \(src/)
+    expect(formatStatus(later, T0)).toMatch(/^changed during a read or test run: src\/a\.ts, src\/b\.ts \(charged to nobody\)$/m)
+    expect(formatStatus(INITIAL_STATS, T0)).not.toMatch(/changed during a read/)
+  })
+
+  test('it marks the module changed since its run, and moves no count', () => {
+    const source = { path: 'src/a.ts', target: { kind: 'source' as const, module: 'a' } }
+    const seen = recordUnclaimed(INITIAL_STATS, [source], T0)
+    expect(seen.modules.a?.editedSinceRun).toBe(true)
+    expect([seen.testFirst, seen.unguarded]).toEqual([0, 0])
+    const paused = recordUnclaimed({ ...INITIAL_STATS, paused: true }, [source], T0)
+    expect(paused.modules.a?.editedSinceRun).not.toBe(true)
+  })
+
+  test('a test changed after its red counts as a test changed, and unlocks nothing', () => {
+    const red = { ...INITIAL_STATS, modules: { a: { ...INITIAL_STATS.modules.a, sawRed: true } as never } }
+    const seen = recordUnclaimed(red, [test_('a')], T0)
+    expect(seen.modules.a?.testTouchedAfterRed).toBe(true)
+    expect(seen.unlocked).toEqual({})
+    expect(recordUnclaimed(INITIAL_STATS, [test_('a')], T0).modules.a?.testTouchedAfterRed).not.toBe(true)
+  })
+
+  test('one command is one event, however many files it changed, so a big rewrite keeps the rest of the log', () => {
+    const many = recordUnclaimed(INITIAL_STATS, Array.from({ length: 60 }, (_, i) => other(`src/f${i}.ts`)), T0)
+    expect(many.events.filter(({ kind }) => kind === 'unclaimed')).toHaveLength(1)
+    expect(formatStatus(many, T0)).toMatch(/charged to nobody \(src\/f0\.ts and 59 more\)$/m)
+    expect(many.unclaimed).toContain('src/f0.ts')
+  })
+
+  test('the row names the ten newest and counts the rest, however many there were', () => {
+    const many = recordUnclaimed(INITIAL_STATS, Array.from({ length: 250 }, (_, i) => other(`src/f${i}.ts`)), T0)
+    expect(many.unclaimed).toHaveLength(200)
+    const row = formatStatus(many, T0).split('\n').find(line => line.startsWith('changed during'))
+    expect(row).toBe(`changed during a read or test run: ${Array.from({ length: 10 }, (_, i) => `src/f${i + 240}.ts`).join(', ')} and 190 more (charged to nobody)`)
   })
 
   test('the guard line says when code of another stack was edited, with no setup it cannot deliver', () => {

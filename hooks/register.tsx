@@ -48,20 +48,20 @@ import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
 import { withoutDots, classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isTestRun, looksReadOnly, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
-import { cwdAfter, isPureRead } from './shell.ts'
+import { cwdAfter } from './shell.ts'
 import { cwdToCarry, settledStart, shellRoot, shellStart, unlockedElsewhere } from './shellCheckout.ts'
 import type { ShellScene } from './shellCheckout.ts'
-import { leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
+import { changeOwner, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { activeLayoutNote, answerFrom, briefingNote, formatSetup, isCodeFile, isUnreadLanguage, layoutMismatch, needsWalk, projectStack, setupInference, suggestedConfig, withInference } from './setup.ts'
-import { catchWord, lastRunLine, lastRunTarget, leftOutBy } from './bandModel.ts'
+import { catchWord, lastRunLine, lastRunTarget, leftOutBy, worthSaying } from './bandModel.ts'
 import type { Saved } from './bandModel.ts'
 import type { ProjectAnswer, Survey } from './setup.ts'
 import {
@@ -95,6 +95,7 @@ import {
   recordSpike,
   recordTestTouch,
   releaseCurrent,
+  recordUnclaimed,
   recordUnreadRun,
   recordWorkaround,
   releaseCheck,
@@ -1840,8 +1841,7 @@ async function snapshotWatched($: EngineInterface, root: string, config: GuardCo
     return null
   }
 
-  const stamped = async (path: string, signature: string) =>
-    [path, `${signature}:${(await lastModifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const
+  const stamped = async (path: string, signature: string) => [path, `${signature}:${(await modifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const
   const tracked = await Promise.all(Object.entries(parseNumstat(numstat)).map(([path, counts]) => stamped(path, counts)))
   const untrackedPaths = untracked.split(/\r?\n/).filter(path => path !== '')
   const untrackedEntries = await Promise.all(untrackedPaths.map(path => stamped(path, 'untracked')))
@@ -1936,9 +1936,8 @@ async function checkShell(
     }
   }
 
-  // A command that only reads, or only runs tests, cannot be the agent writing source: no snapshot around it, no git cost.
-  const watched = !isPureRead(command) && !isPureTestRun(command)
-  const before = watched ? await snapshotWatched($, root, config) : null
+  // Every command gets this, reads too: telling from its text which could skip it kept missing writes (#281).
+  const before = await snapshotWatched($, root, config)
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
@@ -1960,7 +1959,7 @@ async function checkShell(
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
   // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
   // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
-  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment) || isPureRead(segment))
+  const revertOnly = isRevertOnly(command, looksReadOnly)
   const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
   if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
@@ -1972,11 +1971,16 @@ async function checkShell(
       $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
     }
   }
-  // A command that cannot have written source (Claude Code held it read-only, or it is only test runs and filters):
-  // what changed while it ran was another editor or session, so it is said and never charged to the agent.
-  const cannotWrite = result.isReadOnly === true || isPureTestRun(command)
-  const changed = cannotWrite ? [] : seen
-  const bystanders = cannotWrite ? changedOfKind(root, seen, 'source', config).map(({ path }) => path) : []
+  // What changed around a command that can't have written it, or only looks that way, is said and never charged.
+  const owner = changeOwner(result.isReadOnly === true, looksReadOnly(command))
+  const { charged: changed, said } = splitChanges(seen, owner, writes.map(({ relative }) => relative))
+  const others = said.map(path => ({ path, target: classifyPath(root, `${root}/${path}`, config) })).filter(({ path, target }) => worthSaying(path, target, config))
+  if (others.length > 0) {
+    await change($, s => recordUnclaimed(s, others, nowMs))
+  }
+  const fresh = others.map(({ path }) => path).filter(path => !current.unclaimed.includes(path))
+  const bystanders = owner === 'elsewhere' ? fresh : []
+  const unclaimed = owner === 'unclaimed' ? fresh : []
   if (bystanders.length > 0) {
     $.ui.log(`dope-tdd: changed during a command that cannot write them, not counted: ${bystanders.join(', ')}`)
   }
@@ -2151,6 +2155,7 @@ async function checkShell(
       notStarted,
       unreadableRunner: firstUnreadable ? unreadable : null,
       bystanders,
+      unclaimed,
       commented,
       redUnlocked,
       carriedOn: carriedOn.map(module => ({ module, testPath: afterRun.unlocked[module] ?? '' })),

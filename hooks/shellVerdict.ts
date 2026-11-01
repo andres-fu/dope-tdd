@@ -4,6 +4,7 @@
 import type { LeftOut, LeftOutList } from '../types'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
 import type { GuardConfig, Policy } from './config.ts'
+import { say } from './messages.ts'
 import { classifyPath, isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
 import type { LayoutConfig } from './mirror.ts'
 import { neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
@@ -121,6 +122,34 @@ export function judgeFailures(
   return { outcome: 'fail', alreadyFailing: [], record: names.length > 0 ? 'red' : null }
 }
 
+/**
+ * Who a change seen around a shell command belongs to. Held read-only by Claude Code, it can't be the command. Only
+ * looking read-only proves nothing (#281: three designs that read the text all missed writes), so it is said, and neither
+ * charged nor credited.
+ */
+export function changeOwner(heldReadOnly: boolean, looksReadOnly: boolean): 'elsewhere' | 'unclaimed' | 'command' {
+  if (heldReadOnly) {
+    return 'elsewhere'
+  }
+  return looksReadOnly ? 'unclaimed' : 'command'
+}
+
+/** Which of the changes seen are charged, and which only said. A write the command names is its own, however it looks. */
+export function splitChanges(seen: readonly string[], owner: ReturnType<typeof changeOwner>, named: readonly string[]): { charged: string[]; said: string[] } {
+  if (owner === 'unclaimed') {
+    return { charged: seen.filter(path => named.includes(path)), said: seen.filter(path => !named.includes(path)) }
+  }
+  return owner === 'command' ? { charged: [...seen], said: [] } : { charged: [], said: [...seen] }
+}
+
+// A run that rewrites generated code can change hundreds of files at once, and each line costs the agent tokens.
+const MAX_CHANGE_LINES = 3
+
+function changeLines(paths: readonly string[], line: (path: string) => string): string[] {
+  const extra = paths.length - MAX_CHANGE_LINES
+  return [...paths.slice(0, MAX_CHANGE_LINES).map(line), ...(extra > 0 ? [say('shell.moreChanged', { count: extra })] : [])]
+}
+
 export type ShellReminderFacts = {
   readonly paused: boolean
   /** Sources the command changed with no test touched first. */
@@ -132,8 +161,10 @@ export type ShellReminderFacts = {
   readonly notStarted: string | null
   /** A runner dope-tdd cannot read, given only the first time it is seen, since it is said once. */
   readonly unreadableRunner: string | null
-  /** Sources changed while a command that cannot write them ran. */
+  /** Code and tests first seen changed while a command that cannot write them ran. */
   readonly bystanders: readonly string[]
+  /** Code and tests first seen changed around a command that only looks read-only. */
+  readonly unclaimed: readonly string[]
   /** The commented-out-code notes, already worded. */
   readonly commented: readonly string[]
   readonly redUnlocked: readonly string[]
@@ -158,7 +189,8 @@ export function shellReminders(facts: ShellReminderFacts, config: LayoutConfig, 
             ]),
         ...(facts.notStarted === null ? [] : [`dope-tdd: the test runner did not start (${facts.notStarted}); nothing was counted. Run it the way this project runs its tests.`]),
         ...(facts.unreadableRunner === null ? [] : [unreadableRunnerAdvice(facts.unreadableRunner)]),
-        ...facts.bystanders.map(path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
+        ...changeLines(facts.bystanders, path => `dope-tdd: ${path} changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.`),
+        ...changeLines(facts.unclaimed, path => say('shell.unclaimed', { path })),
         ...facts.commented,
         ...facts.redUnlocked.map(module => redUnlockAdvice(moduleLabel(config, module), sourcePathFor(config, module))),
         ...facts.carriedOn.map(({ module, testPath }) => carriedOnAdvice(sourcePathFor(config, module), relativePath(root, testPath), facts.passed)),

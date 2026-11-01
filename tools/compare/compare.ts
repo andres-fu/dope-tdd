@@ -2,10 +2,10 @@
 // `npm run compare`: what a change does to dope-tdd's behaviour, measured against a base. Tests say the code does what
 // someone thought of; this says what else moved in what it covers: which files `findSourceWrites` reads from real
 // commands, and what an Edit shows in fake-engine sessions. A change to reading test runs shows on neither. Run it
-// before the first review, so review time goes to design.
+// before the first review of a change to hooks/, so review time goes to design.
 //
 //   npm run compare                        real commands from your own session logs, through both builds (seconds)
-//   npm run compare -- --sessions          also about 16,000 fake-engine sessions on both builds (minutes)
+//   npm run compare -- --sessions          also about 16,000 fake-engine sessions on both builds (about 17 minutes)
 //   npm run compare -- --base <ref>        against that ref, origin/release by default, as it stands: this doesn't fetch
 //   npm run compare -- --transcripts <dir> session logs from there, ~/.claude/projects by default
 //

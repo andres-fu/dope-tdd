@@ -130,13 +130,14 @@ edit, green after, and the catch check all still apply to the one file you run.
 Tests say the code does what someone thought of. `npm run compare` says what else
 moved in what it covers, by running the same inputs through this checkout and a
 base: which files the shell reader finds in real commands, and what an Edit shows in
-fake-engine sessions. A change to reading test runs shows on neither. Run it before
-the first review, so review time goes to design. Commit nothing first: with a change
-committed, `--base` must name a ref from before it.
+fake-engine sessions. A change to reading test runs shows on neither. Run it with
+`--sessions` before the first review of a change to `hooks/`, so review time goes to
+design. It reads this checkout as it stands, committed or not, so `--base` must name a
+ref from before the change.
 
 ```bash
 npm run compare                        # real commands from your session logs, through both builds (seconds)
-npm run compare -- --sessions          # also about 16,000 fake-engine sessions on both builds (minutes)
+npm run compare -- --sessions          # also about 16,000 fake-engine sessions on both builds (about 17 minutes)
 npm run compare -- --base <ref>        # against that ref, origin/release by default
 npm run compare -- --transcripts <dir> # session logs from there, ~/.claude/projects by default
 ```

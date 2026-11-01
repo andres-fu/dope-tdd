@@ -27,6 +27,7 @@ node --import ./tests/node/register.mjs --test tests/runPlan.test.ts   # one tes
 npm run check -- --all   # once, before opening a pull request; CI also runs the tools/ tests
 npm run golden           # after changing a message's words
 npm run diagrams         # after changing tools/diagrams/is-it-on.mjs
+npm run compare -- --sessions   # before the first review of a change to hooks/
 ```
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
@@ -43,6 +44,14 @@ runs.
   request says "No issue: a feature, tracked in <where>".
 - **One pull request per item, test-first.** Each fix is broken once on purpose, to prove a test
   catches it.
+- **Prove first, then review.** Before the first review of a change to `hooks/`, run the comparison,
+  account for each kind of change it reports, and do the deliberate breaks, so review time goes to
+  design. Run it again after a review fix that changes behaviour. It plays no test run or catch check,
+  so clean counts say nothing about those. The pull request gives its counts, never its commands: they
+  come from private session logs.
+- **One pull request per sitting.** A person merges every change, and reads worse at the end of a long
+  stretch. An agent stops once one is green and reviewed, and starts the next only when asked. A merge
+  alone isn't asking.
 - **Docs go in the same pull request.** A behaviour change updates whichever of `README.md`,
   `docs/testers.md` and `docs/how-it-works.md` describe it, and the pull request says which changed.
 - **Correctness before UI.** Every verdict word carries its context. Workarounds (config loosened, test

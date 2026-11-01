@@ -77,5 +77,7 @@ jobs:
         run: node --test tools/move-check/move.spec-node.ts
       - name: Check the transcript replay
         run: node --test tools/replay/replay.spec-node.ts
+      - name: Check the comparison report
+        run: node --test tools/compare/report.spec-node.ts
       - name: Check the branch guard hook
         run: node --test tools/guard/branch-guard.spec-node.ts

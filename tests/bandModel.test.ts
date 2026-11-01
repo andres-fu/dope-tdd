@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandView, catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from '../hooks/bandModel'
-import { DEFAULT_CONFIG } from '../hooks/config'
+import { bandView, catchWord, countsAsUnwatched, lastRunLine, lastRunTarget, leftOutBy } from '../hooks/bandModel'
+import { DEFAULT_CONFIG, parseConfig } from '../hooks/config'
+import { classifyPath } from '../hooks/mirror'
 import type { Override } from '../hooks/overrides'
 import { FRESH_MODULE, INITIAL_STATS } from '../hooks/stats'
 import type { TddStats } from '../types'
@@ -54,11 +55,56 @@ describe('which edited files count as code it is not watching', () => {
     expect(countsAsUnwatched('scripts/build.ts', CONFIG)).toBe(true)
   })
 
+  test('only code of its own stack: another stack says nothing about what this guard watches', () => {
+    expect(countsAsUnwatched('tools/gen.py', CONFIG)).toBe(false)
+  })
+
   test('test helpers in the test folder, exempt files and files that are not code do not', () => {
     expect(countsAsUnwatched('tests/engine.tsx', CONFIG)).toBe(false)
     expect(countsAsUnwatched('hooks/register.tsx', { ...CONFIG, exempt: ['hooks/register.tsx'] })).toBe(false)
     expect(countsAsUnwatched('README.md', CONFIG)).toBe(false)
     expect(countsAsUnwatched('dope-tdd.json', CONFIG)).toBe(false)
+  })
+})
+
+// #259: an edit is the signal that a project holds more than its config covers. Two different facts: a layout that
+// misses code can be fixed with /tdd setup, and the band says so; a second stack can't, and the guard still works.
+describe('leftOutBy: why an edited file is not guarded', () => {
+  const left = (path: string, config = CONFIG) => leftOutBy(path, classifyPath('R:', `R:/${path}`, config), config)
+
+  test('code of its own stack the layout misses is the layout', () => {
+    expect(left('scripts/build.ts')).toBe('layout')
+  })
+
+  test('code of another stack is the stack', () => {
+    expect(left('tools/gen.py')).toBe('stack')
+    expect(left('src/App.cs', { ...CONFIG, stack: 'python' })).toBe('stack')
+  })
+
+  test('another stack in a source folder that also holds the tests still counts', () => {
+    expect(left('src/gen.py', parseConfig('{"layout":"colocated"}'))).toBe('stack')
+    expect(left('src/gen.py', parseConfig('{"layout":"__tests__"}'))).toBe('stack')
+  })
+
+  test('a file the layout placed, a test of any stack, a helper in the test folder, exempt, and what is not code are not left out', () => {
+    expect(left('hooks/a.ts')).toBeNull()
+    expect(left('tests/a.test.ts')).toBeNull()
+    expect(left('scripts/test_gen.py')).toBeNull()
+    expect(left('tests/helper.py')).toBeNull()
+    expect(left('tools/gen.py', { ...CONFIG, exempt: ['tools/**'] })).toBeNull()
+    expect(left('README.md')).toBeNull()
+  })
+
+  test('a helper in a Java test tree is not left out, under roots or a folder layout', () => {
+    expect(left('services/api/src/test/java/TestData.java', parseConfig('{"stack":"java","layout":"maven","roots":["services/*"]}'))).toBeNull()
+    expect(left('api/src/test/java/TestData.java', parseConfig('{"stack":"java","layout":"maven","layouts":{"api":"maven"}}'))).toBeNull()
+  })
+
+  test('a helper in a package or __tests__ test folder is not left out, in either stack', () => {
+    const packages = parseConfig('{"layout":"mirror","roots":["packages/*"]}')
+    expect(left('packages/app/tests/helper.ts', packages)).toBeNull()
+    expect(left('packages/app/tests/helper.py', packages)).toBeNull()
+    expect(left('src/__tests__/helper.py', parseConfig('{"layout":"__tests__"}'))).toBeNull()
   })
 })
 

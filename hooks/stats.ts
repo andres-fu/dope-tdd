@@ -1,4 +1,4 @@
-import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, LastRun, ModuleState, TddEvent, TddStats } from '../types'
+import type { BeforeState, CatchOutcome, CurrentTest, CycleChange, EventKind, LastRun, LeftOutList, ModuleState, TddEvent, TddStats } from '../types'
 import type { WorkaroundKind } from './workarounds.ts'
 import { pathKey } from './mirror.ts'
 
@@ -66,6 +66,8 @@ export const INITIAL_STATS: TddStats = {
   stuck: [],
   spikes: [],
   unwatched: [],
+  shellUnwatched: [],
+  otherStack: [],
   lastCatch: null,
   lastCycle: null,
   current: null,
@@ -159,6 +161,8 @@ export function normalizeStats(stored: unknown): TddStats {
     stuck: pick('stuck', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.runs === 'number')),
     spikes: pick('spikes', v => Array.isArray(v) && v.every(row => isRecord(row) && typeof row.atMs === 'number' && typeof row.question === 'string')),
     unwatched: strings(pick('unwatched', isStringList)),
+    shellUnwatched: strings(pick('shellUnwatched', isStringList)),
+    otherStack: strings(pick('otherStack', isStringList)),
     lastCatch: pick('lastCatch', v => v === null || isRecord(v)),
     lastCycle: pick('lastCycle', v => v === null || (isRecord(v) && typeof v.module === 'string')),
     current: pick('current', v => v === null || (isRecord(v) && typeof v.module === 'string' && typeof v.testPath === 'string')),
@@ -382,6 +386,16 @@ const MAX_UNWATCHED = 20
 export function recordUnwatchedEdit(s: TddStats, path: string, nowMs: number): TddStats {
   const kept = { ...s, unwatched: [...s.unwatched.filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
   return s.unwatched.includes(path) ? kept : logged(kept, 'not-watched', nowMs, undefined, path)
+}
+
+/** #259: an edited file dope-tdd cannot guard, on the list named. Only `layout`, which is `unwatched`, reaches the band. */
+export function recordLeftOut(s: TddStats, path: string, list: LeftOutList, nowMs: number): TddStats {
+  if (list === 'layout') {
+    return recordUnwatchedEdit(s, path, nowMs)
+  }
+  const field = list === 'shell' ? 'shellUnwatched' : 'otherStack'
+  const kept = { ...s, [field]: [...s[field].filter(entry => entry !== path), path].slice(-MAX_UNWATCHED) }
+  return s[field].includes(path) ? kept : logged(kept, list === 'shell' ? 'not-watched' : 'other-stack', nowMs, undefined, path)
 }
 
 /** A test run whose result could not be read: no summary line in the output. Counted as nothing but the fact. */

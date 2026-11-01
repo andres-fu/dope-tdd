@@ -36,6 +36,7 @@ import {
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
+  leftOutNotices,
 } from './advice.ts'
 import { say } from './messages.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
@@ -54,13 +55,13 @@ import type { RecordEntry } from './sessionLog.ts'
 import { cwdAfter, isPureRead } from './shell.ts'
 import { cwdToCarry, settledStart, shellRoot, shellStart, unlockedElsewhere } from './shellCheckout.ts'
 import type { ShellScene } from './shellCheckout.ts'
-import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
+import { leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 import { activeLayoutNote, answerFrom, briefingNote, formatSetup, isCodeFile, isUnreadLanguage, layoutMismatch, needsWalk, projectStack, setupInference, suggestedConfig, withInference } from './setup.ts'
-import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
+import { catchWord, lastRunLine, lastRunTarget, leftOutBy } from './bandModel.ts'
 import type { Saved } from './bandModel.ts'
 import type { ProjectAnswer, Survey } from './setup.ts'
 import {
@@ -87,7 +88,7 @@ import {
   recordReportedElsewhere,
   recordRunTime,
   recordSameRed,
-  recordUnwatchedEdit,
+  recordLeftOut,
   recordStaleUnlocks,
   recordTestChanged,
   recordPinSkill,
@@ -1612,10 +1613,13 @@ async function guardFileWrite(
   if (git.operation !== null) {
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
   }
+  const before = await readStats($)
   const result = await checkFileWrite($, tool, filePath, proceed, agentId)
   await noteSaved($, root)
+  const config = await configForRender($, root)
+  const leftOut = result.deny === undefined ? leftOutNotices(before, await readStats($), config.stack) : []
   const outside = result.deny === undefined ? await noteOutside($, root, [await projectPath($, root, filePath)]) : []
-  return tell((await configForRender($, root)).mode === 'observe', result, [...git.lines, ...outside])
+  return tell(config.mode === 'observe', result, [...git.lines, ...leftOut, ...outside])
 }
 
 /**
@@ -1664,6 +1668,7 @@ async function checkFileWrite(
   const gateNowMs = await $.clock.now()
   const record = await read($, overrideRecord)
   const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
+  const leftOut = isInsideRoot(root, filePath) ? leftOutBy(relative, target, config) : null
   // The verdict is fileGate.ts's; this acts on it.
   const verdict = gateWrite({
     relativePath: relative,
@@ -1674,7 +1679,7 @@ async function checkFileWrite(
     inherited: target.kind === 'source' && current.inherited[target.module] !== undefined,
     paused: current.paused,
     covering,
-    unwatchedCode: target.kind === 'other' && isInsideRoot(root, filePath) && countsAsUnwatched(relative, config),
+    unwatchedCode: leftOut !== null,
   })
   if (verdict.kind === 'deny-record') {
     return { deny: RECORD_DENY }
@@ -1690,10 +1695,6 @@ async function checkFileWrite(
   if (verdict.kind === 'carry-wait' && target.kind === 'source') {
     await change($, s => recordCarryWait(s, target.module, gateNowMs))
     return { deny: await carryWait($, root, config, current, target.module, gateNowMs) }
-  }
-  if (verdict.kind === 'go' && verdict.unwatched) {
-    // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
-    await change($, s => recordUnwatchedEdit(s, relative, gateNowMs))
   }
   if (verdict.kind === 'go' && verdict.spend !== null) {
     // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
@@ -1719,6 +1720,10 @@ async function checkFileWrite(
   }
 
   const nowMs = await $.clock.now()
+  if (verdict.kind === 'go' && verdict.unwatched && leftOut !== null) {
+    // Code this guard can't pair with a test: let it through, but remember it, so it is said and /tdd lists it.
+    await change($, s => recordLeftOut(s, relative, leftOut, nowMs))
+  }
   if (isConfig) {
     const after = await loadConfig($, root)
     const detail = describeConfigChange(config, after)
@@ -1894,7 +1899,9 @@ async function checkShell(
       // A write into a worktree is judged against that worktree, as Edit and Write are (#198); from the session root,
       // since `root` can itself be a worktree now and a file in the main checkout is no file of that one.
       const home = worktreeRootFor(sessionRoot, path, mainCheckout)
-      return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
+      const relative = relativePath(home, path)
+      const leftOut = isInsideRoot(home, path) ? leftOutBy(relative, classifyPath(home, path, config), config) : null
+      return { path, relative, leftOut, module: sourceModuleOf(home, path, config), policy: policyFor(config, relative) }
     }),
   )
   const gated = gateShellWrites(writes, current.unlocked, current.inherited, sessionRoot, mainCheckout)
@@ -1935,6 +1942,11 @@ async function checkShell(
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
   const textsBefore = await Promise.all(expectedWrites.map(async write => ({ ...write, before: await readFile($, write.path) })))
+  // A command's text can name a write that never lands (`false && ...`, `ssh host "..."`), so left-out code is judged by the disk.
+  const namedLeftOut = writes.flatMap(({ path, relative, leftOut }) => (leftOut === null ? [] : [{ path, relative, why: leftOut, wasMs: null as number | null }]))
+  for (const named of namedLeftOut) {
+    named.wasMs = await modifiedMs($, named.path)
+  }
   const startedMs = await $.clock.now()
   const result = await proceed()
   if (result.deny !== undefined) {
@@ -1987,6 +1999,15 @@ async function checkShell(
   )
   const tests = touchedTests.map(({ path, module }, index) => ({ path, module, leads: leading[index] ?? true }))
   const updated = await change($, s => recordShellChanges(s, { root, touchedTests: tests, changedSources, captured }, nowMs))
+  const namedNow = await Promise.all(namedLeftOut.map(async ({ relative, why, wasMs, path }) => ({ path: relative, why, wasMs, isMs: await modifiedMs($, path) })))
+  const seenLeftOut = await Promise.all(
+    changed.flatMap(path => {
+      const why = leftOutBy(path, classifyPath(root, `${root}/${path}`, config), config)
+      return why === null ? [] : [modifiedMs($, `${root}/${path}`).then(isMs => ({ path, why, isMs }))]
+    }),
+  )
+  const leftOut = leftOutShellEdits(namedNow, seenLeftOut, result.isReadOnly !== true)
+  const afterLeftOut = leftOut.length === 0 ? updated : await change($, s => leftOut.reduce((acc, { path, list }) => recordLeftOut(acc, path, list, nowMs), s))
   for (const { path, module } of touchedTests) {
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
@@ -2142,7 +2163,7 @@ async function checkShell(
   const outsideRun = runLocation !== null && !isInsideRoot(root, runLocation) && isTestRun(command) ? [`${runLocation}/`] : []
   // A write in the session's own checkout, beside a run judged in a worktree, is inside the project all the same.
   const outside = await noteOutside($, root, [...outsideRun, ...writes.map(({ path }) => path).filter(path => !isInsideRoot(scene.base, path))])
-  return tell(quiet, result, [...reminders, ...outside])
+  return tell(quiet, result, [...reminders, ...leftOutNotices(current, afterLeftOut, config.stack), ...outside])
 }
 
 /** The modified time now of each path that left the snapshot, null for one that is gone; quiet, since gone is expected. */
@@ -2158,6 +2179,15 @@ async function mtimesOfGone($: EngineInterface, root: string, before: SourceSnap
     }),
   )
   return Object.fromEntries(entries)
+}
+
+/** The modified time now, null for a file that isn't there; quiet, since missing is expected. */
+async function modifiedMs($: EngineInterface, path: string): Promise<number | null> {
+  try {
+    return (await $.fs.stat(path)).mtimeMs
+  } catch {
+    return null
+  }
 }
 
 async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {

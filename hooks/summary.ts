@@ -37,6 +37,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'git-in': 'brought in by git, not guarded',
   outside: 'outside this project, not guarded',
   'not-watched': 'edited, no test layout, not guarded',
+  'other-stack': 'edited, another stack, not guarded',
   'test-gone': 'test file gone, cycle and unlock dropped',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
@@ -142,10 +143,12 @@ function guardCaveat(s: TddStats, config: GuardConfig | undefined): string {
   if (config !== undefined && config.error !== null) {
     return ` with the defaults: ${CONFIG_FILE} was not read (see config below)`
   }
-  const count = s.unwatched.length
-  return count === 0
-    ? ''
-    : `, but ${count} edited code file${count === 1 ? ' matches' : 's match'} no test layout and ${count === 1 ? 'was' : 'were'} not guarded (${s.unwatched.join(', ')}) · fix: /tdd setup`
+  const missed = [...new Set([...s.unwatched, ...s.shellUnwatched])]
+  const count = missed.length
+  const others = s.otherStack.length
+  const layout = count === 0 ? '' : `, but ${count} edited code file${count === 1 ? ' matches' : 's match'} no test layout and ${count === 1 ? 'was' : 'were'} not guarded (${missed.join(', ')}) · fix: /tdd setup`
+  const stack = others === 0 ? '' : `, ${count === 0 ? 'but' : 'and'} ${others} edited code file${others === 1 ? ' is' : 's are'} another stack and ${others === 1 ? 'was' : 'were'} not guarded (${s.otherStack.join(', ')})`
+  return `${layout}${stack}`
 }
 
 /** `build`: which dope-tdd is running (build.ts), the first row; the app already names the plugin. */

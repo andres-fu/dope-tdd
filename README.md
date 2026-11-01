@@ -176,7 +176,11 @@ left alone on purpose:
   `/tdd setup write`. When the code doesn't make it clear, or it's a language
   Dope TDD doesn't read yet, such as Go or Rust, Claude is told, and that code
   isn't guarded. With a marker, a default layout that pairs nothing is said the
-  same way. A `dope-tdd.json` with a mistake isn't read: the band reads
+  same way. Code the layout misses, or code of a second stack, goes through
+  unguarded: Claude is told the first time in a session, and `/tdd` lists each
+  file. A language Dope TDD doesn't read yet is left out of that list. A
+  `dope-tdd.json` with a mistake
+  isn't read: the band reads
   CONFIG INVALID, `/tdd` says so on its first line, and the defaults apply.
 - **A folder where the plugin is off.** Claude Code decides where a plugin
   runs. A local-scope install covers only the folder it was installed in; install

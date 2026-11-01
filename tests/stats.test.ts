@@ -37,6 +37,7 @@ import {
   recordUnreadRun,
   recordOtherPass,
   recordReportedElsewhere,
+  recordLeftOut,
   recordUnwatchedEdit,
   recordWorkaround,
   releaseCheck,
@@ -700,6 +701,35 @@ describe('code edited outside the layout is remembered, so the band can say it i
   test('the first edit to each file is logged as not watched, with the path; a repeat is not', () => {
     const twice = recordUnwatchedEdit(recordUnwatchedEdit(INITIAL_STATS, 'api.py', 5), 'api.py', 6)
     expect(twice.events.map(e => [e.kind, e.detail])).toEqual([['not-watched', 'api.py']])
+  })
+
+  // #259: code of another stack is kept apart, so the band's NOT WATCHING keeps meaning what it says.
+  test('a left-out edit goes to the list its reason names, and never the other', () => {
+    const layout = recordLeftOut(INITIAL_STATS, 'scripts/a.ts', 'layout', 5)
+    expect(layout.unwatched).toEqual(['scripts/a.ts'])
+    expect(layout.otherStack).toEqual([])
+    const stack = recordLeftOut(INITIAL_STATS, 'tools/gen.py', 'stack', 5)
+    expect(stack.unwatched).toEqual([])
+    expect(stack.otherStack).toEqual(['tools/gen.py'])
+    expect(stack.events.map(e => [e.kind, e.detail])).toEqual([['other-stack', 'tools/gen.py']])
+  })
+
+  // Only Edit and Write ever reached the band: a shell write to build output must not flip a working guard to NOT WATCHING.
+  test('a layout miss written by a shell is listed apart, so it stays off the band', () => {
+    const shell = recordLeftOut(INITIAL_STATS, 'dist/bundle.js', 'shell', 5)
+    expect(shell.unwatched).toEqual([])
+    expect(shell.shellUnwatched).toEqual(['dist/bundle.js'])
+    expect(shell.events.map(e => [e.kind, e.detail])).toEqual([['not-watched', 'dist/bundle.js']])
+    expect(recordLeftOut(shell, 'dist/bundle.js', 'shell', 6).events).toHaveLength(1)
+    expect(normalizeStats({ ...INITIAL_STATS, shellUnwatched: undefined }).shellUnwatched).toEqual([])
+  })
+
+  test('another stack: each file once, at most twenty, and a stats file from before it reads as none', () => {
+    const twice = recordLeftOut(recordLeftOut(INITIAL_STATS, 'a.py', 'stack', 5), 'a.py', 'stack', 6)
+    expect(twice.events).toHaveLength(1)
+    const many = Array.from({ length: 25 }, (_, i) => `f${i}.py`).reduce((s, path) => recordLeftOut(s, path, 'stack', 1), INITIAL_STATS)
+    expect(many.otherStack).toHaveLength(20)
+    expect(normalizeStats({ ...INITIAL_STATS, otherStack: undefined }).otherStack).toEqual([])
   })
 
   test('each file once, newest kept, at most twenty', () => {

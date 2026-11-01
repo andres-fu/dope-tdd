@@ -122,6 +122,20 @@ refused, and a shell change to it is put back and counted as a workaround.
   write. Quoted text is data, so a commit message or an echoed sentence that
   mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
   shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read.
+- Code the guard can't pair with a test goes through, and isn't guarded. There
+  are two kinds, each told to Claude once a session, whichever tool wrote the
+  file, and `/tdd` lists each file
+  ([#259](https://github.com/andres-fu/dope-tdd/issues/259)). For code of the
+  project's stack that the layout misses, `/tdd setup` shows whether a different
+  layout would cover it. An Edit or Write to it turns the band to NOT WATCHING
+  while no module is current; a shell write doesn't, since it may only be build
+  output. Code of another stack Dope TDD reads can't be covered, since one
+  `dope-tdd.json` guards one stack, so it never reaches the band. A shell write
+  counts when the file it names changed on disk, or `git` saw a file change in
+  the folders it watches and it is still there. A deleted file isn't an edit.
+  Exempt files, helpers in a test folder, another stack's tests, languages Dope
+  TDD doesn't read (Go) and notebooks don't count. Nothing is said while the guard
+  is paused, and a kind first seen then isn't said afterwards.
 - Git putting files back to a saved state (`git restore`, `git checkout --
   <file>`, `git reset --hard`, `git stash`) is not an edit: nothing is counted.
   Git bringing code in from elsewhere (`git checkout main -- <file>`, `git

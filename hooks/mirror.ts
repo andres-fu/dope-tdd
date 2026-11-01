@@ -18,7 +18,8 @@ export { isTestRun } from './runners.ts'
 export type ClassifiedPath =
   | { kind: 'source'; module: string }
   | { kind: 'test'; module: string }
-  | { kind: 'other' }
+  /** `inTestFolder`: a helper or fixture there, which is tested through the tests that use it. */
+  | { kind: 'other'; inTestFolder?: true }
 
 /**
  * The layout, the package roots it applies under (none means the session root itself), the stack whose extensions it
@@ -102,6 +103,18 @@ export function splitRoot(relative: string, roots: readonly string[]): { pkg: st
   return null
 }
 
+/** The fixed folders a layout template starts with: `tests/{module}.test.{ext}` lives under `tests/`. */
+export function fixedPrefix(template: string): string {
+  return template.slice(0, Math.max(0, template.indexOf('{')))
+}
+
+/** A file nobody's: a helper in a test folder is marked, since it is tested through the tests that use it (#259). */
+function nobodys(rest: string, layout: Layout): ClassifiedPath {
+  const tests = fixedPrefix(layout.test)
+  const ownTree = tests !== '' && tests !== fixedPrefix(layout.source) && rest.startsWith(tests)
+  return ownTree || (layout.test.includes('__tests__/') && /(?:^|\/)__tests__\//.test(rest)) ? { kind: 'other', inTestFolder: true } : { kind: 'other' }
+}
+
 function withPkg(pkg: string, module: string): string {
   return pkg === '' ? module : `${pkg}/${module}`
 }
@@ -146,18 +159,18 @@ function classifyIn(split: { pkg: string; rest: string }, layout: Layout, stack:
     const asTest = matchTemplate(layout.test, stem.replace(/(\.[^./]+)$/, '.test$1'), exts)
     const module = asSource?.module ?? asTest?.module
     // Named like a test but in no place this layout knows: nobody's test, and still nobody's source.
-    return module === undefined ? { kind: 'other' } : { kind: 'test', module: withPkg(split.pkg, reduce(module)) }
+    return module === undefined ? nobodys(split.rest, layout) : { kind: 'test', module: withPkg(split.pkg, reduce(module)) }
   }
   // A file inside a tests folder of its own that is not a test (a fixture, a conftest) is nobody's source.
   const testsRoot = literalRoot(layout.test)
   if (testsRoot !== null && testsRoot !== literalRoot(layout.source) && split.rest.startsWith(`${testsRoot}/`)) {
-    return { kind: 'other' }
+    return { kind: 'other', inTestFolder: true }
   }
   const source = matchTemplate(layout.source, split.rest, exts)
   if (source !== null) {
     return { kind: 'source', module: withPkg(split.pkg, reduce(source.module)) }
   }
-  return { kind: 'other' }
+  return nobodys(split.rest, layout)
 }
 
 /** The inverse of `withPkg`: the package root a module id starts with, under these root globs. */

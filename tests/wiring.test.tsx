@@ -463,6 +463,328 @@ describe('work outside the project is said once, never refused', () => {
 
 // #234 (tester round 7): with dope-tdd.json unread, an untested edit to code the default layout pairs with nothing
 // landed, and /tdd afterwards was unchanged: a bare "guard: ON", no events.
+// #259: an edit to code no layout pairs went through with nothing said, and a shell write was not even recorded.
+describe('code no layout pairs is said once a session', () => {
+  const NOTICE = /dope-tdd: .* (?:matches no test layout|isn't \w+ code)/
+
+  test('the first edit is told to the agent, and goes through', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    const first = await writeAt($, 'helpers.js')
+    const second = await writeAt($, 'other.js')
+
+    expect(first.deny).toBeUndefined()
+    expect(first.context?.join(' ')).toMatch(/dope-tdd: helpers\.js matches no test layout, so it is not guarded/)
+    expect(first.context?.join(' ')).toMatch(/\/tdd setup/)
+    expect(second.context?.join(' ') ?? '').not.toMatch(NOTICE)
+  })
+
+  test('code of another stack is said as that, and the band keeps saying the guard is on', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+
+    const edit = await editAt($, 'tools/gen.py')
+    const status = await runCommand($, 'tdd')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(edit.deny).toBeUndefined()
+    expect(edit.context?.join(' ')).toMatch(/tools\/gen\.py isn't node code, so it is not guarded/)
+    expect(status.text).toMatch(/1 edited code file is another stack/)
+    expect(status.text).not.toMatch(/fix: \/tdd setup/)
+    expect(JSON.stringify(await ui.drawn())).not.toMatch(/NOT WATCHING/)
+    expect((await editAt($, 'src/a.ts')).deny).toMatch(/write the failing test first/)
+  })
+
+  test('another stack beside a source folder that holds the tests is said too', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"colocated"}')
+
+    expect((await writeAt($, 'src/gen.py')).context?.join(' ')).toMatch(/src\/gen\.py isn't node code/)
+  })
+
+  test('a layout miss and another stack are each said once', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    await writeAt($, 'helpers.js')
+    const other = await writeAt($, 'tools/gen.py')
+    const again = await writeAt($, 'tools/more.py')
+
+    expect(other.context?.join(' ')).toMatch(/isn't node code/)
+    expect(again.context?.join(' ') ?? '').not.toMatch(/isn't node code/)
+  })
+
+  test('a file named by a command that left it as it was is not recorded', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    for (const command of ['echo 1 > missing/helpers.js', 'false && echo 1 > other.js', 'ssh host "echo 1 > helpers.js"', 'echo a # then > helpers.js']) {
+      expect((await runBash($, command)).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    }
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('a write beside a test run is seen, though the command reads as only a test run', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const run = await runBash($, 'echo 1 > tools/gen.py && npx vitest run')
+
+    expect(run.context?.join(' ')).toMatch(/tools\/gen\.py isn't node code/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/edited, another stack, not guarded \(tools\/gen\.py\)/)
+  })
+
+  test('a file a shell deleted is not an edit, though git saw it change', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.numstat = '0\t5\tsrc/gen.py\n'
+    world.onBash = () => {
+      world.numstat = ''
+      world.gone.add(`${ROOT}/src/gen.py`)
+    }
+
+    const run = await runBash($, 'rm src/gen.py')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/another stack/)
+  })
+
+  test('a shell write to code the layout misses leaves the band as it was, and is still said and listed', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const run = await runBash($, 'cat a.js b.js > dist/bundle.js')
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+
+    expect(run.context?.join(' ')).toMatch(/dist\/bundle\.js matches no test layout/)
+    expect(JSON.stringify(await ui.drawn())).not.toMatch(/NOT WATCHING/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/1 edited code file matches no test layout/)
+  })
+
+  test('a write that failed after the gate let it through is not recorded, and leaves the notice for a real one', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.editFails = true
+    await writeAt($, 'failed.js')
+    world.editFails = false
+
+    const real = await writeAt($, 'real.js')
+
+    expect(real.context?.join(' ')).toMatch(/real\.js matches no test layout/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/failed\.js/)
+  })
+
+  test('a shell write in a worktree is judged by that worktree', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror","roots":["packages/*"]}')
+    const worktree = `${ROOT}/.claude/worktrees/w`
+    world.fileContents.set(`${worktree}/dope-tdd.json`, '{"layout":"mirror","roots":["packages/*"]}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const run = await runBash($, `echo 1 > ${worktree}/packages/app/tests/helper.ts`)
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(NOTICE)
+  })
+
+  test('one command writing in both checkouts judges each file where it sits', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror","roots":["packages/*"]}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    await runBash($, `echo 1 > helpers.ts; echo 1 > ${ROOT}/.claude/worktrees/w/packages/app/tests/helper.ts`)
+
+    const status = (await runCommand($, 'tdd')).text
+    expect(status).toMatch(/not guarded \(helpers\.ts\)/)
+    expect(status).not.toMatch(/tests\/helper\.ts/)
+  })
+
+  test('a file a command made and removed again is not recorded', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.onBash = () => {
+      world.gone.add(`${ROOT}/scratch.js`)
+    }
+
+    expect((await runBash($, 'echo 1 > scratch.js && rm scratch.js')).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('a Write outside the project is said as outside, not as unwatched', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    const write = await $.tool.call({ tool: 'Write', file_path: '/elsewhere/repo/helpers.py', content: 'x' } as never)
+
+    expect(write.context?.join(' ')).toMatch(/is outside this project/)
+    expect(write.context?.join(' ')).not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/another stack/)
+  })
+
+  test('a layout whose tests sit outside any folder is judged the same in a shell as in an Edit', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":{"source":"lib/{module}.{ext}","test":"{module}.check.{ext}"}}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    expect((await runBash($, 'echo 1 > b.check.ts')).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('while paused it is recorded and nothing is said', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    await $.command.run({ command: 'tdd', args: 'pause 30 working through a known refactor on the helpers' } as never)
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    expect((await writeAt($, 'helpers.js')).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runBash($, 'echo 1 > other.js')).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).toMatch(/edited, no test layout, not guarded \(helpers\.js\)/)
+  })
+
+  for (const [name, run] of [['Bash', runBash], ['PowerShell', runPowerShell]] as const) {
+    test(`a ${name} write is recorded and said too, once across both kinds of write`, async ($, on) => {
+      const world = fakeEngine(on)
+      world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+      world.onBash = () => {
+        world.testModifiedAt += 1
+      }
+
+      const first = await run($, 'echo 1 > helpers.js')
+      const second = await writeAt($, 'other.js')
+      const status = await runCommand($, 'tdd')
+
+      expect(first.context?.join(' ')).toMatch(/helpers\.js matches no test layout/)
+      expect(second.context?.join(' ') ?? '').not.toMatch(NOTICE)
+      expect(status.text).toMatch(/edited, no test layout, not guarded \(helpers\.js\)/)
+    })
+  }
+
+  test('a command that only reads, or only mentions a file, says nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.fileContents.set(`${ROOT}/helpers.js`, 'x')
+
+    const read = await runBash($, 'cat helpers.js')
+    const quoted = await runBash($, `git commit -m "write > helpers.js"`)
+    const status = await runCommand($, 'tdd')
+
+    expect(read.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect(quoted.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect(status.text).not.toMatch(/no test layout/)
+  })
+
+  test('a file exempt, a test helper, and a file that is not code say nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror","exempt":["helpers.js"]}')
+
+    for (const path of ['helpers.js', 'tests/helper.ts', 'notes.md']) {
+      expect((await writeAt($, path)).context?.join(' ') ?? '').not.toMatch(NOTICE)
+    }
+  })
+
+  test('a source file the layout pairs is refused as ever, with no notice', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+
+    const blocked = await runBash($, 'echo 1 > src/a.ts')
+
+    expect(blocked.deny).toMatch(/write the failing test first/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('a command held read-only is not charged with what it names, even if the file moved under it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.readOnly = true
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const held = await runBash($, 'echo 1 > helpers.js')
+
+    expect(held.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('code a script wrote in a watched folder is seen by git, though the command never names it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.onBash = () => {
+      world.untracked = 'src/gen.py\n'
+    }
+
+    const run = await runBash($, 'node gen.mjs')
+
+    expect(run.context?.join(' ')).toMatch(/src\/gen\.py isn't node code/)
+  })
+
+  test('code git saw change that the layout does pair is an unguarded edit, not unwatched', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.onBash = () => {
+      world.untracked = 'src/gen.ts\n'
+    }
+
+    const run = await runBash($, 'node gen.mjs')
+
+    expect(run.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('a shell write to an unlocked module is that module, not unwatched', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    await writeAt($, 'tests/a.test.ts', "it('x', () => { expect(1).toBe(1) })")
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const run = await runBash($, 'echo 1 > src/a.ts')
+
+    expect(run.deny).toBeUndefined()
+    expect(run.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('a shell write outside the project is said as outside, not as unwatched', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"layout":"mirror"}')
+    world.onBash = () => {
+      world.testModifiedAt += 1
+    }
+
+    const run = await runBash($, 'echo 1 > /elsewhere/repo/helpers.js')
+
+    expect(run.context?.join(' ')).toMatch(/is outside this project/)
+    expect(run.context?.join(' ')).not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
+  })
+
+  test('observe mode records it and tells the agent nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"mode":"observe","layout":"mirror"}')
+
+    const edit = await writeAt($, 'helpers.js')
+
+    expect(edit.context?.join(' ') ?? '').not.toMatch(NOTICE)
+    expect((await runCommand($, 'tdd')).text).toMatch(/edited, no test layout, not guarded \(helpers\.js\)/)
+  })
+})
+
 describe('an edit the guard did not look at shows in /tdd', () => {
   test('under an unread dope-tdd.json, /tdd leads with the defaults, and the edit is an event', async ($, on) => {
     const world = fakeEngine(on)

@@ -1,25 +1,21 @@
 // What the band says, as plain data (#59; redesigned 2026-10-18). draw.tsx only paints it. The band answers, in order:
 // is dope-tdd watching at all, what has the current module proven, and what is the one next step. Totals are not
 // here: zeros read as "all good" when dope-tdd could see nothing, so only problems above zero are shown.
-import type { Override, TddStats } from '../types'
+import type { LeftOut, Override, TddStats } from '../types'
 import { policyFor } from './config.ts'
 import type { GuardConfig } from './config.ts'
-import { moduleLabel } from './mirror.ts'
+import { fixedPrefix, moduleLabel } from './mirror.ts'
+import type { ClassifiedPath } from './mirror.ts'
 import { deciderLabel, overrideLeft } from './overrides.ts'
 import type { SavedState } from './gitChanges.ts'
 import { UNNAMED_FAILURE } from './runPlan.ts'
 import { isCodeFile } from './setup.ts'
-import { stackOf } from './stacks.ts'
+import { isTestFileAny, stackOf } from './stacks.ts'
 import { RED_TIMER_ALARM_MS } from './theme.ts'
 import { formatAgo, formatSpan } from './timeText.ts'
 
 /** A one-file run this long is slow for the loop: it should take seconds, and by 30 s the agent and the person drift. */
 export const SLOW_RUN_MS = 30_000
-
-/** The fixed folder a layout template starts with: `tests/{module}.test.{ext}` lives under `tests/`. */
-function fixedPrefix(template: string): string {
-  return template.slice(0, Math.max(0, template.indexOf('{')))
-}
 
 /**
  * An edited file the layout classified as neither source nor test that dope-tdd should say it cannot guard: code of the
@@ -32,6 +28,22 @@ export function countsAsUnwatched(relativePath: string, config: GuardConfig): bo
     policyFor(config, relativePath) !== 'exempt' &&
     !(testFolder !== '' && relativePath.startsWith(testFolder))
   )
+}
+
+/**
+ * #259: why an edited file is not guarded, or null when it is, or isn't code anyone would guard. `target` is what the
+ * layout made of it. Another stack's code is kept apart from a layout miss: /tdd setup can't cover it, since a config
+ * guards one stack, and the guard still works, so it must not reach the band's NOT WATCHING.
+ */
+export function leftOutBy(relativePath: string, target: ClassifiedPath, config: GuardConfig): LeftOut | null {
+  if (target.kind !== 'other' || target.inTestFolder === true) {
+    return null
+  }
+  if (countsAsUnwatched(relativePath, config)) {
+    return 'layout'
+  }
+  const anotherStack = isCodeFile(relativePath) && !isCodeFile(relativePath, stackOf(config.stack)) && !isTestFileAny(relativePath)
+  return anotherStack && policyFor(config, relativePath) !== 'exempt' ? 'stack' : null
 }
 
 export type Watch = { kind: 'watching'; where: string } | { kind: 'not-watching'; files: number; example: string } | { kind: 'cannot-read' }

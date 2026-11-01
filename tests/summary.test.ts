@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordRun, recordSpike, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordLeftOut, recordRun, recordSpike, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -157,6 +157,21 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
 
   test('the guard line says when dope-tdd.json was not read', () => {
     expect(formatStatus(INITIAL_STATS, T0, parseConfig('{"mode":"strict"}'))).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read \(see config below\)$/m)
+  })
+
+  test('the guard line counts a layout miss once, whichever tool wrote it', () => {
+    const both = recordLeftOut(recordLeftOut(INITIAL_STATS, 'a.ts', 'layout', T0), 'a.ts', 'shell', T0)
+    expect(formatStatus(both, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(a\.ts\)/m)
+    const shell = recordLeftOut(INITIAL_STATS, 'b.ts', 'shell', T0)
+    expect(formatStatus(shell, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(b\.ts\)/m)
+  })
+
+  test('the guard line says when code of another stack was edited, with no setup it cannot deliver', () => {
+    const one = recordLeftOut(INITIAL_STATS, 'tools/gen.py', 'stack', T0)
+    expect(formatStatus(one, T0)).toMatch(/^guard: ON, but 1 edited code file is another stack and was not guarded \(tools\/gen\.py\)$/m)
+    expect(formatStatus(one, T0)).toMatch(/: edited, another stack, not guarded \(tools\/gen\.py\)$/m)
+    const both = recordLeftOut(one, 'scripts/a.ts', 'layout', T0)
+    expect(formatStatus(both, T0)).toMatch(/not guarded \(scripts\/a\.ts\) · fix: \/tdd setup, and 1 edited code file is another stack and was not guarded \(tools\/gen\.py\)$/m)
   })
 
   test('the guard line says when edited code matched no test layout, and the edit is an event', () => {

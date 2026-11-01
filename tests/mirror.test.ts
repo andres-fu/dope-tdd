@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { parseConfig } from '../hooks/config'
 import { LAYOUTS } from '../hooks/layout'
 import { classifyPath, isInsideRoot, isTestRun, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
@@ -41,6 +42,56 @@ describe('isTestRun', () => {
     ]
 
     expect(commands.filter(isTestRun)).toEqual([])
+  })
+})
+
+// #259: a helper in a test folder isn't code left unguarded, and only the classifier knows the folder once a package or a
+// folder layout is split off.
+describe('classifyPath says when other code sits in a test folder', () => {
+  const config = (json: string) => parseConfig(json)
+
+  test('under the top-level layout, a package, and a folder with a layout of its own', () => {
+    expect(classifyPath('R:', 'R:/tests/helper.py', config('{"layout":"mirror"}'))).toEqual({ kind: 'other', inTestFolder: true })
+    expect(classifyPath('R:', 'R:/packages/app/tests/helper.py', config('{"layout":"mirror","roots":["packages/*"]}'))).toEqual({ kind: 'other', inTestFolder: true })
+  })
+
+  test('a folder with a layout of its own', () => {
+    const folders = config('{"layout":"mirror","layouts":{"dashboard":{"source":"src/{module}.{ext}","test":"spec/{module}.spec.{ext}"}}}')
+    expect(classifyPath('R:', 'R:/dashboard/spec/helper.ts', folders)).toEqual({ kind: 'other', inTestFolder: true })
+  })
+
+  test('a test tree that shares its first folder with the source, as Maven does', () => {
+    const maven = config('{"stack":"java","layout":"maven"}')
+    expect(classifyPath('R:', 'R:/src/test/java/gen.py', maven)).toEqual({ kind: 'other', inTestFolder: true })
+    const services = config('{"stack":"java","layout":"maven","roots":["services/*"]}')
+    expect(classifyPath('R:', 'R:/services/api/src/test/java/TestData.java', services)).toEqual({ kind: 'other', inTestFolder: true })
+    const folders = config('{"stack":"java","layout":"maven","layouts":{"api":"maven"}}')
+    expect(classifyPath('R:', 'R:/api/src/test/java/TestData.java', folders)).toEqual({ kind: 'other', inTestFolder: true })
+  })
+
+  test('a file named like a test in that folder, which the template does not place', () => {
+    const services = config('{"stack":"java","layout":"maven","roots":["services/*"]}')
+    expect(classifyPath('R:', 'R:/services/api/src/test/java/FooIT.java', services)).toEqual({ kind: 'other', inTestFolder: true })
+  })
+
+  test('source beside a test tree stays source, and a folder merely inside the source root stays as it was', () => {
+    expect(classifyPath('R:', 'R:/src/main/java/App.java', config('{"stack":"java","layout":"maven"}'))).toEqual({ kind: 'source', module: 'App' })
+    const nested = config('{"layout":{"source":"src/{module}.{ext}","test":"src/test/{module}.test.{ext}"}}')
+    expect(classifyPath('R:', 'R:/src/test/helper.ts', nested)).toEqual({ kind: 'source', module: 'test/helper' })
+  })
+
+  test('a layout whose tests sit in no folder of their own marks nothing', () => {
+    const noFolder = config('{"layout":{"source":"lib/{module}.{ext}","test":"{module}.check.{ext}"}}')
+    expect(classifyPath('R:', 'R:/tools/x.ts', noFolder)).toEqual({ kind: 'other' })
+  })
+
+  test('in a __tests__ folder, wherever it sits', () => {
+    expect(classifyPath('R:', 'R:/src/__tests__/helper.py', config('{"layout":"__tests__"}'))).toEqual({ kind: 'other', inTestFolder: true })
+  })
+
+  test('a source folder that also holds the tests is not a test folder, and nor is anywhere else', () => {
+    expect(classifyPath('R:', 'R:/src/gen.py', config('{"layout":"colocated"}'))).toEqual({ kind: 'other' })
+    expect(classifyPath('R:', 'R:/tools/gen.py', config('{"layout":"mirror"}'))).toEqual({ kind: 'other' })
   })
 })
 

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import { ELSEWHERE } from '../hooks/shell'
-import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from '../hooks/shellVerdict'
+import { leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
 import { MOCHA_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
@@ -280,5 +280,45 @@ describe('ownTestRun', () => {
   test('a module unlocked in another checkout is not this run to judge: its failures are not that module\'s', () => {
     expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/a'])).toBeNull()
     expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/b'])).toEqual({ module: 'utils/a', testPath: 'C:/r/tests/utils/a.test.ts' })
+  })
+})
+
+describe('leftOutShellEdits: what a command wrote that dope-tdd cannot guard (#259)', () => {
+  const py = { path: 'tools/a.py', why: 'stack' } as const
+  const js = { path: 'helpers.js', why: 'layout' } as const
+  const moved = { wasMs: 1, isMs: 2 }
+  const pyListed = { path: 'tools/a.py', list: 'stack' }
+  const jsListed = { path: 'helpers.js', list: 'shell' }
+
+  test('a file the command named that changed on disk, and one git saw that is still there, once each', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }, { ...py, ...moved }], [{ ...py, isMs: 2 }, { path: 'tools/b.py', why: 'stack', isMs: 2 }], true)).toEqual([jsListed, pyListed, { path: 'tools/b.py', list: 'stack' }])
+  })
+
+  test('a layout miss goes on the shell list, which stays off the band; another stack keeps its own', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }], [], true)).toEqual([jsListed])
+    expect(leftOutShellEdits([{ ...py, ...moved }], [], true)).toEqual([pyListed])
+  })
+
+  test('a named file that did not change, or is gone, did not land', () => {
+    expect(leftOutShellEdits([{ ...js, wasMs: 1, isMs: 1 }], [], true)).toEqual([])
+    expect(leftOutShellEdits([{ ...js, wasMs: null, isMs: null }], [], true)).toEqual([])
+    expect(leftOutShellEdits([{ ...js, wasMs: 1, isMs: null }], [], true)).toEqual([])
+  })
+
+  test('a new file landed', () => {
+    expect(leftOutShellEdits([{ ...js, wasMs: null, isMs: 2 }], [], true)).toEqual([jsListed])
+  })
+
+  test('a file git saw deleted is not an edit', () => {
+    expect(leftOutShellEdits([], [{ ...py, isMs: null }], true)).toEqual([])
+  })
+
+  test('a command held read-only leaves what it names out', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }], [], false)).toEqual([])
+  })
+
+  test('what git saw stands either way, and nothing written is nothing to say', () => {
+    expect(leftOutShellEdits([], [{ ...py, isMs: 2 }], false)).toEqual([pyListed])
+    expect(leftOutShellEdits([], [], true)).toEqual([])
   })
 })

@@ -62,6 +62,10 @@ export const BAND = {
 export type FakeWorld = {
   /** Every folder listed, in order: how a test counts walks of the project. */
   listed: string[]
+  /** Paths whose stat fails, as a file that is gone does. */
+  gone: Set<string>
+  /** Edit and Write fail after the gate let them through, as a stale edit does. */
+  editFails: boolean
   clock: MockClock
   bashFails: boolean
   bashText: string
@@ -146,6 +150,8 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
     clock: mock.clock(on, { now: T0 }),
     listed: [],
+    gone: new Set(),
+    editFails: false,
     bashFails: false,
     bashText: '',
     lastTest: null,
@@ -340,6 +346,9 @@ ${main}/.git
     } as never
   })
   on('fs.stat', (_$, e) => {
+    if (world.gone.has(fakePath(e.path))) {
+      throw new Error(`ENOENT: ${e.path}`)
+    }
     const stat = { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false }
     return { value: e.resolve === true ? { ...stat, realPath: landed(world.links, fakePath(e.path)) } : stat } as never
   })
@@ -392,6 +401,9 @@ ${main}/.git
     }
     if ((e.tool === 'Write' || e.tool === 'Edit') && target !== undefined && /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(target)) {
       world.lastTest = target.startsWith(`${ROOT}/`) ? target.slice(ROOT.length + 1) : target
+    }
+    if ((e.tool === 'Write' || e.tool === 'Edit') && world.editFails) {
+      return { isError: true as const, result: 'failed', text: 'failed' }
     }
     if (isShell && world.bashFails) {
       return { isError: true as const, result: 'FAIL', text: world.bashText || failOutput(world.lastTest) }

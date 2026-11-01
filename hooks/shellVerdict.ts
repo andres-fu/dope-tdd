@@ -1,6 +1,7 @@
 // The decisions `checkShell` in register.tsx makes about a shell command, as plain data in and out (#59). The engine
 // follows `$` only into functions declared in register.tsx, so that file gathers the inputs and carries out the
 // result; what is decided lives here, where a unit test reaches it without the fake engine.
+import type { LeftOut, LeftOutList } from '../types'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
 import type { GuardConfig, Policy } from './config.ts'
 import { classifyPath, isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
@@ -163,4 +164,22 @@ export function shellReminders(facts: ShellReminderFacts, config: LayoutConfig, 
         ...facts.carriedOn.map(({ module, testPath }) => carriedOnAdvice(sourcePathFor(config, module), relativePath(root, testPath), facts.passed)),
         ...(facts.advice === null ? [] : [facts.advice]),
       ]
+}
+
+type LeftOutEdit = { path: string; why: LeftOut }
+
+/**
+ * #259: what a shell command edited that dope-tdd cannot guard. `named` is what its text writes, which can say more than
+ * happened (`false && ...`, `ssh host "..."`), so it counts when the file changed on disk, unless the command was held
+ * read-only. `changed` is what git saw, only in the folders it watches, so neither is enough alone. A file that is gone
+ * was deleted, not edited. Times are null for a file that isn't there. A layout miss goes on the shell list, off the band:
+ * only Edit and Write ever reached NOT WATCHING, and a redirect into build output must not flip a working guard.
+ */
+export function leftOutShellEdits(
+  named: readonly (LeftOutEdit & { wasMs: number | null; isMs: number | null })[],
+  changed: readonly (LeftOutEdit & { isMs: number | null })[],
+  canWrite: boolean,
+): { path: string; list: LeftOutList }[] {
+  const landed = [...(canWrite ? named.filter(({ wasMs, isMs }) => isMs !== wasMs) : []), ...changed].filter(({ isMs }) => isMs !== null)
+  return landed.filter((edit, index) => landed.findIndex(({ path }) => path === edit.path) === index).map(({ path, why }) => ({ path, list: why === 'layout' ? 'shell' : why }))
 }

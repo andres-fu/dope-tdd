@@ -188,3 +188,13 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   const said = line === null ? null : line + errorsNote + stuckNote
   return said === null || other === undefined ? said : said + say('note.ownTestToo', { module, other, outcome: red ? 'red' : 'green' })
 }
+
+/** #259: the first file of each kind, whichever tool wrote it, said once a session; a paused guard stays quiet. */
+export function leftOutNotices(before: TddStats, after: TddStats, stack: string): string[] {
+  const layout = before.unwatched.length + before.shellUnwatched.length === 0 ? (after.unwatched[0] ?? after.shellUnwatched[0]) : undefined
+  const other = before.otherStack.length === 0 ? after.otherStack[0] : undefined
+  if (before.paused) {
+    return []
+  }
+  return [...(layout === undefined ? [] : [say('edit.unwatched', { path: layout })]), ...(other === undefined ? [] : [say('edit.otherStack', { path: other, stack })])]
+}

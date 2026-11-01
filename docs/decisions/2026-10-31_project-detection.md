@@ -16,7 +16,9 @@ throws away what it learned about the language. So the smart path and the path e
 **One answer, in this order:**
 
 1. **Any `dope-tdd.json`, or a marker at the root when the session reads them, behaves exactly as it did.** Stack, layout
-   and walk are unchanged.
+   and walk are unchanged, and so is every refusal. The band changes in one way: a helper in a test folder under `roots`
+   or a folder layout no longer reads as NOT WATCHING. The one addition is the notice for code the guard can't pair, and
+   its line in `/tdd`.
 2. **With no config and no marker, the repo decides.** A session reads the code files it finds, once per root, and uses
    that stack and layout from memory.
 3. **If the repo can't decide, it says so.** The Node defaults still run then, and the note says that plainly.
@@ -24,9 +26,11 @@ throws away what it learned about the language. So the smart path and the path e
 **Three rules for a project that changes:**
 
 - **Config wins.** Detection never edits or overrides a config.
-- **An edit is the signal.** There is no watcher and no re-scan. An edit to code of any known stack that the config
-  doesn't cover counts as unwatched (`isCodeFileAny`, where today only the configured stack counts).
-- **Say it once.** One line per session, then quiet.
+- **An edit is the signal.** There is no watcher and no re-scan. An edit to code of another stack we read is said once
+  and listed in `/tdd`. It stays apart from a layout miss: `/tdd setup` can't cover a second stack, and the guard still
+  works on the first, so it never reaches the band's NOT WATCHING. A shell write to code the layout misses stays off the
+  band too, since it may only be build output.
+- **Say it once.** One line per kind per session, then quiet.
 
 A session keeps the stack it starts with until `/tdd setup` looks again, as it always has. So a marker added mid-session
 counts from the next session, and until then the repo's answer stands instead of the Node guess. A config counts as soon
@@ -42,7 +46,7 @@ exists keeps the runner its own file points at, because that is the one that can
 | Project | What happens |
 |---|---|
 | Valid config | As today, no walk |
-| Valid config, code in a language it doesn't cover | That edit goes through, and is said once, with `/tdd setup` or `exempt` as the way out |
+| Valid config, code of a stack it doesn't cover | That edit goes through, and is said once, whichever tool wrote it, with `exempt` as the way to stop counting it. `/tdd setup` isn't offered, since one config guards one stack. A language we don't read at all (Go) and notebooks aren't counted yet |
 | No config, one clear language | Uses that stack, and the layout the repo shows when the default pairs nothing. Says so and offers to save. If nothing pairs, it says that instead |
 | No config, marker missing | The code decides: Python files mean Python |
 | `.cs` files and no marker | .NET: the code decides, so a C# repo needs no marker list. Beside other code too, in the notes and in what `/tdd setup` saves |
@@ -68,11 +72,13 @@ natural first addition. Rust often keeps unit tests inside the source file, so i
 The walk is capped in depth and in code files, and skips dependency folders. A session with no named layout already
 walks once, so this keeps it at one walk per root, plus one for a worktree with no config of its own.
 
-Only a project with no config and no marker changes behaviour, and there the old answer was a guess. A comparison with
+Only a project with no config and no marker changes what is guarded, and there the old answer was a guess. A comparison with
 `release` covered band, briefing, edits, `/tdd`, `/tdd setup` and walks. All 14,280 sessions with a config or marker
 matched in repos that sit still. So did 42,612 of 42,616 steps in sessions where a config, marker or file changed
 part-way or `/tdd setup` ran. In the other 4 a marker was deleted and `/tdd setup write` then read the repo, which is the
-new behaviour working as decided. The one difference left, a marker added mid-session, is decided above.
+new behaviour working as decided. The one difference left, a marker added mid-session, is decided above. The notice for
+code the guard can't pair (#259) then added lines to what the agent reads and to `/tdd`, and changed no refusal and no
+band in all 14,400 sessions of the first comparison.
 
 ## How we'll know it works
 Unit tests for the rules in `tests/setup.test.ts`, and for the wiring in `tests/layouts.test.tsx`. Two new live scenarios in `npm run live`:

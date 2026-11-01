@@ -73,7 +73,9 @@ out differently gets refusals that name the wrong test, or a band that says
 `package.json` or `pyproject.toml`, it reads your code to work out the language
 and layout, and tells Claude so. With a marker and a default layout that matches
 none of your code, Claude is told, with the layout `/tdd setup` finds, and asks
-you to run it.
+you to run it. An edit to code the layout misses, or to code of a second stack,
+goes through: Claude is told the first time in a session, and `/tdd` lists each
+file. A language Dope TDD doesn't read yet isn't listed.
 
 To watch without steering at first, put `"mode": "observe"` in
 `dope-tdd.json`: nothing is refused and no file is ever undone, but every

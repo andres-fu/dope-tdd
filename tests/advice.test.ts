@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { carriedOnAdvice, carryWaitMessage, commentsOnlyAdvice, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
+import { carriedOnAdvice, leftOutNotices, carryWaitMessage, commentsOnlyAdvice, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
 import { say } from '../hooks/messages'
+import type { TddStats } from '../types'
 import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch, recordChange } from '../hooks/stats'
 
 // These tests check which message is said, with which facts. The words themselves are pinned once, in
@@ -10,6 +11,34 @@ const at = (seconds: number) => 1_700_000_000_000 + seconds * 1_000
 const MODULE = 'money/formatCents'
 const SOURCE = 'src/money/formatCents'
 const touched = recordTestTouch(INITIAL_STATS, { module: MODULE, testPath: 'tests/money/formatCents.test.ts' }, at(0))
+
+// #259: each kind is said once a session, whichever tool wrote the file. A person paused the guard, so it stays quiet.
+describe('leftOutNotices', () => {
+  const left = (over: Partial<TddStats>): TddStats => ({ ...INITIAL_STATS, ...over })
+
+  test('the first file of each kind is named, and the kinds are told apart', () => {
+    expect(leftOutNotices(INITIAL_STATS, left({ unwatched: ['a.ts'] }), 'node')).toEqual([say('edit.unwatched', { path: 'a.ts' })])
+    expect(leftOutNotices(INITIAL_STATS, left({ otherStack: ['a.py'] }), 'node')).toEqual([say('edit.otherStack', { path: 'a.py', stack: 'node' })])
+    expect(leftOutNotices(INITIAL_STATS, left({ unwatched: ['a.ts'], otherStack: ['a.py'] }), 'node')).toHaveLength(2)
+  })
+
+  test('a layout miss is one kind, whether a shell or an Edit wrote it', () => {
+    expect(leftOutNotices(INITIAL_STATS, left({ shellUnwatched: ['a.ts'] }), 'node')).toEqual([say('edit.unwatched', { path: 'a.ts' })])
+    expect(leftOutNotices(left({ shellUnwatched: ['a.ts'] }), left({ shellUnwatched: ['a.ts'], unwatched: ['b.ts'] }), 'node')).toEqual([])
+    expect(leftOutNotices(left({ unwatched: ['a.ts'] }), left({ unwatched: ['a.ts'], shellUnwatched: ['b.ts'] }), 'node')).toEqual([])
+  })
+
+  test('once a kind has been said it stays quiet, and the other can still be said', () => {
+    const before = left({ unwatched: ['a.ts'] })
+    expect(leftOutNotices(before, left({ unwatched: ['a.ts', 'b.ts'] }), 'node')).toEqual([])
+    expect(leftOutNotices(before, left({ unwatched: ['a.ts'], otherStack: ['a.py'] }), 'node')).toHaveLength(1)
+  })
+
+  test('nothing new, or a paused guard, says nothing', () => {
+    expect(leftOutNotices(INITIAL_STATS, INITIAL_STATS, 'node')).toEqual([])
+    expect(leftOutNotices(left({ paused: true }), left({ paused: true, unwatched: ['a.ts'] }), 'node')).toEqual([])
+  })
+})
 
 describe('touchAdvice', () => {
   test('tells the agent the module is unlocked and what to do before editing', () => {

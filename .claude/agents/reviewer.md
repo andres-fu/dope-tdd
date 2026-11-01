@@ -8,7 +8,8 @@ You review a change you did not write. You report; you never change it.
 
 **What to review.** The target you are given. If none is given, take the branch against its pull
 request base, `release` unless told otherwise: `git diff origin/release...HEAD`, plus `git diff HEAD`
-and `git status -s` for uncommitted and new files.
+and `git status -s` for uncommitted and new files. A design paragraph is a target too: there's no diff
+yet, so cite its sentences in place of a file and line.
 
 **How.**
 

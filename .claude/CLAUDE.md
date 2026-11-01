@@ -27,7 +27,8 @@ node --import ./tests/node/register.mjs --test tests/runPlan.test.ts   # one tes
 npm run check -- --all   # once, before opening a pull request; CI also runs the tools/ tests
 npm run golden           # after changing a message's words
 npm run diagrams         # after changing tools/diagrams/is-it-on.mjs
-npm run compare -- --sessions   # before the first review of a change to hooks/
+npm run compare          # before the first review of a change to the shell reader
+npm run compare -- --sessions   # or to the briefing, band, /tdd or an Edit of an untested file
 ```
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
@@ -44,11 +45,19 @@ runs.
   request says "No issue: a feature, tracked in <where>".
 - **One pull request per item, test-first.** Each fix is broken once on purpose, to prove a test
   catches it.
-- **Prove first, then review.** Before the first review of a change to `hooks/`, run the comparison,
-  account for each kind of change it reports, and do the deliberate breaks, so review time goes to
-  design. Run it again after a review fix that changes behaviour. It plays no test run or catch check,
-  so clean counts say nothing about those. The pull request gives its counts, never its commands: they
-  come from private session logs.
+- **Attack the design before building it.** Before writing code for a change to `hooks/` that isn't
+  small and clear, write the design in one paragraph: the simplest option, what it could damage in
+  normal use, and whether it is worth that. Have the `reviewer` agent try to break the paragraph, citing
+  its sentences. This isn't a review round. Writing code is cheap and reviewing it isn't, so a wrong idea
+  should die on paper.
+- **Prove first, then review.** Before the first review of the code, do the deliberate breaks and run
+  the comparison where it can see the change. `npm run compare` takes seconds and shows which files the
+  shell reader finds. `--sessions` takes about 17 minutes and adds the briefing, band, `/tdd` and what an
+  Edit of an untested file shows, as config, markers and files change. Neither plays the rest of shell
+  handling, a test run or a catch check, so skip it for those and say why: clean counts from a run that
+  can't see the change prove nothing. Account for each kind of change it reports, and run it again after
+  a review fix that changes behaviour. The pull request gives its counts, never its commands: they come
+  from private session logs.
 - **One pull request per sitting.** A person merges every change, and reads worse at the end of a long
   stretch. An agent stops once one is green and reviewed, and starts the next only when asked. A merge
   alone isn't asking.

@@ -23,6 +23,7 @@ import { shellCalls, transcriptFiles } from '../replay/replay.ts'
 import { ALL } from './plan.ts'
 import { compareReadings, compareSessions, formatReadings, formatSessions, parseArgs, problemsIn, readSessions, sameFiles } from './report.ts'
 import type { Compared, Reader, Session } from './report.ts'
+import { unpack } from './unpack.ts'
 
 const CHECKOUT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const BUILD = ['hooks', 'types', 'package.json', 'tsconfig.json', 'dope-tdd.json', '.claude-plugin']
@@ -34,7 +35,7 @@ const FILES_PER_BATCH = 10
 
 function exportBase(ref: string, dir: string): void {
   const archive = execFileSync('git', ['-C', CHECKOUT, 'archive', ref, ...BUILD], { maxBuffer: 1 << 28 })
-  execFileSync('tar', ['-x', '-C', dir], { input: archive })
+  unpack(archive, dir)
 }
 
 function copyCheckout(dir: string): void {

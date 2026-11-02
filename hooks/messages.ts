@@ -88,6 +88,8 @@ export const MESSAGES = {
     `dope-tdd: this was a ${f.runner} run, and dope-tdd cannot read ${f.runner}'s summary yet, so ${f.runner} runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.`),
   'config.changed': entry({ detail: 'mode: enforce → warn' }, f =>
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
+  'config.changedNearby': entry({ detail: 'mode: enforce → warn' }, f =>
+    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command, which may not have done it. This is recorded in /tdd.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).

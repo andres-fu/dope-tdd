@@ -186,7 +186,7 @@ const CALC = `${PROBE}\\src\\calc.js`
 const WORKTREE_CALC = `${PROBE}\\.claude\\worktrees\\agent-a1b2\\src\\calc.js`
 
 test('every scenario has an id, a title, a place to run, messages and checks', () => {
-  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'])
+  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])
   for (const s of scenarios) {
     assert.ok(['home', 'probe', 'linked', 'pyapp', 'csapp'].includes(s.cwd), `${s.id} cwd`)
     assert.ok(['on', 'off'].includes(s.plugin), `${s.id} plugin`)
@@ -218,6 +218,16 @@ test('I: a write the same command stages or commits is counted, and the count is
   assert.ok(failed(I.check(readRun(run('unguarded 0')), changed)).includes('/tdd counts both as unguarded'), 'no count, as with #292, fails I')
   assert.ok(failed(I.check(readRun(run('unguarded 2')), ctxFor())).includes('src/calc.js changed on disk'), 'a file left alone fails I')
   assert.ok(failed(I.check(readRun(run('unguarded 2', [write, 'git add src/calc.js', commands[1]])), changed)).includes('one command wrote and staged'), 'a model that split the command fails I')
+})
+
+test('J: a config loosened by a script is counted, and the count is what decides', () => {
+  const J = byId('J')
+  const command = 'node -e "require(\'fs\').writeFileSync(process.argv[1], x)" dope-tdd.json'
+  const run = line => stream([init(), use('t1', 'Bash', { command }), answer('t1', ''), end('x'), init(), end(report(line), true)])
+  assert.deepEqual(failed(J.check(readRun(run('workarounds: 1\n9S AGO: config (mode enforce → observe)')), ctxFor())), [])
+  assert.ok(failed(J.check(readRun(run('workarounds: 0')), ctxFor())).includes('/tdd counts a workaround'), 'no count, as with #293, fails J')
+  assert.ok(failed(J.check(readRun(run('workarounds: 1\nmode: observe (records only)')), ctxFor())).includes('/tdd names the change'), 'the mode line alone is no event, so it fails J')
+  assert.ok(failed(J.check(readRun(stream([init(), end('x'), init(), end(report('workarounds: 1 mode enforce → observe'), true)])), ctxFor())).includes('the command ran'), 'no command at all fails J')
 })
 
 test('B: an untested edit is refused, names the test, and leaves the file alone', () => {

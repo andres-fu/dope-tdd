@@ -1925,6 +1925,203 @@ describe('the config file is watched', () => {
   })
 })
 
+// #293: only Edit and Write compared the config, so a shell loosened it with no line and no workaround.
+describe('a config changed through a shell is on the record', () => {
+  const CONFIG = `${ROOT}/dope-tdd.json`
+  const loosen = (world: ReturnType<typeof fakeEngine>, text = '{"mode":"observe"}') => {
+    world.fileContents.set(CONFIG, '{"mode":"enforce"}')
+    world.existingFiles.add(ROOT)
+    world.onBash = () => {
+      world.fileContents.set(CONFIG, text)
+    }
+  }
+
+  test('loosened by a script: counted, asked about and shown', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+
+    const result = await runBash($, 'python3 loosen.py')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed \(mode enforce → observe\).*say why/)
+    expect(world.toasts.some(t => /mode enforce → observe/.test(t))).toBe(true)
+    expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
+    expect(status.text).toMatch(/workarounds: 1/)
+  })
+
+  test('a named write beside a test run is the command\'s', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+
+    await runBash($, 'echo \'{"mode":"observe"}\' > dope-tdd.json && npm test')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/workarounds: 1/)
+  })
+
+  test('tightened by a script: asked about, not counted', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"warn"}')
+    world.onBash = () => {
+      world.fileContents.set(CONFIG, '{"mode":"enforce"}')
+    }
+
+    const result = await runBash($, 'python3 tighten.py')
+
+    expect(result.context?.join(' ')).toMatch(/say why/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/workarounds: 1/)
+  })
+
+  test('deleted: counted, since refusals can stop with it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"enforce","exempt":["src/a.ts"]}')
+    world.existingFiles.add(ROOT)
+    world.onBash = () => {
+      world.fileContents.delete(CONFIG)
+    }
+
+    const result = await runBash($, 'rm dope-tdd.json')
+
+    expect(result.context?.join(' ')).toMatch(/file deleted: .*say why/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/workarounds: 1/)
+  })
+
+  test('a file that can no longer be read is not called deleted', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"enforce","exempt":["src/a.ts"]}')
+    world.existingFiles.add(ROOT)
+    world.onBash = () => {
+      world.unreadable.add(CONFIG)
+    }
+
+    const result = await runBash($, 'chmod 000 dope-tdd.json')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed/)
+    expect(result.context?.join(' ')).not.toMatch(/file deleted/)
+  })
+
+  test('a root that went with the command is no deleted config', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"enforce","exempt":["src/a.ts"]}')
+    world.onBash = () => {
+      world.fileContents.delete(CONFIG)
+    }
+
+    const result = await runBash($, 'git worktree remove here')
+
+    expect(result.context?.join(' ') ?? '').not.toMatch(/dope-tdd\.json changed/)
+  })
+
+  test('made invalid: counted', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world, '{oops')
+
+    await runBash($, 'python3 loosen.py')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/workarounds: 1/)
+  })
+
+  test('brought in by a git rewrite: said and recorded, not counted, and nothing asked', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+
+    const result = await runBash($, 'git pull')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed \(mode enforce → observe\)/)
+    expect(result.context?.join(' ')).not.toMatch(/say why/)
+    expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
+    expect(status.text).not.toMatch(/workarounds: 1/)
+  })
+
+  test('around a command that only looks read-only: said, not counted', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+
+    const result = await runBash($, 'npx vitest run tests/a.test.ts')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/workarounds: 1/)
+  })
+
+  test('around a command Claude Code held read-only: said, not counted, and nothing asked', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+    world.readOnly = true
+
+    const result = await runBash($, 'python3 report.py')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed/)
+    expect(result.context?.join(' ')).not.toMatch(/say why/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/workarounds: 1/)
+  })
+
+  test('said in observe mode too, as an Edit is', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"observe"}')
+    world.onBash = () => {
+      world.fileContents.set(CONFIG, '{"mode":"observe","exempt":["src/a.ts"]}')
+    }
+
+    const result = await runBash($, 'python3 exempt.py')
+
+    expect(result.context?.join(' ')).toMatch(/dope-tdd\.json changed/)
+  })
+
+  test('a command that changes nothing the guard reads is quiet', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world, '{"mode": "enforce", "comment": "same"}')
+
+    const result = await runBash($, 'npx prettier --write dope-tdd.json')
+
+    expect(result.context?.join(' ') ?? '').not.toMatch(/dope-tdd\.json changed/)
+    expect(world.toasts).toEqual([])
+  })
+
+  test('a refused command leaves no record of a change', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"stack":"node","layout":"mirror"}')
+
+    const result = await runBash($, 'echo x >> src/utils/a.ts')
+
+    expect(result.deny).toBeDefined()
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/config\s+\(/)
+  })
+
+  test('a change while a command is refused is recorded, and not counted: it never ran', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"enforce"}')
+    world.bashDeny = 'no'
+    world.onBash = () => {
+      world.fileContents.set(CONFIG, '{"mode":"observe"}')
+    }
+
+    const result = await runBash($, 'python3 x.py')
+    const status = await runCommand($, 'tdd')
+
+    expect(result.deny).toBe('no')
+    expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
+    expect(status.text).not.toMatch(/workarounds: 1/)
+  })
+
+  test('a change is not lost when the check throws', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(CONFIG, '{"mode":"enforce"}')
+    world.onBash = () => {
+      world.fileContents.set(CONFIG, '{"mode":"observe"}')
+      world.onBash = () => {}
+      throw new Error('the check broke')
+    }
+
+    await runBash($, 'python3 loosen.py').catch(() => null)
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
+    expect(status.text).toMatch(/workarounds: 1/)
+    // The error still goes on: the guard's own failure is reported, not swallowed here.
+    expect(status.text).toMatch(/guard: FAILING/)
+  })
+})
+
 describe('workarounds are on the record', () => {
   const TEST = 'tests/money/formatCents.test.ts'
   const HONEST = "import { expect, test } from 'vitest'\n\ntest('formats', () => {\n  expect(formatCents(-1250)).toBe('-$12.50')\n  expect(formatCents(-50)).toBe('-$0.50')\n})\n"

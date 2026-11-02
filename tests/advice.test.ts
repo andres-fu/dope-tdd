@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { carriedOnAdvice, leftOutNotices, carryWaitMessage, commentsOnlyAdvice, configChangedAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
+import { carriedOnAdvice, leftOutNotices, carryWaitMessage, commentsOnlyAdvice, configChangedAdvice, configChangedNearbyAdvice, hollowAdvice, inheritedAdvice, runAdvice, staleUnlockNote, touchAdvice, unreadRunAdvice } from '../hooks/advice'
 import { say } from '../hooks/messages'
 import type { TddStats } from '../types'
 import { INITIAL_STATS, recordRun, recordSourceEdit, recordTestTouch, recordChange } from '../hooks/stats'
@@ -158,6 +158,15 @@ describe('unreadRunAdvice', () => {
 
   test('a node --test run that crashed reading its test process is said as that, with what to do (#26)', () => {
     expect(unreadRunAdvice(false, 'node-test', true)).toBe(say('run.crashed', {}))
+  })
+})
+
+describe('configChangedNearbyAdvice', () => {
+  test('says it changed, and asks nothing of an agent that may not have done it', () => {
+    const line = configChangedNearbyAdvice('mode enforce → observe')
+    expect(line).toBe(say('config.changedNearby', { detail: 'mode enforce → observe' }))
+    expect(line).toMatch(/dope-tdd\.json changed \(mode enforce → observe\)/)
+    expect(line).not.toMatch(/say why/)
   })
 })
 

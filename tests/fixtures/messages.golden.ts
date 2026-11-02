@@ -24,6 +24,7 @@ export const GOLDEN: Record<string, string> = {
   "run.unread": "dope-tdd: a test run happened but its summary line was not in the output, so nothing was counted. Run one test file and keep the end of its output, where the summary is.",
   "run.unreadable": "dope-tdd: this was a mocha run, and dope-tdd cannot read mocha's summary yet, so mocha runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.",
   "config.changed": "dope-tdd: dope-tdd.json changed (mode: enforce → warn). This is recorded in /tdd; say why in your reply.",
+  "config.changedNearby": "dope-tdd: dope-tdd.json changed (mode: enforce → warn) around that command, which may not have done it. This is recorded in /tdd.",
   "workaround.skipped": "dope-tdd: tests/utils/a.test.ts gained 2 skip/only markers. A skipped test guards nothing. Recorded; say why in your reply.",
   "note.stuck": " The same failure 3 runs in a row (`expected 2 to be 3`): this is not moving. Step back and re-read what the test expects, or say BLOCKED and what you need from the user.",
   "note.errorsOnly": " So it does not prove the test of utils/a can fail: once the error is fixed, break the code on purpose and run again.",

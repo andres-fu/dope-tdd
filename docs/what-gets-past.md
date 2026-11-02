@@ -29,9 +29,14 @@ agent that sets out to beat them.
 Some routes need no trick at all. A test only has to be touched to unlock its
 module, so adding a comment to a test file lets the next edit through, and so does
 deleting it ([#300](https://github.com/andres-fu/dope-tdd/issues/300)). A shell
-command can change `dope-tdd.json`, and the guard then follows the new settings:
-it isn't recorded when a shell does that
-([#293](https://github.com/andres-fu/dope-tdd/issues/293)). During a merge, rebase
+command can change `dope-tdd.json`, and the guard then follows the new settings
+from the next command. That's recorded and said, and it stops nothing. A change
+that arrived with a git rewrite alone, `git checkout other -- dope-tdd.json`
+included, isn't counted against anyone, and neither is one around a command Claude
+Code held read-only or one that only looks read-only and doesn't name the file. A
+loosening during any other command is counted against it, even if a person saved
+the file in an editor meanwhile. A command judged in a worktree that changes the
+main checkout's config isn't seen, and neither is a change between sessions. During a merge, rebase
 or cherry-pick nothing is guarded, and that state comes from a marker file in
 `.git`. The band says STANDING DOWN.
 

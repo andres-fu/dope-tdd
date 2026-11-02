@@ -179,6 +179,7 @@ npm run live -- --model sonnet   # a cheaper model
 | G | in a Python repo with no config and no marker | edit `api.py`, no test touched | refused, naming `tests/test_api.py` |
 | H | in a C# repo with only a `.sln` | edit `src/App.cs`, no test touched | refused, naming `tests/AppTests.cs` |
 | I | in the probe repo | a script writes `src/calc.js` and one command stages it, then again and one command commits it | both go through; `/tdd` counts `unguarded 2` |
+| J | in the probe repo | a script sets `dope-tdd.json` to `observe` | goes through; `/tdd` counts a workaround and names the change |
 
 Each scenario prints `PASS` or `FAIL` with its checks; a failure also prints
 what the session did and keeps its transcript. The checks read tool results

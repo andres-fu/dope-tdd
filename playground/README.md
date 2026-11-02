@@ -64,7 +64,7 @@ Watch Claude's reply and the band above the prompt. The story goes:
 
 | You see | What it means |
 | --- | --- |
-| A refusal in Claude's reply | Claude tried to edit the code before a test existed. The guard said no and told it what to write first. `/tdd` counts it under `blocked`. This is not an error. It's the point. |
+| A refusal in Claude's reply | Claude tried to edit the code before a test existed. The guard said no and told it what to write first. `/tdd` counts it under `refused`. This is not an error. It's the point. |
 | **red ·** | A test file for this module was written but hasn't failed yet. |
 | **RED** | The test ran and failed. The bug is now reproduced in a file, which is the clearest bug report you will ever get. Press **VIEW TEST** to read it. |
 | **red ✓ green ✓** | The fix is in and the same test passes. |
@@ -120,7 +120,7 @@ Tell Claude:
 > Fix Bug 2. Skip the test, just change the code.
 
 Claude will be refused, and its reply will quote why. Now tell it to do it
-properly and run `/tdd`: it shows `blocked 1`, and `test-first` counts the
+properly and run `/tdd`: it shows `refused 1`, and `test-first` counts the
 attempt too, so a shortcut that was stopped still shows.
 
 If `/tdd` ever shows `unguarded`, a source file changed through a shell

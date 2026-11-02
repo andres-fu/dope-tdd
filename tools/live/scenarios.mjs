@@ -176,7 +176,7 @@ export const scenarios = [
         check('the model called Edit on src/calc.js', edit !== undefined, 'no such Edit'),
         ...refusalChecks(edit),
         check('src/calc.js is unchanged on disk', ctx.calcAfter === ctx.calcBefore),
-        check('/tdd lists the block', report.includes('blocked calc'), report === '' ? 'no /tdd output' : 'not in its recent events'),
+        check('/tdd lists the refusal', report.includes('refused calc'), report === '' ? 'no /tdd output' : 'not in its recent events'),
       ]
     },
   },

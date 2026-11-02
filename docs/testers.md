@@ -223,7 +223,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 
 | Claude is about to... | Dope TDD... | You see |
 | --- | --- | --- |
-| Edit or write a source file whose module is not unlocked | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it (or, when the test exists, one assertion to add or tighten), (2) `/dope-tdd:pin`, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `blocked` |
+| Edit or write a source file whose module is not unlocked | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it (or, when the test exists, one assertion to add or tighten), (2) `/dope-tdd:pin`, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `refused` |
 | Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
 | Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
 | Run the tests through the shell | Reads the runner's own summary line, not the exit code. A failure in another file, or a run of a file outside the layout, is not this module's. Output with no summary is unread, never guessed. | **red ✓** / **green ✓**, and the last run in words |

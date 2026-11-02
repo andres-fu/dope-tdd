@@ -2776,7 +2776,7 @@ async function tddCommand($: EngineInterface, args: string): Promise<string> {
   // and logs itself.
   if (words[0] === 'reset') {
     if (words[1] !== 'yes') {
-      return 'This starts the session counts over: runs, cycles, blocked, the recent events. The workarounds and the override record stay. /tdd reset yes to go ahead.'
+      return 'This starts the session counts over: runs, cycles, refusals, the recent events. The workarounds and the override record stay. /tdd reset yes to go ahead.'
     }
     const nowMs = await $.clock.now()
     await change($, s => resetStats(s, nowMs))

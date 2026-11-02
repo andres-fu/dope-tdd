@@ -149,7 +149,7 @@ test('isRefusal knows dope-tdd refusing an edit from an edit that went through',
 })
 
 test('tddReport finds /tdd output, not the model saying it is missing', () => {
-  assert.equal(tddReport(readRun(stream([end('done'), end(report('8S AGO: blocked calc'), true)]))), report('8S AGO: blocked calc'))
+  assert.equal(tddReport(readRun(stream([end('done'), end(report('8S AGO: refused calc'), true)]))), report('8S AGO: refused calc'))
   assert.equal(tddReport(readRun(stream([end('`/tdd` is not available in this session.')]))), null)
   assert.equal(tddReport(readRun(stream([end('Unknown command: /tdd', true)]))), null)
 })
@@ -204,7 +204,7 @@ test('A: an edit outside the project goes through, and /tdd says it was outside'
     stream([init({ cwd: `${ROOT}\\home` }), use('t1', 'Edit', { file_path: file }), edit, end('x'), init({ cwd: `${ROOT}\\home` }), end(report(`8S AGO: ${event}`), true)])
   const outside = `outside this project, not guarded (${file})`
   assert.deepEqual(failed(A.check(readRun(run(answer('t1', UPDATED(file)), outside)), ctx)), [])
-  assert.ok(failed(A.check(readRun(run(answer('t1', REFUSAL, true), 'blocked calc')), ctxFor())).length > 0, 'refusing an edit outside the project fails A')
+  assert.ok(failed(A.check(readRun(run(answer('t1', REFUSAL, true), 'refused calc')), ctxFor())).length > 0, 'refusing an edit outside the project fails A')
   assert.ok(failed(A.check(readRun(run(answer('t1', UPDATED(file)), 'unguarded calc')), ctx)).length > 0, '/tdd not saying outside fails A')
 })
 
@@ -232,7 +232,7 @@ test('J: a config loosened by a script is counted, and the count is what decides
 
 test('B: an untested edit is refused, names the test, and leaves the file alone', () => {
   const B = byId('B')
-  const run = edit => stream([init(), use('t1', 'Edit', { file_path: CALC }), edit, end('x'), init(), end(report('9S AGO: blocked calc'), true)])
+  const run = edit => stream([init(), use('t1', 'Edit', { file_path: CALC }), edit, end('x'), init(), end(report('9S AGO: refused calc'), true)])
   assert.deepEqual(failed(B.check(readRun(run(answer('t1', REFUSAL, true))), ctxFor())), [])
   assert.ok(failed(B.check(readRun(run(answer('t1', UPDATED(CALC)))), ctxFor({ calcAfter: 'a + b + 0' }))).length > 0, 'an edit that went through fails B')
   assert.ok(failed(B.check(readRun(stream([init(), end('I will not')])), ctxFor())).includes('the model called Edit on src/calc.js'), 'no Edit at all fails B, saying so')
@@ -240,7 +240,7 @@ test('B: an untested edit is refused, names the test, and leaves the file alone'
 
 test('B: in branch mode the build must be the checkout, by path and by sha', () => {
   const B = byId('B')
-  const run = (plugin, line = report('9S AGO: blocked calc')) => stream([init({ plugins: [plugin] }), use('t1', 'Edit', { file_path: CALC }), answer('t1', REFUSAL, true), end(line, true)])
+  const run = (plugin, line = report('9S AGO: refused calc')) => stream([init({ plugins: [plugin] }), use('t1', 'Edit', { file_path: CALC }), answer('t1', REFUSAL, true), end(line, true)])
   const branch = { name: 'dope-tdd', path: CHECKOUT, source: 'dope-tdd@inline', version: '0.2.13' }
   const installed = { name: 'dope-tdd', path: 'C:\\plugins\\dope-tdd', source: 'dope-tdd@dope-tdd', version: '0.2.11' }
   assert.deepEqual(failed(B.check(readRun(run(branch)), ctxFor())), [])

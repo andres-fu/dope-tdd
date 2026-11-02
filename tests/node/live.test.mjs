@@ -186,7 +186,7 @@ const CALC = `${PROBE}\\src\\calc.js`
 const WORKTREE_CALC = `${PROBE}\\.claude\\worktrees\\agent-a1b2\\src\\calc.js`
 
 test('every scenario has an id, a title, a place to run, messages and checks', () => {
-  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
+  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'])
   for (const s of scenarios) {
     assert.ok(['home', 'probe', 'linked', 'pyapp', 'csapp'].includes(s.cwd), `${s.id} cwd`)
     assert.ok(['on', 'off'].includes(s.plugin), `${s.id} plugin`)
@@ -206,6 +206,18 @@ test('A: an edit outside the project goes through, and /tdd says it was outside'
   assert.deepEqual(failed(A.check(readRun(run(answer('t1', UPDATED(file)), outside)), ctx)), [])
   assert.ok(failed(A.check(readRun(run(answer('t1', REFUSAL, true), 'blocked calc')), ctxFor())).length > 0, 'refusing an edit outside the project fails A')
   assert.ok(failed(A.check(readRun(run(answer('t1', UPDATED(file)), 'unguarded calc')), ctx)).length > 0, '/tdd not saying outside fails A')
+})
+
+test('I: a write the same command stages or commits is counted, and the count is what decides', () => {
+  const I = byId('I')
+  const write = 'node -e "require(\'fs\').appendFileSync(process.argv[1], \'x\')" src/calc.js'
+  const commands = [`${write} && git add src/calc.js`, `${write} && git commit -qam fix`]
+  const run = (counted, steps = commands) => stream([init(), ...steps.flatMap((command, i) => [use(`t${i}`, 'Bash', { command }), answer(`t${i}`, '')]), end('x'), init(), end(report(counted), true)])
+  const changed = ctxFor({ calcAfter: 'a + b // one' })
+  assert.deepEqual(failed(I.check(readRun(run('unguarded 2')), changed)), [])
+  assert.ok(failed(I.check(readRun(run('unguarded 0')), changed)).includes('/tdd counts both as unguarded'), 'no count, as with #292, fails I')
+  assert.ok(failed(I.check(readRun(run('unguarded 2')), ctxFor())).includes('src/calc.js changed on disk'), 'a file left alone fails I')
+  assert.ok(failed(I.check(readRun(run('unguarded 2', [write, 'git add src/calc.js', commands[1]])), changed)).includes('one command wrote and staged'), 'a model that split the command fails I')
 })
 
 test('B: an untested edit is refused, names the test, and leaves the file alone', () => {

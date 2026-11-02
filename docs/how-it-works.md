@@ -117,11 +117,21 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   their test by class name and never name files, so their red is still the
   module's.
 - After every shell command, reads and test runs included, `git diff` under
-  `src/` and `tests/` is the source of truth, so a change the same command stages
-  isn't seen ([#292](https://github.com/andres-fu/dope-tdd/issues/292)). Source
-  files changed without a test touched count as unguarded, and tests written
-  through the shell count as
-  touched. The command's text only decides whose change it was. One Claude Code
+  `src/` and `tests/` is the source of truth. It compares with the commit HEAD was
+  on before the command, so a change the command also stages or commits still
+  shows. A plain commit keeps that base. Anything else git did to HEAD, read from
+  the reflog (a pull, checkout, rebase or reset), moves it, so what git brought in
+  isn't charged, and a write committed before that move in the same command isn't
+  seen. With the reflog off it can't tell a commit from a pull: it says so in the
+  log and compares with the new HEAD. A commit hook that rewrites a file is
+  charged to the commit. Source files changed without a test touched count as
+  unguarded, and tests written through the shell count as touched. `git rm` and
+  `git mv` count too, and a test deleted counts as touched
+  ([#300](https://github.com/andres-fu/dope-tdd/issues/300)). In a repository with
+  no commit yet there's nothing to compare with, so a new file the same command
+  stages isn't seen. A git command with git's own options before its verb, such
+  as `git -C . restore`, reads as a script, so what it changes is charged
+  ([#302](https://github.com/andres-fu/dope-tdd/issues/302)). The command's text only decides whose change it was. One Claude Code
   held read-only can't have made it. One that only looks read-only, a read or a
   test run, may hide a write (`echo "$(sed -i ...)"`), so each code or test file
   changed around it is said once and listed in `/tdd` under **changed during a

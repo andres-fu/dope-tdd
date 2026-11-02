@@ -178,6 +178,7 @@ npm run live -- --model sonnet   # a cheaper model
 | F | in the probe repo, with a worktree at `.claude/worktrees/nested` | red, fix and green there by `cd`, then a run in the main checkout | the red and green count on `calc` and the catch check proves it there; the main checkout's run does not count |
 | G | in a Python repo with no config and no marker | edit `api.py`, no test touched | refused, naming `tests/test_api.py` |
 | H | in a C# repo with only a `.sln` | edit `src/App.cs`, no test touched | refused, naming `tests/AppTests.cs` |
+| I | in the probe repo | a script writes `src/calc.js` and one command stages it, then again and one command commits it | both go through; `/tdd` counts `unguarded 2` |
 
 Each scenario prints `PASS` or `FAIL` with its checks; a failure also prints
 what the session did and keeps its transcript. The checks read tool results

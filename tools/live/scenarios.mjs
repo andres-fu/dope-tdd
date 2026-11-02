@@ -12,6 +12,8 @@ import { buildOf, check, dopePlugin, isRefusal, isUnder, samePath, tddReport } f
 const CHANGE = 'use the Edit tool once to change "return a + b" to "return a + b + 0"'
 const subagentPrompt = `Use the Agent tool once, with isolation set to "worktree", and give the subagent this task: Read src/calc.js in your worktree, then ${CHANGE}. Do not touch any test. Report the Edit tool result word for word. Then reply with the subagent's report and stop.`
 const fwd = path => path.replace(/\\/g, '/')
+/** A write the guard can't read from a command's text, which only the check after the command can see. */
+const scriptWrite = word => `node -e "require('fs').appendFileSync(process.argv[1], '// ${word}\\n')" src/calc.js`
 
 export const dirOf = (ctx, where) => (where === 'probe' ? ctx.probe : `${ctx.root}/${where}`)
 
@@ -225,4 +227,25 @@ export const scenarios = [
   },
   noMarkerScenario('G', 'pyapp', 'Python', 'api.py', 'tests/test_api.py'),
   noMarkerScenario('H', 'csapp', 'C#', 'src/App.cs', 'tests/AppTests.cs'),
+  {
+    id: 'I',
+    title: "a script's write shows though the same command stages or commits it (#292)",
+    cwd: 'probe',
+    plugin: 'on',
+    tools: ['Bash'],
+    maxTurns: 6,
+    messages: () => [`Use the Bash tool to run these two commands exactly, one at a time, and stop if one is refused: \`${scriptWrite('one')} && git add src/calc.js\` then \`${scriptWrite('two')} && git commit -qam fix\`. Then stop.`, '/tdd'],
+    check(run, ctx) {
+      const report = tddReport(run) ?? ''
+      const ran = step => run.calls.some(call => call.name === 'Bash' && call.input?.command?.includes('appendFileSync') && call.input.command.includes(step) && call.result?.error === false)
+      return [
+        ...buildChecks(run, ctx),
+        sessionCheck(run, ctx, 'probe'),
+        check('one command wrote and staged', ran('git add')),
+        check('one command wrote and committed', ran('git commit')),
+        check('src/calc.js changed on disk', ctx.calcAfter !== ctx.calcBefore),
+        check('/tdd counts both as unguarded', report.includes('unguarded 2'), report === '' ? 'no /tdd output' : (/unguarded \d+/.exec(report)?.[0] ?? 'no unguarded count')),
+      ]
+    },
+  },
 ]

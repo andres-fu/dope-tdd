@@ -78,10 +78,16 @@ export type FakeWorld = {
   logs: string[]
   toasts: string[]
   numstat: string
+  /** `git diff --numstat <commit>`, by commit; a commit with no entry answers `numstat`. */
+  numstatAgainst: Map<string, string>
+  /** `git log -g`, newest first: one `<sha> <subject>` line per entry (#292). */
+  reflog: string
   untracked: string
   gitCalls: (readonly string[])[]
   /** The working directory of each process run, in order, beside `gitCalls`. */
   runCwds: string[]
+  /** The commit `git rev-parse HEAD` answers; null for a repository with no commit yet. */
+  head: string | null
   /** Git refs and objects for the shared check lock; `gitUnavailable` makes the folder not a git checkout. */
   refs: Map<string, string>
   objects: Map<string, string>
@@ -162,9 +168,12 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     logs: [],
     toasts: [],
     numstat: '',
+    numstatAgainst: new Map(),
+    reflog: '',
     untracked: '',
     gitCalls: [],
     runCwds: [],
+    head: 'f'.repeat(40),
     refs: new Map(),
     objects: new Map(),
     gitUnavailable: false,
@@ -298,8 +307,8 @@ ${main}/.git
     }
     if (verb === 'rev-parse') {
       const ref = rest[rest.length - 1] ?? ''
-      const sha = world.refs.get(ref)
-      return sha === undefined ? answer(1) : answer(0, `${sha}\n`)
+      const sha = ref === 'HEAD' ? world.head : world.refs.get(ref)
+      return sha === undefined || sha === null ? answer(1) : answer(0, `${sha}\n`)
     }
     if (verb === 'cat-file') {
       const sha = rest[rest.length - 1] ?? ''
@@ -319,8 +328,13 @@ ${main}/.git
     if (verb === 'diff' && e.argv.includes('--name-only')) {
       return answer(0, e.argv.includes('--diff-filter=D') ? world.deleted : world.dirty)
     }
+    if (verb === 'log' && rest.includes('-g')) {
+      return answer(0, world.reflog)
+    }
     const isNumstat = e.argv.includes('--numstat')
-    return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never
+    const commit = isNumstat ? e.argv.find(arg => world.numstatAgainst.has(arg)) : undefined
+    const numstat = commit === undefined ? world.numstat : (world.numstatAgainst.get(commit) ?? '')
+    return { value: { exitCode: 0, stdout: isNumstat ? numstat : world.untracked, stderr: '' } } as never
   })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)

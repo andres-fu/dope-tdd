@@ -40,7 +40,7 @@ import {
 } from './advice.ts'
 import { say } from './messages.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
@@ -1833,9 +1833,21 @@ function changedOfKind(root: string, paths: string[], kind: 'source' | 'test', c
   })
 }
 
-async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig): Promise<SourceSnapshot | null> {
+/** A command of more plain commits than this reads as a reflog that can't say. */
+const MAX_REFLOG_READ = 100
+
+/** HEAD's commit, null with no commit yet or no repository; quiet, since either is expected. */
+async function headOf($: EngineInterface, root: string): Promise<string | null> {
+  const run = await gitQuiet($, root, ['rev-parse', '--verify', '-q', 'HEAD'])
+  const head = run?.exitCode === 0 ? run.stdout.trim() : ''
+  return head === '' ? null : head
+}
+
+/** The tree against `base`, so a write the same command stages or commits still shows (#292); the index when there is no commit. */
+async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig, base: string | null): Promise<SourceSnapshot | null> {
   const dirs = watchedDirs(config)
-  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', '--', ...dirs])
+  // Against a commit a staged rename prints as `{a => b}`, which is no path.
+  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
   const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...dirs])
   if (numstat === null || untracked === null) {
     return null
@@ -1937,7 +1949,8 @@ async function checkShell(
   }
 
   // Every command gets this, reads too: telling from its text which could skip it kept missing writes (#281).
-  const before = await snapshotWatched($, root, config)
+  const head = await headOf($, root)
+  const before = await snapshotWatched($, root, config, head)
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
@@ -1953,17 +1966,25 @@ async function checkShell(
     return result
   }
   await writeCwd($, shell, cwdToCarry(cwdAfter(command, start), root, scene.base), agentId)
-  const after = before === null ? null : await snapshotWatched($, root, config)
+  const headNow = before === null ? head : await headOf($, root)
+  const reflog = head !== null && headNow !== null && headNow !== head ? await runGit($, root, ['log', '-g', '--no-show-signature', '--format=%H %gs', `-n${MAX_REFLOG_READ}`, 'HEAD']) : ''
+  const { base, unread } = baseFor(head, headNow, reflog ?? '')
+  if (unread) {
+    $.ui.log('dope-tdd: can\'t tell what moved HEAD, so a write committed in that command can\'t be seen')
+  }
+  const after = before === null ? null : await snapshotWatched($, root, config, base)
+  const afterOldBase = before === null || base === head ? null : await snapshotWatched($, root, config, head)
   const nowMs = await $.clock.now()
 
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
   // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
   // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
   const revertOnly = isRevertOnly(command, looksReadOnly)
-  const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
+  const around = before === null || after === null ? [] : changedAround(before, after, afterOldBase, await mtimesOfGone($, root, before, after))
+  const seen = revertOnly ? [] : around
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
-    const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
+  if (revertOnly && bringsInCode(command)) {
+    const brought = changedOfKind(root, around, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       // The verb only: the arguments can hold a token in a remote URL (verified review B1).
       const detail = gitVerb(command)

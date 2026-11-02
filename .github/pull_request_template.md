@@ -17,7 +17,7 @@ on this line instead. -->
 
 ## Risk
 
-<!-- .claude/CLAUDE.md, Review, lists the paths that need a person. An agent leaves the last line empty. -->
+<!-- .claude/CLAUDE.md, Review, lists the paths that need a person. The last line is optional, and an agent leaves it empty. -->
 - Review: what ran, N findings across all rounds, M wrong; each one fixed or answered
 - How to revert:
 - Needs a person: yes / no

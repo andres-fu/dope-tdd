@@ -58,9 +58,11 @@ runs.
   can't see the change prove nothing. Account for each kind of change it reports, and run it again after
   a review fix that changes behaviour. The pull request gives its counts, never its commands: they come
   from private session logs.
-- **One pull request per sitting.** A person merges every change, and reads worse at the end of a long
-  stretch. An agent stops once one is green and reviewed, and starts the next only when asked. A merge
-  alone isn't asking.
+- **One pull request at a time.** A person merges every change, and reads worse at the end of a long
+  stretch, so an agent doesn't start the next one on its own. Once a pull request is green and reviewed,
+  the agent stops. If the person hasn't said what's next this session, it asks, once. It starts what they
+  said after the merge, without asking again, or sooner if they ask for a stack. If they haven't said, it
+  waits: a merge, or a message that only reports one, isn't permission to start.
 - **Docs go in the same pull request.** A behaviour change updates whichever of `README.md`,
   `docs/testers.md` and `docs/how-it-works.md` describe it, and the pull request says which changed.
 - **Correctness before UI.** Every verdict word carries its context. Workarounds (config loosened, test
@@ -117,8 +119,9 @@ round; the pull request counts findings across all rounds.
 - `dope-tdd.json`, `.claude/settings.json`, `.claude/CLAUDE.md`, `.claude/agents/`
 
 The person reads the pull request's Evidence and Risk sections, which carry the receipt and the review's
-report, and writes what the checks would miss, in their own words. An agent leaves that line empty. An
-agent's approval never counts as a person's.
+report, and their merge says they did. The "What the checks would miss" line is for anything they noticed,
+in their own words, and stays empty if there's nothing. An agent always leaves it empty. An agent's
+approval never counts as a person's.
 
 **Only a person merges.** An agent stops once a pull request is green and reviewed, whatever it touches.
 

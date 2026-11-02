@@ -1,9 +1,17 @@
 // node --test tools/compare/report.spec-node.ts (not *.test.ts: the plugin test kit would load it)
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { compareReadings, compareSessions, formatReadings, formatSessions, parseArgs, problemsIn, readSessions, sameFiles } from './report.ts'
 import type { Session, Step } from './report.ts'
+import { unpack } from './unpack.ts'
+
+const CHECKOUT = fileURLToPath(new URL('../..', import.meta.url))
 
 const step = (over: Partial<Step> = {}): Step => ({
   name: 'start',
@@ -165,4 +173,17 @@ test('readSessions: reads the lines the harness printed', () => {
 
 test('readSessions: a line cut off mid-way is skipped, so its session reads as missing', () => {
   assert.deepEqual([...readSessions('@@{"key":"a').keys()], [])
+})
+
+test('unpack: a backslash in the folder is no escape to tar (#307)', () => {
+  const work = mkdtempSync(join(tmpdir(), 'dope-tdd-unpack-'))
+  try {
+    // GNU tar unquotes its arguments, so a backslash and b made a backspace. Windows paths are full of these; on Linux this name is one.
+    const dir = join(work, 'x\\base')
+    mkdirSync(dir, { recursive: true })
+    unpack(execFileSync('git', ['-C', CHECKOUT, 'archive', 'HEAD', 'package.json']), dir)
+    assert.equal(existsSync(join(dir, 'package.json')), true)
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
 })

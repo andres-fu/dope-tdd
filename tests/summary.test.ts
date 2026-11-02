@@ -83,7 +83,8 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     expect(text).toMatch(/^ {2}red ✓ green ✓ +the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first/m)
     expect(text).toMatch(/^ {2}RED 4M +the test fails now, and how long since the cycle opened/m)
     expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when;/m)
-    for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
+    expect(text).toMatch(/^ {2}refused +an edit was stopped until the test is written/m)
+    for (const retired of ['blocked', 'CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
       expect(text).not.toContain(retired)
     }
   })
@@ -151,8 +152,8 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
   // #234 (tester round 7): under an unread dope-tdd.json an untested edit landed while /tdd led with a bare "guard: ON".
   // #236: edits under a carried-over unlock are neither test-first nor misses; the line counts them apart.
   test('the test-first line counts edits under an earlier session\'s unlock on their own', () => {
-    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · blocked 0$/m)
-    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · blocked 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · refused 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · refused 0$/m)
   })
 
   test('the guard line says when dope-tdd.json was not read', () => {
@@ -325,11 +326,11 @@ describe('formatStatus event rows', () => {
 
   test('under an hour, a row says the seconds', () => {
     const text = formatStatus({ ...INITIAL_STATS, events: [at(T0 - 492_000), at(T0 - 12_000)] }, T0)
-    expect(text).toMatch(/^8MIN12S AGO: blocked stats$/m)
-    expect(text).toMatch(/^12S AGO: blocked stats$/m)
+    expect(text).toMatch(/^8MIN12S AGO: refused stats$/m)
+    expect(text).toMatch(/^12S AGO: refused stats$/m)
   })
 
   test("a subagent's row says so", () => {
-    expect(formatStatus({ ...INITIAL_STATS, events: [at(T0, 'a1')] }, T0)).toMatch(/^JUST NOW: blocked stats · subagent$/m)
+    expect(formatStatus({ ...INITIAL_STATS, events: [at(T0, 'a1')] }, T0)).toMatch(/^JUST NOW: refused stats · subagent$/m)
   })
 })

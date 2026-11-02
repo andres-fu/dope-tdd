@@ -143,15 +143,18 @@ guards there.
 
 ### Is it on?
 
-The band above the prompt tells you. With no word in capitals, it is guarding.
-A word in capitals means something differs from plain guarding, and the rest of
-the line says what and what to do. No band and no `/tdd` command means the
-plugin is not running in this folder.
+The band above the prompt tells you. RED, PROVEN, UNPROVEN, MISSED and CHANGED
+say how the test stands, not whether the guard is on. With none of the words in
+the picture below and no OVERRIDE line, it is guarding. With one, the rest of the
+line says what differs and what to do. No band and no `/tdd` command means the
+plugin is not running in this folder. Not sure about a folder? Open it in Claude
+Code and look for the band.
 
 ![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS when something needs a fix, which the band names; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
 
 The picture answers only "is it on?". The band shows more, such as the next step
-and the last run, and `/tdd why` explains its words.
+and the last run, and `/tdd why` explains its words. `refused:` can share the line
+with a cycle: it names the last refusal, and the cycle carries on.
 
 To check it for real, ask Claude to change a source file whose test you have
 not touched. It should be refused, and the refusal names the test to write.
@@ -275,6 +278,11 @@ default. Setup and the move check: [docs/pr-check.md](docs/pr-check.md).
 Status: early, public, and used daily on its own code and on real projects.
 Tell us the one moment it was wrong, silent or annoying with the **Tester
 report** issue template. Security problems go privately: see `SECURITY.md`.
+
+## Liner notes
+
+feat. [Karl Kloss](https://github.com/KlossKarl), who ran it on a real project
+round after round and found what our own tests missed.
 
 ## License
 

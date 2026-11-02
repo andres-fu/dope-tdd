@@ -31,7 +31,7 @@ describe('the guard stands down while a git operation is in progress', () => {
     expect(second.deny).toBeUndefined()
     expect(second.context).toBeUndefined()
     expect(status.text).toMatch(/standing down: a git rebase is in progress/)
-    expect(status.text).toMatch(/unguarded 0 · blocked 0/)
+    expect(status.text).toMatch(/unguarded 0 · refused 0/)
     expect(world.toasts.join(' ')).toMatch(/git rebase/)
   })
 

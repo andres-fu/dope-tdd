@@ -24,6 +24,7 @@ const RECENT_EVENTS = 10
 // never sits under "proven 11". Kinds not listed read as they are.
 const EVENT_WORDS: Readonly<Record<string, string>> = {
   caught: 'proven',
+  blocked: 'refused',
   unverified: 'not checked',
   elsewhere: 'failed, not this module',
   fail: 'failed',
@@ -184,7 +185,7 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     runsLine(s),
     cycleLine(s),
     // #236: edits under a carried-over unlock are neither test-first nor misses, so they sit apart from the ratio.
-    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · refused ${s.blocked}`,
     ...catchLine(s),
     ...unclaimedLine(s),
     ...workaroundLine(s),
@@ -235,7 +236,7 @@ export function formatGlossary(): string {
     word('test-first', 'source edits made after their test was touched or seen failing, out of all source edits and refusals'),
     word('unlocked earlier', 'modules whose test was touched in an earlier session (up to 7 days); each needs one run of its test before its first edit'),
     word('unguarded', 'a source file changed with no test touched first'),
-    word('blocked', 'an edit was refused until the test is written'),
+    word('refused', 'an edit was stopped until the test is written'),
     word('never failed', 'cycles that went green without the test ever failing'),
     word('not checked', 'greens the catch check could not run on; the agent was told why'),
     word('workarounds', 'ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged'),

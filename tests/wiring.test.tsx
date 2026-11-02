@@ -2251,7 +2251,7 @@ describe('memory across sessions', () => {
     expect(first.deny).toMatch(/Why: /)
     expect(first.deny).not.toMatch(/write the failing test first/)
     expect(status.text).toMatch(/unlocked earlier: utils.formatDuration/)
-    expect(status.text).toMatch(/blocked 0/)
+    expect(status.text).toMatch(/refused 0/)
     expect(status.text).toMatch(/needs a run/)
   })
 

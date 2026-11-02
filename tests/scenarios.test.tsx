@@ -19,7 +19,7 @@ describe('scenario: fixing a bug in code that has no tests', () => {
     expect(allowed.deny).toBeUndefined()
     expect(green.text).toMatch(/phase: GREEN/)
     expect(green.text).toMatch(/cycles: 1 \(avg .*, 0 never failed\)/)
-    expect(green.text).toMatch(/test-first: 1\/2 · unguarded 0 · blocked 1/)
+    expect(green.text).toMatch(/test-first: 1\/2 · unguarded 0 · refused 1/)
   })
 })
 

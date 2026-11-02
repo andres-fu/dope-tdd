@@ -61,7 +61,7 @@ describe('guard modes from dope-tdd.json', () => {
     expect(entry.deny).toBeUndefined()
     expect(generated.deny).toBeUndefined()
     expect(other.deny).toBeDefined()
-    expect(status.text).toMatch(/test-first: 0\/1 · unguarded 0 · blocked 1/)
+    expect(status.text).toMatch(/test-first: 0\/1 · unguarded 0 · refused 1/)
     expect(status.text).toMatch(/exempt: src\/main\.tsx, src\/generated\/\*\*/)
   })
 
@@ -77,7 +77,7 @@ describe('guard modes from dope-tdd.json', () => {
     expect(outside.deny).toBeUndefined()
     expect(outside.context).toBeUndefined()
     expect(status.text).toMatch(/mode: enforce in src\/billing\/\*\*/)
-    expect(status.text).toMatch(/unguarded 1 · blocked 1/)
+    expect(status.text).toMatch(/unguarded 1 · refused 1/)
   })
 
   test('a broken config file falls back to enforce and the status says why', async ($, on) => {

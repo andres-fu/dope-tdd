@@ -116,6 +116,15 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   phase. Run the module's own test file to see its red. Maven and Gradle pick
   their test by class name and never name files, so their red is still the
   module's.
+- `dope-tdd.json` is compared before and after every shell command, as it is for
+  Edit and Write. A change the command made is recorded and Claude is asked why,
+  and one that loosens the guard counts as a workaround. So does making the file
+  invalid, on any surface, or deleting it through a shell, since an invalid or
+  missing file takes its layout and exemptions with it. A file that only held the
+  defaults changes nothing the guard reads, so deleting it is quiet. A change that arrived with
+  a git rewrite alone, or around a command Claude Code refused or held read-only,
+  is recorded and said, and counted against nobody. So is one around a command that
+  only looks read-only, unless the command names the file.
 - After every shell command, reads and test runs included, `git diff` under
   `src/` and `tests/` is the source of truth. It compares with the commit HEAD was
   on before the command, so a change the command also stages or commits still

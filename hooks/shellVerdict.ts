@@ -134,6 +134,35 @@ export function changeOwner(heldReadOnly: boolean, looksReadOnly: boolean): 'els
   return looksReadOnly ? 'unclaimed' : 'command'
 }
 
+/** Nothing to compare: the same text, or a file that went with its folder (`git worktree remove`), which is no deleted config. */
+export function configLeftAlone(textBefore: string | null, textAfter: string | null, rootThere: boolean): boolean {
+  return textAfter === textBefore || (textAfter === null && !rootThere)
+}
+
+export interface ConfigChangeFacts {
+  refused: boolean
+  heldReadOnly: boolean
+  looksReadOnly: boolean
+  revertOnly: boolean
+  /** The command's text names a write to the file. */
+  named: boolean
+  loosened: boolean
+  deleted: boolean
+  detail: string
+}
+
+/**
+ * What a change to the config around a shell command means (#293). As with a code file, what a git rewrite brought in or
+ * a held-read-only command sat beside isn't the command's, and a write it names is its own however it looks. A refused
+ * command never ran. The command's own change is asked about, and counted when it loosens the guard or deletes the file,
+ * which takes its layout and exemptions with it.
+ */
+export function judgeConfigChange({ refused, heldReadOnly, looksReadOnly, revertOnly, named, loosened, deleted, detail }: ConfigChangeFacts): { asks: boolean; counts: boolean; detail: string } {
+  const owner = changeOwner(heldReadOnly, looksReadOnly)
+  const asks = !refused && !revertOnly && (owner === 'command' || (owner === 'unclaimed' && named))
+  return { asks, counts: asks && (loosened || deleted), detail: deleted ? `file deleted: ${detail}` : detail }
+}
+
 /** Which of the changes seen are charged, and which only said. A write the command names is its own, however it looks. */
 export function splitChanges(seen: readonly string[], owner: ReturnType<typeof changeOwner>, named: readonly string[]): { charged: string[]; said: string[] } {
   if (owner === 'unclaimed') {

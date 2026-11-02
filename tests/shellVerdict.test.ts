@@ -3,8 +3,57 @@ import { describe, expect, test } from 'claude-code/testing'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import { ELSEWHERE } from '../hooks/shell'
-import { changeOwner, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from '../hooks/shellVerdict'
+import { changeOwner, configLeftAlone, judgeConfigChange, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
+
+// #293: a config changed around a command is the command's as a code file would be, and a named write is its own.
+describe('judgeConfigChange', () => {
+  const facts = { refused: false, heldReadOnly: false, looksReadOnly: false, revertOnly: false, named: false, loosened: true, deleted: false, detail: 'mode enforce → observe' }
+
+  test('an ordinary command made the change: asked, and counted when it loosens', () => {
+    expect(judgeConfigChange(facts)).toEqual({ asks: true, counts: true, detail: facts.detail })
+    expect(judgeConfigChange({ ...facts, loosened: false })).toEqual({ asks: true, counts: false, detail: facts.detail })
+  })
+
+  test('a file deleted counts whatever the fields say, and says so', () => {
+    expect(judgeConfigChange({ ...facts, loosened: false, deleted: true })).toEqual({ asks: true, counts: true, detail: `file deleted: ${facts.detail}` })
+  })
+
+  test('a refused command never ran, so it asks and counts nothing', () => {
+    expect(judgeConfigChange({ ...facts, refused: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a git rewrite with nothing beside it brought the change in, named or not', () => {
+    expect(judgeConfigChange({ ...facts, revertOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, revertOnly: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a command Claude Code held read-only did not make it, named or not', () => {
+    expect(judgeConfigChange({ ...facts, heldReadOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, heldReadOnly: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a command that only looks read-only may have, unless it names the file', () => {
+    expect(judgeConfigChange({ ...facts, looksReadOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, looksReadOnly: true, named: true })).toMatchObject({ asks: true, counts: true })
+  })
+})
+
+describe('configLeftAlone', () => {
+  test('the same text is no change', () => {
+    expect(configLeftAlone('{}', '{}', true)).toBe(true)
+    expect(configLeftAlone(null, null, true)).toBe(true)
+  })
+
+  test('new text is a change, and so is a file gone from a folder that is still there', () => {
+    expect(configLeftAlone('{}', '{"mode":"warn"}', true)).toBe(false)
+    expect(configLeftAlone('{}', null, true)).toBe(false)
+  })
+
+  test('a file gone with its folder went with the folder (`git worktree remove`)', () => {
+    expect(configLeftAlone('{}', null, false)).toBe(true)
+  })
+})
 
 describe('changeOwner', () => {
   test('a command Claude Code held read-only did not make the change', () => {

@@ -25,6 +25,7 @@ import {
   carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
+  configChangedNearbyAdvice,
   commentsOnlyAdvice,
   hollowAdvice,
   importAdvice,
@@ -55,7 +56,7 @@ import type { RecordEntry } from './sessionLog.ts'
 import { cwdAfter } from './shell.ts'
 import { cwdToCarry, settledStart, shellRoot, shellStart, unlockedElsewhere } from './shellCheckout.ts'
 import type { ShellScene } from './shellCheckout.ts'
-import { changeOwner, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from './shellVerdict.ts'
+import { changeOwner, configLeftAlone, judgeConfigChange, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
@@ -1878,7 +1879,7 @@ async function guardShell(
   const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await checkShell($, command, proceed, shell, { root, start, written, scene }, agentId)
+    const result = await watchConfig($, root, command, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
@@ -2587,6 +2588,47 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
   const line = `dope-tdd: that command changed ${OVERRIDES_FILE}; only dope-tdd writes it, so dope-tdd put ${OVERRIDES_FILE} back. Recorded as a workaround; say why.`
   $.ui.log(line)
   return tell(false, result, [line])
+}
+
+/** A config a command changed is recorded as Edit's is (#293), even when the check around the command throws. */
+async function watchConfig($: EngineInterface, root: string, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+  const path = `${root}/${CONFIG_FILE}`
+  const textBefore = await readWhole($, path)
+  const before = await loadConfig($, root)
+  const noteChange = async (result: ToolCallResult | null): Promise<string[]> => {
+    const textAfter = await readWhole($, path)
+    if (configLeftAlone(textBefore, textAfter, await $.fs.exists(root))) {
+      return []
+    }
+    const after = await loadConfig($, root)
+    const changed = describeConfigChange(before, after)
+    if (changed === null) {
+      return []
+    }
+    const { asks, counts, detail } = judgeConfigChange({
+      refused: result?.deny !== undefined,
+      heldReadOnly: result?.isReadOnly === true,
+      looksReadOnly: looksReadOnly(command),
+      revertOnly: isRevertOnly(command, looksReadOnly),
+      named: writesFileNamed(command, CONFIG_FILE),
+      loosened: isLoosening(before, after),
+      // A read can fail with the file still there (a lock, `chmod 000`).
+      deleted: textAfter === null && !(await $.fs.exists(path)),
+      detail: changed,
+    })
+    const nowMs = await $.clock.now()
+    await change($, s => recordConfigChange(s, detail, counts, nowMs))
+    toast($, `dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
+    return [asks ? configChangedAdvice(detail) : configChangedNearbyAdvice(detail)]
+  }
+  let result: ToolCallResult
+  try {
+    result = await run()
+  } catch (error) {
+    await noteChange(null).catch((second: unknown) => $.ui.log(`dope-tdd: could not compare ${CONFIG_FILE}: ${String(second)}`))
+    throw error
+  }
+  return tell(false, result, await noteChange(result))
 }
 
 /** The session records in `<home>/.dope-tdd/sessions/`, or none when there is no home or no folder yet. */

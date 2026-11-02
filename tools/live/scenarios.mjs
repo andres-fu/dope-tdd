@@ -14,6 +14,7 @@ const subagentPrompt = `Use the Agent tool once, with isolation set to "worktree
 const fwd = path => path.replace(/\\/g, '/')
 /** A write the guard can't read from a command's text, which only the check after the command can see. */
 const scriptWrite = word => `node -e "require('fs').appendFileSync(process.argv[1], '// ${word}\\n')" src/calc.js`
+const configWrite = `node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({ mode: 'observe' }))" dope-tdd.json`
 
 export const dirOf = (ctx, where) => (where === 'probe' ? ctx.probe : `${ctx.root}/${where}`)
 
@@ -245,6 +246,26 @@ export const scenarios = [
         check('one command wrote and committed', ran('git commit')),
         check('src/calc.js changed on disk', ctx.calcAfter !== ctx.calcBefore),
         check('/tdd counts both as unguarded', report.includes('unguarded 2'), report === '' ? 'no /tdd output' : (/unguarded \d+/.exec(report)?.[0] ?? 'no unguarded count')),
+      ]
+    },
+  },
+  {
+    id: 'J',
+    title: 'a config loosened by a script is recorded, and the agent is asked why (#293)',
+    cwd: 'probe',
+    plugin: 'on',
+    tools: ['Bash'],
+    maxTurns: 5,
+    messages: () => [`Use the Bash tool to run this command exactly, once: \`${configWrite}\`. Then stop.`, '/tdd'],
+    check(run, ctx) {
+      const report = tddReport(run) ?? ''
+      const call = run.calls.find(each => each.name === 'Bash' && each.input?.command?.includes('writeFileSync'))
+      return [
+        ...buildChecks(run, ctx),
+        sessionCheck(run, ctx, 'probe'),
+        check('the command ran', call?.result?.error === false, call?.result?.text.split('\n')[0] ?? 'no such command'),
+        check('/tdd counts a workaround', report.includes('workarounds: 1'), report === '' ? 'no /tdd output' : (/workarounds: \d+/.exec(report)?.[0] ?? 'no workaround count')),
+        check('/tdd names the change', report.includes('mode enforce → observe'), report === '' ? 'no /tdd output' : 'not in its report'),
       ]
     },
   },

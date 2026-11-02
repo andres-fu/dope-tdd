@@ -130,6 +130,8 @@ export type FakeWorld = {
   diffText: string
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
   readOnly: boolean
+  /** Claude Code refuses the shell call with this reason; null lets it run. */
+  bashDeny: string | null
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
   onCatchRun: () => void | Promise<void>
   /** Called while the catch check runs its baseline, before anything is reverted: a save from your editor, say. */
@@ -200,6 +202,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     mainCheckout: null,
     diffText: '',
     readOnly: false,
+    bashDeny: null,
     onCatchRun: () => {},
     onBaselineRun: () => {},
     writeFails: () => false,
@@ -418,6 +421,9 @@ ${main}/.git
     }
     if ((e.tool === 'Write' || e.tool === 'Edit') && world.editFails) {
       return { isError: true as const, result: 'failed', text: 'failed' }
+    }
+    if (isShell && world.bashDeny !== null) {
+      return { deny: world.bashDeny } as never
     }
     if (isShell && world.bashFails) {
       return { isError: true as const, result: 'FAIL', text: world.bashText || failOutput(world.lastTest) }

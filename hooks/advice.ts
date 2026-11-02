@@ -98,6 +98,10 @@ export function configChangedAdvice(detail: string): string {
   return say('config.changed', { detail })
 }
 
+export function configChangedNearbyAdvice(detail: string): string {
+  return say('config.changedNearby', { detail })
+}
+
 export function skippedAdvice(testPath: string, added: number): string {
   return say('workaround.skipped', { testPath, added })
 }

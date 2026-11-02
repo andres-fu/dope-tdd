@@ -187,8 +187,9 @@ left alone on purpose:
   at user scope, or at project scope, to cover more.
 - **Files a program changes.** Dope TDD can't see inside a script, formatter or
   code generator before it runs, so it can't refuse it. Changes it makes to
-  source are noticed afterwards and counted as unguarded, unless the same command
-  stages them.
+  source are noticed afterwards and counted as unguarded, usually even when the
+  same command stages or commits them. [What gets past it](docs/what-gets-past.md)
+  lists when that fails.
 - **While it stands aside.** In `warn` or `observe` mode, during `/tdd pause`,
   and during a git merge, rebase or cherry-pick, nothing is refused. The band
   says which.

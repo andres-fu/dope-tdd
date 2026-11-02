@@ -27,7 +27,8 @@ agent that sets out to beat them.
 ## What gets past a refusal
 
 Some routes need no trick at all. A test only has to be touched to unlock its
-module, so adding a comment to a test file lets the next edit through. A shell
+module, so adding a comment to a test file lets the next edit through, and so does
+deleting it ([#300](https://github.com/andres-fu/dope-tdd/issues/300)). A shell
 command can change `dope-tdd.json`, and the guard then follows the new settings:
 it isn't recorded when a shell does that
 ([#293](https://github.com/andres-fu/dope-tdd/issues/293)). During a merge, rebase
@@ -40,11 +41,14 @@ These aren't refused, and the last column says what the guard does instead.
 | What | Example | What the guard does |
 |---|---|---|
 | A program it can't see inside | `python3 fix.py`, `make`, `prettier --write` | After the command, git shows the change and it counts as unguarded |
-| A write that's also staged | `python3 fix.py && git add src/a.ts` | Nothing: the check compares with what's staged ([#292](https://github.com/andres-fu/dope-tdd/issues/292)) |
-| A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it |
+| A write committed, then a pull or checkout in the same command | `python3 fix.py && git commit -qam x && git pull --rebase` | Nothing: the pull moves the commit the check compares with |
+| A write committed with no reflog to read | A repository with `core.logAllRefUpdates=false` and no `logs/HEAD` | A line in the log, nothing in `/tdd`: it can't tell a commit from a pull |
+| A write committed by plumbing | `python3 fix.py && git add -A && git update-ref HEAD "$(git commit-tree ...)"` | Nothing: only `git commit` reads as a commit |
+| A new file staged in a repository with no commit yet | `python3 fix.py && git add -A` | Nothing: there's no commit to compare with |
+| A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it ([#297](https://github.com/andres-fu/dope-tdd/issues/297)) |
 | A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts` | Said once for that file, charged to nobody |
 | A write hidden in a read or a test run | `echo "$(sed -i ...)"` | Said once for that file, charged to nobody |
-| A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
+| A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git restore a.ts && git tag -a -m "$(./fix.sh)" v9`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
 | A write outside the folders it watches | A file outside `src/` and `tests/`, with the default layout | Nothing, unless the command names it |
 | A project with no git repository | A script's write | Nothing: the check after a command needs git |
 | A job left running after its command ends | `(sleep 5; ./fix.sh) &` | Nothing, unless it lands while a later command runs. Then that command is charged |

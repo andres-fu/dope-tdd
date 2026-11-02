@@ -1446,6 +1446,209 @@ describe('a commit is not a write (#23)', () => {
   })
 })
 
+// #292: the check compared the tree with the index, so a write the same command staged or committed never showed.
+describe('a write the same command stages or commits still shows', () => {
+  const OLD = 'a'.repeat(40)
+  const NEW = 'b'.repeat(40)
+  const onDisk = (world: ReturnType<typeof fakeEngine>) => {
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.head = OLD
+    world.numstatAgainst.set(OLD, '')
+  }
+  const moveHead = (world: ReturnType<typeof fakeEngine>, subject: string) => {
+    world.head = NEW
+    world.reflog = `${NEW} ${subject}\n${OLD} commit: start\n`
+    world.numstatAgainst.set(NEW, '')
+  }
+
+  for (const command of ['python3 fix.py && git add src/a.ts', 'python3 fix.py && git add -A']) {
+    test(`staged: ${command}`, async ($, on) => {
+      const world = fakeEngine(on)
+      onDisk(world)
+      world.onBash = () => {
+        world.numstatAgainst.set(OLD, '1\t1\tsrc/a.ts\n')
+      }
+
+      await runBash($, command)
+
+      expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+    })
+  }
+
+  test('committed in the same command', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'commit: x')
+      world.numstatAgainst.set(OLD, '1\t1\tsrc/a.ts\n')
+    }
+
+    await runBash($, 'python3 fix.py && git commit -qam x')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
+  test('a commit of work from an earlier command is not charged', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.numstatAgainst.set(OLD, '3\t1\tsrc/a.ts\n')
+    world.onBash = () => {
+      moveHead(world, 'commit: x')
+    }
+
+    await runBash($, 'git commit -qam x')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 0/)
+  })
+
+  test('what a pull brought is not charged, and a write beside it is', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'pull: Fast-forward')
+      world.numstatAgainst.set(OLD, '9\t0\tsrc/pulled.ts\n1\t1\tsrc/a.ts\n')
+      world.numstatAgainst.set(NEW, '1\t1\tsrc/a.ts\n')
+    }
+
+    await runBash($, 'git pull && python3 fix.py && git add src/a.ts')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
+  test('what a reset uncovered is not charged, and a write beside it is', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'reset: moving to HEAD~1')
+      world.numstatAgainst.set(OLD, '1\t1\tsrc/a.ts\n')
+      world.numstatAgainst.set(NEW, '1\t1\tsrc/a.ts\n4\t0\tsrc/c.ts\n')
+    }
+
+    await runBash($, 'git reset --soft HEAD~1 && python3 fix.py')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
+  test('a reset alone brings in nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'reset: moving to HEAD~1')
+      world.numstatAgainst.set(NEW, '4\t0\tsrc/c.ts\n')
+    }
+
+    await runBash($, 'git reset --soft HEAD~1')
+
+    expect(world.logs.join('\n')).not.toMatch(/brought in code/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 0/)
+  })
+
+  test('a reflog that cannot say what moved HEAD is said', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      world.head = NEW
+      world.reflog = ''
+      world.numstatAgainst.set(NEW, '')
+    }
+
+    await runBash($, 'python3 fix.py && git commit -qam x')
+
+    expect(world.logs.join('\n')).toMatch(/can't tell what moved HEAD/)
+  })
+
+  test('a HEAD that can no longer be read is said', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      world.head = null
+    }
+
+    await runBash($, 'git checkout --orphan fresh && python3 fix.py && git add -A')
+
+    expect(world.logs.join('\n')).toMatch(/can't tell what moved HEAD/)
+  })
+
+  test('a rewrite beside a script is charged, not said as brought in', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      world.numstatAgainst.set(OLD, '1\t1\tsrc/a.ts\n')
+    }
+
+    await runBash($, 'git stash pop && python3 fix.py')
+
+    expect(world.logs.join('\n')).not.toMatch(/brought in code/)
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
+  test('what a rewrite brought is not charged though it is committed and pushed', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'commit: t')
+      world.numstatAgainst.set(OLD, '1\t1\tsrc/d.ts\n')
+    }
+
+    await runBash($, 'git checkout other -- src/d.ts && git commit -qm t && git push')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 0/)
+  })
+
+  test('both snapshots name the commit and turn renames off', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+
+    await runBash($, 'ls')
+
+    const snapshots = world.gitCalls.filter(argv => argv.includes('--numstat'))
+    expect(snapshots).toHaveLength(2)
+    for (const argv of snapshots) {
+      expect(argv).toContain(OLD)
+      expect(argv).toContain('--no-renames')
+    }
+  })
+
+  test('a repository with no commit yet stays on the index, and logs nothing for it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.head = null
+
+    await runBash($, 'ls')
+
+    const snapshot = world.gitCalls.find(argv => argv.includes('--numstat'))
+    expect(snapshot).not.toContain('--no-renames')
+    expect(world.logs.join('\n')).not.toMatch(/rev-parse|moved HEAD/)
+  })
+
+  test('the first commit in a repository stays on the index both sides', async ($, on) => {
+    const world = fakeEngine(on)
+    world.head = null
+    world.onBash = () => {
+      world.head = NEW
+    }
+
+    await runBash($, 'git commit -qm first')
+
+    const snapshots = world.gitCalls.filter(argv => argv.includes('--numstat'))
+    expect(snapshots).toHaveLength(2)
+    expect(snapshots.some(argv => argv.includes('--no-renames'))).toBe(false)
+  })
+
+  test('the reflog read is bounded and leaves out signature lines', async ($, on) => {
+    const world = fakeEngine(on)
+    onDisk(world)
+    world.onBash = () => {
+      moveHead(world, 'commit: x')
+    }
+
+    await runBash($, 'git commit -qam x')
+
+    const read = world.gitCalls.find(argv => argv.includes('-g'))
+    expect(read).toContain('--no-show-signature')
+    expect(read).toContain('-n100')
+  })
+})
+
 describe('the PowerShell tool', () => {
   test('a PowerShell write to a locked source file is denied like a Bash one', async ($, on) => {
     fakeEngine(on)

@@ -35,20 +35,90 @@ export function parseNumstat(output: string): Record<string, string> {
 
 /**
  * The paths whose entry differs, appeared, or disappeared. `mtimesNow` gives the current modified time of paths that
- * left the snapshot (null when the file is gone): one that is still there with the time the snapshot recorded was
- * committed or staged (`git add`, `git commit`), not written, so it is not a change (#23).
+ * left the snapshot (null when the file is gone): one that is still there with the time the snapshot recorded left it
+ * through git (a commit in a repository with none before it, a pull), not a write, so it is not a change (#23).
  */
 export function changedPaths(before: SourceSnapshot, after: SourceSnapshot, mtimesNow: Readonly<Record<string, number | null>> = {}): string[] {
   const paths = new Set([...Object.keys(before), ...Object.keys(after)])
-  return [...paths].filter(path => before[path] !== after[path] && !onlyLeftTheDiff(before[path], after[path], mtimesNow[path]))
+  return [...paths].filter(path => before[path] !== after[path] && !onlyLeftTheDiff(before[path], after[path], mtimesNow[path]) && !onlyStaged(before[path], after[path]))
 }
 
 /** An entry is `<counts or untracked>:<modified time>`; the time is what follows the last colon. */
+function timeOf(entry: string): string {
+  return entry.slice(entry.lastIndexOf(':') + 1)
+}
+
 function onlyLeftTheDiff(was: string | undefined, now: string | undefined, mtimeNow: number | null | undefined): boolean {
   if (was === undefined || now !== undefined || mtimeNow === undefined || mtimeNow === null) {
     return false
   }
-  return was.slice(was.lastIndexOf(':') + 1) === String(mtimeNow)
+  return timeOf(was) === String(mtimeNow)
+}
+
+/** Against a commit, staging a new file turns `untracked` into counts and unstaging turns it back: nothing was written (#292). */
+function onlyStaged(was: string | undefined, now: string | undefined): boolean {
+  if (was === undefined || now === undefined || was.startsWith('untracked') === now.startsWith('untracked')) {
+    return false
+  }
+  return timeOf(was) === timeOf(now)
+}
+
+/**
+ * What a command changed. `after` is against the base `baseAfter` gave; `afterOldBase`, the same tree against the old
+ * base, is there only when that base moved. Git moved the base, and a reset moves it without touching a file, so only
+ * what differs against both was written (#292).
+ */
+export function changedAround(before: SourceSnapshot, after: SourceSnapshot, afterOldBase: SourceSnapshot | null, mtimesNow: Readonly<Record<string, number | null>> = {}): string[] {
+  const changed = changedPaths(before, after, mtimesNow)
+  if (afterOldBase === null) {
+    return changed
+  }
+  const againstOld = new Set(changedPaths(before, afterOldBase))
+  return changed.filter(path => againstOld.has(path))
+}
+
+/**
+ * What to compare the tree with after a command, given HEAD before and after it. With no commit before it there is no
+ * base, and the snapshots stay on the index. `unread` says the guard can't tell what moved HEAD, so a write committed in
+ * that command may not show: a reflog that can't say, or a HEAD that can't be read any more (`git checkout --orphan`).
+ */
+export function baseFor(oldHead: string | null, newHead: string | null, reflog: string): { base: string | null; unread: boolean } {
+  if (oldHead === null) {
+    return { base: null, unread: false }
+  }
+  if (newHead === null) {
+    return { base: null, unread: true }
+  }
+  const read = baseAfter(oldHead, newHead, reflog)
+  return { base: read ?? newHead, unread: read === null }
+}
+
+const REFLOG_ENTRY = /^([0-9a-f]{40}|[0-9a-f]{64}) (.*)$/
+const PLAIN_COMMIT = /^commit(?: \(amend\))?: /
+
+/**
+ * The commit to compare the tree with after a command, from `git log -g --format='%H %gs'`, newest first. A plain commit
+ * is the command's own work, so it keeps the base; anything else git did to HEAD brought in code that isn't, so the base
+ * moves to the newest such entry (#292). Null when HEAD moved and the reflog doesn't reach the old HEAD (turned off, or
+ * expired): nothing here can tell a commit from a pull.
+ */
+export function baseAfter(oldHead: string, newHead: string, reflog: string): string | null {
+  if (newHead === oldHead) {
+    return oldHead
+  }
+  for (const line of reflog.split(/\r?\n/)) {
+    const [, commit, subject] = REFLOG_ENTRY.exec(line) ?? []
+    if (commit === undefined || subject === undefined) {
+      continue
+    }
+    if (!PLAIN_COMMIT.test(subject)) {
+      return commit
+    }
+    if (commit === oldHead) {
+      return oldHead
+    }
+  }
+  return null
 }
 
 /**
@@ -56,7 +126,9 @@ function onlyLeftTheDiff(was: string | undefined, now: string | undefined, mtime
  * where a token in a remote URL can sit (verified review B1, 2026-10-20: 80 characters of the command were kept).
  */
 export function gitVerb(command: string): string {
-  for (const segment of commandSegments(command)) {
+  const segments = commandSegments(command)
+  // The rewrite that brought the code first, whatever git step came before it (#292).
+  for (const segment of [...segments.filter(segmentBringsCode), ...segments]) {
     const words = segment.trim().split(/\s+/)
     if (words[0] !== 'git') {
       continue
@@ -87,14 +159,17 @@ export function isGitOnly(command: string): boolean {
   return segments.length > 0 && segments.every(segment => /^\s*git\s/.test(segment))
 }
 
+const LEAVES_THE_TREE = /^\s*git\s+(?:add|commit|push|fetch|tag)(?=\s|$)/
+
 /**
  * A command that rewrites the tree with git and does nothing else that could write: every segment is a git rewrite,
- * a cd, or one `quiet` says cannot write (a test run). Only then are the changes it leaves not the agent's; a git
- * segment beside a script once hid the script's writes (verified review A7, 2026-10-20).
+ * a cd, one that leaves the tree alone (what a rewrite brought is staged, committed or pushed, #292), or one `quiet` says
+ * cannot write (a test run). Only then are the changes it leaves not the agent's; a git segment beside a script once hid
+ * the script's writes (verified review A7, 2026-10-20).
  */
 export function isRevertOnly(command: string, quiet: (segment: string) => boolean): boolean {
   const segments = commandSegments(command).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
-  return segments.some(segment => REWRITES_TREE.test(segment)) && segments.every(segment => REWRITES_TREE.test(segment) || quiet(segment))
+  return segments.some(segment => REWRITES_TREE.test(segment)) && segments.every(segment => REWRITES_TREE.test(segment) || LEAVES_THE_TREE.test(segment) || quiet(segment))
 }
 
 export function isRevertCommand(command: string): boolean {
@@ -119,5 +194,9 @@ const BACK_TO_HEAD = [
  * (Karl's trial, 2026-10-19: a git restore logged nothing, which is right only for code put back to HEAD).
  */
 export function bringsInCode(command: string): boolean {
-  return commandSegments(command).some(segment => REWRITES_TREE.test(segment) && !BACK_TO_HEAD.some(shape => shape.test(segment)))
+  return commandSegments(command).some(segmentBringsCode)
+}
+
+function segmentBringsCode(segment: string): boolean {
+  return REWRITES_TREE.test(segment) && !BACK_TO_HEAD.some(shape => shape.test(segment))
 }

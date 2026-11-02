@@ -603,14 +603,14 @@ describe('code no layout pairs is said once a session', () => {
     expect((await runCommand($, 'tdd')).text).not.toMatch(/no test layout/)
   })
 
-  test('a write beside a test run is seen, though the command reads as only a test run', async ($, on) => {
+  test('a run\'s own write to code nothing guards is seen, though the command reads as only a test run', async ($, on) => {
     const world = fakeEngine(on)
     world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
     world.onBash = () => {
       world.testModifiedAt += 1
     }
 
-    const run = await runBash($, 'echo 1 > tools/gen.py && npx vitest run')
+    const run = await runBash($, 'npx vitest run > tools/gen.py')
 
     expect(run.context?.join(' ')).toMatch(/tools\/gen\.py isn't node code/)
     expect((await runCommand($, 'tdd')).text).toMatch(/edited, another stack, not guarded \(tools\/gen\.py\)/)
@@ -1953,7 +1953,7 @@ describe('a config changed through a shell is on the record', () => {
     const world = fakeEngine(on)
     loosen(world)
 
-    await runBash($, 'echo \'{"mode":"observe"}\' > dope-tdd.json && npm test')
+    await runBash($, 'npx vitest run > dope-tdd.json')
 
     expect((await runCommand($, 'tdd')).text).toMatch(/workarounds: 1/)
   })

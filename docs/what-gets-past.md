@@ -51,8 +51,9 @@ These aren't refused, and the last column says what the guard does instead.
 | A write committed by plumbing | `python3 fix.py && git add -A && git update-ref HEAD "$(git commit-tree ...)"` | Nothing: only `git commit` reads as a commit |
 | A new file staged in a repository with no commit yet | `python3 fix.py && git add -A` | Nothing: there's no commit to compare with |
 | A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it ([#297](https://github.com/andres-fu/dope-tdd/issues/297)) |
-| A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts` | Said once for that file, charged to nobody |
+| A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts`, `echo x 2> a.txt && npm test` | Said once for that file, charged to nobody |
 | A write hidden in a read or a test run | `echo "$(sed -i ...)"` | Said once for that file, charged to nobody |
+| A path through `$PWD` | `echo 1 > "$PWD/src/a.ts"`, `npm test > "$PWD/src/a.ts"` | Not refused. After the command, git shows the change: the first counts as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309)) |
 | A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git restore a.ts && git tag -a -m "$(./fix.sh)" v9`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
 | A write outside the folders it watches | A file outside `src/` and `tests/`, with the default layout | Nothing, unless the command names it |
 | A project with no git repository | A script's write | Nothing: the check after a command needs git |

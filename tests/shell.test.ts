@@ -146,4 +146,11 @@ describe('isPureRead', () => {
       expect(isPureRead(command)).toBe(false)
     }
   })
+
+  // #304: every wider pattern tried here charged reads that write nothing, so these stay read until the proper reader (#260).
+  test('stderr and streams joined to one another stay reads, on any null device PowerShell or cmd uses too', () => {
+    for (const command of ['ls 2>&1', 'ls >&2', 'ls >& 2', 'ls 2>/dev/null', 'git status 2>$null', 'cat a 2>nul', 'ls > /dev/null']) {
+      expect(isPureRead(command)).toBe(true)
+    }
+  })
 })

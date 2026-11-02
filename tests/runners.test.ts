@@ -788,6 +788,20 @@ describe('looksReadOnly', () => {
       expect(looksReadOnly(command)).toBe(false)
     }
   })
+
+  // #304: `echo` beside a run was harmless with no look for a redirect, so a write through a path the reader can't name
+  // read as nobody's.
+  test('a redirect beside a test run is the command writing', () => {
+    for (const command of ['echo \'{}\' > "$PWD/dope-tdd.json" && npm test', 'echo 1 >> tests/a.test.ts && npx vitest run', 'npm test | tail -5 > src/a.ts']) {
+      expect(looksReadOnly(command)).toBe(false)
+    }
+  })
+
+  test('a run keeps its own output, and output thrown away is no write', () => {
+    for (const command of ['npm test > out.log', 'npm test 2>&1 | tail -5', 'echo done 2>/dev/null && npm test', 'echo $? > /dev/null; npm test', 'wc -l a 2>$null; npm test']) {
+      expect(looksReadOnly(command)).toBe(true)
+    }
+  })
 })
 
 // #243 (2026-10-29): one command ran a test red, then green (`node --test x ; fix && node --test x`). The first summary

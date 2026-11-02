@@ -147,8 +147,16 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   read or test run**. Nobody is charged or credited. The change also counts
   against the module's next verdict where it can, though a verdict can still miss
   it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
-  names, as it does `ls 2> src/a.ts`, is the command's as usual
-  ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). Beside a git rewrite
+  names, as it does `npm test > src/a.ts`, is the command's as usual
+  ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). So is any change
+  around a `>` or `>>` beside a test run (`echo x > a.txt && npm test`), which reads
+  as a command that writes, though a run's own output to a file doesn't
+  ([#304](https://github.com/andres-fu/dope-tdd/issues/304)). Another editor's save
+  during that command is then the command's too: a test counts as touched and
+  unlocks its module. A `>` in quoted text
+  reads as a redirect too (`npm test | grep "=> x"`), so such a command takes the
+  charge when it shouldn't ([#310](https://github.com/andres-fu/dope-tdd/issues/310)).
+  Beside a git rewrite
   changes still count as git's, so a write hidden there isn't seen
   ([#284](https://github.com/andres-fu/dope-tdd/issues/284)).
 - Before a shell command runs, its writes are read from the command: a

@@ -1,6 +1,7 @@
 # Security and data
 
-What Dope TDD runs on your machine, what it sends, and what it keeps.
+What Dope TDD runs on your machine, what it sends, and what it keeps. It isn't a
+security boundary: [what gets past it](what-gets-past.md) says why.
 
 ## Your record
 

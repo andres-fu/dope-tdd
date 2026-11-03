@@ -568,6 +568,9 @@ describe('a sed -i handed to a shell names its files (#350)', () => {
     expect(findSourceWrites("$msg = @'\nnotes about src/a.ts\n'@\nbash scripts/check.sh\nsed -i 's/x/y/' docs/x.md", undefined, 'powershell')).toEqual([])
     // Spelled by its path, sed is no word of its own either, but with no shell in the command nothing is handed.
     expect(findSourceWrites(`/usr/bin/sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`)).toEqual([])
+    // Review round 2: spelled by its path beside a shell's name, it is still the command's own sed, not handed text.
+    expect(findSourceWrites(`wsl /usr/bin/sed -i 's/a/b/' ./src/a.ts`, undefined, 'powershell')).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`wsl /usr/bin/sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`, undefined, 'powershell')).toEqual([])
   })
 
   // Review round 1: a handed sed's script is text like a script's, so a dotted path in it is an import path (#272).

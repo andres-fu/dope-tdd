@@ -232,7 +232,9 @@ function mentioned(segment: string): string[] {
  * files read already, and a shell's name elsewhere in the segment (a comment, `wsl sed`) makes its script no target.
  */
 function sedTargets(segment: string, words: string): string[] {
-  const handed = RUNS_QUOTED_SHELL.test(words) && !(segment.match(SHELL_WORD) ?? []).includes('sed')
+  // The command's own sed, by name or by path (`/usr/bin/sed`).
+  const ownSed = (segment.match(SHELL_WORD) ?? []).some(word => /(?:^|\/)sed$/.test(word))
+  const handed = RUNS_QUOTED_SHELL.test(words) && !ownSed
   return handed ? mentioned(segment) : sedFiles(segment).filter(path => CODE_FILE.test(path))
 }
 

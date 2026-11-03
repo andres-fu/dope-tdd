@@ -36,20 +36,23 @@ runs.
 
 ## Working in this repo
 
-Each line here cost a session an hour or a broken file. Ten lines at most: at ten, the oldest becomes a
-test, a tool or a lint, and leaves. A session that trips on the same thing twice adds a line in its pull
-request.
+Each line here cost a session an hour or a broken file. A session that trips on the same thing twice
+in one sitting adds a line at the bottom in its pull request, so line 1 is the oldest. Ten lines at
+most: at ten, line 1 becomes a test, a tool, a lint or a note elsewhere, and leaves.
 
-1. Run a test file without a pipe. `node --test` prints its summary before the failures, so `head` or
-   `grep` cuts it off and the guard counts nothing. To filter, use `--test-reporter=tap | tail -40`.
+1. `node --test`'s default reporter prints the summary before the failure detail, so `| tail` can drop
+   it and the guard counts nothing. With `--test-reporter=tap` the summary comes last, and `| tail -40`
+   keeps it. What the guard reads from a run is in [docs/testers.md](../docs/testers.md).
 2. Write a probe script or a test block with the Write tool, then run it by path. A heredoc through
-   Bash on Windows loses backslashes and quotes, and has broken test files mid-edit.
-3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text, and a
-   write verb beside a source file's name there can read as a write to it, even in a read.
+   Bash on Windows halves double backslashes, which breaks string and regex escapes in test files.
+3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text: a
+   write verb outside quotes (`sed -i`, `Set-Content`, `mv`), or a script's write call anywhere in it
+   (`writeFile(`, `open(..., 'w')`), beside a source file's name reads as a write to it, even in a grep.
 4. Don't switch branches in a checkout another session is using. A side session that writes code
    gets its own worktree.
-5. Probe for Python with `command -v python` first. On Windows a bare `python` can be the Store stub,
-   which hangs instead of failing.
+5. Before running `python`, check where it resolves: `command -v python` in Bash,
+   `(Get-Command python).Source` in PowerShell. A path under `WindowsApps` is the Store stub, which
+   hangs instead of failing.
 
 ## How we work
 

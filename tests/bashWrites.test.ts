@@ -388,6 +388,26 @@ describe('a PowerShell write names its target (#332)', () => {
     expect(findSourceWrites(`sed -i 's/a/b/' src/a.ts src/b.ts`)).toEqual(['src/a.ts', 'src/b.ts'])
   })
 
+  // Review nit: a quoted path after a switch or a non-path option is still the write's positional path.
+  test('a quoted path after an option that is not the path option is still named', () => {
+    expect(findSourceWrites('Set-Content -Encoding UTF8 "src/a.ts" $c')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('$c | Out-File -Append "src/a.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('"x" | Out-File -Encoding utf8 "src/a.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('Set-Content -Value "see hooks/b.ts" "src/a.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('Set-Content -Value "see hooks/b.ts" -Path "src/a.ts" -NoNewline')).toEqual(['src/a.ts'])
+  })
+
+  // Review nit: the record and config check must name a file by a drive-letter path, and on a line after a heredoc.
+  test('the record named by a drive-letter path, or on a line after a data heredoc, is still a write to it', () => {
+    expect(writesFileNamed(`Set-Content -Path "C:/r/${RECORD}" -Value '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path:"C:/r/${RECORD}" '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`sed -i 's/a/b/' C:/r/${RECORD}`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path "$root/${RECORD}" '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`cat > /tmp/x <<'EOF'\nhi\nEOF\nsed -i 's/a/b/' ${RECORD}`, RECORD)).toBe(true)
+    expect(writesFileNamed(`cat > /tmp/x <<'EOF'\nhi\nEOF\nSet-Content ${RECORD} '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path "C:/r/dope-tdd.json" '{"mode":"observe"}'`, 'dope-tdd.json')).toBe(true)
+  })
+
   // #322: a data heredoc whose body named the record beside `sed -i` was refused as a write to the record.
   test("a data heredoc's body naming the record beside sed -i is not a write to it (#322)", () => {
     expect(writesFileNamed(`cat > /tmp/probe.sh <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(false)

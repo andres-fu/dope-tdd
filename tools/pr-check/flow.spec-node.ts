@@ -91,6 +91,18 @@ test('a marker the pull request adds does not change the stack it is judged as',
   assert.equal(rows.find(row => row.source === 'src/a.js')?.verdict, 'UNTESTED')
 })
 
+test('a project whose first marker comes in the pull request is judged as that stack, and told so', async () => {
+  const { rows, configNote } = await checkPullRequest(repoWith(null, null, { 'pyproject.toml': '[project]\n', 'src/b.py': 'def b():\n    return 1\n' }), 'main', { timeoutMs: 20_000 })
+  assert.equal(rows.find(row => row.source === 'src/b.py')?.verdict, 'UNTESTED')
+  assert.match(configNote ?? '', /adds pyproject\.toml/)
+})
+
+test('an invalid first config says to fix it in this pull request', async () => {
+  const { configNote } = await checkPullRequest(repoWith(null, '{ "mode": "Nope" }\n'), 'main', { timeoutMs: 20_000 })
+  assert.match(configNote ?? '', /invalid, so the defaults were used\. Fix it in this pull request\./)
+  assert.doesNotMatch(configNote ?? '', /judged by that file|base branch/)
+})
+
 test('a config that is invalid at the base is said, whatever the pull request does with it', async () => {
   for (const prConfig of [null, '{ "mode": "enforce" }\n']) {
     const { configNote } = await checkPullRequest(repoWith('{ "mode": "Nope" }\n', prConfig), 'main', { timeoutMs: 20_000 })

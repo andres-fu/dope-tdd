@@ -34,7 +34,8 @@ import { failedTestsIn } from '../../hooks/runners.ts'
 import { changedCode, existsAt, renameRules } from '../move-check/check.ts'
 import { declarations, findMoves } from '../move-check/move.ts'
 import type { Move, Rename } from '../move-check/move.ts'
-import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
+import { detectStackFrom, stackMarker, stackOf } from '../../hooks/stacks.ts'
+import type { StackName } from '../../hooks/stacks.ts'
 
 type Verdict = 'PROVEN' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNPROVEN'
 /** `policy`: what dope-tdd.json says for the source; only an enforced one fails the check (#192). */
@@ -203,20 +204,40 @@ export function report(rows: readonly Row[], base: string, configNote: string | 
  * The config a pull request is judged by: the base's, so it can't pass by changing what it's judged by (#319). A project
  * with none at the base has nothing else to go on, so its first config counts. The note says when the two differ.
  */
-function configFor(root: string, base: string): { text: string | null; note: string | null } {
+function configFor(root: string, base: string): { text: string | null; atBase: boolean; changed: boolean } {
   const head = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
   if (git(root, 'ls-tree', base, '--', CONFIG_FILE) === '') {
-    // Said, so a reader sees the pull request wrote the rules it was judged by.
-    return { text: head, note: head === null ? null : `This pull request adds ${CONFIG_FILE}, and it was judged by that file, since the base has none.` }
+    return { text: head, atBase: false, changed: head !== null }
   }
   const text = git(root, 'show', `${base}:${CONFIG_FILE}`)
   const same = head !== null && head.replace(/\r\n/g, '\n').trim() === text.replace(/\r\n/g, '\n').trim()
-  return {
-    text,
-    note: same
-      ? null
-      : `This pull request changes ${CONFIG_FILE}. It was judged by the base's copy, so the change isn't in force here: tests or sources at new paths aren't seen. Merge the config change on its own first.`,
-  }
+  return { text, atBase: true, changed: !same }
+}
+
+/**
+ * The stack, from the base's markers, so one the pull request adds can't move the layout. A project with neither a
+ * marker nor a config at the base takes the pull request's first marker, as with a first config, and the note says so.
+ */
+function stackFor(root: string, base: string, configAtBase: boolean): { stack: StackName | undefined; note: string | null } {
+  const atBase = detectStackFrom(lines(git(root, 'ls-tree', '--name-only', base)))
+  if (atBase !== null || configAtBase) return { stack: atBase ?? undefined, note: null }
+  const headNames = lines(git(root, 'ls-tree', '--name-only', 'HEAD'))
+  const added = detectStackFrom(headNames)
+  if (added === null) return { stack: undefined, note: null }
+  return { stack: added, note: `This pull request adds ${stackMarker(headNames, added)}, and it was judged as ${added} by it, since the base has no marker.` }
+}
+
+/** What the report says about the config, ahead of the table. Each says what the pull request did and where it stands. */
+function configNotes(found: { atBase: boolean; changed: boolean }, invalid: boolean, stackNote: string | null): string | null {
+  const notes = [
+    found.atBase && found.changed
+      ? `This pull request changes ${CONFIG_FILE}. It was judged by the base's copy, so the change isn't in force here: tests or sources at new paths aren't seen. Merge the config change on its own first.`
+      : null,
+    !found.atBase && found.changed && !invalid ? `This pull request adds ${CONFIG_FILE}, and it was judged by that file, since the base has none.` : null,
+    invalid ? `${CONFIG_FILE} is invalid, so the defaults were used. ${found.atBase ? 'Fix it on the base branch.' : 'Fix it in this pull request.'}` : null,
+    stackNote,
+  ].filter(note => note !== null)
+  return notes.length === 0 ? null : notes.join(' ')
 }
 
 /** The check of a pull request checked out at `root`: a row per guarded source it changes, the merge base used, and any word on the config. */
@@ -226,12 +247,11 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
   }
   const base = git(root, 'merge-base', baseRef, 'HEAD')
   const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
-  const { text: configText, note: changedNote } = configFor(root, base)
-  // The stack comes from the base too: a marker the pull request adds would change the layout it's judged by.
-  const config = parseConfig(configText, detectStackFrom(lines(git(root, 'ls-tree', '--name-only', base))) ?? undefined)
+  const found = configFor(root, base)
+  const { stack, note: stackNote } = stackFor(root, base, found.atBase)
+  const config = parseConfig(found.text, stack)
   // An invalid file is ignored whole, as the plugin ignores it, and said, as the plugin says it.
-  const invalidNote = config.error === null ? null : `${CONFIG_FILE} is invalid, so the defaults were used. Fix it on the base branch.`
-  const configNote = [changedNote, invalidNote].filter(note => note !== null).join(' ') || null
+  const configNote = configNotes(found, config.error !== null, stackNote)
   const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
   // Moved code: every changed code file as it was at the base and as it is at HEAD, which is the checkout (the tree
   // is clean), so its committed text is what is on disk.

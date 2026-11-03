@@ -595,6 +595,7 @@ describe('/tdd receipt', () => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
+    world.refs.set('main^{commit}', 'b'.repeat(40))
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
@@ -618,14 +619,28 @@ describe('/tdd receipt', () => {
 
     expect(green.context?.join(' ') ?? '').toMatch(/with the change undone its test fails with `expected '14m' to be '1y 2m'`\./)
     world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
+    world.refs.set('main^{commit}', 'b'.repeat(40))
     const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
     expect(receipt.text).toMatch(/before the change, and fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
   })
 
   // #269: a file the base doesn't have can't be checked out from it, and the run after a failed checkout proves nothing.
+  test('a base that is not a branch here is said as that, never as a new file', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).not.toMatch(/is new since/)
+    expect(receipt.text).toMatch(/main isn't a branch here/)
+  })
+
   test('a file new since the base gives no step that claims to prove it', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
+    world.refs.set('main^{commit}', 'b'.repeat(40))
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 

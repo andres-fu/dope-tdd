@@ -188,7 +188,15 @@ describe('catchPlan', () => {
     provedByRed: false,
     redErrorsOnly: false,
     checkable: true,
+    changedOnDisk: false,
     ...over,
+  })
+
+  test('code that moved after it was put back is no proof, whatever the config allows (#285)', () => {
+    const restored = { ...fix, after: fix.before }
+    const changed = { kind: 'done', result: { kind: 'unverified', reason: 'changed outside' } }
+    expect(catchPlan(input({ change: restored, provedByRed: true, changedOnDisk: true }))).toEqual(changed)
+    expect(catchPlan(input({ change: restored, provedByRed: true, changedOnDisk: true, checkable: false }))).toEqual(changed)
   })
 
   test('a change of code is reverted against its test', () => {

@@ -656,6 +656,25 @@ describe('PROVEN: break, red, restore, green', () => {
     expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
   })
 
+  // #285: "put back exactly as it was" was taken from the record of the restore, so a script or formatter run after it
+  // left different code on disk under the word PROVEN.
+  test('code changed after it was put back is not proven', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await restore($)
+    world.fileContents.set(SOURCE, 'export const a = 999')
+
+    const green = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(green.context?.join(' ')).toMatch(/UNPROVEN.*changed/)
+    expect(status.text).toMatch(/catch check: proven 0 · missed 0/)
+  })
+
   // #132, the break-and-restore door (found writing Karl's round 5, 2026-10-21): a break that only made the test fail to
   // load (a bad import) gave a red no assertion ran in; restoring the code then read as PROVEN.
   test('a break whose red was only an error (no assertion ran) is not proof when the code is put back', async ($, on) => {

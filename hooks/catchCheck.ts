@@ -19,6 +19,8 @@ export type CatchPlanInput = {
   redErrorsOnly: boolean
   /** The config lets the check touch the changed file: not observe, not exempt, and catchCheck is not false. */
   checkable: boolean
+  /** The file on disk is not the code on record: a script or formatter moved it after the last edit (#285). */
+  changedOnDisk: boolean
 }
 
 /**
@@ -50,6 +52,10 @@ export function catchPlan(input: CatchPlanInput): CatchPlan {
     // Never when the test was edited after the red: that green came from the test, and is TEST CHANGED.
     if (!input.provedByRed) {
       return { kind: 'done', result: 'unchecked' }
+    }
+    // "Put back exactly as it was" has to be true of the disk, not only of the record of the restore (#285).
+    if (input.changedOnDisk) {
+      return { kind: 'done', result: { kind: 'unverified', reason: 'changed outside' } }
     }
     // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
     // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).

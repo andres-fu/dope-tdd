@@ -1180,6 +1180,7 @@ async function verifyCatch(
     provedByRed,
     redErrorsOnly,
     checkable: policy !== 'observe' && policy !== 'exempt' && config.catchCheck !== false,
+    changedOnDisk: cycleChange !== undefined && (await readWhole($, cycleChange.path)) !== cycleChange.after,
   })
   // Past `done` there is always a change and a test; the rest of this condition only tells the type checker so.
   if (plan.kind === 'done' || cycleChange === undefined || testPath === undefined) {

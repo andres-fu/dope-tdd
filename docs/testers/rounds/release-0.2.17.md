@@ -9,9 +9,10 @@ what the round found beside the steps, plus what review found in the same week.
   anywhere in a command, quotes included, used to make every source path the command mentioned a
   write, so a here-string naming `api.py`, a `grep` whose pattern named the verbs, or an issue body
   pasted into `gh` were refused as edits to files they never touched. Now the verb must be the shell's
-  own word, and the target is the path after the verb or after `-Path`, or sed's file arguments. In a
-  PowerShell command, a here-string is one quoted span; Bash has none. A target the shape can't name,
-  such as `-Path $p`, is said after the command instead, as unguarded.
+  own word, and the target is the path after the verb or after `-Path`, plus any path outside quotes,
+  or sed's file arguments. Under Claude Code's PowerShell tool a here-string is one quoted span; Bash
+  has none. A target the shape can't name, such as `-Path $p`, is said after the command instead, as
+  unguarded, where git can see the file.
 - **The override record is still read eagerly.** A command that names `dope-tdd.overrides.json` or
   `dope-tdd.json` beside a write verb is a write to it, even when the name only sits in a note's text,
   as in 0.2.16 (#322 stays open). A findings note written with `Add-Content` that names the record is
@@ -19,7 +20,8 @@ what the round found beside the steps, plus what review found in the same week.
 - **A forged record behind a git command is put back** (part of #348). A script after a PowerShell
   here-string commit message read as git alone, so a change it made to the record stayed. The command
   is now split the way its shell runs it. A here-string git command piped to something else, such as
-  `| Select-Object`, has a pulled-in record put back, as its plain form always did.
+  `| Select-Object`, has a pulled-in record put back, and a restore beside a here-string that runs code
+  is charged, as their plain forms always were.
 - **PROVEN reads the disk** (#285). After a deliberate break was put back, a script or formatter could
   change the file and the word stayed. Now the file is compared with the code put back; a difference
   reads UNPROVEN: "the file changed after you put it back".
@@ -31,16 +33,20 @@ what the round found beside the steps, plus what review found in the same week.
   and why.
 - **Smaller:** a green says whether its own module saw red, not the previous one's (#311). A file with
   a non-ASCII name is seen by the shell check (#299). A helper in a `__tests__` folder beside the code
-  is not source (#275). `/tdd receipt` names the branch it compares with (#269). Under `observe`,
+  is not source (#275). `/tdd receipt` names the branch it compares with, says when that branch is
+  missing, and offers no re-check for a file that is new since it (#269). Under `observe`,
   `/tdd` no longer says the catch check is on (#336). The outside-project notice reads "and nothing
   else outside it is guarded this session either", and the unpaired-code notice "and other code like
-  it won't be guarded this session either" (#338, a tester's wording). The session record's digest is
+  it won't be guarded this session either" (#338, a tester's wording). A `dope-tdd.json` change
+  around a command that may not have written it now says "git brought it in, or it changed beside a
+  command that may not have written it. Charged to nobody; recorded in /tdd." (#338). The session record's digest is
   said to be checked by hand (#294). A `sed -i` inside text handed to a shell (`eval "…"`, `ssh host
   "…"`) names its file again (#350).
 - **README:** with a `--scope local` install, `/cd` into a worktree unloads the plugin until `/cd`
   back, with nothing said. Whether project and user installs stay on is untested (#339).
 
-With thanks to Karl Kloss for round 8B, which found most of this.
+With thanks to Karl Kloss for round 8B, which found #332, #336, #338 and #339, and the four known limits
+below.
 
 **Known limits, open from round 8B:** the band can read `committed` for uncommitted work in a worktree
 (#333), keep a stale `refused` line under observe or after an unguarded write (#334), say NOT
@@ -49,7 +55,8 @@ next wording pass. `/cd` at local scope is Claude Code's loading, reported separ
 
 **Known limits, found by this release's reviews:** some PowerShell quoting the reader doesn't model (a
 `#` comment, `--%`, a backtick escape, `$(…)` in double quotes) can hide a source write from the
-refusal; the check after the command still counts it where git sees the file (#347). A test run inside
+refusal. 0.2.16 refused these, so this is new, the price of #332's fix; the check after the command
+still counts the write where git sees the file (#347). A test run inside
 `(cd elsewhere && …)` is counted as this project's run (#352).
 
 ## What to check
@@ -59,9 +66,11 @@ refusal; the check after the command still counts it where git sees the file (#3
 first line should say `version 0.2.17`. If it didn't change, uninstall and install again with the
 same scope, from inside the project.
 
-**Step 1: the here-string that was refused.** Repeat round 8B's 5.5 command, or any PowerShell
-`Add-Content -Path $p -Value $t` whose here-string names a source file. Expect it to run, with no
-`dope-tdd:` line. Then `Set-Content src/<a source file> x` with no test touched: expect a refusal.
+**Step 1: the here-string that was refused.** With Claude Code's PowerShell tool, repeat round 8B's
+5.5 command, or an `Add-Content -Path $p -Value $t` whose here-string names a source file in plain
+prose. Expect it to run, with no `dope-tdd:` line. Then `Add-Content src/<a source file> x` with no
+test touched: expect a refusal. If it runs instead, it appended one line: put the file back with
+`git checkout -- src/<that file>`, and paste what happened.
 
 **Step 2: a script's write.** Write a short script that changes a source file whose test hasn't been
 touched, and run it. Expect the line to contain "Use the Edit tool for code changes next time."
@@ -73,8 +82,8 @@ the band stay? Does `/tdd` answer? This is the untested half of #339.
 **Step 4: observe.** Set `"mode": "observe"` and `"catchCheck": true`, run `/tdd`. Expect
 `catch check: not under observe (dope-tdd.json sets it on)`. Put it back.
 
-**Step 5: the words.** In a fresh session, since each notice is said once a session, edit a file
-outside the project, and a file no layout covers. Paste the two notices.
+**Step 5: the words.** In a fresh session, since each notice is said once a session, edit a code
+file outside the project, and a code file no layout covers. Paste the two notices.
 
 Paste the exact lines for each step. Anything that doesn't match is a finding.
 

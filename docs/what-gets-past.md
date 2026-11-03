@@ -157,10 +157,12 @@ an honest session, not proof that one was.
   record. By default it passes a change with no test, which is exactly what an
   override lets through, so set that option if you want those to fail. It reads
   `dope-tdd.json` from the base, not from the pull request it judges, so a pull
-  request can't exempt itself
-  ([#319](https://github.com/andres-fu/dope-tdd/issues/319)). The first config a
-  project adds is the exception: with none at the base, the pull request's counts,
-  and the report says so.
+  request can't exempt itself through that file
+  ([#319](https://github.com/andres-fu/dope-tdd/issues/319)). It can still change
+  the workflow that runs the check, its `fail-on` input or the step itself, so
+  review a change to the workflow too. The first config or stack marker a project
+  adds is the exception: with none at the base, the pull request's counts, and the
+  report says so.
 - **Count UNPROVEN as unproven,** and read `/tdd` for workarounds and for changes
   charged to nobody.
 - **Use a sandbox if you don't trust the agent.** Claude Code's permissions and an

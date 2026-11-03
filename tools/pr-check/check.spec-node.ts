@@ -34,6 +34,11 @@ test('a pull request that touches no guarded source says so', () => {
   assert.match(report([], 'main'), /No source file in this pull request is one the project guards\./)
 })
 
+test('a word on the config leads the report, and there is none without one (#319)', () => {
+  assert.match(report([], 'main', 'This pull request changes dope-tdd.json.'), /^## .*\n\n\*\*This pull request changes dope-tdd\.json\.\*\*\n/)
+  assert.doesNotMatch(report([], 'main'), /\*\*/)
+})
+
 test('a new file whose code all moved from another file, unchanged, is MOVED; the new code in it is named (#40)', () => {
   const base = { 'index.js': 'function ping(cfg) { return fetch(cfg.url) }\nfunction swap(n) { return lavalinkNodes[n] }\nfunction keep() {}' }
   const head = {

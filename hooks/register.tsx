@@ -41,7 +41,7 @@ import {
 } from './advice.ts'
 import { say } from './messages.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { PLAIN_PATHS, baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
@@ -1021,9 +1021,9 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     if (added === null || added.exitCode !== 0) {
       return { step: 'copy' }
     }
-    const dirty = listed(await gitQuiet($, root, ['diff', '--name-only', 'HEAD']))
-    const untracked = listed(await gitQuiet($, root, ['ls-files', '--others', '--exclude-standard']))
-    const deleted = listed(await gitQuiet($, root, ['diff', '--name-only', '--diff-filter=D', 'HEAD']))
+    const dirty = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--name-only', 'HEAD']))
+    const untracked = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'ls-files', '--others', '--exclude-standard']))
+    const deleted = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--name-only', '--diff-filter=D', 'HEAD']))
     if (dirty === null || untracked === null || deleted === null) {
       return { step: 'changes' }
     }
@@ -1848,8 +1848,8 @@ async function headOf($: EngineInterface, root: string): Promise<string | null> 
 async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig, base: string | null): Promise<SourceSnapshot | null> {
   const dirs = watchedDirs(config)
   // Against a commit a staged rename prints as `{a => b}`, which is no path.
-  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
-  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...dirs])
+  const numstat = await runGit($, root, [...PLAIN_PATHS, 'diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
+  const untracked = await runGit($, root, [...PLAIN_PATHS, 'ls-files', '--others', '--exclude-standard', '--', ...dirs])
   if (numstat === null || untracked === null) {
     return null
   }
@@ -2479,7 +2479,7 @@ async function sampleTestFiles($: EngineInterface, root: string, config: GuardCo
   if (known !== undefined) {
     return known
   }
-  const listed = await runGit($, root, ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
+  const listed = await runGit($, root, [...PLAIN_PATHS, 'ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
   const paths = (listed ?? '').split(/\r?\n/).filter(path => path !== '')
   const samples = changedOfKind(root, paths, 'test', config).map(({ path }) => path).sort().slice(0, BRIEFING_SAMPLES)
   briefingSamples.set(key, samples)

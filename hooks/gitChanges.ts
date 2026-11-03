@@ -24,6 +24,9 @@ export function savedStateOf(status: string): SavedState | null {
   return ahead === '0' ? 'pushed' : 'committed'
 }
 
+/** Git quotes a path with a non-ASCII byte, and the quoted text is no file: a write to one went unseen (#299). */
+export const PLAIN_PATHS = ['-c', 'core.quotePath=false']
+
 export function parseNumstat(output: string): Record<string, string> {
   const entries = output
     .split(/\r?\n/)
@@ -60,7 +63,8 @@ function onlyStaged(was: string | undefined, now: string | undefined): boolean {
   if (was === undefined || now === undefined || was.startsWith('untracked') === now.startsWith('untracked')) {
     return false
   }
-  return timeOf(was) === timeOf(now)
+  // A time that couldn't be read says nothing, so two of them don't match.
+  return timeOf(was) === timeOf(now) && timeOf(now) !== 'missing'
 }
 
 /**

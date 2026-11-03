@@ -337,7 +337,10 @@ ${main}/.git
     const isNumstat = e.argv.includes('--numstat')
     const commit = isNumstat ? e.argv.find(arg => world.numstatAgainst.has(arg)) : undefined
     const numstat = commit === undefined ? world.numstat : (world.numstatAgainst.get(commit) ?? '')
-    return { value: { exitCode: 0, stdout: isNumstat ? numstat : world.untracked, stderr: '' } } as never
+    // Real git quotes a path with a non-ASCII byte unless told not to, so such a path is no path to anything (#299).
+    const listing = isNumstat ? numstat : world.untracked
+    const stdout = e.argv.includes('core.quotePath=false') ? listing : listing.split('\n').map(row => row.replace(/[^\t]*[^\x00-\x7f][^\t]*$/, path => `"${path}"`)).join('\n')
+    return { value: { exitCode: 0, stdout, stderr: '' } } as never
   })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)

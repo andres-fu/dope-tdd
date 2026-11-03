@@ -66,6 +66,10 @@ describe('changedPaths', () => {
     expect(changedPaths({ 'src/new.ts': '4/0:1000' }, { 'src/new.ts': 'untracked:1000' })).toEqual([])
   })
 
+  test('a time that could not be read shows nothing was only staged (#299)', () => {
+    expect(changedPaths({ 'src/a.ts': 'untracked:missing' }, { 'src/a.ts': '1/1:missing' })).toEqual(['src/a.ts'])
+  })
+
   test('staged and rewritten is a change, and so is new counts at the same time, as with cp -p', () => {
     expect(changedPaths({ 'src/new.ts': 'untracked:1000' }, { 'src/new.ts': '4/0:2000' })).toEqual(['src/new.ts'])
     expect(changedPaths({}, { 'src/a.ts': '1/1:1000' })).toEqual(['src/a.ts'])

@@ -128,6 +128,28 @@ test('a pull request that leaves the config alone hears nothing about it', async
   assert.equal(configNote, null)
 })
 
+// #299: git quotes a non-ASCII name, and the quoted text classified as nothing, so the change was skipped in silence.
+test('a source file with a non-ASCII name is checked like any other', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pr-check-name-')).replace(/\\/g, '/')
+  after(() => rmSync(dir, { recursive: true, force: true }))
+  const run = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
+  const code = (n: number) => `function f() {\n  return ${n}\n}\nmodule.exports = { f }\n`
+  run('init', '-q', '-b', 'main')
+  run('config', 'user.email', 'test@example.com')
+  run('config', 'user.name', 'test')
+  run('config', 'commit.gpgsign', 'false')
+  run('config', 'core.quotePath', 'true')
+  mkdirSync(join(dir, 'src'))
+  writeFileSync(join(dir, 'src', 'café.js'), code(1))
+  run('add', '-A')
+  run('commit', '-q', '-m', 'base')
+  run('checkout', '-q', '-b', 'pr')
+  writeFileSync(join(dir, 'src', 'café.js'), code(2))
+  run('commit', '-q', '-am', 'pr')
+  const { rows } = await checkPullRequest(dir, 'main', { timeoutMs: 20_000 })
+  assert.equal(rows.find(row => row.source === 'src/café.js')?.verdict, 'UNTESTED')
+})
+
 test('an existing file that received moved code is checked as itself, never MOVED; the move is a note (#1)', async () => {
   const { rows } = await checkPullRequest(repo, 'main', { timeoutMs: 20_000 })
   const a = rows.find(row => row.source === 'src/a.js')

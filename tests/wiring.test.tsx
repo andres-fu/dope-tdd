@@ -1102,6 +1102,20 @@ describe('bash bypass', () => {
     expect(charged.text).toMatch(/unguarded [12]/)
   })
 
+  // #299: git quotes a non-ASCII name, the quoted text is no file, and a write to it left no record at all.
+  test('a write to a file with a non-ASCII name still shows', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"node","layout":"mirror"}')
+    world.fileContents.set(`${ROOT}/src/café.ts`, 'export const a = 1')
+    world.onBash = () => {
+      world.numstat = '1\t1\tsrc/café.ts\n'
+    }
+
+    await runBash($, './scripts/codemod.sh')
+
+    expect((await runCommand($, 'tdd')).text).toMatch(/unguarded 1/)
+  })
+
   // #281: reads once skipped the check to save a git call, and working out which could skip it took three designs and
   // nineteen findings, so every command gets it.
   test('every shell command gets a git snapshot before and after', async ($, on) => {

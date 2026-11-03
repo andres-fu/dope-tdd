@@ -155,9 +155,14 @@ an honest session, not proof that one was.
 - **Run the [pull-request check](pr-check.md) in CI with `fail-on: untested`.** It
   works from the diff, outside the agent's session, and never reads the override
   record. By default it passes a change with no test, which is exactly what an
-  override lets through, so set that option if you want those to fail. It does read
-  `dope-tdd.json` from the pull request it judges, so review a change to that file
-  too: a pull request could exempt itself.
+  override lets through, so set that option if you want those to fail. It reads
+  `dope-tdd.json` from the base, not from the pull request it judges, so a pull
+  request can't exempt itself through that file
+  ([#319](https://github.com/andres-fu/dope-tdd/issues/319)). It can still change
+  the workflow that runs the check, its `fail-on` input or the step itself, so
+  review a change to the workflow too. A project's first config is the exception:
+  with no `dope-tdd.json` at the base, the pull request's counts, and with neither a
+  config nor a stack marker at the base, its first marker counts; the report says so.
 - **Count UNPROVEN as unproven,** and read `/tdd` for workarounds and for changes
   charged to nobody.
 - **Use a sandbox if you don't trust the agent.** Claude Code's permissions and an

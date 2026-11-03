@@ -2,7 +2,7 @@ import { describe, expect } from 'claude-code/testing'
 
 import { OVERRIDE_HINT } from '../hooks/refusals'
 
-import { ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, writeAt } from './engine'
+import { BAND, ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 function configure(world: FakeWorld, json: string) {
@@ -11,6 +11,10 @@ function configure(world: FakeWorld, json: string) {
 
 async function setup($: Parameters<typeof runCommand>[0], args: string) {
   return $.command.run({ command: 'tdd', args } as never)
+}
+
+async function setupText($: Parameters<typeof runCommand>[0]): Promise<{ text: string }> {
+  return (await setup($, 'setup')) as { text: string }
 }
 
 describe('colocated tests', () => {
@@ -342,8 +346,9 @@ describe('a default layout that matches none of the code', () => {
     return composed.sections.find(section => section.id === 'dope-tdd:briefing')?.text ?? ''
   }
 
-  test('is said in the briefing, with the layout /tdd setup finds', async ($, on) => {
+  test('with a marker, it is said in the briefing with the layout /tdd setup finds, as it always was (#167)', async ($, on) => {
     const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/package.json`)
     world.existingFiles.add(`${ROOT}/site/package.json`)
     world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
     world.fileContents.set(`${ROOT}/site/src/lib/countup.test.ts`, "it('counts', () => {})")
@@ -351,6 +356,189 @@ describe('a default layout that matches none of the code', () => {
     const text = await briefing($)
     expect(text).toMatch(/The default layout matches none of this project's code/)
     expect(text).toMatch(/colocated \(src\/\{module\}\.\{ext\} ↔ src\/\{module\}\.test\.\{ext\}\) under site/)
+  })
+
+  // #268: a project with no config and no marker used to run as Node, whatever it held.
+  test('with neither a config nor a marker, the session reads the repo and guards with it', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/db.py`, 'y = 1')
+
+    expect(await briefing($)).toMatch(/read from its code as python/)
+    const blocked = await editAt($, 'api.py')
+    expect(blocked.deny).toMatch(/Touch tests\/test_api\.py/)
+    expect(world.fileContents.has(`${ROOT}/dope-tdd.json`)).toBe(false)
+  })
+
+  test('a layout read from the repo guards there, where the default paired nothing', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/site/package.json`)
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.test.ts`, "it('counts', () => {})")
+
+    expect(await briefing($)).toMatch(/read from its code as node/)
+    const blocked = await editAt($, 'site/src/lib/countup.ts')
+    expect(blocked.deny).toMatch(/write the failing test first/)
+  })
+
+  test('a language it does not read is said, not called empty', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/main.go`, 'package main')
+    world.fileContents.set(`${ROOT}/util.go`, 'package main')
+
+    expect(await briefing($)).toMatch(/doesn't read Go yet/)
+  })
+
+  test('a config saved during the session stops the note about having none', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    expect(await briefing($)).toMatch(/No dope-tdd\.json here/)
+
+    world.fileContents.set(`${ROOT}/dope-tdd.json`, '{"stack":"python","layout":"package"}')
+    expect(await briefing($)).not.toMatch(/No dope-tdd\.json here/)
+  })
+
+  test('/tdd setup agrees with the stack the session is running on, and says why', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/tests/test_api.py`, 'def test_x(): pass')
+    await briefing($)
+
+    const { text } = await setupText($)
+    expect(text).toMatch(/detected stack: python \(2 python files, no marker at the root\)/)
+    expect(text).not.toMatch(/runs as node/)
+    expect(text).not.toMatch(/named in/)
+  })
+
+  test('a C# repo is .NET in the briefing and in /tdd setup, never Godot', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/App.sln`)
+    world.fileContents.set(`${ROOT}/MyApp/Service.cs`, 'class Service {}')
+    world.fileContents.set(`${ROOT}/MyApp/Util.cs`, 'class Util {}')
+    world.fileContents.set(`${ROOT}/MyApp.Tests/ServiceTests.cs`, 'class ServiceTests {}')
+
+    expect(await briefing($)).not.toMatch(/godot/i)
+    expect((await setupText($)).text).toMatch(/detected stack: dotnet \(3 dotnet files, no marker at the root\)/)
+  })
+
+  test('C# beside other code is .NET too, so saving never pins Godot', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/App.sln`)
+    for (const file of ['Api/Service.cs', 'Api/Util.cs', 'Api/Repo.cs', 'web/src/a.ts', 'web/src/b.ts']) {
+      world.fileContents.set(`${ROOT}/${file}`, 'x')
+    }
+
+    expect(await briefing($)).not.toMatch(/godot/i)
+    expect((await setupText($)).text).toMatch(/detected stack: dotnet \(3 dotnet files, no marker at the root\)/)
+    await setup($, 'setup write')
+    expect(world.fileContents.get(`${ROOT}/dope-tdd.json`)).toMatch(/"stack": "dotnet"/)
+  })
+
+  test('with a marker, /tdd setup leaves the reading out: the marker decides, as it always did', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/package.json`)
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/db.py`, 'y = 1')
+
+    const { text } = await setupText($)
+    expect(text).toMatch(/detected stack: node \(package\.json at the root\)/)
+    expect(text).not.toMatch(/python/)
+  })
+
+  test('after /tdd setup the next briefing looks at a marked project again, as it always did', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/package.json`)
+    world.existingFiles.add(`${ROOT}/site/package.json`)
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
+    expect(await briefing($)).toMatch(/default layout matches none/)
+
+    await setupText($)
+    world.fileContents.set(`${ROOT}/src/x.ts`, 'export const x = 1')
+
+    expect(await briefing($)).not.toMatch(/default layout matches none/)
+  })
+
+  test('after /tdd setup a marked project that lost its paired file is warned again', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/package.json`)
+    world.existingFiles.add(`${ROOT}/site/package.json`)
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
+    world.fileContents.set(`${ROOT}/src/x.ts`, 'export const x = 1')
+    expect(await briefing($)).not.toMatch(/default layout matches none/)
+
+    await setupText($)
+    world.fileContents.delete(`${ROOT}/src/x.ts`)
+
+    expect(await briefing($)).toMatch(/default layout matches none/)
+  })
+
+  test('/tdd setup reads a project with nothing to go on again', async ($, on) => {
+    const world = fakeEngine(on)
+    expect(await briefing($)).toMatch(/No code Dope TDD reads/)
+
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/db.py`, 'y = 1')
+    await setupText($)
+
+    expect(await briefing($)).toMatch(/read from its code as python/)
+  })
+
+  test('a broken config saved after a reading still says nothing is guarded (#214)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.existingFiles.add(`${ROOT}/site/package.json`)
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.ts`, 'export const a = 1')
+    world.fileContents.set(`${ROOT}/site/src/lib/countup.test.ts`, "it('counts', () => {})")
+    await briefing($)
+
+    configure(world, 'not json {')
+
+    expect(await briefing($)).toMatch(/default layout matches none/)
+    const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
+    expect(JSON.stringify(await ui.drawn())).toMatch(/ignored, and the default layout matches none of this project's code, so nothing is guarded/)
+  })
+
+  test('the project is walked once, however many hooks ask', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/lib/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/lib/db.py`, 'y = 1')
+
+    await briefing($)
+    await editAt($, 'lib/api.py')
+    await briefing($)
+
+    expect(world.listed.filter(dir => dir === `${ROOT}/lib`)).toHaveLength(1)
+  })
+
+  test('a language off the list is not called no code', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/main.lua`, 'print(1)')
+    world.fileContents.set(`${ROOT}/run.sh`, 'echo 1')
+
+    const text = await briefing($)
+    expect(text).not.toMatch(/No code yet/)
+    expect(text).toMatch(/any other code is not guarded/)
+  })
+
+  test('readable code beside a language it does not read is said to be unguarded too', async ($, on) => {
+    const world = fakeEngine(on)
+    for (const file of ['lib/a.py', 'lib/b.py', 'lib/c.py', 'x.go', 'y.go', 'z.go', 'w.go']) {
+      world.fileContents.set(`${ROOT}/${file}`, 'x')
+    }
+
+    const text = await briefing($)
+    expect(text).toMatch(/doesn't read Go yet/)
+    expect(text).toMatch(/The python code here isn't guarded either\. \/tdd setup write guards one stack, the one with the most code/)
+  })
+
+  test('a mixed project keeps the warning that no edit is refused (#167)', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(`${ROOT}/web/src/a.ts`, 'export const a = 1')
+    world.fileContents.set(`${ROOT}/api.py`, 'x = 1')
+    world.fileContents.set(`${ROOT}/db.py`, 'y = 1')
+
+    const text = await briefing($)
+    expect(text).toMatch(/mixes/)
+    expect(text).toMatch(/no edit is refused/)
   })
 
   test('is not said when the default pairs the code', async ($, on) => {

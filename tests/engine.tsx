@@ -60,6 +60,12 @@ export const BAND = {
 } as const
 
 export type FakeWorld = {
+  /** Every folder listed, in order: how a test counts walks of the project. */
+  listed: string[]
+  /** Paths whose stat fails, as a file that is gone does. */
+  gone: Set<string>
+  /** Edit and Write fail after the gate let them through, as a stale edit does. */
+  editFails: boolean
   clock: MockClock
   bashFails: boolean
   bashText: string
@@ -72,10 +78,16 @@ export type FakeWorld = {
   logs: string[]
   toasts: string[]
   numstat: string
+  /** `git diff --numstat <commit>`, by commit; a commit with no entry answers `numstat`. */
+  numstatAgainst: Map<string, string>
+  /** `git log -g`, newest first: one `<sha> <subject>` line per entry (#292). */
+  reflog: string
   untracked: string
   gitCalls: (readonly string[])[]
   /** The working directory of each process run, in order, beside `gitCalls`. */
   runCwds: string[]
+  /** The commit `git rev-parse HEAD` answers; null for a repository with no commit yet. */
+  head: string | null
   /** Git refs and objects for the shared check lock; `gitUnavailable` makes the folder not a git checkout. */
   refs: Map<string, string>
   objects: Map<string, string>
@@ -118,6 +130,8 @@ export type FakeWorld = {
   diffText: string
   /** Claude Code held the shell command read-only by its own check (`ls`, `cat`, `git status`). */
   readOnly: boolean
+  /** Claude Code refuses the shell call with this reason; null lets it run. */
+  bashDeny: string | null
   /** Called while the catch check has the source reverted on disk, before the runner answers. */
   onCatchRun: () => void | Promise<void>
   /** Called while the catch check runs its baseline, before anything is reverted: a save from your editor, say. */
@@ -143,6 +157,9 @@ export type FakeOptions = { store?: Readonly<Record<string, unknown>>; env?: Rea
 export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
   const world: FakeWorld = {
     clock: mock.clock(on, { now: T0 }),
+    listed: [],
+    gone: new Set(),
+    editFails: false,
     bashFails: false,
     bashText: '',
     lastTest: null,
@@ -153,9 +170,12 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     logs: [],
     toasts: [],
     numstat: '',
+    numstatAgainst: new Map(),
+    reflog: '',
     untracked: '',
     gitCalls: [],
     runCwds: [],
+    head: 'f'.repeat(40),
     refs: new Map(),
     objects: new Map(),
     gitUnavailable: false,
@@ -182,6 +202,7 @@ export function fakeEngine(on: On, options: FakeOptions = {}): FakeWorld {
     mainCheckout: null,
     diffText: '',
     readOnly: false,
+    bashDeny: null,
     onCatchRun: () => {},
     onBaselineRun: () => {},
     writeFails: () => false,
@@ -289,8 +310,8 @@ ${main}/.git
     }
     if (verb === 'rev-parse') {
       const ref = rest[rest.length - 1] ?? ''
-      const sha = world.refs.get(ref)
-      return sha === undefined ? answer(1) : answer(0, `${sha}\n`)
+      const sha = ref === 'HEAD' ? world.head : world.refs.get(ref)
+      return sha === undefined || sha === null ? answer(1) : answer(0, `${sha}\n`)
     }
     if (verb === 'cat-file') {
       const sha = rest[rest.length - 1] ?? ''
@@ -310,8 +331,13 @@ ${main}/.git
     if (verb === 'diff' && e.argv.includes('--name-only')) {
       return answer(0, e.argv.includes('--diff-filter=D') ? world.deleted : world.dirty)
     }
+    if (verb === 'log' && rest.includes('-g')) {
+      return answer(0, world.reflog)
+    }
     const isNumstat = e.argv.includes('--numstat')
-    return { value: { exitCode: 0, stdout: isNumstat ? world.numstat : world.untracked, stderr: '' } } as never
+    const commit = isNumstat ? e.argv.find(arg => world.numstatAgainst.has(arg)) : undefined
+    const numstat = commit === undefined ? world.numstat : (world.numstatAgainst.get(commit) ?? '')
+    return { value: { exitCode: 0, stdout: isNumstat ? numstat : world.untracked, stderr: '' } } as never
   })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -337,11 +363,15 @@ ${main}/.git
     } as never
   })
   on('fs.stat', (_$, e) => {
+    if (world.gone.has(fakePath(e.path))) {
+      throw new Error(`ENOENT: ${e.path}`)
+    }
     const stat = { kind: 'file', size: 1, mtimeMs: world.testModifiedAt, isLink: false }
     return { value: e.resolve === true ? { ...stat, realPath: landed(world.links, fakePath(e.path)) } : stat } as never
   })
   on('fs.list', (_$, e) => {
     const dir = fakePath(e.path ?? ROOT).replace(/\/$/, '')
+    world.listed.push(dir)
     const names = new Map<string, 'file' | 'dir'>()
     for (const path of [...world.fileContents.keys(), ...world.existingFiles]) {
       if (!path.startsWith(`${dir}/`)) {
@@ -388,6 +418,12 @@ ${main}/.git
     }
     if ((e.tool === 'Write' || e.tool === 'Edit') && target !== undefined && /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(target)) {
       world.lastTest = target.startsWith(`${ROOT}/`) ? target.slice(ROOT.length + 1) : target
+    }
+    if ((e.tool === 'Write' || e.tool === 'Edit') && world.editFails) {
+      return { isError: true as const, result: 'failed', text: 'failed' }
+    }
+    if (isShell && world.bashDeny !== null) {
+      return { deny: world.bashDeny } as never
     }
     if (isShell && world.bashFails) {
       return { isError: true as const, result: 'FAIL', text: world.bashText || failOutput(world.lastTest) }

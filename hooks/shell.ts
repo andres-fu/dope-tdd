@@ -264,9 +264,11 @@ export function expandKnown(text: string, vars: ShellVars): string {
 // Hashes only read (Karl's round 4, 2026-10-20: `sha256sum api.py` beside a git checkout read as a possible write).
 const READS = /^\s*(?:cd|ls|dir|cat|type|head|tail|grep|rg|wc|pwd|echo|which|where|tree|stat|file|du|df|sort|uniq|true|sha(?:1|224|256|384|512)sum|md5sum|b2sum|shasum|cksum|Get-FileHash|find(?![^\n]*\s-(?:exec|execdir|delete|ok|fprint)\b)|git\s+(?:status|log|diff|show|branch|rev-parse|ls-files|blame|remote|config\s+--get))(?:\s|$)/
 // An output redirect writes, whatever the command: `echo x > src/a.ts`. Stderr to a file descriptor or /dev/null does not.
-const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
+// `2>`, `&>` and `>&` go unread, and text in quotes can match (#310). Two wider patterns here each traded those for false
+// charges, on `2>$null` and `>& 2` (#304), so the spellings wait for the proper reader (#260).
+export const WRITES_OUTPUT = /(?:^|[^\d&>])>{1,2}(?!&)\s*(?!\/dev\/null)\S/
 
-/** Only commands that read: nothing in it can change a file, so there is nothing to snapshot around it. */
+/** Only commands that read, by what it says: a write can still hide in one (#281), so this can never clear a command. */
 export function isPureRead(command: string): boolean {
   const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
   return segments.length > 0 && segments.every(segment => READS.test(segment) && !WRITES_OUTPUT.test(segment))

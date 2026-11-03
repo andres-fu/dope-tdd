@@ -24,6 +24,7 @@ const RECENT_EVENTS = 10
 // never sits under "proven 11". Kinds not listed read as they are.
 const EVENT_WORDS: Readonly<Record<string, string>> = {
   caught: 'proven',
+  blocked: 'refused',
   unverified: 'not checked',
   elsewhere: 'failed, not this module',
   fail: 'failed',
@@ -37,6 +38,8 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   'git-in': 'brought in by git, not guarded',
   outside: 'outside this project, not guarded',
   'not-watched': 'edited, no test layout, not guarded',
+  'other-stack': 'edited, another stack, not guarded',
+  unclaimed: 'changed during a read or test run, charged to nobody',
   'test-gone': 'test file gone, cycle and unlock dropped',
   'comment-touch': 'touched, comments only',
   spike: 'spike started',
@@ -105,6 +108,9 @@ function eventLines(s: TddStats, nowMs: number, label: Label): string[] {
   return ['recent events: newest first', ...rows]
 }
 
+// Generated code can change hundreds of files, and this row reaches the agent through the status tool.
+const MAX_UNCLAIMED_NAMED = 10
+
 function catchLine(s: TddStats): string[] {
   const verdicts =
     s.caught + s.proven + s.missed + s.unverified === 0
@@ -114,6 +120,15 @@ function catchLine(s: TddStats): string[] {
   // A refactor is a fact about the change, not a verdict on the test, so it never sits beside caught and proven.
   const refactors = s.refactors === 0 ? [] : [`refactors: ${s.refactors} (changed while green with the test untouched; not re-checked)`]
   return [...verdicts, ...refactors]
+}
+
+function unclaimedLine(s: TddStats): string[] {
+  if (s.unclaimed.length === 0) {
+    return []
+  }
+  const named = s.unclaimed.slice(-MAX_UNCLAIMED_NAMED).join(', ')
+  const rest = s.unclaimed.length - MAX_UNCLAIMED_NAMED
+  return [`changed during a read or test run: ${named}${rest > 0 ? ` and ${rest} more` : ''} (charged to nobody)`]
 }
 
 function workaroundLine(s: TddStats): string[] {
@@ -142,10 +157,12 @@ function guardCaveat(s: TddStats, config: GuardConfig | undefined): string {
   if (config !== undefined && config.error !== null) {
     return ` with the defaults: ${CONFIG_FILE} was not read (see config below)`
   }
-  const count = s.unwatched.length
-  return count === 0
-    ? ''
-    : `, but ${count} edited code file${count === 1 ? ' matches' : 's match'} no test layout and ${count === 1 ? 'was' : 'were'} not guarded (${s.unwatched.join(', ')}) · fix: /tdd setup`
+  const missed = [...new Set([...s.unwatched, ...s.shellUnwatched])]
+  const count = missed.length
+  const others = s.otherStack.length
+  const layout = count === 0 ? '' : `, but ${count} edited code file${count === 1 ? ' matches' : 's match'} no test layout and ${count === 1 ? 'was' : 'were'} not guarded (${missed.join(', ')}) · fix: /tdd setup`
+  const stack = others === 0 ? '' : `, ${count === 0 ? 'but' : 'and'} ${others} edited code file${others === 1 ? ' is' : 's are'} another stack and ${others === 1 ? 'was' : 'were'} not guarded (${s.otherStack.join(', ')})`
+  return `${layout}${stack}`
 }
 
 /** `build`: which dope-tdd is running (build.ts), the first row; the app already names the plugin. */
@@ -168,8 +185,9 @@ export function formatStatus(s: TddStats, nowMs: number, config?: GuardConfig, b
     runsLine(s),
     cycleLine(s),
     // #236: edits under a carried-over unlock are neither test-first nor misses, so they sit apart from the ratio.
-    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · blocked ${s.blocked}`,
+    `test-first: ${s.testFirst}/${s.testFirst + s.blocked + s.unguarded}${s.carriedEdits > 0 ? ` · under an earlier session's unlock ${s.carriedEdits}` : ''} · unguarded ${s.unguarded} · refused ${s.blocked}`,
     ...catchLine(s),
+    ...unclaimedLine(s),
     ...workaroundLine(s),
     ...pinsLine(s),
     ...spikesLine(s),
@@ -218,7 +236,7 @@ export function formatGlossary(): string {
     word('test-first', 'source edits made after their test was touched or seen failing, out of all source edits and refusals'),
     word('unlocked earlier', 'modules whose test was touched in an earlier session (up to 7 days); each needs one run of its test before its first edit'),
     word('unguarded', 'a source file changed with no test touched first'),
-    word('blocked', 'an edit was refused until the test is written'),
+    word('refused', 'an edit was stopped until the test is written'),
     word('never failed', 'cycles that went green without the test ever failing'),
     word('not checked', 'greens the catch check could not run on; the agent was told why'),
     word('workarounds', 'ways around the guard, each on the record: config loosened, pause, test changed after red, skip/only added, assertion removed, code commented out, a test re-saved unchanged'),

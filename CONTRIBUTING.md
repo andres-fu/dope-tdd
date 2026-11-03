@@ -125,6 +125,34 @@ produce. CI still runs everything, POSIX root included, on Linux and Windows
 for every pull request, and on macOS too for every push to `main`. The guard is unchanged by this: red before an
 edit, green after, and the catch check all still apply to the one file you run.
 
+### Comparing with a base
+
+Tests say the code does what someone thought of. `npm run compare` says what else
+moved in what it covers, by running the same inputs through this checkout and a
+base. On its own it shows which files the shell reader finds in real commands, in
+seconds. With `--sessions` it adds fake-engine sessions, about 17 minutes: the briefing,
+band, `/tdd` and what an Edit of an untested file shows. The rest of shell handling,
+test runs and the catch check show on neither. Run the part that can see a change
+before its first review, so review time goes to design, and skip what can't. It reads
+this checkout as it stands, committed or not, so `--base` must name a ref from before
+the change.
+
+```bash
+npm run compare                        # real commands from your session logs, through both builds (seconds)
+npm run compare -- --sessions          # also about 16,000 fake-engine sessions on both builds (about 17 minutes)
+npm run compare -- --base <ref>        # against that ref, origin/release by default
+npm run compare -- --transcripts <dir> # session logs from there, ~/.claude/projects by default
+```
+
+The sessions play each project with two things happening in it: a config or marker
+arriving or going, files changing, `/tdd setup`. It reports refusals, bands, briefings,
+messages, `/tdd` and walks that changed, with examples. It never fails for a difference,
+since whether one is right is for you to read. It says INCOMPLETE and exits non-zero when
+it proved less than it should: a session missing from either side, a test kit that failed,
+no commands found, a reader that threw, or the same hooks on both sides. It doesn't fetch,
+so it prints the base's commit. The commands are read where they are and never saved, but the report prints
+them, so read it before pasting it anywhere public.
+
 ### Live runs
 
 Some claims only a real Claude Code session can settle: which project root it
@@ -148,6 +176,10 @@ npm run live -- --model sonnet   # a cheaper model
 | D | in a `git worktree add` of the probe | the same subagent edit | refused (went through on 0.2.11, fixed in 0.2.12); the worktree is under the main checkout |
 | E | in the probe repo, plugin off | the same edit as B | goes through; no `/tdd` |
 | F | in the probe repo, with a worktree at `.claude/worktrees/nested` | red, fix and green there by `cd`, then a run in the main checkout | the red and green count on `calc` and the catch check proves it there; the main checkout's run does not count |
+| G | in a Python repo with no config and no marker | edit `api.py`, no test touched | refused, naming `tests/test_api.py` |
+| H | in a C# repo with only a `.sln` | edit `src/App.cs`, no test touched | refused, naming `tests/AppTests.cs` |
+| I | in the probe repo | a script writes `src/calc.js` and one command stages it, then again and one command commits it | both go through; `/tdd` counts `unguarded 2` |
+| J | in the probe repo | a script sets `dope-tdd.json` to `observe` | goes through; `/tdd` counts a workaround and names the change |
 
 Each scenario prints `PASS` or `FAIL` with its checks; a failure also prints
 what the session did and keeps its transcript. The checks read tool results

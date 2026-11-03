@@ -66,7 +66,9 @@ approved what, and the receipt lists them. A pause reason must say what and
 why (at least 30 characters; "need to proceed" is refused), only one request
 can wait at a time, and a module override open for more than 7 days blocks
 new ones. Claude's Edit and Write calls to `dope-tdd.overrides.json` are
-refused, and a shell change to it is put back and counted as a workaround.
+refused, and a shell change to it is put back and counted as a workaround. A
+command of git alone is left alone, since a pull can bring in other people's
+overrides, and [what gets past it](what-gets-past.md) says what that leaves open.
 
 ## How it decides
 
@@ -114,14 +116,74 @@ refused, and a shell change to it is put back and counted as a workaround.
   phase. Run the module's own test file to see its red. Maven and Gradle pick
   their test by class name and never name files, so their red is still the
   module's.
-- After every shell command, `git diff` under `src/` and `tests/` is the
-  source of truth: source files changed without a test touched count as
-  unguarded, and tests written through the shell count as touched.
+- `dope-tdd.json` is compared before and after every shell command, as it is for
+  Edit and Write. A change the command made is recorded and Claude is asked why,
+  and one that loosens the guard counts as a workaround. So does making the file
+  invalid, on any surface, or deleting it through a shell, since an invalid or
+  missing file takes its layout and exemptions with it. A file that only held the
+  defaults changes nothing the guard reads, so deleting it is quiet. A change that arrived with
+  a git rewrite alone, or around a command Claude Code refused or held read-only,
+  is recorded and said, and counted against nobody. So is one around a command that
+  only looks read-only, unless the command names the file.
+- After every shell command, reads and test runs included, `git diff` under
+  `src/` and `tests/` is the source of truth. It compares with the commit HEAD was
+  on before the command, so a change the command also stages or commits still
+  shows. A plain commit keeps that base. Anything else git did to HEAD, read from
+  the reflog (a pull, checkout, rebase or reset), moves it, so what git brought in
+  isn't charged, and a write committed before that move in the same command isn't
+  seen. With the reflog off it can't tell a commit from a pull: it says so in the
+  log and compares with the new HEAD. A commit hook that rewrites a file is
+  charged to the commit. Source files changed without a test touched count as
+  unguarded, and tests written through the shell count as touched. `git rm` and
+  `git mv` count too, and a test deleted counts as touched
+  ([#300](https://github.com/andres-fu/dope-tdd/issues/300)). In a repository with
+  no commit yet there's nothing to compare with, so a new file the same command
+  stages isn't seen. A git command with git's own options before its verb, such
+  as `git -C . restore`, reads as a script, so what it changes is charged
+  ([#302](https://github.com/andres-fu/dope-tdd/issues/302)). The command's text only decides whose change it was. One Claude Code
+  held read-only can't have made it. One that only looks read-only, a read or a
+  test run, may hide a write (`echo "$(sed -i ...)"`), so each code or test file
+  changed around it is said once and listed in `/tdd` under **changed during a
+  read or test run**. Nobody is charged or credited. The change also counts
+  against the module's next verdict where it can, though a verdict can still miss
+  it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
+  names, as it does `npm test > src/a.ts`, is the command's as usual
+  ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). So is any change
+  around a `>` or `>>` beside a test run (`echo x > a.txt && npm test`), which reads
+  as a command that writes, though a run's own output to a file doesn't
+  ([#304](https://github.com/andres-fu/dope-tdd/issues/304)). Another editor's save
+  during that command is then the command's too: a test counts as touched and
+  unlocks its module. A `>` in quoted text
+  reads as a redirect too (`npm test | grep "=> x"`), so such a command takes the
+  charge when it shouldn't ([#310](https://github.com/andres-fu/dope-tdd/issues/310)).
+  Beside a git rewrite
+  changes still count as git's, so a write hidden there isn't seen
+  ([#284](https://github.com/andres-fu/dope-tdd/issues/284)).
 - Before a shell command runs, its writes are read from the command: a
   redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
   write. Quoted text is data, so a commit message or an echoed sentence that
   mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
-  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read.
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read. A path
+  spelled `./src/a.ts`, `src//a.ts` or `lib/../src/a.ts` is the file it names, for
+  a shell write and for Edit, Write and NotebookEdit. A `..` is resolved by
+  reading the path, so through a symbolic link it can land elsewhere. In a script's
+  text, or in quotes in PowerShell, a dotted path is left as text, since import
+  paths are spelled that way
+  ([#272](https://github.com/andres-fu/dope-tdd/issues/272)).
+- Code the guard can't pair with a test goes through, and isn't guarded. There
+  are two kinds, each told to Claude once a session, whichever tool wrote the
+  file, and `/tdd` lists each file
+  ([#259](https://github.com/andres-fu/dope-tdd/issues/259)). For code of the
+  project's stack that the layout misses, `/tdd setup` shows whether a different
+  layout would cover it. An Edit or Write to it turns the band to NOT WATCHING
+  while no module is current; a shell write doesn't, since it may only be build
+  output. Code of another stack Dope TDD reads can't be covered, since one
+  `dope-tdd.json` guards one stack, so it never reaches the band. A shell write
+  counts when the file it names changed on disk, or `git` saw a file change in
+  the folders it watches and it is still there. A deleted file isn't an edit.
+  Exempt files, helpers in a test folder, another stack's tests, languages Dope
+  TDD doesn't read (Go) and notebooks don't count. Nothing is said while the guard
+  is paused, and a kind first seen then isn't said afterwards.
 - Git putting files back to a saved state (`git restore`, `git checkout --
   <file>`, `git reset --hard`, `git stash`) is not an edit: nothing is counted.
   Git bringing code in from elsewhere (`git checkout main -- <file>`, `git

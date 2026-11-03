@@ -186,7 +186,7 @@ export function formatReport(report: Report): string {
   ].join('\n')
 }
 
-function transcriptFiles(dir: string): string[] {
+export function transcriptFiles(dir: string): string[] {
   const found: string[] = []
   for (const name of readdirSync(dir)) {
     const path = join(dir, name)

@@ -143,15 +143,18 @@ guards there.
 
 ### Is it on?
 
-The band above the prompt tells you. With no word in capitals, it is guarding.
-A word in capitals means something differs from plain guarding, and the rest of
-the line says what and what to do. No band and no `/tdd` command means the
-plugin is not running in this folder.
+The band above the prompt tells you. RED, PROVEN, UNPROVEN, MISSED and CHANGED
+say how the test stands, not whether the guard is on. With none of the words in
+the picture below and no OVERRIDE line, it is guarding. With one, the rest of the
+line says what differs and what to do. No band and no `/tdd` command means the
+plugin is not running in this folder. Not sure about a folder? Open it in Claude
+Code and look for the band.
 
 ![Is it on: the band reads "ready" or "refused" while guarding; PAUSED, WARN ONLY, OBSERVING or STANDING DOWN while on but not refusing; NOT WATCHING, CONFIG INVALID or CAN'T READ RUNS when something needs a fix, which the band names; GUARD FAILING after an internal error; and nothing at all where the plugin is off.](assets/is-it-on.svg)
 
 The picture answers only "is it on?". The band shows more, such as the next step
-and the last run, and `/tdd why` explains its words.
+and the last run, and `/tdd why` explains its words. `refused:` can share the line
+with a cycle: it names the last refusal, and the cycle carries on.
 
 To check it for real, ask Claude to change a source file whose test you have
 not touched. It should be refused, and the refusal names the test to write.
@@ -171,21 +174,32 @@ left alone on purpose:
   never passes through them. The [pull-request check](docs/pr-check.md) covers
   code whoever wrote it.
 - **Code the layout doesn't match.** Dope TDD pairs source with tests by the
-  layout. With no `dope-tdd.json`, or one with a mistake, the defaults apply and
-  may pair nothing: the band reads NOT WATCHING or CONFIG INVALID, and `/tdd`
-  says so on its first line and lists each such edit. `/tdd setup` finds the
-  right layout.
+  layout. With no `dope-tdd.json` and no marker such as `package.json`, it reads
+  the code to work out the language, and guards with that until you save it with
+  `/tdd setup write`. When the code doesn't make it clear, or it's a language
+  Dope TDD doesn't read yet, such as Go or Rust, Claude is told, and that code
+  isn't guarded. With a marker, a default layout that pairs nothing is said the
+  same way. Code the layout misses, or code of a second stack, goes through
+  unguarded: Claude is told the first time in a session, and `/tdd` lists each
+  file. A language Dope TDD doesn't read yet is left out of that list. A
+  `dope-tdd.json` with a mistake
+  isn't read: the band reads
+  CONFIG INVALID, `/tdd` says so on its first line, and the defaults apply.
 - **A folder where the plugin is off.** Claude Code decides where a plugin
   runs. A local-scope install covers only the folder it was installed in; install
   at user scope, or at project scope, to cover more.
 - **Files a program changes.** Dope TDD can't see inside a script, formatter or
   code generator before it runs, so it can't refuse it. Changes it makes to
-  source are noticed afterwards and counted as unguarded.
+  source are noticed afterwards and counted as unguarded, usually even when the
+  same command stages or commits them. [What gets past it](docs/what-gets-past.md)
+  lists when that fails.
 - **While it stands aside.** In `warn` or `observe` mode, during `/tdd pause`,
   and during a git merge, rebase or cherry-pick, nothing is refused. The band
   says which.
 - **A determined agent.** It keeps an agent honest and on the record; it is not
-  a sandbox. Workarounds are recorded, and overrides need a person.
+  a sandbox or a security boundary. A script can get past a refusal, and an agent
+  with a shell can forge the override record. [What gets past it](docs/what-gets-past.md)
+  says how, why that can't be closed, and what to do about it.
 
 ## Settings
 
@@ -255,6 +269,7 @@ default. Setup and the move check: [docs/pr-check.md](docs/pr-check.md).
 ## More
 
 - [How it works](docs/how-it-works.md): every step, how it decides, the band.
+- [What gets past it](docs/what-gets-past.md): its limits, and why it can't be a wall.
 - [Testers' guide](docs/testers.md): a first session, and the rough edges.
 - [Contributing](CONTRIBUTING.md): build, test and change Dope TDD.
 - [Project rules](.claude/CLAUDE.md): how we work and what review looks for.
@@ -263,6 +278,11 @@ default. Setup and the move check: [docs/pr-check.md](docs/pr-check.md).
 Status: early, public, and used daily on its own code and on real projects.
 Tell us the one moment it was wrong, silent or annoying with the **Tester
 report** issue template. Security problems go privately: see `SECURITY.md`.
+
+## Liner notes
+
+feat. [Karl Kloss](https://github.com/KlossKarl), who ran it on a real project
+round after round and found what our own tests missed.
 
 ## License
 

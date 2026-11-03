@@ -6,6 +6,7 @@
     "check": "node tools/check/check.mjs",
     "golden": "node --import ./tests/node/register.mjs tools/golden.mjs",
     "diagrams": "node tools/diagrams/is-it-on.mjs",
-    "live": "node tools/live/run.mjs"
+    "live": "node tools/live/run.mjs",
+    "compare": "node tools/compare/compare.ts"
   }
 }

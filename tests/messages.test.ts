@@ -34,6 +34,34 @@ describe('the message catalogue', () => {
 })
 
 // #238: the first code file or test run outside the project in a session is said: not guarded, and what to do instead.
+describe('edit.unwatched', () => {
+  test('says the file is not guarded, and both ways out', () => {
+    const text = say('edit.unwatched', { path: 'scripts/build.ts' })
+    expect(text).toContain('scripts/build.ts matches no test layout, so it is not guarded')
+    expect(text).toContain('/tdd setup')
+    expect(text).toContain('"exempt"')
+  })
+
+  test('promises no cover: a stray file has none, and /tdd setup only checks the layout', () => {
+    expect(say('edit.unwatched', { path: 'scripts/build.ts' })).not.toMatch(/To cover it/)
+    expect(say('edit.unwatched', { path: 'scripts/build.ts' })).toContain('If a different layout would cover it')
+  })
+
+  test('saying how to exempt it never sends the agent to a config that would end the reading', () => {
+    expect(say('edit.unwatched', { path: 'scripts/build.ts' })).toContain('the user can save one with /tdd setup write')
+    expect(say('edit.otherStack', { path: 'tools/gen.py', stack: 'node' })).toContain('the user can save one with /tdd setup write')
+  })
+})
+
+describe('edit.otherStack', () => {
+  test('says what the guard runs as, and promises no setup that cannot cover it', () => {
+    const text = say('edit.otherStack', { path: 'tools/gen.py', stack: 'node' })
+    expect(text).toContain("tools/gen.py isn't node code, so it is not guarded")
+    expect(text).toContain('One dope-tdd.json guards one stack')
+    expect(text).not.toMatch(/To cover it/)
+  })
+})
+
 describe('outside.project', () => {
   test('names the path and the project, says it is not guarded or counted, and how to guard it', () => {
     const text = say('outside.project', { path: 'C:/work/other/src/a.ts', root: 'C:/work/app' })

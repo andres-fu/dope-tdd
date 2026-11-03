@@ -3,8 +3,87 @@ import { describe, expect, test } from 'claude-code/testing'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
 import { ELSEWHERE } from '../hooks/shell'
-import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from '../hooks/shellVerdict'
+import { changeOwner, configLeftAlone, judgeConfigChange, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
+
+// #293: a config changed around a command is the command's as a code file would be, and a named write is its own.
+describe('judgeConfigChange', () => {
+  const facts = { refused: false, heldReadOnly: false, looksReadOnly: false, revertOnly: false, named: false, loosened: true, deleted: false, detail: 'mode enforce → observe' }
+
+  test('an ordinary command made the change: asked, and counted when it loosens', () => {
+    expect(judgeConfigChange(facts)).toEqual({ asks: true, counts: true, detail: facts.detail })
+    expect(judgeConfigChange({ ...facts, loosened: false })).toEqual({ asks: true, counts: false, detail: facts.detail })
+  })
+
+  test('a file deleted counts whatever the fields say, and says so', () => {
+    expect(judgeConfigChange({ ...facts, loosened: false, deleted: true })).toEqual({ asks: true, counts: true, detail: `file deleted: ${facts.detail}` })
+  })
+
+  test('a refused command never ran, so it asks and counts nothing', () => {
+    expect(judgeConfigChange({ ...facts, refused: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a git rewrite with nothing beside it brought the change in, named or not', () => {
+    expect(judgeConfigChange({ ...facts, revertOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, revertOnly: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a command Claude Code held read-only did not make it, named or not', () => {
+    expect(judgeConfigChange({ ...facts, heldReadOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, heldReadOnly: true, named: true })).toMatchObject({ asks: false, counts: false })
+  })
+
+  test('a command that only looks read-only may have, unless it names the file', () => {
+    expect(judgeConfigChange({ ...facts, looksReadOnly: true })).toMatchObject({ asks: false, counts: false })
+    expect(judgeConfigChange({ ...facts, looksReadOnly: true, named: true })).toMatchObject({ asks: true, counts: true })
+  })
+})
+
+describe('configLeftAlone', () => {
+  test('the same text is no change', () => {
+    expect(configLeftAlone('{}', '{}', true)).toBe(true)
+    expect(configLeftAlone(null, null, true)).toBe(true)
+  })
+
+  test('new text is a change, and so is a file gone from a folder that is still there', () => {
+    expect(configLeftAlone('{}', '{"mode":"warn"}', true)).toBe(false)
+    expect(configLeftAlone('{}', null, true)).toBe(false)
+  })
+
+  test('a file gone with its folder went with the folder (`git worktree remove`)', () => {
+    expect(configLeftAlone('{}', null, false)).toBe(true)
+  })
+})
+
+describe('changeOwner', () => {
+  test('a command Claude Code held read-only did not make the change', () => {
+    expect(changeOwner(true, false)).toBe('elsewhere')
+    expect(changeOwner(true, true)).toBe('elsewhere')
+  })
+
+  test('a command that only looks read-only may have: nobody is charged', () => {
+    expect(changeOwner(false, true)).toBe('unclaimed')
+  })
+
+  test('anything else is the command', () => {
+    expect(changeOwner(false, false)).toBe('command')
+  })
+})
+
+describe('splitChanges', () => {
+  test("a command's changes are all charged to it", () => {
+    expect(splitChanges(['a', 'b'], 'command', [])).toEqual({ charged: ['a', 'b'], said: [] })
+  })
+
+  test('changes from elsewhere are said, even one the text names', () => {
+    expect(splitChanges(['a'], 'elsewhere', ['a'])).toEqual({ charged: [], said: ['a'] })
+  })
+
+  // `ls 2> src/a.ts` looks read-only and says in plain sight what it writes.
+  test('around a command that looks read-only, a file it names is charged, and the rest are said', () => {
+    expect(splitChanges(['a', 'b'], 'unclaimed', ['a'])).toEqual({ charged: ['a'], said: ['b'] })
+  })
+})
 import { MOCHA_PASS, PYTEST_FAIL, PYTEST_PASS } from './fixtures/runnerOutputs'
 
 describe('gateShellWrites', () => {
@@ -96,12 +175,32 @@ describe('shellReminders', () => {
     notStarted: null,
     unreadableRunner: null,
     bystanders: [],
+    unclaimed: [],
     commented: [],
     redUnlocked: [],
     carriedOn: [],
     passed: false,
     advice: null,
   }
+
+  // #281: the text can't prove a command wrote nothing, so a change around one that looks read-only is said, not charged.
+  test('a change around a command that looks read-only names both ways it could have happened, and is not counted', () => {
+    expect(shellReminders({ ...none, unclaimed: ['src/utils/b.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
+      'dope-tdd: src/utils/b.ts changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.',
+    ])
+  })
+
+  test('a run that rewrites many files names three, and says how many more', () => {
+    const lines = shellReminders({ ...none, unclaimed: ['a', 'b', 'c', 'd', 'e'] }, DEFAULT_CONFIG, 'C:/r')
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe('dope-tdd: and 2 more changed the same way.')
+  })
+
+  test('so does a read-only command', () => {
+    const lines = shellReminders({ ...none, bystanders: ['a', 'b', 'c', 'd'] }, DEFAULT_CONFIG, 'C:/r')
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe('dope-tdd: and 1 more changed the same way.')
+  })
 
   test('a run with nothing to report adds no reminder lines', () => {
     expect(shellReminders(none, DEFAULT_CONFIG, 'C:/r')).toEqual([])
@@ -135,6 +234,7 @@ describe('shellReminders', () => {
       notStarted: 'command not found',
       unreadableRunner: 'mocha',
       bystanders: ['src/utils/b.ts'],
+      unclaimed: ['src/utils/e.ts'],
       commented: ['dope-tdd: commented out'],
       redUnlocked: ['utils/c'],
       carriedOn: [{ module: 'utils/d', testPath: 'C:/r/tests/utils/d.test.ts' }],
@@ -147,6 +247,7 @@ describe('shellReminders', () => {
       'dope-tdd: the test runner did not start (command not found); nothing was counted. Run it the way this project runs its tests.',
       unreadableRunnerAdvice('mocha'),
       'dope-tdd: src/utils/b.ts changed while the command ran, but the command cannot have changed it (another editor or session?); not counted.',
+      'dope-tdd: src/utils/e.ts changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.',
       'dope-tdd: commented out',
       redUnlockAdvice('utils/c', 'src/utils/c'),
       carriedOnAdvice('src/utils/d', 'tests/utils/d.test.ts', true),
@@ -280,5 +381,45 @@ describe('ownTestRun', () => {
   test('a module unlocked in another checkout is not this run to judge: its failures are not that module\'s', () => {
     expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/a'])).toBeNull()
     expect(ownTestRun(run, 'fail', ROOT, ROOT, DEFAULT_CONFIG, ['utils/b'])).toEqual({ module: 'utils/a', testPath: 'C:/r/tests/utils/a.test.ts' })
+  })
+})
+
+describe('leftOutShellEdits: what a command wrote that dope-tdd cannot guard (#259)', () => {
+  const py = { path: 'tools/a.py', why: 'stack' } as const
+  const js = { path: 'helpers.js', why: 'layout' } as const
+  const moved = { wasMs: 1, isMs: 2 }
+  const pyListed = { path: 'tools/a.py', list: 'stack' }
+  const jsListed = { path: 'helpers.js', list: 'shell' }
+
+  test('a file the command named that changed on disk, and one git saw that is still there, once each', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }, { ...py, ...moved }], [{ ...py, isMs: 2 }, { path: 'tools/b.py', why: 'stack', isMs: 2 }], true)).toEqual([jsListed, pyListed, { path: 'tools/b.py', list: 'stack' }])
+  })
+
+  test('a layout miss goes on the shell list, which stays off the band; another stack keeps its own', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }], [], true)).toEqual([jsListed])
+    expect(leftOutShellEdits([{ ...py, ...moved }], [], true)).toEqual([pyListed])
+  })
+
+  test('a named file that did not change, or is gone, did not land', () => {
+    expect(leftOutShellEdits([{ ...js, wasMs: 1, isMs: 1 }], [], true)).toEqual([])
+    expect(leftOutShellEdits([{ ...js, wasMs: null, isMs: null }], [], true)).toEqual([])
+    expect(leftOutShellEdits([{ ...js, wasMs: 1, isMs: null }], [], true)).toEqual([])
+  })
+
+  test('a new file landed', () => {
+    expect(leftOutShellEdits([{ ...js, wasMs: null, isMs: 2 }], [], true)).toEqual([jsListed])
+  })
+
+  test('a file git saw deleted is not an edit', () => {
+    expect(leftOutShellEdits([], [{ ...py, isMs: null }], true)).toEqual([])
+  })
+
+  test('a command held read-only leaves what it names out', () => {
+    expect(leftOutShellEdits([{ ...js, ...moved }], [], false)).toEqual([])
+  })
+
+  test('what git saw stands either way, and nothing written is nothing to say', () => {
+    expect(leftOutShellEdits([], [{ ...py, isMs: 2 }], false)).toEqual([pyListed])
+    expect(leftOutShellEdits([], [], true)).toEqual([])
   })
 })

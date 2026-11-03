@@ -4,6 +4,7 @@
 // `<root>/home` is a second one, for a session whose edit lands outside its own project (scenario A).
 // `<root>/linked` is a `git worktree add` of the probe (scenario D).
 // `<probe>/.claude/worktrees/nested` is one under the probe, as the desktop app makes for a session (scenario F).
+// `<root>/pyapp` and `<root>/csapp` hold a language with no config and no usual marker (scenarios G and H).
 // A worktree subagent's worktree lands in `<probe>/.claude/worktrees/agent-…` with a branch of its own; cleanup
 // removes those too, wherever they landed, so nothing is left on disk.
 import { execFileSync } from 'node:child_process'
@@ -19,12 +20,25 @@ const FILES = {
     "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\n\nimport { add } from '../src/calc.js'\n\ntest('add', () => assert.equal(add(1, 2), 3))\n",
 }
 
+// Projects with no config and no marker for their language, for detection (scenarios G and H, #268).
+const NO_MARKER = {
+  pyapp: {
+    'api.py': 'def add(a, b):\n    return a + b\n',
+    'tests/test_api.py': 'from api import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n',
+  },
+  csapp: {
+    'MyApp.sln': '\n',
+    'src/App.cs': 'public class App\n{\n    public int Add(int a, int b)\n    {\n        return a + b;\n    }\n}\n',
+    'tests/AppTests.cs': 'public class AppTests\n{\n}\n',
+  },
+}
+
 const CONFIG = '[user]\n\tname = dope-tdd live\n\temail = live@dope-tdd.invalid\n[core]\n\tautocrlf = false\n[commit]\n\tgpgsign = false\n'
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
-function makeRepo(dir) {
-  for (const [file, text] of Object.entries(FILES)) {
+function makeRepo(dir, files = FILES) {
+  for (const [file, text] of Object.entries(files)) {
     mkdirSync(join(dir, file, '..'), { recursive: true })
     writeFileSync(join(dir, file), text)
   }
@@ -46,6 +60,10 @@ export function makeRoot(where) {
   if (where === 'home') {
     mkdirSync(join(root, 'home'))
     makeRepo(join(root, 'home'))
+  }
+  if (NO_MARKER[where] !== undefined) {
+    mkdirSync(join(root, where))
+    makeRepo(join(root, where), NO_MARKER[where])
   }
   if (where === 'linked') git(probe, 'worktree', 'add', '-q', join(root, 'linked'), '-b', 'linked')
   if (where === 'nested') {

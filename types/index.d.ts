@@ -51,6 +51,9 @@ export type EventKind =
   | 'test-gone'
   /** #234: the first edit to a code file the layout pairs with no test: not guarded, on the record. */
   | 'not-watched'
+  | 'other-stack'
+  /** #281: files changed around a command that can't have, or only looks that way: said, and charged to nobody. */
+  | 'unclaimed'
   /** The spike skill ran (idea 19): exploring in a throwaway copy outside the project, then rebuilding test-first. */
   | 'spike'
 
@@ -187,6 +190,12 @@ export type TddStats = {
   /** `path` is the source file the check reverted, kept for the receipt after the change record is cleared. */
   /** Code files edited this session that the layout pairs with no test, newest last, at most 20: what it is not watching. */
   unwatched: readonly string[]
+  /** Code a shell wrote that no layout pairs (#259). Apart from `unwatched`, since only Edit and Write reach the band. */
+  shellUnwatched: readonly string[]
+  /** Code of another stack edited this session: not guarded, and no layout could cover it (#259). */
+  otherStack: readonly string[]
+  /** Code and tests changed around a command that can't have, or only looks that way (#281), newest last, at most 200: said once each. */
+  unclaimed: readonly string[]
   lastCatch: { module: string; outcome: CatchOutcome | { kind: 'refactor' }; path?: string } | null
   lastCycle: CycleVerdict | null
   current: CurrentTest | null
@@ -278,3 +287,9 @@ declare module 'claude-code' {
     }
   }
 }
+
+/** Why an edited file is not guarded: the layout misses it, or it is code of another stack (#259). */
+export type LeftOut = 'layout' | 'stack'
+
+/** Where a left-out edit is kept: its reason, or `shell` for a layout miss a shell wrote, which stays off the band. */
+export type LeftOutList = LeftOut | 'shell'

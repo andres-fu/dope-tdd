@@ -149,7 +149,7 @@ test('isRefusal knows dope-tdd refusing an edit from an edit that went through',
 })
 
 test('tddReport finds /tdd output, not the model saying it is missing', () => {
-  assert.equal(tddReport(readRun(stream([end('done'), end(report('8S AGO: blocked calc'), true)]))), report('8S AGO: blocked calc'))
+  assert.equal(tddReport(readRun(stream([end('done'), end(report('8S AGO: refused calc'), true)]))), report('8S AGO: refused calc'))
   assert.equal(tddReport(readRun(stream([end('`/tdd` is not available in this session.')]))), null)
   assert.equal(tddReport(readRun(stream([end('Unknown command: /tdd', true)]))), null)
 })
@@ -186,9 +186,9 @@ const CALC = `${PROBE}\\src\\calc.js`
 const WORKTREE_CALC = `${PROBE}\\.claude\\worktrees\\agent-a1b2\\src\\calc.js`
 
 test('every scenario has an id, a title, a place to run, messages and checks', () => {
-  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F'])
+  assert.deepEqual(scenarios.map(s => s.id), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])
   for (const s of scenarios) {
-    assert.ok(['home', 'probe', 'linked'].includes(s.cwd), `${s.id} cwd`)
+    assert.ok(['home', 'probe', 'linked', 'pyapp', 'csapp'].includes(s.cwd), `${s.id} cwd`)
     assert.ok(['on', 'off'].includes(s.plugin), `${s.id} plugin`)
     const messages = s.messages(ctxFor())
     assert.ok(messages.length >= 1 && messages.every(m => typeof m === 'string' && m !== ''), `${s.id} messages`)
@@ -204,13 +204,35 @@ test('A: an edit outside the project goes through, and /tdd says it was outside'
     stream([init({ cwd: `${ROOT}\\home` }), use('t1', 'Edit', { file_path: file }), edit, end('x'), init({ cwd: `${ROOT}\\home` }), end(report(`8S AGO: ${event}`), true)])
   const outside = `outside this project, not guarded (${file})`
   assert.deepEqual(failed(A.check(readRun(run(answer('t1', UPDATED(file)), outside)), ctx)), [])
-  assert.ok(failed(A.check(readRun(run(answer('t1', REFUSAL, true), 'blocked calc')), ctxFor())).length > 0, 'refusing an edit outside the project fails A')
+  assert.ok(failed(A.check(readRun(run(answer('t1', REFUSAL, true), 'refused calc')), ctxFor())).length > 0, 'refusing an edit outside the project fails A')
   assert.ok(failed(A.check(readRun(run(answer('t1', UPDATED(file)), 'unguarded calc')), ctx)).length > 0, '/tdd not saying outside fails A')
+})
+
+test('I: a write the same command stages or commits is counted, and the count is what decides', () => {
+  const I = byId('I')
+  const write = 'node -e "require(\'fs\').appendFileSync(process.argv[1], \'x\')" src/calc.js'
+  const commands = [`${write} && git add src/calc.js`, `${write} && git commit -qam fix`]
+  const run = (counted, steps = commands) => stream([init(), ...steps.flatMap((command, i) => [use(`t${i}`, 'Bash', { command }), answer(`t${i}`, '')]), end('x'), init(), end(report(counted), true)])
+  const changed = ctxFor({ calcAfter: 'a + b // one' })
+  assert.deepEqual(failed(I.check(readRun(run('unguarded 2')), changed)), [])
+  assert.ok(failed(I.check(readRun(run('unguarded 0')), changed)).includes('/tdd counts both as unguarded'), 'no count, as with #292, fails I')
+  assert.ok(failed(I.check(readRun(run('unguarded 2')), ctxFor())).includes('src/calc.js changed on disk'), 'a file left alone fails I')
+  assert.ok(failed(I.check(readRun(run('unguarded 2', [write, 'git add src/calc.js', commands[1]])), changed)).includes('one command wrote and staged'), 'a model that split the command fails I')
+})
+
+test('J: a config loosened by a script is counted, and the count is what decides', () => {
+  const J = byId('J')
+  const command = 'node -e "require(\'fs\').writeFileSync(process.argv[1], x)" dope-tdd.json'
+  const run = line => stream([init(), use('t1', 'Bash', { command }), answer('t1', ''), end('x'), init(), end(report(line), true)])
+  assert.deepEqual(failed(J.check(readRun(run('workarounds: 1\n9S AGO: config (mode enforce → observe)')), ctxFor())), [])
+  assert.ok(failed(J.check(readRun(run('workarounds: 0')), ctxFor())).includes('/tdd counts a workaround'), 'no count, as with #293, fails J')
+  assert.ok(failed(J.check(readRun(run('workarounds: 1\nmode: observe (records only)')), ctxFor())).includes('/tdd names the change'), 'the mode line alone is no event, so it fails J')
+  assert.ok(failed(J.check(readRun(stream([init(), end('x'), init(), end(report('workarounds: 1 mode enforce → observe'), true)])), ctxFor())).includes('the command ran'), 'no command at all fails J')
 })
 
 test('B: an untested edit is refused, names the test, and leaves the file alone', () => {
   const B = byId('B')
-  const run = edit => stream([init(), use('t1', 'Edit', { file_path: CALC }), edit, end('x'), init(), end(report('9S AGO: blocked calc'), true)])
+  const run = edit => stream([init(), use('t1', 'Edit', { file_path: CALC }), edit, end('x'), init(), end(report('9S AGO: refused calc'), true)])
   assert.deepEqual(failed(B.check(readRun(run(answer('t1', REFUSAL, true))), ctxFor())), [])
   assert.ok(failed(B.check(readRun(run(answer('t1', UPDATED(CALC)))), ctxFor({ calcAfter: 'a + b + 0' }))).length > 0, 'an edit that went through fails B')
   assert.ok(failed(B.check(readRun(stream([init(), end('I will not')])), ctxFor())).includes('the model called Edit on src/calc.js'), 'no Edit at all fails B, saying so')
@@ -218,7 +240,7 @@ test('B: an untested edit is refused, names the test, and leaves the file alone'
 
 test('B: in branch mode the build must be the checkout, by path and by sha', () => {
   const B = byId('B')
-  const run = (plugin, line = report('9S AGO: blocked calc')) => stream([init({ plugins: [plugin] }), use('t1', 'Edit', { file_path: CALC }), answer('t1', REFUSAL, true), end(line, true)])
+  const run = (plugin, line = report('9S AGO: refused calc')) => stream([init({ plugins: [plugin] }), use('t1', 'Edit', { file_path: CALC }), answer('t1', REFUSAL, true), end(line, true)])
   const branch = { name: 'dope-tdd', path: CHECKOUT, source: 'dope-tdd@inline', version: '0.2.13' }
   const installed = { name: 'dope-tdd', path: 'C:\\plugins\\dope-tdd', source: 'dope-tdd@dope-tdd', version: '0.2.11' }
   assert.deepEqual(failed(B.check(readRun(run(branch)), ctxFor())), [])
@@ -227,6 +249,21 @@ test('B: in branch mode the build must be the checkout, by path and by sha', () 
   assert.deepEqual(failed(B.check(readRun(run(installed)), ctxFor({ mode: 'installed', checkoutSha: null }))), [], 'installed mode takes the installed copy')
   assert.ok(failed(B.check(readRun(run(branch)), ctxFor({ mode: 'installed', checkoutSha: null }))).length > 0, 'a --plugin-dir copy in installed mode fails')
 })
+
+for (const [id, where, source, testPath] of [
+  ['G', 'pyapp', 'api.py', 'tests/test_api.py'],
+  ['H', 'csapp', 'src/App.cs', 'tests/AppTests.cs'],
+]) {
+  test(`${id}: a project with no marker for its language is read from its code, and an untested edit is refused (#268)`, () => {
+    const scenario = byId(id)
+    const file = `${ROOT}\\${where}\\${source.replace(/\//g, '\\')}`
+    const refused = `dope-tdd: write the failing test first. Touch ${testPath}, or run it and see it fail.`
+    const run = edit => stream([init({ cwd: `${ROOT}\\${where}` }), use('t1', 'Edit', { file_path: file }), edit, end('x')])
+    assert.deepEqual(failed(scenario.check(readRun(run(answer('t1', refused, true))), ctxFor())), [])
+    assert.ok(failed(scenario.check(readRun(run(answer('t1', UPDATED(file)))), ctxFor())).length > 0, 'an edit that went through fails it')
+    assert.ok(failed(scenario.check(readRun(run(answer('t1', 'dope-tdd: write the failing test first. Touch tests/other.test.ts', true))), ctxFor())).length > 0, 'a refusal naming the wrong test fails it')
+  })
+}
 
 const subagentRun = (cwd, editResult) =>
   stream([

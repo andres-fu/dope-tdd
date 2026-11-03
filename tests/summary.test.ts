@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parseConfig } from '../hooks/config'
 import { formatGlossary, formatStatus } from '../hooks/summary'
-import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordRun, recordSpike, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
+import { INITIAL_STATS, recordCommentTouch, recordGitIn, recordOutside, recordLeftOut, recordRun, recordSpike, recordUnclaimed, recordTestTouch, recordUnwatchedEdit, recordWorkaround, seedUnlocks, togglePause } from '../hooks/stats'
 import type { TddStats } from '../types'
 
 const T0 = 1_000_000
@@ -83,7 +83,8 @@ describe('/tdd why explains the words the band and /tdd use, and only those', ()
     expect(text).toMatch(/^ {2}red ✓ green ✓ +the steps of this cycle: ✓ done, · not yet, ✗ the test went green without failing first/m)
     expect(text).toMatch(/^ {2}RED 4M +the test fails now, and how long since the cycle opened/m)
     expect(text).toMatch(/^ {2}last run +which test ran last, how it went, and when;/m)
-    for (const retired of ['CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
+    expect(text).toMatch(/^ {2}refused +an edit was stopped until the test is written/m)
+    for (const retired of ['blocked', 'CAUGHT', 'UNVERIFIED', 'NEVER SAW RED', 'TEST CHANGED', 'SAW RED', 'RED ELSEWHERE', 'GIT REBASE', 'UNWATCHED', '  WATCHING']) {
       expect(text).not.toContain(retired)
     }
   })
@@ -151,12 +152,77 @@ describe('formatStatus as rows the app can show as a table (2026-10-18)', () => 
   // #234 (tester round 7): under an unread dope-tdd.json an untested edit landed while /tdd led with a bare "guard: ON".
   // #236: edits under a carried-over unlock are neither test-first nor misses; the line counts them apart.
   test('the test-first line counts edits under an earlier session\'s unlock on their own', () => {
-    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · blocked 0$/m)
-    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · blocked 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2, carriedEdits: 1 }, T0)).toMatch(/^test-first: 2\/2 · under an earlier session's unlock 1 · unguarded 0 · refused 0$/m)
+    expect(formatStatus({ ...INITIAL_STATS, testFirst: 2 }, T0)).toMatch(/^test-first: 2\/2 · unguarded 0 · refused 0$/m)
   })
 
   test('the guard line says when dope-tdd.json was not read', () => {
     expect(formatStatus(INITIAL_STATS, T0, parseConfig('{"mode":"strict"}'))).toMatch(/^guard: ON with the defaults: dope-tdd\.json was not read \(see config below\)$/m)
+  })
+
+  test('the guard line counts a layout miss once, whichever tool wrote it', () => {
+    const both = recordLeftOut(recordLeftOut(INITIAL_STATS, 'a.ts', 'layout', T0), 'a.ts', 'shell', T0)
+    expect(formatStatus(both, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(a\.ts\)/m)
+    const shell = recordLeftOut(INITIAL_STATS, 'b.ts', 'shell', T0)
+    expect(formatStatus(shell, T0)).toMatch(/^guard: ON, but 1 edited code file matches no test layout and was not guarded \(b\.ts\)/m)
+  })
+
+  const other = (path: string) => ({ path, target: { kind: 'other' as const } })
+  const test_ = (module: string) => ({ path: `tests/${module}.test.ts`, target: { kind: 'test' as const, module } })
+
+  test('a change around a command that looks read-only is an event once, and leaves the guard line alone', () => {
+    const twice = recordUnclaimed(recordUnclaimed(INITIAL_STATS, [other('src/a.ts')], T0), [other('src/a.ts')], T0)
+    expect(twice.unclaimed).toEqual(['src/a.ts'])
+    expect(twice.events.filter(({ kind }) => kind === 'unclaimed')).toHaveLength(1)
+    expect(formatStatus(twice, T0)).toMatch(/: changed during a read or test run, charged to nobody \(src\/a\.ts\)$/m)
+    expect(formatStatus(twice, T0)).toMatch(/^guard: ON$/m)
+  })
+
+  test('its own row lasts after the event has scrolled away', () => {
+    const seen = recordUnclaimed(INITIAL_STATS, [other('src/a.ts'), other('src/b.ts')], T0)
+    const later = Array.from({ length: 40 }, (_, i) => `s${i}`).reduce((acc, name) => recordSpike(acc, name, T0), seen)
+    expect(formatStatus(later, T0)).not.toMatch(/charged to nobody \(src/)
+    expect(formatStatus(later, T0)).toMatch(/^changed during a read or test run: src\/a\.ts, src\/b\.ts \(charged to nobody\)$/m)
+    expect(formatStatus(INITIAL_STATS, T0)).not.toMatch(/changed during a read/)
+  })
+
+  test('it marks the module changed since its run, and moves no count', () => {
+    const source = { path: 'src/a.ts', target: { kind: 'source' as const, module: 'a' } }
+    const seen = recordUnclaimed(INITIAL_STATS, [source], T0)
+    expect(seen.modules.a?.editedSinceRun).toBe(true)
+    expect([seen.testFirst, seen.unguarded]).toEqual([0, 0])
+    const paused = recordUnclaimed({ ...INITIAL_STATS, paused: true }, [source], T0)
+    expect(paused.modules.a?.editedSinceRun).not.toBe(true)
+  })
+
+  test('a test changed after its red counts as a test changed, and unlocks nothing', () => {
+    const red = { ...INITIAL_STATS, modules: { a: { ...INITIAL_STATS.modules.a, sawRed: true } as never } }
+    const seen = recordUnclaimed(red, [test_('a')], T0)
+    expect(seen.modules.a?.testTouchedAfterRed).toBe(true)
+    expect(seen.unlocked).toEqual({})
+    expect(recordUnclaimed(INITIAL_STATS, [test_('a')], T0).modules.a?.testTouchedAfterRed).not.toBe(true)
+  })
+
+  test('one command is one event, however many files it changed, so a big rewrite keeps the rest of the log', () => {
+    const many = recordUnclaimed(INITIAL_STATS, Array.from({ length: 60 }, (_, i) => other(`src/f${i}.ts`)), T0)
+    expect(many.events.filter(({ kind }) => kind === 'unclaimed')).toHaveLength(1)
+    expect(formatStatus(many, T0)).toMatch(/charged to nobody \(src\/f0\.ts and 59 more\)$/m)
+    expect(many.unclaimed).toContain('src/f0.ts')
+  })
+
+  test('the row names the ten newest and counts the rest, however many there were', () => {
+    const many = recordUnclaimed(INITIAL_STATS, Array.from({ length: 250 }, (_, i) => other(`src/f${i}.ts`)), T0)
+    expect(many.unclaimed).toHaveLength(200)
+    const row = formatStatus(many, T0).split('\n').find(line => line.startsWith('changed during'))
+    expect(row).toBe(`changed during a read or test run: ${Array.from({ length: 10 }, (_, i) => `src/f${i + 240}.ts`).join(', ')} and 190 more (charged to nobody)`)
+  })
+
+  test('the guard line says when code of another stack was edited, with no setup it cannot deliver', () => {
+    const one = recordLeftOut(INITIAL_STATS, 'tools/gen.py', 'stack', T0)
+    expect(formatStatus(one, T0)).toMatch(/^guard: ON, but 1 edited code file is another stack and was not guarded \(tools\/gen\.py\)$/m)
+    expect(formatStatus(one, T0)).toMatch(/: edited, another stack, not guarded \(tools\/gen\.py\)$/m)
+    const both = recordLeftOut(one, 'scripts/a.ts', 'layout', T0)
+    expect(formatStatus(both, T0)).toMatch(/not guarded \(scripts\/a\.ts\) · fix: \/tdd setup, and 1 edited code file is another stack and was not guarded \(tools\/gen\.py\)$/m)
   })
 
   test('the guard line says when edited code matched no test layout, and the edit is an event', () => {
@@ -260,11 +326,11 @@ describe('formatStatus event rows', () => {
 
   test('under an hour, a row says the seconds', () => {
     const text = formatStatus({ ...INITIAL_STATS, events: [at(T0 - 492_000), at(T0 - 12_000)] }, T0)
-    expect(text).toMatch(/^8MIN12S AGO: blocked stats$/m)
-    expect(text).toMatch(/^12S AGO: blocked stats$/m)
+    expect(text).toMatch(/^8MIN12S AGO: refused stats$/m)
+    expect(text).toMatch(/^12S AGO: refused stats$/m)
   })
 
   test("a subagent's row says so", () => {
-    expect(formatStatus({ ...INITIAL_STATS, events: [at(T0, 'a1')] }, T0)).toMatch(/^JUST NOW: blocked stats · subagent$/m)
+    expect(formatStatus({ ...INITIAL_STATS, events: [at(T0, 'a1')] }, T0)).toMatch(/^JUST NOW: refused stats · subagent$/m)
   })
 })

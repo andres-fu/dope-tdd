@@ -1,6 +1,6 @@
 import { failedFiles as nodeFailedFiles, runOutcome as readNode, stripAnsi } from './runOutcome.ts'
 import type { RunOutcome } from './runOutcome.ts'
-import { ELSEWHERE, commandSegments, executedText, locatedSegments } from './shell.ts'
+import { ELSEWHERE, WRITES_OUTPUT, commandSegments, executedText, isPureRead, locatedSegments } from './shell.ts'
 import { STACKS } from './stacks.ts'
 import type { StackName } from './stacks.ts'
 
@@ -739,14 +739,20 @@ export function runnersFor(stack: StackName, testPath?: string): readonly Runner
 }
 
 /** A shell command that runs any known runner, or a package's test script. */
-// What may sit beside a test run without writing anything: a cd, and the filters its output is piped through.
+// What may sit beside a test run without writing anything: a cd, and the filters its output is piped through. With a
+// redirect one of these writes (#304). The run itself keeps its own: `npm test > out.log` is common, and a log isn't code.
 const HARMLESS = /^\s*(?:cd|echo|tail|head|grep|sort|uniq|wc|true)(?:\s|$)/
 
-/** Only test runs, cds and output filters: nothing in it writes source, so a change seen while it ran came from elsewhere. */
+/** Only test runs, cds and output filters: nothing in it says it writes source. */
 export function isPureTestRun(command: string): boolean {
   const segments = commandSegments(command).map(executedText).filter(segment => segment.trim() !== '')
   const runs = (segment: string) => runsTests(segment)
-  return segments.some(runs) && segments.every(segment => runs(segment) || HARMLESS.test(segment))
+  return segments.some(runs) && segments.every(segment => runs(segment) || (HARMLESS.test(segment) && !WRITES_OUTPUT.test(segment)))
+}
+
+/** Says it only reads or runs tests. What's hidden in it is another matter, so this decides a charge, never whether to look. */
+export function looksReadOnly(command: string): boolean {
+  return isPureRead(command) || isPureTestRun(command)
 }
 
 /** A run that always covers the whole folder (the plugin kit): its red belongs to whichever files it names, if any. */

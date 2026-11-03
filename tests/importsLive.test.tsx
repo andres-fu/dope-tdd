@@ -55,7 +55,7 @@ describe('a test covers what it imports', () => {
     expect(status.text).toMatch(/module: io/)
     expect(status.text).toMatch(/proven 1/)
     expect(status.text).not.toMatch(/also open/)
-    expect(status.text).not.toMatch(/blocked [1-9]/)
+    expect(status.text).not.toMatch(/refused [1-9]/)
     const check = world.gitCalls.find(argv => argv.some(arg => arg.includes('vitest.mjs')))
     expect(check?.slice(-1)).toEqual([SLUG_TEST])
   })

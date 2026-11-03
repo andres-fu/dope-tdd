@@ -33,6 +33,15 @@ test('every path that needs a person exists', () => {
   }
 })
 
+test('every npm script the rules name exists', () => {
+  const { scripts } = JSON.parse(read('package.json'))
+  const named = [...read(RULES).matchAll(/npm run ([\w-]+)/g)].map(m => m[1])
+  assert.ok(named.includes('compare'), `found only ${named.join(', ')}`)
+  for (const script of named) {
+    assert.ok(script in scripts, `${RULES} names npm run ${script}, which does not exist`)
+  }
+})
+
 test('the reviewer agent exists, with the tools it is limited to', () => {
   assert.match(read('.claude/agents/reviewer.md'), /^---\nname: reviewer\n[\s\S]*?\ntools: [^\n]+\n---\n/)
 })

@@ -343,7 +343,9 @@ export function isLoosening(before: GuardConfig, after: GuardConfig): boolean {
   const longerPause = pauseLimit(after) > pauseLimit(before)
   // A model approving in a person's place is a step away from a person: the record says so.
   const modelApproves = approverOf(before).approver === 'human' && approverOf(after).approver === 'model'
-  return weakerMode || moreExempt || narrowerScope || checkOff || longerPause || modelApproves
+  // An invalid file is ignored whole, so its layout, scope and exemptions go with it (#293).
+  const nowInvalid = before.error === null && after.error !== null
+  return weakerMode || moreExempt || narrowerScope || checkOff || longerPause || modelApproves || nowInvalid
 }
 
 function listChange(name: string, before: readonly string[], after: readonly string[]): string[] {

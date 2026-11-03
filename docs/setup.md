@@ -14,8 +14,9 @@ Two questions decide whether an edit is guarded, in this order:
    the folder it was installed in. Where the plugin is not enabled no hook
    runs, so nothing is refused and nothing is logged.
 2. **What does it guard?** Dope TDD decides, from the session root: the folder
-   Claude Code was opened in. It reads `dope-tdd.json` there, and pairs and
-   guards source and tests by the layout. A subagent's worktree, or one the
+   Claude Code was opened in. It reads `dope-tdd.json` there, or with neither
+   that file nor a marker such as `package.json`, reads the code itself, and
+   pairs and guards source and tests by the layout. A subagent's worktree, or one the
    session's own shell works in, is guarded with that worktree's own
    `dope-tdd.json` and tests, both under
    `.claude/worktrees/` in the session root and, when the session root is
@@ -34,8 +35,9 @@ Out of the box Dope TDD pairs `src/<module>.ts` with `tests/<module>.test.ts`
 in a Node project, `src/pkg/calc.py` with `tests/pkg/test_calc.py` in a Python
 project, and `scripts/player.gd` with `test/scripts/player_test.gd` in a Godot
 project, which is gdUnit4's own rule. The project's root files say which it is
-(`package.json`, `pyproject.toml`, `project.godot`, `pom.xml`); `"stack"` in
-`dope-tdd.json` pins it. If your tests sit elsewhere, say so once:
+(`package.json`, `pyproject.toml`, `project.godot`, `pom.xml`), or with none of
+those and no `dope-tdd.json`, its code does. `"stack"` in `dope-tdd.json` pins
+it. If your tests sit elsewhere, say so once:
 
 ```json
 { "layout": "colocated" }
@@ -48,10 +50,12 @@ project, which is gdUnit4's own rule. The project's root files say which it is
 { "layout": { "source": "lib/{module}.{ext}", "test": "spec/{module}.spec.{ext}" } }
 ```
 
-With no `dope-tdd.json`, Dope TDD looks once at the start of a session: if
-the default layout matches none of the project's code, nothing would ever be
-refused, so Claude is told so, with the layout `/tdd setup` finds (for
-example `colocated` under `site`), and asks you to run `/tdd setup`.
+With no `dope-tdd.json`, Dope TDD looks once at the start of a session. With
+no marker either, it uses the layout the repo shows when the default matches
+none of its code, and says so. With a marker, or when that layout pairs nothing
+too, nothing would ever be refused, so Claude is told so, with the layout
+`/tdd setup` finds (for example `colocated` under `site`), and asks you to run
+`/tdd setup`.
 
 A monorepo adds `"roots": ["packages/*"]` and each package is its own project.
 One `dope-tdd.json` guards one stack: in a repository with a Python backend
@@ -81,9 +85,9 @@ branch (`origin/HEAD`) rather than the branch you are on.
 
 So commit `dope-tdd.json` and your tests to the branch worktrees are created
 from, usually `main`. If they are untracked, or committed only on a local
-branch, the subagent's worktree has neither: the default layout applies there,
-and if it matches none of the code, the subagent's edits go through unguarded
-and nothing says so. To cut worktrees from the branch you are on instead, set
+branch, the subagent's worktree has neither: it is read as any project with no
+config is, and if nothing pairs its code, the subagent's edits go through
+unguarded. To cut worktrees from the branch you are on instead, set
 `worktree.baseRef` to `"head"` in Claude Code's settings.
 
 The plugin must also be enabled where the worktree lands. When the session

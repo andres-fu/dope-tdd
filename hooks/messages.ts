@@ -59,8 +59,17 @@ export const MESSAGES = {
   // from this session; it is left alone, and said, so nobody takes it for guarded work.
   'outside.project': entry({ path: 'C:/work/other/src/a.ts', root: 'C:/work/app' }, f =>
     `dope-tdd: ${f.path} is outside this project (${f.root.replace(/\\/g, '/')}), so it is not guarded or counted, and nor is anything else outside it this session. To work test-first in another repository, open a Claude Code session in it.`),
+  // #259: once a session, the first code file no layout pairs. The edit goes through; this is a notice, not a refusal.
+  'edit.unwatched': entry({ path: 'scripts/build.ts' }, f =>
+    `dope-tdd: ${f.path} matches no test layout, so it is not guarded, and nor is other code like it this session. If a different layout would cover it, the user can check with /tdd setup. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
+  'edit.otherStack': entry({ path: 'tools/gen.py', stack: 'node' }, f =>
+    `dope-tdd: ${f.path} isn't ${f.stack} code, so it is not guarded, and nor is other code like it this session. One dope-tdd.json guards one stack. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
   'edit.unguarded': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.sourcePath} was edited with no test touched first. Write ${f.testPath} next and see it fail.`),
+  // #281: the guard can't tell who made this change, so it says both and charges nobody.
+  'shell.unclaimed': entry({ path: 'src/a.ts' }, f =>
+    `dope-tdd: ${f.path} changed while a command that looks read-only ran (another editor or session, or a write hidden in it); charged to nobody.`),
+  'shell.moreChanged': entry({ count: 2 }, f => `dope-tdd: and ${f.count} more changed the same way.`),
   'run.crashed': entry({}, () =>
     'dope-tdd: node --test could not read its test process output (a Node bug when a test prints non-ASCII text, such as emoji), so nothing was counted. Run it again; if it keeps happening, quiet the logging in the code under test.'),
   // VibeCast field test (2026-10-18): a 40 KB `npm test` was cut before its summary; said as too long, never "pipe it".
@@ -79,6 +88,8 @@ export const MESSAGES = {
     `dope-tdd: this was a ${f.runner} run, and dope-tdd cannot read ${f.runner}'s summary yet, so ${f.runner} runs are not counted: no RED or GREEN from them, and no catch check. Untested edits are still refused. Said once.`),
   'config.changed': entry({ detail: 'mode: enforce → warn' }, f =>
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
+  'config.changedNearby': entry({ detail: 'mode: enforce → warn' }, f =>
+    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command, which may not have done it. This is recorded in /tdd.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).

@@ -184,6 +184,16 @@ describe('overrides in dope-tdd.json: who approves (2026-10-18)', () => {
   })
 })
 
+// #293: an invalid file is ignored whole, so its layout, scope and exemptions go with it, on Edit and through a shell.
+describe('isLoosening when the file turns invalid', () => {
+  test('a valid file turning invalid loosens the guard, and one already invalid does not', () => {
+    const invalid = parseConfig('{oops')
+    expect(isLoosening(DEFAULT_CONFIG, invalid)).toBe(true)
+    expect(isLoosening(invalid, parseConfig('{still oops'))).toBe(false)
+    expect(isLoosening(invalid, DEFAULT_CONFIG)).toBe(false)
+  })
+})
+
 // #214 (tester round 6): an invalid file is ignored whole, so the agent was told `stack python → node` while the file
 // still said python, which read as if the edit changed the stack. Say once that the file is ignored, and what applies.
 describe('describeConfigChange when the file turns invalid', () => {

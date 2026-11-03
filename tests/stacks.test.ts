@@ -5,7 +5,7 @@ import { classifyPath, testPathFor, watchedDirs } from '../hooks/mirror'
 import type { LayoutConfig } from '../hooks/mirror'
 import { runnersFor } from '../hooks/runners'
 import { inferLayout, suggestedConfig } from '../hooks/setup'
-import { STACKS, detectStackFrom } from '../hooks/stacks'
+import { STACKS, detectStackFrom, isTestFileAny } from '../hooks/stacks'
 
 const ROOT = 'C:/proj'
 
@@ -63,7 +63,7 @@ describe('python layouts', () => {
     const config = layout('python', 'package')
     expect(classifyPath(ROOT, `${ROOT}/pkg/calc.py`, config)).toEqual({ kind: 'source', module: 'pkg/calc' })
     expect(classifyPath(ROOT, `${ROOT}/tests/pkg/test_calc.py`, config)).toEqual({ kind: 'test', module: 'pkg/calc' })
-    expect(classifyPath(ROOT, `${ROOT}/tests/conftest.py`, config)).toEqual({ kind: 'other' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/conftest.py`, config)).toEqual({ kind: 'other', inTestFolder: true })
     expect(classifyPath(ROOT, `${ROOT}/README.md`, config)).toEqual({ kind: 'other' })
     expect(watchedDirs(config)).toEqual(['.'])
   })
@@ -74,7 +74,7 @@ describe('godot layouts', () => {
     const config = layout('godot', 'godot')
     expect(classifyPath(ROOT, `${ROOT}/scripts/player.gd`, config)).toEqual({ kind: 'source', module: 'scripts/player' })
     expect(classifyPath(ROOT, `${ROOT}/test/scripts/player_test.gd`, config)).toEqual({ kind: 'test', module: 'scripts/player' })
-    expect(classifyPath(ROOT, `${ROOT}/test/helpers.gd`, config)).toEqual({ kind: 'other' })
+    expect(classifyPath(ROOT, `${ROOT}/test/helpers.gd`, config)).toEqual({ kind: 'other', inTestFolder: true })
     expect(classifyPath(ROOT, `${ROOT}/player.tscn`, config)).toEqual({ kind: 'other' })
     expect(testPathFor(config, 'scripts/player')).toBe('test/scripts/player_test.gd')
     expect(watchedDirs(config)).toEqual(['.'])
@@ -163,7 +163,7 @@ describe('pairing by name', () => {
     expect(classifyPath(ROOT, `${ROOT}/scripts/show/BeatDeck.cs`, config)).toEqual({ kind: 'source', module: 'BeatDeck' })
     expect(classifyPath(ROOT, `${ROOT}/autoloads/GameState.cs`, config)).toEqual({ kind: 'source', module: 'GameState' })
     expect(classifyPath(ROOT, `${ROOT}/test/BeatDeckTest.cs`, config)).toEqual({ kind: 'test', module: 'BeatDeck' })
-    expect(classifyPath(ROOT, `${ROOT}/test/.gdignore`, config)).toEqual({ kind: 'other' })
+    expect(classifyPath(ROOT, `${ROOT}/test/.gdignore`, config)).toEqual({ kind: 'other', inTestFolder: true })
     expect(testPathFor(config, 'BeatDeck')).toBe('test/BeatDeckTest.cs')
   })
 
@@ -174,7 +174,7 @@ describe('pairing by name', () => {
     const python = layout('python', 'flat')
     expect(classifyPath(ROOT, `${ROOT}/pkg/calc.py`, python)).toEqual({ kind: 'source', module: 'calc' })
     expect(classifyPath(ROOT, `${ROOT}/tests/test_calc.py`, python)).toEqual({ kind: 'test', module: 'calc' })
-    expect(classifyPath(ROOT, `${ROOT}/tests/conftest.py`, python)).toEqual({ kind: 'other' })
+    expect(classifyPath(ROOT, `${ROOT}/tests/conftest.py`, python)).toEqual({ kind: 'other', inTestFolder: true })
   })
 
   test('setup picks the name-paired preset when tests sit flat and are named after their sources', () => {
@@ -197,6 +197,20 @@ describe('pairing by name', () => {
     expect(classifyPath(ROOT, `${ROOT}/spec/thing.spec.ts`, config)).toEqual({ kind: 'test', module: 'thing' })
     expect(describeConfig(config).join(' ')).toMatch(/by name/)
     expect(parseConfig('{"layout":{"source":"lib/{module}.{ext}","test":"spec/{name}.spec.{ext}","pairing":"sideways"}}').error).toMatch(/pairing must be/)
+  })
+})
+
+describe('isTestFileAny: a test in any stack', () => {
+  test('each stack\'s test shape counts, wherever it sits', () => {
+    for (const path of ['scripts/test_gen.py', 'tools/gen.test.ts', 'Tests/GenTests.cs', 'src/GenTest.java', 'test/gen_test.gd']) {
+      expect(isTestFileAny(path)).toBe(true)
+    }
+  })
+
+  test('code that is not a test does not', () => {
+    for (const path of ['scripts/gen.py', 'tools/gen.ts', 'App.cs', 'README.md']) {
+      expect(isTestFileAny(path)).toBe(false)
+    }
   })
 })
 

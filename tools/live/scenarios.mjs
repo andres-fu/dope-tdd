@@ -12,6 +12,9 @@ import { buildOf, check, dopePlugin, isRefusal, isUnder, samePath, tddReport } f
 const CHANGE = 'use the Edit tool once to change "return a + b" to "return a + b + 0"'
 const subagentPrompt = `Use the Agent tool once, with isolation set to "worktree", and give the subagent this task: Read src/calc.js in your worktree, then ${CHANGE}. Do not touch any test. Report the Edit tool result word for word. Then reply with the subagent's report and stop.`
 const fwd = path => path.replace(/\\/g, '/')
+/** A write the guard can't read from a command's text, which only the check after the command can see. */
+const scriptWrite = word => `node -e "require('fs').appendFileSync(process.argv[1], '// ${word}\\n')" src/calc.js`
+const configWrite = `node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({ mode: 'observe' }))" dope-tdd.json`
 
 export const dirOf = (ctx, where) => (where === 'probe' ? ctx.probe : `${ctx.root}/${where}`)
 
@@ -118,6 +121,26 @@ function nestedChecks(run, ctx) {
   ]
 }
 
+/** #268: a project with no marker for its language is read from its code, so an untested edit is refused. */
+function noMarkerScenario(id, where, language, source, testPath) {
+  return {
+    id,
+    title: `${language} with no config and no usual marker is read from its code, and an untested edit is refused (#268)`,
+    cwd: where,
+    plugin: 'on',
+    messages: () => [`Read ${source}, then use the Edit tool once to change "return a + b" to "return a + b + 0". Do not touch any test. Then quote the tool result word for word and stop.`],
+    check(run, ctx) {
+      const edit = edits(run, { subagent: false }).find(e => samePath(e.path, `${dirOf(ctx, where)}/${source}`))
+      return [
+        sessionCheck(run, ctx, where),
+        check(`the model called Edit on ${source}`, edit !== undefined, 'no such Edit'),
+        check('dope-tdd refused it', isRefusal(edit?.result), edit?.result?.text.split('\n')[0] ?? 'no result'),
+        check(`the refusal names ${testPath}`, edit?.result?.text.includes(testPath) === true),
+      ]
+    },
+  }
+}
+
 export const scenarios = [
   {
     id: 'A',
@@ -153,7 +176,7 @@ export const scenarios = [
         check('the model called Edit on src/calc.js', edit !== undefined, 'no such Edit'),
         ...refusalChecks(edit),
         check('src/calc.js is unchanged on disk', ctx.calcAfter === ctx.calcBefore),
-        check('/tdd lists the block', report.includes('blocked calc'), report === '' ? 'no /tdd output' : 'not in its recent events'),
+        check('/tdd lists the refusal', report.includes('refused calc'), report === '' ? 'no /tdd output' : 'not in its recent events'),
       ]
     },
   },
@@ -202,5 +225,48 @@ export const scenarios = [
     maxTurns: 14,
     messages: ctx => [nestedPrompt(ctx), '/tdd'],
     check: nestedChecks,
+  },
+  noMarkerScenario('G', 'pyapp', 'Python', 'api.py', 'tests/test_api.py'),
+  noMarkerScenario('H', 'csapp', 'C#', 'src/App.cs', 'tests/AppTests.cs'),
+  {
+    id: 'I',
+    title: "a script's write shows though the same command stages or commits it (#292)",
+    cwd: 'probe',
+    plugin: 'on',
+    tools: ['Bash'],
+    maxTurns: 6,
+    messages: () => [`Use the Bash tool to run these two commands exactly, one at a time, and stop if one is refused: \`${scriptWrite('one')} && git add src/calc.js\` then \`${scriptWrite('two')} && git commit -qam fix\`. Then stop.`, '/tdd'],
+    check(run, ctx) {
+      const report = tddReport(run) ?? ''
+      const ran = step => run.calls.some(call => call.name === 'Bash' && call.input?.command?.includes('appendFileSync') && call.input.command.includes(step) && call.result?.error === false)
+      return [
+        ...buildChecks(run, ctx),
+        sessionCheck(run, ctx, 'probe'),
+        check('one command wrote and staged', ran('git add')),
+        check('one command wrote and committed', ran('git commit')),
+        check('src/calc.js changed on disk', ctx.calcAfter !== ctx.calcBefore),
+        check('/tdd counts both as unguarded', report.includes('unguarded 2'), report === '' ? 'no /tdd output' : (/unguarded \d+/.exec(report)?.[0] ?? 'no unguarded count')),
+      ]
+    },
+  },
+  {
+    id: 'J',
+    title: 'a config loosened by a script is recorded, and the agent is asked why (#293)',
+    cwd: 'probe',
+    plugin: 'on',
+    tools: ['Bash'],
+    maxTurns: 5,
+    messages: () => [`Use the Bash tool to run this command exactly, once: \`${configWrite}\`. Then stop.`, '/tdd'],
+    check(run, ctx) {
+      const report = tddReport(run) ?? ''
+      const call = run.calls.find(each => each.name === 'Bash' && each.input?.command?.includes('writeFileSync'))
+      return [
+        ...buildChecks(run, ctx),
+        sessionCheck(run, ctx, 'probe'),
+        check('the command ran', call?.result?.error === false, call?.result?.text.split('\n')[0] ?? 'no such command'),
+        check('/tdd counts a workaround', report.includes('workarounds: 1'), report === '' ? 'no /tdd output' : (/workarounds: \d+/.exec(report)?.[0] ?? 'no workaround count')),
+        check('/tdd names the change', report.includes('mode enforce → observe'), report === '' ? 'no /tdd output' : 'not in its report'),
+      ]
+    },
   },
 ]

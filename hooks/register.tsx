@@ -25,6 +25,7 @@ import {
   carryWaitMessage,
   commentedOutAdvice,
   configChangedAdvice,
+  configChangedNearbyAdvice,
   commentsOnlyAdvice,
   hollowAdvice,
   importAdvice,
@@ -36,33 +37,34 @@ import {
   touchAdvice,
   unguardedAdvice,
   unreadRunAdvice,
+  leftOutNotices,
 } from './advice.ts'
 import { say } from './messages.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { bringsInCode, changedPaths, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
 import type { GitOperation } from './gitOperation.ts'
 import { learnRoot, rootOfAgent } from './agentRoots.ts'
 import type { AgentRoots } from './agentRoots.ts'
-import { classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
-import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isPureTestRun, isTestRun, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
+import { withoutDots, classifyPath, extOf, isInsideRoot, moduleLabel, pathKey, relativePath, respelled, sameCheckout, sourcePathFor, testFileFor, testPathFor, watchedDirs, worktreeRootFor } from './mirror.ts'
+import { failedCountIn, failedFilesIn, failedOnlyOnErrors, failedTestsIn, failureMessage, filtersTests, isNodeTestRun, isTestRun, looksReadOnly, namedOtherFiles, namedTestFile, namesFailedFiles, nodeRunnerCrashed, runnerNamed, runnersFor, runsWholeFolder, testRunLocation, workspaceTarget } from './runners.ts'
 import { isTruncated } from './runOutcome.ts'
 import { changedRecords, sealRecord, sessionLogPath, sessionRecord } from './sessionLog.ts'
 import type { RecordEntry } from './sessionLog.ts'
-import { cwdAfter, isPureRead } from './shell.ts'
+import { cwdAfter } from './shell.ts'
 import { cwdToCarry, settledStart, shellRoot, shellStart, unlockedElsewhere } from './shellCheckout.ts'
 import type { ShellScene } from './shellCheckout.ts'
-import { gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders } from './shellVerdict.ts'
+import { changeOwner, configLeftAlone, judgeConfigChange, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from './shellVerdict.ts'
 import { absolutePath, applyRun, failedTestPaths, failingTestFiles } from './runPlan.ts'
 import type { RunPlan } from './runPlan.ts'
 import { detectStackFrom, stackOf } from './stacks.ts'
 import type { StackName } from './stacks.ts'
-import { formatSetup, inferLayout, isCodeFile, layoutMismatch, suggestedConfig } from './setup.ts'
-import { catchWord, countsAsUnwatched, lastRunLine, lastRunTarget } from './bandModel.ts'
+import { activeLayoutNote, answerFrom, briefingNote, formatSetup, isCodeFile, isUnreadLanguage, layoutMismatch, needsWalk, projectStack, setupInference, suggestedConfig, withInference } from './setup.ts'
+import { catchWord, lastRunLine, lastRunTarget, leftOutBy, worthSaying } from './bandModel.ts'
 import type { Saved } from './bandModel.ts'
-import type { Survey } from './setup.ts'
+import type { ProjectAnswer, Survey } from './setup.ts'
 import {
   CHECK_LOCK_TTL_MS,
   INITIAL_STATS,
@@ -87,13 +89,14 @@ import {
   recordReportedElsewhere,
   recordRunTime,
   recordSameRed,
-  recordUnwatchedEdit,
+  recordLeftOut,
   recordStaleUnlocks,
   recordTestChanged,
   recordPinSkill,
   recordSpike,
   recordTestTouch,
   releaseCurrent,
+  recordUnclaimed,
   recordUnreadRun,
   recordWorkaround,
   releaseCheck,
@@ -206,11 +209,13 @@ async function writeCwd($: EngineInterface, shell: ShellName, cwd: string, agent
 }
 
 /** The config as the tool hooks last read it; renders reuse it instead of reading the file on every redraw. */
-let cachedConfig: { root: string; config: GuardConfig } | null = null
+let cachedConfig: { root: string; config: GuardConfig; answer: ProjectAnswer | null } | null = null
 /** The stack each root's files pointed at when first listed; `/tdd setup` looks again. */
 const detectedStacks = new Map<string, StackName | undefined>()
 /** What the briefing says about a default layout that matches none of the code (#167), per root; `/tdd setup` looks again. */
 const layoutNotes = new Map<string, string | null>()
+/** What a walk of a project with no config and no marker settled, per root (#268); `/tdd setup` looks again. */
+const projectAnswers = new Map<string, ProjectAnswer>()
 /** Roots whose interrupted-check journals were looked at since this module loaded (a hot reload starts over). */
 const repairedRoots = new Set<string>()
 let guardFailureToasted = false
@@ -251,6 +256,17 @@ async function detectStack($: EngineInterface, root: string): Promise<StackName 
   return detected
 }
 
+/** The repo's answer, from one walk per root (#268). */
+async function projectAnswer($: EngineInterface, root: string): Promise<ProjectAnswer> {
+  const known = projectAnswers.get(root)
+  if (known !== undefined) {
+    return known
+  }
+  const answer = answerFrom(await surveyProject($, root))
+  projectAnswers.set(root, answer)
+  return answer
+}
+
 /** GODOT_BIN, the variable gdUnit4's own wrapper reads, when the config does not name the binary. */
 async function godotFromEnv($: EngineInterface): Promise<string | null> {
   try {
@@ -262,8 +278,11 @@ async function godotFromEnv($: EngineInterface): Promise<string | null> {
 }
 
 async function loadConfig($: EngineInterface, root: string): Promise<GuardConfig> {
-  const config = parseConfig(await readWhole($, `${root}/${CONFIG_FILE}`), await detectStack($, root))
-  cachedConfig = { root, config }
+  const text = await readWhole($, `${root}/${CONFIG_FILE}`)
+  const marked = await detectStack($, root)
+  const answer = needsWalk(text, marked) ? await projectAnswer($, root) : null
+  const config = withInference(parseConfig(text, marked ?? (answer === null ? undefined : projectStack(answer.reading))), answer?.inferred ?? null)
+  cachedConfig = { root, config, answer }
   return config
 }
 
@@ -274,14 +293,20 @@ async function briefing($: EngineInterface): Promise<string | null> {
   if (config.mode === 'observe') {
     return null
   }
+  const answer = activeAnswer(root)
   // #167: with no dope-tdd.json the project is walked once per root, so a default that pairs nothing is said.
   if (config.layoutGuessed === true && !layoutNotes.has(root)) {
-    layoutNotes.set(root, layoutMismatch(await surveyProject($, root), config))
+    layoutNotes.set(root, answer === null ? layoutMismatch(await surveyProject($, root), config) : answer.defaultNote)
   }
-  const layoutNote = config.layoutGuessed === true ? (layoutNotes.get(root) ?? null) : null
+  const layoutNote = activeLayoutNote(answer, config, layoutNotes.get(root) ?? null)
   // Idea 15: the store changes only when a session ends, so the briefing stays the same all session.
   const leftRed = leftRedNote(freshLeftRed(await $.store.get(leftRedKey(root)), await $.clock.now()))
-  return briefingText(config, await briefingCommand($, root, config), layoutNote, leftRed)
+  return briefingText(config, await briefingCommand($, root, config), briefingNote(answer?.reading ?? null, layoutNote), leftRed)
+}
+
+/** The answer behind the config in force, when the repo decided it. */
+function activeAnswer(root: string): ProjectAnswer | null {
+  return cachedConfig?.root === root ? cachedConfig.answer : null
 }
 
 async function configForRender($: EngineInterface, root: string): Promise<GuardConfig> {
@@ -1367,6 +1392,7 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
   const files: string[] = []
   const packageDirs: string[] = []
   const rootEntries: string[] = []
+  const unread: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > SURVEY_DEPTH || files.length >= SURVEY_CAP) {
       return
@@ -1391,12 +1417,14 @@ async function surveyProject($: EngineInterface, root: string): Promise<Survey> 
           packageDirs.push(dir)
         } else if (isCodeFile(relative)) {
           files.push(relative)
+        } else if (isUnreadLanguage(relative)) {
+          unread.push(relative)
         }
       }
     }
   }
   await walk('', 0)
-  return { files, packageDirs, rootEntries }
+  return { files, packageDirs, rootEntries, unread }
 }
 
 function parsedJson(text: string | null): Record<string, unknown> {
@@ -1412,11 +1440,14 @@ function parsedJson(text: string | null): Record<string, unknown> {
 async function setupText($: EngineInterface, root: string, write: boolean, nowMs: number): Promise<string> {
   detectedStacks.delete(root)
   layoutNotes.delete(root)
+  projectAnswers.delete(root)
   const survey = await surveyProject($, root)
   const configPath = `${root}/${CONFIG_FILE}`
   const existing = await readWhole($, configPath)
-  const current = parseConfig(existing, await detectStack($, root))
-  const inferred = inferLayout(survey, current.stackSource === 'config' ? current.stack : undefined)
+  const marked = await detectStack($, root)
+  const answer = needsWalk(existing, marked) ? answerFrom(survey) : null
+  const current = parseConfig(existing, marked ?? (answer === null ? undefined : projectStack(answer.reading)))
+  const inferred = setupInference(survey, current, answer?.reading ?? null)
   // The runner under the detected config, which is what saving it gives (Karl's round 4: setup never named one).
   const testCommand = await briefingCommand($, root, { ...current, stack: inferred.stack, layout: inferred.layout, roots: inferred.roots })
   const text = formatSetup(current, inferred, survey, existing !== null, testCommand ?? undefined)
@@ -1573,10 +1604,11 @@ type FileTool = 'Edit' | 'Write' | 'NotebookEdit'
 async function guardFileWrite(
   $: EngineInterface,
   tool: FileTool,
-  filePath: string,
+  spelledPath: string,
   proceed: () => Promise<ToolCallResult>,
   agentId?: string,
 ): Promise<ToolCallResult> {
+  const filePath = withoutDots(spelledPath)
   // A file in an agent worktree is judged against that worktree, the checkout it belongs to (#198).
   const sessionRoot = await $.session.root()
   const root = worktreeRootFor(sessionRoot, filePath, await mainCheckoutOf($, sessionRoot))
@@ -1584,10 +1616,13 @@ async function guardFileWrite(
   if (git.operation !== null) {
     return standDown($, root, git.lines, isCodeFile(relativePath(root, filePath)), proceed)
   }
+  const before = await readStats($)
   const result = await checkFileWrite($, tool, filePath, proceed, agentId)
   await noteSaved($, root)
+  const config = await configForRender($, root)
+  const leftOut = result.deny === undefined ? leftOutNotices(before, await readStats($), config.stack) : []
   const outside = result.deny === undefined ? await noteOutside($, root, [await projectPath($, root, filePath)]) : []
-  return tell((await configForRender($, root)).mode === 'observe', result, [...git.lines, ...outside])
+  return tell(config.mode === 'observe', result, [...git.lines, ...leftOut, ...outside])
 }
 
 /**
@@ -1636,6 +1671,7 @@ async function checkFileWrite(
   const gateNowMs = await $.clock.now()
   const record = await read($, overrideRecord)
   const covering = target.kind === 'source' && isLocked ? coveringOverride(record, target.module, gateNowMs, await sessionIdNow($)) : null
+  const leftOut = isInsideRoot(root, filePath) ? leftOutBy(relative, target, config) : null
   // The verdict is fileGate.ts's; this acts on it.
   const verdict = gateWrite({
     relativePath: relative,
@@ -1646,7 +1682,7 @@ async function checkFileWrite(
     inherited: target.kind === 'source' && current.inherited[target.module] !== undefined,
     paused: current.paused,
     covering,
-    unwatchedCode: target.kind === 'other' && isInsideRoot(root, filePath) && countsAsUnwatched(relative, config),
+    unwatchedCode: leftOut !== null,
   })
   if (verdict.kind === 'deny-record') {
     return { deny: RECORD_DENY }
@@ -1662,10 +1698,6 @@ async function checkFileWrite(
   if (verdict.kind === 'carry-wait' && target.kind === 'source') {
     await change($, s => recordCarryWait(s, target.module, gateNowMs))
     return { deny: await carryWait($, root, config, current, target.module, gateNowMs) }
-  }
-  if (verdict.kind === 'go' && verdict.unwatched) {
-    // Code no layout pairs with a test: let it through, but remember it, so the band says what it is not watching.
-    await change($, s => recordUnwatchedEdit(s, relative, gateNowMs))
   }
   if (verdict.kind === 'go' && verdict.spend !== null) {
     // An approved override lets the edit through, on the record: a change override is spent by it, a pause counts it.
@@ -1691,6 +1723,10 @@ async function checkFileWrite(
   }
 
   const nowMs = await $.clock.now()
+  if (verdict.kind === 'go' && verdict.unwatched && leftOut !== null) {
+    // Code this guard can't pair with a test: let it through, but remember it, so it is said and /tdd lists it.
+    await change($, s => recordLeftOut(s, relative, leftOut, nowMs))
+  }
   if (isConfig) {
     const after = await loadConfig($, root)
     const detail = describeConfigChange(config, after)
@@ -1798,16 +1834,27 @@ function changedOfKind(root: string, paths: string[], kind: 'source' | 'test', c
   })
 }
 
-async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig): Promise<SourceSnapshot | null> {
+/** A command of more plain commits than this reads as a reflog that can't say. */
+const MAX_REFLOG_READ = 100
+
+/** HEAD's commit, null with no commit yet or no repository; quiet, since either is expected. */
+async function headOf($: EngineInterface, root: string): Promise<string | null> {
+  const run = await gitQuiet($, root, ['rev-parse', '--verify', '-q', 'HEAD'])
+  const head = run?.exitCode === 0 ? run.stdout.trim() : ''
+  return head === '' ? null : head
+}
+
+/** The tree against `base`, so a write the same command stages or commits still shows (#292); the index when there is no commit. */
+async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig, base: string | null): Promise<SourceSnapshot | null> {
   const dirs = watchedDirs(config)
-  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', '--', ...dirs])
+  // Against a commit a staged rename prints as `{a => b}`, which is no path.
+  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
   const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...dirs])
   if (numstat === null || untracked === null) {
     return null
   }
 
-  const stamped = async (path: string, signature: string) =>
-    [path, `${signature}:${(await lastModifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const
+  const stamped = async (path: string, signature: string) => [path, `${signature}:${(await modifiedMs($, `${root}/${path}`)) ?? 'missing'}`] as const
   const tracked = await Promise.all(Object.entries(parseNumstat(numstat)).map(([path, counts]) => stamped(path, counts)))
   const untrackedPaths = untracked.split(/\r?\n/).filter(path => path !== '')
   const untrackedEntries = await Promise.all(untrackedPaths.map(path => stamped(path, 'untracked')))
@@ -1832,7 +1879,7 @@ async function guardShell(
   const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await checkShell($, command, proceed, shell, { root, start, written, scene }, agentId)
+    const result = await watchConfig($, root, command, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
@@ -1866,7 +1913,9 @@ async function checkShell(
       // A write into a worktree is judged against that worktree, as Edit and Write are (#198); from the session root,
       // since `root` can itself be a worktree now and a file in the main checkout is no file of that one.
       const home = worktreeRootFor(sessionRoot, path, mainCheckout)
-      return { path, module: sourceModuleOf(home, path, config), policy: policyFor(config, relativePath(home, path)) }
+      const relative = relativePath(home, path)
+      const leftOut = isInsideRoot(home, path) ? leftOutBy(relative, classifyPath(home, path, config), config) : null
+      return { path, relative, leftOut, module: sourceModuleOf(home, path, config), policy: policyFor(config, relative) }
     }),
   )
   const gated = gateShellWrites(writes, current.unlocked, current.inherited, sessionRoot, mainCheckout)
@@ -1900,30 +1949,43 @@ async function checkShell(
     }
   }
 
-  // A command that only reads, or only runs tests, cannot be the agent writing source: no snapshot around it, no git cost.
-  const watched = !isPureRead(command) && !isPureTestRun(command)
-  const before = watched ? await snapshotWatched($, root, config) : null
+  // Every command gets this, reads too: telling from its text which could skip it kept missing writes (#281).
+  const head = await headOf($, root)
+  const before = await snapshotWatched($, root, config, head)
   const expectedWrites = current.paused
     ? []
     : writes.flatMap(({ path, module, policy }) => (module === null || policy === 'exempt' ? [] : [{ path, module }]))
   const textsBefore = await Promise.all(expectedWrites.map(async write => ({ ...write, before: await readFile($, write.path) })))
+  // A command's text can name a write that never lands (`false && ...`, `ssh host "..."`), so left-out code is judged by the disk.
+  const namedLeftOut = writes.flatMap(({ path, relative, leftOut }) => (leftOut === null ? [] : [{ path, relative, why: leftOut, wasMs: null as number | null }]))
+  for (const named of namedLeftOut) {
+    named.wasMs = await modifiedMs($, named.path)
+  }
   const startedMs = await $.clock.now()
   const result = await proceed()
   if (result.deny !== undefined) {
     return result
   }
   await writeCwd($, shell, cwdToCarry(cwdAfter(command, start), root, scene.base), agentId)
-  const after = before === null ? null : await snapshotWatched($, root, config)
+  const headNow = before === null ? head : await headOf($, root)
+  const reflog = head !== null && headNow !== null && headNow !== head ? await runGit($, root, ['log', '-g', '--no-show-signature', '--format=%H %gs', `-n${MAX_REFLOG_READ}`, 'HEAD']) : ''
+  const { base, unread } = baseFor(head, headNow, reflog ?? '')
+  if (unread) {
+    $.ui.log('dope-tdd: can\'t tell what moved HEAD, so a write committed in that command can\'t be seen')
+  }
+  const after = before === null ? null : await snapshotWatched($, root, config, base)
+  const afterOldBase = before === null || base === head ? null : await snapshotWatched($, root, config, head)
   const nowMs = await $.clock.now()
 
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
   // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
   // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
-  const revertOnly = isRevertOnly(command, segment => isPureTestRun(segment) || isPureRead(segment))
-  const seen = before === null || after === null || revertOnly ? [] : changedPaths(before, after, await mtimesOfGone($, root, before, after))
+  const revertOnly = isRevertOnly(command, looksReadOnly)
+  const around = before === null || after === null ? [] : changedAround(before, after, afterOldBase, await mtimesOfGone($, root, before, after))
+  const seen = revertOnly ? [] : around
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (before !== null && after !== null && revertOnly && bringsInCode(command)) {
-    const brought = changedOfKind(root, changedPaths(before, after, await mtimesOfGone($, root, before, after)), 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
+  if (revertOnly && bringsInCode(command)) {
+    const brought = changedOfKind(root, around, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       // The verb only: the arguments can hold a token in a remote URL (verified review B1).
       const detail = gitVerb(command)
@@ -1931,11 +1993,16 @@ async function checkShell(
       $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
     }
   }
-  // A command that cannot have written source (Claude Code held it read-only, or it is only test runs and filters):
-  // what changed while it ran was another editor or session, so it is said and never charged to the agent.
-  const cannotWrite = result.isReadOnly === true || isPureTestRun(command)
-  const changed = cannotWrite ? [] : seen
-  const bystanders = cannotWrite ? changedOfKind(root, seen, 'source', config).map(({ path }) => path) : []
+  // What changed around a command that can't have written it, or only looks that way, is said and never charged.
+  const owner = changeOwner(result.isReadOnly === true, looksReadOnly(command))
+  const { charged: changed, said } = splitChanges(seen, owner, writes.map(({ relative }) => relative))
+  const others = said.map(path => ({ path, target: classifyPath(root, `${root}/${path}`, config) })).filter(({ path, target }) => worthSaying(path, target, config))
+  if (others.length > 0) {
+    await change($, s => recordUnclaimed(s, others, nowMs))
+  }
+  const fresh = others.map(({ path }) => path).filter(path => !current.unclaimed.includes(path))
+  const bystanders = owner === 'elsewhere' ? fresh : []
+  const unclaimed = owner === 'unclaimed' ? fresh : []
   if (bystanders.length > 0) {
     $.ui.log(`dope-tdd: changed during a command that cannot write them, not counted: ${bystanders.join(', ')}`)
   }
@@ -1959,6 +2026,15 @@ async function checkShell(
   )
   const tests = touchedTests.map(({ path, module }, index) => ({ path, module, leads: leading[index] ?? true }))
   const updated = await change($, s => recordShellChanges(s, { root, touchedTests: tests, changedSources, captured }, nowMs))
+  const namedNow = await Promise.all(namedLeftOut.map(async ({ relative, why, wasMs, path }) => ({ path: relative, why, wasMs, isMs: await modifiedMs($, path) })))
+  const seenLeftOut = await Promise.all(
+    changed.flatMap(path => {
+      const why = leftOutBy(path, classifyPath(root, `${root}/${path}`, config), config)
+      return why === null ? [] : [modifiedMs($, `${root}/${path}`).then(isMs => ({ path, why, isMs }))]
+    }),
+  )
+  const leftOut = leftOutShellEdits(namedNow, seenLeftOut, result.isReadOnly !== true)
+  const afterLeftOut = leftOut.length === 0 ? updated : await change($, s => leftOut.reduce((acc, { path, list }) => recordLeftOut(acc, path, list, nowMs), s))
   for (const { path, module } of touchedTests) {
     await rememberUnlock($, root, module, `${root}/${path}`, nowMs)
   }
@@ -2101,6 +2177,7 @@ async function checkShell(
       notStarted,
       unreadableRunner: firstUnreadable ? unreadable : null,
       bystanders,
+      unclaimed,
       commented,
       redUnlocked,
       carriedOn: carriedOn.map(module => ({ module, testPath: afterRun.unlocked[module] ?? '' })),
@@ -2114,7 +2191,7 @@ async function checkShell(
   const outsideRun = runLocation !== null && !isInsideRoot(root, runLocation) && isTestRun(command) ? [`${runLocation}/`] : []
   // A write in the session's own checkout, beside a run judged in a worktree, is inside the project all the same.
   const outside = await noteOutside($, root, [...outsideRun, ...writes.map(({ path }) => path).filter(path => !isInsideRoot(scene.base, path))])
-  return tell(quiet, result, [...reminders, ...outside])
+  return tell(quiet, result, [...reminders, ...leftOutNotices(current, afterLeftOut, config.stack), ...outside])
 }
 
 /** The modified time now of each path that left the snapshot, null for one that is gone; quiet, since gone is expected. */
@@ -2130,6 +2207,15 @@ async function mtimesOfGone($: EngineInterface, root: string, before: SourceSnap
     }),
   )
   return Object.fromEntries(entries)
+}
+
+/** The modified time now, null for a file that isn't there; quiet, since missing is expected. */
+async function modifiedMs($: EngineInterface, path: string): Promise<number | null> {
+  try {
+    return (await $.fs.stat(path)).mtimeMs
+  } catch {
+    return null
+  }
 }
 
 async function lastModifiedMs($: EngineInterface, path: string): Promise<number | null> {
@@ -2504,6 +2590,47 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
   return tell(false, result, [line])
 }
 
+/** A config a command changed is recorded as Edit's is (#293), even when the check around the command throws. */
+async function watchConfig($: EngineInterface, root: string, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+  const path = `${root}/${CONFIG_FILE}`
+  const textBefore = await readWhole($, path)
+  const before = await loadConfig($, root)
+  const noteChange = async (result: ToolCallResult | null): Promise<string[]> => {
+    const textAfter = await readWhole($, path)
+    if (configLeftAlone(textBefore, textAfter, await $.fs.exists(root))) {
+      return []
+    }
+    const after = await loadConfig($, root)
+    const changed = describeConfigChange(before, after)
+    if (changed === null) {
+      return []
+    }
+    const { asks, counts, detail } = judgeConfigChange({
+      refused: result?.deny !== undefined,
+      heldReadOnly: result?.isReadOnly === true,
+      looksReadOnly: looksReadOnly(command),
+      revertOnly: isRevertOnly(command, looksReadOnly),
+      named: writesFileNamed(command, CONFIG_FILE),
+      loosened: isLoosening(before, after),
+      // A read can fail with the file still there (a lock, `chmod 000`).
+      deleted: textAfter === null && !(await $.fs.exists(path)),
+      detail: changed,
+    })
+    const nowMs = await $.clock.now()
+    await change($, s => recordConfigChange(s, detail, counts, nowMs))
+    toast($, `dope-tdd: ${CONFIG_FILE} changed: ${detail}`)
+    return [asks ? configChangedAdvice(detail) : configChangedNearbyAdvice(detail)]
+  }
+  let result: ToolCallResult
+  try {
+    result = await run()
+  } catch (error) {
+    await noteChange(null).catch((second: unknown) => $.ui.log(`dope-tdd: could not compare ${CONFIG_FILE}: ${String(second)}`))
+    throw error
+  }
+  return tell(false, result, await noteChange(result))
+}
+
 /** The session records in `<home>/.dope-tdd/sessions/`, or none when there is no home or no folder yet. */
 async function sessionRecords($: EngineInterface, home: string | undefined): Promise<RecordEntry[]> {
   if (home === undefined || home === '') {
@@ -2649,7 +2776,7 @@ async function tddCommand($: EngineInterface, args: string): Promise<string> {
   // and logs itself.
   if (words[0] === 'reset') {
     if (words[1] !== 'yes') {
-      return 'This starts the session counts over: runs, cycles, blocked, the recent events. The workarounds and the override record stay. /tdd reset yes to go ahead.'
+      return 'This starts the session counts over: runs, cycles, refusals, the recent events. The workarounds and the override record stay. /tdd reset yes to go ahead.'
     }
     const nowMs = await $.clock.now()
     await change($, s => resetStats(s, nowMs))

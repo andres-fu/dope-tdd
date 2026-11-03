@@ -31,7 +31,7 @@ describe('/tdd off, /tdd pause and /tdd on', () => {
 
     expect(edit.deny).toBeUndefined()
     expect(status.text).toMatch(/guard: PAUSED/)
-    expect(status.text).toMatch(/unguarded 0 · blocked 0/)
+    expect(status.text).toMatch(/unguarded 0 · refused 0/)
     expect(status.text).toMatch(/workarounds: 1 \(paused 1\)/)
     expect(status.text).toMatch(/^override pause: pause · other · approved by human/m)
   })

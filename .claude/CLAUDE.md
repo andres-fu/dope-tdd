@@ -27,6 +27,8 @@ node --import ./tests/node/register.mjs --test tests/runPlan.test.ts   # one tes
 npm run check -- --all   # once, before opening a pull request; CI also runs the tools/ tests
 npm run golden           # after changing a message's words
 npm run diagrams         # after changing tools/diagrams/is-it-on.mjs
+npm run compare          # before the first review of a change to the shell reader
+npm run compare -- --sessions   # or to the briefing, band, /tdd or an Edit of an untested file
 ```
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
@@ -43,6 +45,24 @@ runs.
   request says "No issue: a feature, tracked in <where>".
 - **One pull request per item, test-first.** Each fix is broken once on purpose, to prove a test
   catches it.
+- **Attack the design before building it.** Before writing code for a change to `hooks/` that isn't
+  small and clear, write the design in one paragraph: the simplest option, what it could damage in
+  normal use, and whether it is worth that. Have the `reviewer` agent try to break the paragraph, citing
+  its sentences. This isn't a review round. Writing code is cheap and reviewing it isn't, so a wrong idea
+  should die on paper.
+- **Prove first, then review.** Before the first review of the code, do the deliberate breaks and run
+  the comparison where it can see the change. `npm run compare` takes seconds and shows which files the
+  shell reader finds. `--sessions` takes about 17 minutes and adds the briefing, band, `/tdd` and what an
+  Edit of an untested file shows, as config, markers and files change. Neither plays the rest of shell
+  handling, a test run or a catch check, so skip it for those and say why: clean counts from a run that
+  can't see the change prove nothing. Account for each kind of change it reports, and run it again after
+  a review fix that changes behaviour. The pull request gives its counts, never its commands: they come
+  from private session logs.
+- **One pull request at a time.** A person merges every change, and reads worse at the end of a long
+  stretch, so an agent doesn't start the next one on its own. Once a pull request is green and reviewed,
+  the agent stops. If the person hasn't said what's next this session, it asks, once. It starts what they
+  said after the merge, without asking again, or sooner if they ask for a stack. If they haven't said, it
+  waits: a merge, or a message that only reports one, isn't permission to start.
 - **Docs go in the same pull request.** A behaviour change updates whichever of `README.md`,
   `docs/testers.md` and `docs/how-it-works.md` describe it, and the pull request says which changed.
 - **Correctness before UI.** Every verdict word carries its context. Workarounds (config loosened, test
@@ -99,8 +119,9 @@ round; the pull request counts findings across all rounds.
 - `dope-tdd.json`, `.claude/settings.json`, `.claude/CLAUDE.md`, `.claude/agents/`
 
 The person reads the pull request's Evidence and Risk sections, which carry the receipt and the review's
-report, and writes what the checks would miss, in their own words. An agent leaves that line empty. An
-agent's approval never counts as a person's.
+report, and their merge says they did. The "What the checks would miss" line is for anything they noticed,
+in their own words, and stays empty if there's nothing. An agent always leaves it empty. An agent's
+approval never counts as a person's.
 
 **Only a person merges.** An agent stops once a pull request is green and reviewed, whatever it touches.
 

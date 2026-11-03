@@ -1,3 +1,4 @@
+import { withoutDots } from './mirror.ts'
 import { ELSEWHERE, commandSegments, expandKnown, locatedSegments, writableText } from './shell.ts'
 import { STACKS } from './stacks.ts'
 
@@ -24,8 +25,15 @@ const ANY_PATHLIB_WRITE = /\.write_(?:text|bytes)\(/g
 const STREAM_WRITE = /(?<!stdout|stderr)\.write\(/
 const STRING_LITERAL = /^(['"`])([^'"`]*)\1$/
 
+/** #272: one spelling for a path. Through a folder this can't see, a `..` says nothing, so that path stays as it is. */
+function resolved(path: string): string {
+  return path.split('/').includes(ELSEWHERE) ? path : withoutDots(path)
+}
+
 function isSourceFile(path: string): boolean {
-  return !path.endsWith('.d.ts') && !PARENT_SEGMENT.test(path) && !Object.values(STACKS).some(stack => stack.testFile.test(path))
+  // A home folder (`~user/..`) is one this can't see too, so a `..` from it says nothing.
+  const fromHome = path.startsWith(ELSEWHERE) && PARENT_SEGMENT.test(path)
+  return !path.endsWith('.d.ts') && !fromHome && !Object.values(STACKS).some(stack => stack.testFile.test(path))
 }
 
 function captures(pattern: RegExp, text: string): string[] {
@@ -117,6 +125,32 @@ function shellWords(segment: string): string {
   return out
 }
 
+// One word of a shell command, its quotes kept: `'a b'c` is one word.
+const SHELL_WORD = /(?:'[^']*'|"(?:\\.|[^"])*"|[^\s'"])+/g
+// What `release` never took for a path of this project: a leading `./`, or any `..`. Import paths are spelled this way.
+const RELATIVE_SPELLING = /^\.\.?\/|(?:^|\/)\.\.(?:\/|$)/
+
+/**
+ * The files an in-place sed names: what follows its first argument, its script, so text in the script is never one. With
+ * more than one `-e`, a later script reads as a file, which is harmless: this only says which mentions to keep.
+ */
+function sedFiles(segment: string): string[] {
+  const words = segment.match(SHELL_WORD) ?? []
+  const args = words.slice(words.indexOf('sed') + 1).filter(word => !word.startsWith('-'))
+  return args.slice(1).map(word => word.replace(/['"]/g, ''))
+}
+
+/**
+ * Every path a segment mentions, for a write that can't be traced to one. Round 3 of #272: everything `release` read stays
+ * read, and a path spelled relatively, which it dropped or misread, counts only where the command's shape names it: sed's
+ * files, or a PowerShell path outside quotes. In a script, or in quotes, those are import paths in a text replace, and
+ * resolving them refuses the edit for a file it never touches. #260 is the proper reader.
+ */
+function mentioned(segment: string, words: string): string[] {
+  const named = new Set(IN_PLACE_SED.test(words) ? sedFiles(segment) : POWERSHELL_WRITE.test(segment) ? captures(SOURCE_PATH, words) : [])
+  return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path) || named.has(path))
+}
+
 function writesIn(whole: string): string[] {
   // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
   const segment = writableText(whole)
@@ -126,7 +160,7 @@ function writesIn(whole: string): string[] {
   // the shell's own word.
   const writesEveryMention = IN_PLACE_SED.test(words) || POWERSHELL_WRITE.test(segment) || (SCRIPT_WRITE.test(segment) && scriptTargets === null)
   return [
-    ...(writesEveryMention ? captures(SOURCE_PATH, segment) : (scriptTargets ?? [])),
+    ...(writesEveryMention ? mentioned(segment, words) : (scriptTargets ?? [])),
     ...captures(REDIRECT_TARGET, words),
     // cp and mv take quoted paths, so their targets come from the segment, once the verb is seen outside quotes.
     ...(/\b(?:cp|mv)\b/.test(words) ? captures(COPY_OR_MOVE_TARGET, segment) : []),
@@ -156,12 +190,12 @@ export function writesFileNamed(command: string, name: string): boolean {
  * Source files the command writes. With a `root`, each path is resolved
  * against the directory its segment runs in (a `cd` earlier in the command
  * moves it), so the result is absolute and a write in another repository
- * resolves outside this one. Without a root, paths come back as written.
+ * resolves outside this one. Without a root, paths stay relative. Either way their dots are resolved (#272).
  */
 export function findSourceWrites(command: string, root?: string): string[] {
   const normalized = command.replace(/\\/g, '/')
   if (root === undefined) {
-    return [...new Set(commandSegments(normalized).flatMap(writesIn).filter(isSourceFile))]
+    return [...new Set(commandSegments(normalized).flatMap(writesIn).filter(isSourceFile).map(resolved).filter(path => !PARENT_SEGMENT.test(path)))]
   }
   const written = locatedSegments(normalized, root).flatMap(({ segment, cwd, vars }) =>
     // Paths through a variable the command set are expanded (#69); one through any other variable lands somewhere this
@@ -170,7 +204,10 @@ export function findSourceWrites(command: string, root?: string): string[] {
       .filter(isSourceFile)
       .map(path =>
         /^(?:[A-Za-z]:)?\//.test(path) || path.startsWith(`${ELSEWHERE}/`) ? path : cwd === ELSEWHERE ? `${ELSEWHERE}/${path}` : `${cwd}/${path}`,
-      ),
+      )
+      // Resolved once the folder is known, so `../a.ts` lands where it does.
+      .map(resolved)
+      .filter(path => !PARENT_SEGMENT.test(path)),
   )
   return [...new Set(written)]
 }

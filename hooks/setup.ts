@@ -1,4 +1,4 @@
-import { CONFIG_FILE, describeLayout, globMatches } from './config.ts'
+import { CONFIG_FILE, describeLayout, globMatches, parseConfig } from './config.ts'
 import type { GuardConfig } from './config.ts'
 import { LAYOUTS, baseName, matchTemplate } from './layout.ts'
 import type { Layout, NodeLayoutName } from './layout.ts'
@@ -8,7 +8,7 @@ import { STACKS, defaultLayoutOf, detectStackFrom, isCodeFileAny, isCodeFileIn, 
 import type { Stack, StackName } from './stacks.ts'
 
 /** What a walk of the project found: every code file and every directory with a package.json, relative to the root, and the names at the root. */
-export type Survey = { files: readonly string[]; packageDirs: readonly string[]; rootEntries?: readonly string[] }
+export type Survey = { files: readonly string[]; packageDirs: readonly string[]; rootEntries?: readonly string[]; unread?: readonly string[] }
 
 export type Inference = {
   stack: StackName
@@ -84,6 +84,160 @@ export function inferStack(survey: Survey): { stack: StackName; reason: string }
     return { stack: 'node', reason: 'no code found, assuming Node' }
   }
   return { stack: most.stack.name, reason: `${most.count} ${most.stack.name} file${most.count === 1 ? '' : 's'}, no marker at the root` }
+}
+
+/** Languages a survey can name but dope-tdd doesn't read: said plainly, not treated as Node (#268). */
+const UNREAD_LANGUAGES: Readonly<Record<string, string>> = {
+  go: 'Go', rs: 'Rust', rb: 'Ruby', php: 'PHP', swift: 'Swift', kt: 'Kotlin', c: 'C', h: 'C', cpp: 'C++', cc: 'C++', cxx: 'C++', hpp: 'C++', fs: 'F#', scala: 'Scala', dart: 'Dart', ex: 'Elixir', exs: 'Elixir',
+}
+
+function unreadLanguageOf(path: string): string | undefined {
+  const ext = /\.([a-z]+)$/.exec(path)?.[1] ?? ''
+  return Object.hasOwn(UNREAD_LANGUAGES, ext) ? UNREAD_LANGUAGES[ext] : undefined
+}
+
+/** Code in each stack, most first. `.cs` is .NET here: Godot's C# only counts once `project.godot` says it is Godot. */
+function stackCounts(survey: Survey): { stack: Stack; count: number }[] {
+  return Object.values(STACKS)
+    .map(stack => ({ stack, count: survey.files.filter(file => isCodeFileIn(stack, file) && !(stack.name === 'godot' && file.endsWith('.cs'))).length }))
+    .sort((a, b) => b.count - a.count)
+}
+
+const countReason = ({ stack, count }: { stack: Stack; count: number }): string => `${count} ${stack.name} file${count === 1 ? '' : 's'}, no marker at the root`
+
+/** The stack with the most code and why, on the reading path, where C# is .NET. Undefined with no code it reads. */
+function mostCode(survey: Survey): { stack: StackName; reason: string } | undefined {
+  const top = stackCounts(survey)[0]
+  return top === undefined || top.count === 0 ? undefined : { stack: top.stack.name, reason: countReason(top) }
+}
+
+export function isUnreadLanguage(path: string): boolean {
+  return unreadLanguageOf(path) !== undefined
+}
+
+/** How much of the code one stack must hold for it to be the project's stack. A first guess, pinned by tests. */
+const CLEAR_SHARE = 0.75
+
+export type ProjectReading =
+  | { kind: 'clear'; stack: StackName; reason: string }
+  | { kind: 'mixed'; languages: string[] }
+  | { kind: 'empty' }
+  | { kind: 'unsupported'; languages: string[]; unguarded: StackName[] }
+
+/**
+ * #268: only a project with no config file and no marker is read from its code. Any config file, valid or not, and any
+ * marker behave as they always did: `Config wins` (docs/decisions/2026-10-31_project-detection.md).
+ */
+export function needsWalk(configText: string | null, marked: StackName | undefined): boolean {
+  return configText === null && marked === undefined
+}
+
+/** What the code of a project with no marker says it is. A repo that can't decide says so. */
+export function readProject(survey: Survey): ProjectReading {
+  const counts = stackCounts(survey).filter(entry => entry.count > 0)
+  const code = counts.reduce((sum, entry) => sum + entry.count, 0)
+  const unread = new Map<string, number>()
+  for (const path of survey.unread ?? []) {
+    const language = unreadLanguageOf(path) ?? ''
+    unread.set(language, (unread.get(language) ?? 0) + 1)
+  }
+  const unreadTotal = survey.unread?.length ?? 0
+  if (code === 0 && unreadTotal === 0) {
+    return { kind: 'empty' }
+  }
+  const unreadMost = [...unread.entries()].sort((a, b) => b[1] - a[1])
+  if (unreadTotal > code) {
+    // Node's defaults run here, so any other stack's code is left out with the unread language.
+    return { kind: 'unsupported', languages: unreadMost.map(([language]) => language), unguarded: counts.map(entry => entry.stack.name).filter(name => name !== 'node').sort() }
+  }
+  const top = counts[0]
+  if (top !== undefined && top.count / (code + unreadTotal) >= CLEAR_SHARE) {
+    return { kind: 'clear', stack: top.stack.name, reason: countReason(top) }
+  }
+  const languages = [...counts.map(({ stack, count }): [string, number] => [stack.name, count]), ...unreadMost].sort((a, b) => b[1] - a[1])
+  return { kind: 'mixed', languages: languages.slice(0, 2).map(([language]) => language) }
+}
+
+/** The stack a reading sets; only a clear one does. */
+export function projectStack(reading: ProjectReading): StackName | undefined {
+  return reading.kind === 'clear' ? reading.stack : undefined
+}
+
+const SAVING_GUARDS_ONE = '/tdd setup write guards one stack, the one with the most code.'
+
+/** What the briefing says about a reading. Node's defaults are what run unless it is clear, so the note says that. */
+export function projectNote(reading: ProjectReading): string {
+  switch (reading.kind) {
+    case 'clear':
+      return `No ${CONFIG_FILE} here, so this project was read from its code as ${reading.stack} (${reading.reason}). To keep that, the user can run /tdd setup write.`
+    case 'mixed':
+      return `This project mixes ${reading.languages.join(' and ')}, so nothing here says which it is. The Node defaults run, so other code is not guarded. ${SAVING_GUARDS_ONE}`
+    case 'empty':
+      return 'No code Dope TDD reads here yet, so the Node defaults run and any other code is not guarded. The next session reads the project from what is here then.'
+    case 'unsupported': {
+      const alsoLeftOut = reading.unguarded.length === 0 ? '' : ` The ${reading.unguarded.join(' and ')} code here isn't guarded either. ${SAVING_GUARDS_ONE}`
+      return `Dope TDD doesn't read ${reading.languages.join(' and ')} yet, so edits to that code are not guarded.${alsoLeftOut}`
+    }
+  }
+}
+
+/**
+ * The briefing's note on the project. A layout that pairs nothing means nothing is guarded, so that warning stays ahead
+ * of a clear reading, and beside a reading that isn't clear, which must always be said.
+ */
+export function briefingNote(reading: ProjectReading | null, layoutNote: string | null): string | null {
+  if (reading === null) {
+    return layoutNote
+  }
+  if (reading.kind === 'clear') {
+    return layoutNote ?? projectNote(reading)
+  }
+  return layoutNote === null ? projectNote(reading) : `${projectNote(reading)} ${layoutNote}`
+}
+
+/** The repo's layout, when the default pairs none of its code. A default that pairs something stays, as it always did. */
+export function inferenceFor(survey: Survey, config: GuardConfig): Inference | null {
+  return layoutMismatch(survey, config) === null ? null : inferLayout(survey, config.stack)
+}
+
+/** The config a session runs on: the layout the repo shows, from memory, when there is one. Nothing is written. */
+export function withInference(config: GuardConfig, inferred: Inference | null): GuardConfig {
+  return inferred === null ? config : { ...config, layout: inferred.layout, roots: inferred.roots }
+}
+
+/** All one walk settles for a project with nothing else to go on. */
+export type ProjectAnswer = {
+  reading: ProjectReading
+  inferred: Inference | null
+  /** The layout note while the reading applies. */
+  layoutNote: string | null
+  /** The note the default layout alone earns, which a config saved mid-session falls back on (#214). */
+  defaultNote: string | null
+}
+
+export function answerFrom(survey: Survey): ProjectAnswer {
+  const reading = readProject(survey)
+  const stack = projectStack(reading)
+  const config = parseConfig(null, stack)
+  const inferred = stack === undefined ? null : inferenceFor(survey, config)
+  return { reading, inferred, layoutNote: layoutMismatch(survey, withInference(config, inferred), mostCode(survey)?.stack), defaultNote: layoutMismatch(survey, parseConfig(null, undefined)) }
+}
+
+/** The layout note for the config in force: the reading's while one applies, else the default's (#167, #214). */
+export function activeLayoutNote(answer: ProjectAnswer | null, config: GuardConfig, defaultNote: string | null): string | null {
+  if (answer !== null) {
+    return answer.layoutNote
+  }
+  return config.layoutGuessed === true ? defaultNote : null
+}
+
+/** What `/tdd setup` detects: the stack the config pins, else on the reading path the one with the most code, else what the survey says. */
+export function setupInference(survey: Survey, current: GuardConfig, reading: ProjectReading | null): Inference {
+  if (current.stackSource === 'config') {
+    return inferLayout(survey, current.stack)
+  }
+  const most = reading === null ? undefined : mostCode(survey)
+  return most === undefined ? inferLayout(survey) : inferLayout(survey, most.stack, most.reason)
 }
 
 /** Package directories that hold a `src/`, grouped into `parent/*` globs when siblings share a parent. */
@@ -204,9 +358,9 @@ function coveringLayout(files: readonly string[], stack: Stack, fallback: Layout
   return { layout: best.layout, reason: `no test files found; ${best.layout.name} covers ${best.count} of ${code.length} code files, ${fallback.name} covers ${fallbackCount}` }
 }
 
-/** `named` is the stack the config pins, when it does; otherwise the survey decides. */
-export function inferLayout(survey: Survey, named?: StackName): Inference {
-  const chosen = named === undefined ? inferStack(survey) : { stack: named, reason: `named in ${CONFIG_FILE}` }
+/** `named` is the stack already settled, when it is, for `why`; otherwise the survey decides. */
+export function inferLayout(survey: Survey, named?: StackName, why = `named in ${CONFIG_FILE}`): Inference {
+  const chosen = named === undefined ? inferStack(survey) : { stack: named, reason: why }
   if (chosen.stack !== 'node') {
     return presetInference(survey, STACKS[chosen.stack], chosen.reason)
   }
@@ -239,9 +393,9 @@ function sourceFile(config: LayoutConfig, module: string, ext: string): string {
 /**
  * What to tell Claude when no dope-tdd.json names a layout and the default matches none of the project's code (#167):
  * then nothing is ever refused, and before this nothing said so. Null when a config file names the layout, the default
- * pairs some code, or there is no code to pair.
+ * pairs some code, or there is no code to pair. `read`: the stack a reading settled, so the note names the same one.
  */
-export function layoutMismatch(survey: Survey, current: GuardConfig): string | null {
+export function layoutMismatch(survey: Survey, current: GuardConfig, read?: StackName): string | null {
   if (current.layoutGuessed !== true) {
     return null
   }
@@ -251,7 +405,7 @@ export function layoutMismatch(survey: Survey, current: GuardConfig): string | n
   if (code.length === 0 || code.some(file => classifyPath('R:', `R:/${file}`, config).kind === 'source')) {
     return null
   }
-  const inferred = inferLayout(survey)
+  const inferred = inferLayout(survey, read)
   const where = inferred.roots.length === 0 ? '' : ` under ${inferred.roots.join(', ')}`
   return (
     `The default layout matches none of this project's code, so no edit is refused until a ${CONFIG_FILE} is saved: ` +
@@ -293,7 +447,7 @@ export function formatSetup(current: GuardConfig, inferred: Inference, survey: S
     // Karl's round 4 (2026-10-20): with no file, `; stack node` beside `detected stack: python` read as a contradiction.
     // Both were true: until the file names a stack, the guard reads only the markers at the root. So it says that.
     !hasConfigFile && current.stack !== inferred.stack
-      ? `current ${CONFIG_FILE}: none. Until one is saved, the guard runs as ${current.stack} (from the markers at the root), not ${inferred.stack}`
+      ? `current ${CONFIG_FILE}: none. Until one is saved, the guard runs as ${current.stack} (${current.stackSource === 'default' ? 'the default, with no marker at the root' : 'from the markers at the root'}), not ${inferred.stack}`
       : `current ${CONFIG_FILE}: ${hasConfigFile ? describeLayout(current.layout) : 'none (mirror by default)'}${current.roots.length === 0 ? '' : `; roots ${current.roots.join(', ')}`}${currentStack}`,
     ...(same
       ? ['the current layout already matches; nothing to write']

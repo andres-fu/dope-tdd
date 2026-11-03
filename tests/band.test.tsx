@@ -218,7 +218,7 @@ describe('band verdict', () => {
     const ui = await $.ui.mount({ plugin: 'dope-tdd', surface: 'terminal', ...BAND })
     expect(await ui.find({ type: 'Text', text: /BLOCKED/ })).toBeUndefined()
     const status = await $.command.run({ command: 'tdd', args: '' } as never)
-    expect(status.text).toMatch(/blocked 1/)
+    expect(status.text).toMatch(/refused 1/)
   })
 
   test('a refactor that kept the test green says REFACTOR, in plain text: a fact about the change, not credit', async ($, on) => {
@@ -435,6 +435,7 @@ describe('/tdd why', () => {
       "PROVEN",
       "MISSED",
       "UNPROVEN",
+      "refused",
       "CHANGED",
       "refactor",
       "proving…",

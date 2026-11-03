@@ -153,6 +153,11 @@ export function isCodeFileIn(stack: Stack, relative: string): boolean {
   return stack.codeFile.test(relative) && !(stack.name === 'node' && relative.endsWith('.d.ts'))
 }
 
+/** A test in any stack, wherever it sits. */
+export function isTestFileAny(relative: string): boolean {
+  return Object.values(STACKS).some(stack => isTestFileIn(stack, relative))
+}
+
 /** Code in any stack, for a survey that does not know the stack yet. */
 export function isCodeFileAny(relative: string): boolean {
   return Object.values(STACKS).some(stack => isCodeFileIn(stack, relative))

@@ -69,9 +69,13 @@ names the command your tests run with, and proposes a `dope-tdd.json`. Out of th
 with `tests/<module>.test.ts`; co-located tests, `__tests__/` folders and
 per-package roots work once the layout is set. Skip this and a project laid
 out differently gets refusals that name the wrong test, or a band that says
-**NOT WATCHING**. With no `dope-tdd.json` and a default layout that matches
-none of your code, Claude is told so at the start, with the layout
-`/tdd setup` finds, and asks you to run it.
+**NOT WATCHING**. With no `dope-tdd.json` and no marker such as
+`package.json` or `pyproject.toml`, it reads your code to work out the language
+and layout, and tells Claude so. With a marker and a default layout that matches
+none of your code, Claude is told, with the layout `/tdd setup` finds, and asks
+you to run it. An edit to code the layout misses, or to code of a second stack,
+goes through: Claude is told the first time in a session, and `/tdd` lists each
+file. A language Dope TDD doesn't read yet isn't listed.
 
 To watch without steering at first, put `"mode": "observe"` in
 `dope-tdd.json`: nothing is refused and no file is ever undone, but every
@@ -219,7 +223,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 
 | Claude is about to... | Dope TDD... | You see |
 | --- | --- | --- |
-| Edit or write a source file whose module is not unlocked | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it (or, when the test exists, one assertion to add or tighten), (2) `/dope-tdd:pin`, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `blocked` |
+| Edit or write a source file whose module is not unlocked | Refuses the call before it runs, and lists the ways past it: (1) the test to make fail, with the command that runs it (or, when the test exists, one assertion to add or tighten), (2) `/dope-tdd:pin`, (3) an override request, offered on the module's first refusal only | Claude's reply quotes the refusal; `/tdd` counts it under `refused` |
 | Touch a test file | Lets it through, unlocks that module, and tells Claude to see the test fail before touching the code. A test with no assertion is called out; a test re-saved unchanged is recorded as a workaround. | the module on the band, with **red ·** (not failed yet) |
 | Run the module's own test and see it fail | Unlocks the module too, with no touch needed: the red is the evidence. A green run alone unlocks nothing. | **RED**, with how long it has been open |
 | Run the tests through the shell | Reads the runner's own summary line, not the exit code. A failure in another file, or a run of a file outside the layout, is not this module's. Output with no summary is unread, never guessed. | **red ✓** / **green ✓**, and the last run in words |
@@ -233,6 +237,7 @@ Dope TDD stands in the path of four of Claude's tools, **Edit**, **Write**,
 | Go green after editing the test since red, with the code unchanged | Says the green came from the test, not the code | **UNPROVEN · the test changed, the code didn't** |
 | Change code while green on a test that has failed before, test untouched | Names it a refactor and does not re-check it | **refactor · not re-checked** |
 | Edit source through the shell (`sed -i`, a heredoc, `git apply`) | Sees it too, and checks `git` afterwards for any change the capture missed | the same words, or **UNPROVEN · not checked: change not captured** |
+| Change a code or test file during something that looks read-only (`echo "$(sed -i ...)"`, or another editor saving during a test run) | Says so once for that file and charges nobody, since it can't tell which | a `changed during a read or test run` row in `/tdd` |
 | Put a file back with git (`git restore`, `git checkout -- <file>`, `git stash`) | Nothing: code put back to a saved state is not an edit | no change |
 | Bring code in with git (`git checkout main -- <file>`, `git pull`, `git stash pop`) | Does not count it as Claude's edit, but records it, with the git verb only | `brought in by git, not guarded` in `/tdd` |
 | Add `.skip` or `.only`, remove an assertion, comment code out, loosen `dope-tdd.json`, pause the guard, or edit a session record in `~/.dope-tdd/sessions/` from the shell | Lets it through, counts it, and asks Claude to say why in its reply | `workarounds: N` in `/tdd`, each one named |
@@ -242,7 +247,7 @@ What it does **not** do: it never writes code or tests for Claude. It runs
 your test runner on one test file, plus `git` and small `node -e` helpers
 (the full list is in [docs/security-and-data.md](security-and-data.md)). In
 your project it writes only `dope-tdd.json` (on `/tdd setup write`) and
-`dope-tdd.overrides.json`, puts that file back if a shell command changes it,
-and, for an in-place catch check, undoes and restores Claude's change. From a clone of the
+`dope-tdd.overrides.json`, puts that file back if a shell command other than git
+alone changes it, and, for an in-place catch check, undoes and restores Claude's change. From a clone of the
 repository, `claude plugin validate .` lists every action it steps into
 (`hooks:`) and everything it touches (`calls:`).

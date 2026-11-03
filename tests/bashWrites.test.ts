@@ -324,3 +324,73 @@ describe('quoted text is data: a redirect inside it writes nothing', () => {
     expect(findSourceWrites('echo x > "src/a.ts"', 'C:/r')).toEqual(['C:/r/src/a.ts'])
   })
 })
+
+// #332 (tester round 8B, F13): a PowerShell write verb anywhere in a command made every source path the command
+// mentioned a write, so a here-string naming api.py, a grep whose pattern named the verbs, or an issue body pasted
+// into gh were refused as edits to files they never touched. The verb must be the shell's own word, and its targets
+// are what its shape names: the path after the verb, or after -Path, -FilePath or -LiteralPath.
+describe('a PowerShell write names its target (#332)', () => {
+  const RECORD = 'dope-tdd.overrides.json'
+
+  test('a path in a variable with a here-string that names a source file writes nothing it can name', () => {
+    const command = "$p='C:/notes/findings.md'\n$t=@'\nthe edit to api.py was refused, naming tests/test_api.py\n'@\nAdd-Content -Path $p -Value $t -Encoding utf8; git status --porcelain"
+    expect(findSourceWrites(command)).toEqual([])
+  })
+
+  test('a read whose quoted text names the verbs is a read', () => {
+    expect(findSourceWrites('grep -n "Add-Content|Set-Content|Out-File" hooks/bashWrites.ts hooks/shell.ts')).toEqual([])
+    expect(findSourceWrites('gh issue create --body "Set-Content is tested against the segment in hooks/bashWrites.ts"')).toEqual([])
+  })
+
+  test('a quoted target after the verb or its path option is still the write, and text in -Value is not', () => {
+    expect(findSourceWrites('Set-Content -Path "src/a.ts" -Value "see hooks/b.ts"')).toEqual(['src/a.ts'])
+    expect(findSourceWrites("Set-Content -LiteralPath 'src/a.ts' -Value 'see hooks/b.ts'")).toEqual(['src/a.ts'])
+    expect(findSourceWrites('"x" | Out-File -FilePath src/a.ts')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('Add-Content src/a.ts "see hooks/b.ts"')).toEqual(['src/a.ts'])
+  })
+
+  test('the override record named only in quoted text is not written; named as the target it is', () => {
+    expect(writesFileNamed(`Add-Content -Path $p -Value "see ${RECORD}"`, RECORD)).toBe(false)
+    expect(writesFileNamed(`Set-Content -Path "${RECORD}" -Value '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path:"${RECORD}" -Value '{}'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`Set-Content -Path $p -Value "see dope-tdd.json"`, 'dope-tdd.json')).toBe(false)
+    expect(writesFileNamed(`Set-Content dope-tdd.json '{"mode":"observe"}'`, 'dope-tdd.json')).toBe(true)
+  })
+
+  // Design review: a shell's name in prose (`RUNS_QUOTED_SHELL`) kept every quote live, so the issue's own notes,
+  // which say "PowerShell" and "Bash", were still refused. The name must be a shell word too.
+  test("a shell's name in quoted text does not make the quotes live", () => {
+    expect(findSourceWrites('gh issue create --body "A PowerShell command with Add-Content refused api.py; see hooks/bashWrites.ts"')).toEqual([])
+    expect(findSourceWrites('git commit -m "from a Bash session: Set-Content src/a.ts"')).toEqual([])
+    expect(findSourceWrites(`ssh host "echo x > src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`iex "Set-Content src/a.ts x"`)).toEqual(['src/a.ts'])
+  })
+
+  // Design review: the reader knew bash quotes, not PowerShell here-strings, so an apostrophe in the body ended the quote.
+  test("a here-string is one quoted span, whatever apostrophes its body holds", () => {
+    const one = "$t=@'\nit's api.py here\n'@\nAdd-Content -Path $p -Value $t"
+    const two = "$t=@'\nit's api.py here, isn't it\n'@\nAdd-Content -Path $p -Value $t"
+    const double = '$t=@"\nit\'s api.py here, isn\'t it\n"@\nSet-Content -Path src/b.ts -Value $t'
+    expect(findSourceWrites(one)).toEqual([])
+    expect(findSourceWrites(two)).toEqual([])
+    expect(findSourceWrites(double)).toEqual(['src/b.ts'])
+  })
+
+  test('a path option with a colon, or a quoted path into another checkout, is still named', () => {
+    expect(findSourceWrites('Set-Content -Path:"src/a.ts" -Value x')).toEqual(['src/a.ts'])
+    expect(findSourceWrites('Set-Content -Value x -Path:"C:/r/.claude/worktrees/w/src/a.ts"', 'C:/r')).toEqual(['C:/r/.claude/worktrees/w/src/a.ts'])
+  })
+
+  // The same line of code reads sed's targets, so sed gets the same rule: text in its script is data.
+  test("a source path quoted in a sed script is not a write; sed's files are", () => {
+    expect(findSourceWrites(`sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`)).toEqual([])
+    expect(findSourceWrites(`sed -i "s|'src/a.ts'|'src/b.ts'|" src/c.ts`)).toEqual(['src/c.ts'])
+    expect(findSourceWrites(`sed -i 's/a/b/' src/a.ts src/b.ts`)).toEqual(['src/a.ts', 'src/b.ts'])
+  })
+
+  // #322: a data heredoc whose body named the record beside `sed -i` was refused as a write to the record.
+  test("a data heredoc's body naming the record beside sed -i is not a write to it (#322)", () => {
+    expect(writesFileNamed(`cat > /tmp/probe.sh <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(false)
+    expect(writesFileNamed(`bash <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(true)
+  })
+})

@@ -167,7 +167,15 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
   write. Quoted text is data, so a commit message or an echoed sentence that
   mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
-  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read. A path
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`, `iex "…"`) still has them read,
+  but a shell's name inside quoted text doesn't count. `sed -i` and a PowerShell
+  write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
+  names: sed's file arguments, and the path after the verb or after `-Path`,
+  `-FilePath` or `-LiteralPath`, plus any path outside quotes. A PowerShell
+  here-string is one quoted span, so text in `-Value` is data. A path the shape
+  doesn't name, such as `-Path $p`, names nothing: the git check after the command
+  says what landed
+  ([#332](https://github.com/andres-fu/dope-tdd/issues/332)). A path
   spelled `./src/a.ts`, `src//a.ts` or `lib/../src/a.ts` is the file it names, for
   a shell write and for Edit, Write and NotebookEdit. A `..` is resolved by
   reading the path, so through a symbolic link it can land elsewhere. In a script's

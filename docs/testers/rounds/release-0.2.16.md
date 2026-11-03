@@ -30,7 +30,7 @@ With thanks to @KlossKarl, whose tester reports led to much of this, and who is 
 README's Liner notes.
 
 **Known limits:** the shell reader still misses some real writes (#260). Some of those are said after
-the command, and some aren't said at all: the page above lists which. A path through `$PWD` isn't
+the command, and some aren't said at all: the page above lists which. A path through a variable it can't expand isn't
 refused (#309). `2>`, `&>` and `>&` beside a test run read as harmless, and so does a run's own
 output to a file (#260). A `>` in quoted text reads as a redirect (#310). Edits to a language Dope TDD
 doesn't read aren't counted, and the briefing says so only when that language leads the project.

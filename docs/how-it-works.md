@@ -172,7 +172,12 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
   names: sed's file arguments, and the path after the verb or after `-Path`,
   `-FilePath` or `-LiteralPath`, plus any path outside quotes. A PowerShell
-  here-string is one quoted span, so text in `-Value` is data. A path the shape
+  here-string is one quoted span, so text in `-Value` is data; it counts as one
+  only where PowerShell reads it, after `$name =`, a parameter or one of the
+  verbs, since in bash `@'` is an ordinary quote. For `dope-tdd.overrides.json`
+  and `dope-tdd.json`, a write verb beside the file's name inside a quoted
+  shell's text (`pwsh -c "…"`) is a write to it, refused even when the text only
+  talks about it. A path the shape
   doesn't name, such as `-Path $p`, names nothing: the git check after the command
   says what landed
   ([#332](https://github.com/andres-fu/dope-tdd/issues/332)). A path

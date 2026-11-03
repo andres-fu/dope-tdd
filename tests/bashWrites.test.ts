@@ -417,6 +417,17 @@ describe('a PowerShell write names its target (#332)', () => {
     expect(findSourceWrites("echo @'\n'\nsed -i 's/x/y/' src/a.ts")).toEqual(['src/a.ts'])
   })
 
+  // Review: a close on a later line still blanked the bash commands between, since the whole command is one segment.
+  // An opener is a here-string only where PowerShell would read one: after `$name =`, a parameter, or one of the verbs.
+  test('a close on a later line does not blank bash commands between: an opener counts only in PowerShell shape', () => {
+    expect(writesFileNamed("echo @'\n'\nsed -i 's/a/b/' dope-tdd.overrides.json && echo @'\n'@", RECORD)).toBe(true)
+    expect(writesFileNamed("echo @'\n'\nsed -i 's/a/b/' dope-tdd.overrides.json\necho @'\nx\n'@", RECORD)).toBe(true)
+    expect(findSourceWrites("echo @'\n'\nsed -i 's/x/y/' src/a.ts && echo @'\n'@")).toEqual(['src/a.ts'])
+    expect(findSourceWrites("echo @'\n'\necho x > src/a.ts\necho @'\n'@")).toEqual(['src/a.ts'])
+    expect(findSourceWrites("$t = @'\nsee src/a.ts\n'@\nSet-Content -Path $p -Value $t")).toEqual([])
+    expect(findSourceWrites("Set-Content -Path src/b.ts -Value @'\nsee src/a.ts\n'@")).toEqual(['src/b.ts'])
+  })
+
   test('a record write behind a quoted shell is still a write to it', () => {
     expect(writesFileNamed(`pwsh -c "Set-Content ${RECORD} '{}'"`, RECORD)).toBe(true)
     expect(writesFileNamed(`powershell -Command "Add-Content -Path ${RECORD} -Value x"`, RECORD)).toBe(true)

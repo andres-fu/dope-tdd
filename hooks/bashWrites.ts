@@ -92,6 +92,10 @@ const RUNS_QUOTED_SHELL = /(?:^|[\s;&|(])(?:bash|sh|zsh|dash|ksh|fish|eval|ssh|s
 const BEFORE_TARGET = /(?:>>?|\btee\s+(?:-a\s+)?)\s*$/
 // A PowerShell here-string opens with `@'` or `@"` at the end of a line and closes with `'@` or `"@` at the start of one.
 const HERESTRING_OPEN = /^@(['"])[ \t]*\r?\n/
+// Where PowerShell reads an opener: assigned to a `$variable`, given to a parameter, or after one of the verbs. In bash
+// `@'` is an ordinary quote, and a `'@` line anywhere later would otherwise blank the real commands between (security
+// review of 0.2.17).
+const HERESTRING_LEAD = /(?:(?:^|[\s;(])\$\w+\s*=|\s-\w+|\b(?:Set-Content|Add-Content|Out-File)(?:\s+\S+)*)\s*$/i
 
 /**
  * #239: the shell words of a segment, with the text inside quotes blanked. A redirect, `sed -i`, `cp`, `mv` or `tee`
@@ -108,9 +112,10 @@ function shellWords(segment: string): string {
   for (let i = 0; i < segment.length; i++) {
     const char = segment[i] ?? ''
     if (quote === null) {
-      const herestring = char === '@' ? HERESTRING_OPEN.exec(segment.slice(i, i + 6)) : null
-      // Only a closed here-string is one: an opener alone is an ordinary quote, or a bash command would have the rest
-      // of itself blanked (security review of 0.2.17).
+      const lead = out.slice(out.lastIndexOf('\n') + 1)
+      const herestring = char === '@' && HERESTRING_LEAD.test(lead) ? HERESTRING_OPEN.exec(segment.slice(i, i + 6)) : null
+      // Only a closed here-string in PowerShell shape is one: an opener alone, or one bash would read, is an ordinary
+      // quote (security review of 0.2.17).
       const close = herestring === null ? null : `\n${herestring[1]}@`
       const end = herestring === null || close === null ? -1 : segment.indexOf(close, i + herestring[0].length)
       if (close !== null && end !== -1) {

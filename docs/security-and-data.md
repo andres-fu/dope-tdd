@@ -23,7 +23,7 @@ starts, and when:
 | A module's own test goes green, in `warn` or `enforce` (the catch check) | Node: the runner from your `node_modules` (Vitest, Jest, ava), or `node --test` with the flags your `package.json` test script passes (`--import`, `--require`, `--env-file`, ...), on that one test file | A throwaway git worktree in `.git/dope-tdd/wt` |
 | The same, on an experimental stack, only with `"catchCheck": true` | pytest or `unittest` through your `.venv` python, or `uv run` / `poetry run` / `pdm run` / `pipenv run` when a lockfile names one, else `python`; `mvnw`, `gradlew`, `mvn`, `gradle`; `dotnet test`; the Godot binary named in `dope-tdd.json` | Your project folder, with your change undone for one run |
 | A red run whose output was cut short, so not every failing test was named, in `warn` or `enforce` (Node; another stack only with `"catchCheck": true`) | The same one-file command, once, to read all the names | Your project folder |
-| Around shell commands, edits and checks | `git`: `diff`, `ls-files`, `status`, `rev-parse`, `cat-file`, `symbolic-ref`, `worktree add`/`remove --force`, `update-ref`, `hash-object -w` (the check lock's objects stay in `.git/objects` until git cleans up), and `rm` inside the copy | Your repository. `worktree add` runs with hooks off (`core.hooksPath` at a folder that does not exist), so none of your git hooks run |
+| Around shell commands, edits and checks | `git`: `diff`, `log`, `ls-files`, `status`, `rev-parse`, `cat-file`, `symbolic-ref`, `worktree add`/`remove --force`, `update-ref`, `hash-object -w` (the check lock's objects stay in `.git/objects` until git cleans up), and `rm` inside the copy | Your repository. `worktree add` runs with hooks off (`core.hooksPath` at a folder that does not exist), so none of your git hooks run |
 | A nested package's `node_modules` during a check | `node -e` to link it into the copy (a junction on Windows, a symlink elsewhere) and unlink it before the copy goes, and to remove the copy | `.git/dope-tdd/wt` |
 | A plugin project (`.claude-plugin/plugin.json`) with `"catchCheck": true` | `claude plugin test .` | Your project folder |
 | At session start | `node -e` to delete its own session logs older than 30 days, and spike copies older than 7 days | `~/.dope-tdd/sessions/`, `~/.dope-tdd/spikes/` |
@@ -78,7 +78,7 @@ change back, so it holds a copy of the source file it is checking:
 | Left red | Plugin store | Each module still red when a session ended: module name, failing test names or message, time | 7 days, or until a session leaves it green |
 | Check lock | Git ref `refs/worktree/dope-tdd-check` and plugin store | Module name and time | Removed when the check ends |
 | Check worktree | `.git/dope-tdd/wt` | A copy of your checkout, dirty and untracked files included (an untracked `.env` that isn't in `.gitignore` too) | Removed when the check ends |
-| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the modules left red (module, failing tests), each spike (question, time), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source text | 30 days; `DOPE_TDD_LOG=off` keeps none |
+| Session log | `~/.dope-tdd/sessions/` | Counts, the status receipt (module and test names, and the paths of files it lists), how long each one-file run took (module, outcome, milliseconds), each stuck spell (module, failure, runs), the modules left red (module, failing tests), each spike (question, time), the repository folder name (in a linked worktree, the main checkout's), and a digest of all of it, so a hand edit shows; no source text | 30 days; `DOPE_TDD_LOG=off` keeps none |
 | Spike copies | `~/.dope-tdd/spikes/` | A git worktree of your project, made by `/dope-tdd:spike` for exploring | Removed by the skill when the spike ends; one left behind is removed at a session start after 7 days |
 | Kept changes | `~/.dope-tdd/kept/` (`<temp>/dope-tdd-kept/` with no home folder) | Your edit, only when a file changed during a check and could not be restored. If writing it fails, only its size is logged | Until you delete it; named at every session start |
 | Override record | `dope-tdd.overrides.json` in the repo | Each override: scope, kind, reason, what ends it, the decider's role (never a name) and, for the model, its reason, the session id and times, the files edited under it | In your repo, as long as you keep it; commit it with the change |
@@ -97,12 +97,13 @@ Claude Code log.
 ## For the plugin directory's reviewer
 
 The directory's scan holds Dope TDD on the warnings below. What the code
-behind each one does, checked against 0.2.15 (all in `hooks/register.tsx`
+behind each one does, checked against 0.2.16 (all in `hooks/register.tsx`
 unless named):
 
 - **Includes a mod.** Its code runs inside Claude Code, as the person, like
-  every plugin's hooks. It registers no tool that runs code on its own; the one
-  tool it adds, `mcp__dope-tdd__override_request`, records a request in
+  every plugin's hooks. It registers no tool that runs code on its own: of the
+  two tools it adds, `mcp__dope-tdd__status` reports its state, and
+  `mcp__dope-tdd__override_request` records a request in
   `dope-tdd.overrides.json` and waits for a person.
 - **Starts programs, with a computed command.** Three kinds, each as an
   argument list (`$.process.run(argv)`), never through a shell: `git`, with
@@ -114,7 +115,10 @@ unless named):
   `dope-tdd.json` on `/tdd setup write`, `dope-tdd.overrides.json`, and its
   check copy under `.git/dope-tdd/`.
 - **Reads local data, and can send data out.** It reads the files it checks,
-  git's view of the changes, and the test runner's output. The only send is the
+  git's view of the changes, and the test runner's output. With no config and
+  no marker it also lists the project's file names to work out the stack, up to
+  six folders deep, skipping dot folders and build output, and keeps the result
+  in memory. The only send is the
   opt-in model approver above (`"overrides": { "approver": "model" }`, off by
   default): `$.model.complete`, through the session's own client, to the model
   API Claude Code already uses. Nothing else leaves the machine; there is no

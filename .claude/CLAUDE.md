@@ -34,6 +34,27 @@ npm run compare -- --sessions   # or to the briefing, band, /tdd or an Edit of a
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
 runs.
 
+## Working in this repo
+
+Each line here cost a session an hour or a broken file. A session that trips on the same thing twice
+in one sitting adds a line at the bottom in its pull request, so line 1 is the oldest. Ten lines at
+most: at ten, line 1 becomes a test, a tool, a lint or a note elsewhere, and leaves.
+
+1. `node --test`'s default reporter prints the summary before the failure detail, so `| tail` can drop
+   it and the guard counts nothing. With `--test-reporter=tap` the summary comes last, and `| tail -40`
+   keeps it. What the guard reads from a run is in [docs/testers.md](../docs/testers.md).
+2. Write a probe script or a test block with the Write tool, then run it by path. A heredoc through
+   Bash on Windows halves double backslashes, which breaks string and regex escapes in test files.
+3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text: a
+   write verb outside quotes (`sed -i`, `Set-Content`, `mv`), or a script's write call anywhere in it
+   whose target it can't trace (`writeFile(`, `open(..., 'w')`), beside a source file's name reads as a
+   write to it, even in a grep.
+4. Don't switch branches in a checkout another session is using. A side session that writes code
+   gets its own worktree.
+5. Before running `python`, check where it resolves: `command -v python` in Bash,
+   `(Get-Command python).Source` in PowerShell. A path under `WindowsApps` is the Store stub, which
+   hangs instead of failing.
+
 ## How we work
 
 - **Branch from `release` and open pull requests into `release`.** Only the release pull request goes

@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { compareReadings, compareSessions, formatReadings, formatSessions, parseArgs, problemsIn, readSessions, sameFiles } from './report.ts'
-import type { Session, Step } from './report.ts'
+import type { Session, ShellCommand, Step } from './report.ts'
 import { unpack } from './unpack.ts'
 
 const CHECKOUT = fileURLToPath(new URL('../..', import.meta.url))
@@ -39,20 +39,38 @@ test('parseArgs: a flag it does not know, or one missing its value, is an error,
   assert.throws(() => parseArgs(['--base', '--sessions']), /--base needs a value/)
 })
 
+const bash = (command: string): ShellCommand => ({ command, shell: 'bash' })
+
 test('compareReadings: each command from each folder, with what changed', () => {
   const was = (command: string) => (command === 'b' ? ['old'] : [])
   const now = (command: string, folder: string) => (command === 'b' && folder === '/two' ? ['new'] : was(command))
 
-  const result = compareReadings(['a', 'b', 'a'], was, now, ['/one', '/two'])
+  const result = compareReadings([bash('a'), bash('b'), bash('a')], was, now, ['/one', '/two'])
 
   assert.equal(result.commands, 2)
   assert.equal(result.readings, 4)
   assert.equal(result.same, 3)
-  assert.deepEqual(result.differ, [{ command: 'b', folder: '/two', was: ['old'], now: ['new'] }])
+  assert.deepEqual(result.differ, [{ command: 'b', shell: 'bash', folder: '/two', was: ['old'], now: ['new'] }])
+})
+
+// Design v2 for #346: only PowerShell has here-strings, so a reading without the shell would compare two bash readings
+// of a PowerShell command and find them the same, whatever the change did.
+test('compareReadings: each command is read with the shell that ran it, and the same text in two shells is two commands', () => {
+  const seen: string[] = []
+  const was = (command: string, _folder: string, shell?: string) => {
+    seen.push(`${shell}:${command}`)
+    return shell === 'powershell' ? ['x'] : []
+  }
+
+  const result = compareReadings([bash('a'), { command: 'a', shell: 'powershell' }, bash('a')], was, () => [], ['/one'])
+
+  assert.equal(result.commands, 2)
+  assert.deepEqual(seen, ['bash:a', 'powershell:a'])
+  assert.deepEqual(result.differ, [{ command: 'a', shell: 'powershell', folder: '/one', was: ['x'], now: [] }])
 })
 
 test('compareReadings: the order of the paths is not a difference', () => {
-  const result = compareReadings(['a'], () => ['x', 'y'], () => ['y', 'x'], ['/one'])
+  const result = compareReadings([bash('a')], () => ['x', 'y'], () => ['y', 'x'], ['/one'])
   assert.equal(result.same, 1)
 })
 
@@ -60,15 +78,16 @@ test('compareReadings: a reader that throws is counted apart, and never read as 
   const broken = () => {
     throw new Error('no')
   }
-  const result = compareReadings(['a'], broken, () => [], ['/one'])
+  const result = compareReadings([bash('a')], broken, () => [], ['/one'])
   assert.equal(result.same, 0)
   assert.equal(result.threw, 1)
   assert.match(formatReadings(result), /1 threw/)
 })
 
-test('formatReadings: says how much was read, and shows each difference', () => {
-  const text = formatReadings(compareReadings(['a'], () => ['x'], () => [], ['/one']))
+test('formatReadings: says how much was read, and shows each difference with its shell', () => {
+  const text = formatReadings(compareReadings([{ command: 'a', shell: 'powershell' }], () => ['x'], () => [], ['/one']))
   assert.match(text, /1 commands, 1 readings: 0 the same, 1 different/)
+  assert.match(text, /\/one, powershell: a/)
   assert.match(text, /was \["x"\]/)
 })
 

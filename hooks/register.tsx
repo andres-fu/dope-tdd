@@ -40,8 +40,9 @@ import {
   leftOutNotices,
 } from './advice.ts'
 import { say } from './messages.ts'
+import { recheckLines } from './receipt.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
-import { baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
+import { PLAIN_PATHS, baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
 import type { SourceSnapshot } from './gitChanges.ts'
 import { findGitOperation, gitDirFromFile, mainCheckoutFrom } from './gitOperation.ts'
@@ -460,7 +461,7 @@ async function reviewRequest($: EngineInterface, root: string, request: Override
   const testPath = unlocked === undefined ? null : relativePath(root, unlocked)
   const lastCatch = request.module !== null && s.lastCatch?.module === request.module ? catchWord(s.lastCatch.outcome) : null
   const paths = [request.path, testPath].filter((path): path is string => path !== null)
-  const diff = paths.length === 0 ? null : await gitQuiet($, root, ['diff', '--no-ext-diff', 'HEAD', '--', ...paths])
+  const diff = paths.length === 0 ? null : await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--no-ext-diff', 'HEAD', '--', ...paths])
   const hunks = moduleHunks(diff === null || diff.exitCode !== 0 ? '' : diff.stdout, paths, 120)
   const { system, prompt } = reviewPrompt(request, { testPath, lastCatch, hunks, history })
   let result: ReviewResult
@@ -1021,9 +1022,9 @@ async function checkInWorktree($: EngineInterface, root: string, check: Worktree
     if (added === null || added.exitCode !== 0) {
       return { step: 'copy' }
     }
-    const dirty = listed(await gitQuiet($, root, ['diff', '--name-only', 'HEAD']))
-    const untracked = listed(await gitQuiet($, root, ['ls-files', '--others', '--exclude-standard']))
-    const deleted = listed(await gitQuiet($, root, ['diff', '--name-only', '--diff-filter=D', 'HEAD']))
+    const dirty = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--name-only', 'HEAD']))
+    const untracked = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'ls-files', '--others', '--exclude-standard']))
+    const deleted = listed(await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--name-only', '--diff-filter=D', 'HEAD']))
     if (dirty === null || untracked === null || deleted === null) {
       return { step: 'changes' }
     }
@@ -1180,6 +1181,7 @@ async function verifyCatch(
     provedByRed,
     redErrorsOnly,
     checkable: policy !== 'observe' && policy !== 'exempt' && config.catchCheck !== false,
+    onDisk: cycleChange === undefined ? null : await readWhole($, cycleChange.path),
   })
   // Past `done` there is always a change and a test; the rest of this condition only tells the type checker so.
   if (plan.kind === 'done' || cycleChange === undefined || testPath === undefined) {
@@ -1848,8 +1850,8 @@ async function headOf($: EngineInterface, root: string): Promise<string | null> 
 async function snapshotWatched($: EngineInterface, root: string, config: GuardConfig, base: string | null): Promise<SourceSnapshot | null> {
   const dirs = watchedDirs(config)
   // Against a commit a staged rename prints as `{a => b}`, which is no path.
-  const numstat = await runGit($, root, ['diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
-  const untracked = await runGit($, root, ['ls-files', '--others', '--exclude-standard', '--', ...dirs])
+  const numstat = await runGit($, root, [...PLAIN_PATHS, 'diff', '--numstat', '--relative', ...(base === null ? [] : ['--no-renames', base]), '--', ...dirs])
+  const untracked = await runGit($, root, [...PLAIN_PATHS, 'ls-files', '--others', '--exclude-standard', '--', ...dirs])
   if (numstat === null || untracked === null) {
     return null
   }
@@ -1875,11 +1877,12 @@ async function guardShell(
   const scene: ShellScene = { base: await agentRoot($, agentId), sessionRoot, mainCheckout: await mainCheckoutOf($, sessionRoot) }
   // The command starts where the last one left the shell, when that is still inside the project.
   const start = await settledStart(command, shellStart(await readCwd($, shell, agentId), scene), scene.base, path => $.fs.exists(path))
-  const written = findSourceWrites(command, start)
+  // The tool says which program runs the command, and only PowerShell has here-strings (design v2 for #346).
+  const written = findSourceWrites(command, start, shell)
   const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await watchConfig($, root, command, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
+    const result = await watchConfig($, root, command, shell, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
@@ -1980,15 +1983,15 @@ async function checkShell(
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
   // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
   // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
-  const revertOnly = isRevertOnly(command, looksReadOnly)
+  const revertOnly = isRevertOnly(command, looksReadOnly, shell)
   const around = before === null || after === null ? [] : changedAround(before, after, afterOldBase, await mtimesOfGone($, root, before, after))
   const seen = revertOnly ? [] : around
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (revertOnly && bringsInCode(command)) {
+  if (revertOnly && bringsInCode(command, shell)) {
     const brought = changedOfKind(root, around, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       // The verb only: the arguments can hold a token in a remote URL (verified review B1).
-      const detail = gitVerb(command)
+      const detail = gitVerb(command, shell)
       await change($, s => recordGitIn(s, [...new Set(brought.map(({ module }) => module))], detail, nowMs))
       $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
     }
@@ -2479,7 +2482,7 @@ async function sampleTestFiles($: EngineInterface, root: string, config: GuardCo
   if (known !== undefined) {
     return known
   }
-  const listed = await runGit($, root, ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
+  const listed = await runGit($, root, [...PLAIN_PATHS, 'ls-files', '--cached', '--others', '--exclude-standard', '--', ...watchedDirs(config)])
   const paths = (listed ?? '').split(/\r?\n/).filter(path => path !== '')
   const samples = changedOfKind(root, paths, 'test', config).map(({ path }) => path).sort().slice(0, BRIEFING_SAMPLES)
   briefingSamples.set(key, samples)
@@ -2543,21 +2546,17 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   const recorded = changePath === undefined ? undefined : { path: changePath }
   // Never the stash: on a committed change it saves nothing, and its pop would apply the reviewer's own stash.
   const head = await gitQuiet($, root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
-  const base = head !== null && head.exitCode === 0 && head.stdout.trim() !== '' ? head.stdout.trim() : 'main'
-  lines.push('To check the proof yourself, from the repo root with this change checked out:', '```', run)
-  if (recorded !== undefined) {
-    const path = relativePath(root, recorded.path)
-    lines.push(`git checkout ${base} -- ${path}`, run, `git checkout HEAD -- ${path}`)
-  }
-  lines.push('```')
+  const fromOrigin = head !== null && head.exitCode === 0 && head.stdout.trim() !== ''
+  const base = fromOrigin ? head.stdout.trim() : 'main'
+  // A change in an agent worktree is that checkout's file, so its path is read from there (review of #269).
+  const home = recorded === undefined ? root : worktreeRootFor(root, recorded.path, await mainCheckoutOf($, root))
+  const path = recorded === undefined ? null : relativePath(home, recorded.path)
+  const baseHere = (await gitQuiet($, home, ['rev-parse', '--verify', '-q', `${base}^{commit}`]))?.exitCode === 0
+  const atBase = !baseHere ? 'unknown' : path !== null && (await gitQuiet($, home, ['cat-file', '-e', `${base}:${path}`]))?.exitCode === 0 ? 'yes' : 'no'
   // Idea 18: the words the test failed with when the catch check undid the change, when it kept them.
   const caught = s.lastCatch?.module === module && s.lastCatch.outcome.kind === 'caught' ? s.lastCatch.outcome.message : undefined
   const fails = caught === undefined ? 'fails' : `fails with \`${caught}\``
-  lines.push(
-    recorded === undefined
-      ? `No change to ${label} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
-      : `The first run passes. The second runs the same test against the code on ${base}, before the change, and ${fails}, which is what the catch check saw. The last line puts the change back.`,
-  )
+  lines.push(...recheckLines({ label, run, base, baseFrom: fromOrigin ? "origin" : "guess", path, atBase, fails }))
   return lines.join('\n')
 }
 
@@ -2566,10 +2565,11 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
  * record has it put back, and it is a workaround on the record. One that created it from nothing leaves it empty, so a
  * forged record approves nothing.
  */
-async function keepRecord($: EngineInterface, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+async function keepRecord($: EngineInterface, command: string, shell: ShellName, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
   // Git may change the record (a pull, a checkout or a merge brings in other people's overrides), but only a command
   // made of git alone: a git segment beside a script proves nothing about what the script wrote (verified review A6).
-  if (isGitOnly(command)) {
+  // Its commands are the tool's shell's own, so a here-string message can't hide a script after it (#348).
+  if (isGitOnly(command, shell)) {
     return run()
   }
   const root = await $.session.root()
@@ -2591,7 +2591,7 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
 }
 
 /** A config a command changed is recorded as Edit's is (#293), even when the check around the command throws. */
-async function watchConfig($: EngineInterface, root: string, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+async function watchConfig($: EngineInterface, root: string, command: string, shell: ShellName, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
   const path = `${root}/${CONFIG_FILE}`
   const textBefore = await readWhole($, path)
   const before = await loadConfig($, root)
@@ -2609,7 +2609,7 @@ async function watchConfig($: EngineInterface, root: string, command: string, ru
       refused: result?.deny !== undefined,
       heldReadOnly: result?.isReadOnly === true,
       looksReadOnly: looksReadOnly(command),
-      revertOnly: isRevertOnly(command, looksReadOnly),
+      revertOnly: isRevertOnly(command, looksReadOnly, shell),
       named: writesFileNamed(command, CONFIG_FILE),
       loosened: isLoosening(before, after),
       // A read can fail with the file still there (a lock, `chmod 000`).
@@ -2961,13 +2961,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash', e.agentId)))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, 'bash', () => guardShell($, e.command, () => next(e), 'bash', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell', e.agentId)))).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, 'powershell', () => guardShell($, e.command, () => next(e), 'powershell', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

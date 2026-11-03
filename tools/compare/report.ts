@@ -4,15 +4,20 @@
 
 export type Options = { base: string; sessions: boolean; transcripts: string | null }
 
-/** What one reader said about one command, from one folder: the files it writes. */
-export type Reader = (command: string, folder: string) => readonly string[]
+export type Shell = 'bash' | 'powershell'
+
+/** A real command and the shell that ran it, which says whether it has here-strings (design v2 for #346). */
+export type ShellCommand = { command: string; shell: Shell }
+
+/** What one reader said about one command, from one folder, in its shell: the files it writes. */
+export type Reader = (command: string, folder: string, shell?: Shell) => readonly string[]
 
 export type Readings = {
   commands: number
   readings: number
   same: number
   threw: number
-  differ: { command: string; folder: string; was: readonly string[]; now: readonly string[] }[]
+  differ: { command: string; shell: Shell; folder: string; was: readonly string[]; now: readonly string[] }[]
 }
 
 export type EditResult = { deny: string | null; context: readonly string[] | null }
@@ -65,18 +70,21 @@ export function parseArgs(argv: readonly string[]): Options {
 
 const sorted = (paths: readonly string[]): string => JSON.stringify([...paths].sort())
 
-/** Each distinct command read by both readers, from each folder. */
-export function compareReadings(commands: readonly string[], was: Reader, now: Reader, folders: readonly string[]): Readings {
-  const distinct = [...new Set(commands)]
+/**
+ * Each distinct command read by both readers, from each folder, in the shell that ran it. The same text from two shells
+ * is two commands. A base build that takes no shell ignores it.
+ */
+export function compareReadings(commands: readonly ShellCommand[], was: Reader, now: Reader, folders: readonly string[]): Readings {
+  const distinct = [...new Map(commands.map(each => [`${each.shell}\n${each.command}`, each])).values()]
   const result: Readings = { commands: distinct.length, readings: 0, same: 0, threw: 0, differ: [] }
-  for (const command of distinct) {
+  for (const { command, shell } of distinct) {
     for (const folder of folders) {
       result.readings++
       try {
-        const before = was(command, folder)
-        const after = now(command, folder)
+        const before = was(command, folder, shell)
+        const after = now(command, folder, shell)
         if (sorted(before) === sorted(after)) result.same++
-        else result.differ.push({ command, folder, was: before, now: after })
+        else result.differ.push({ command, shell, folder, was: before, now: after })
       } catch {
         result.threw++
       }
@@ -89,8 +97,8 @@ export function formatReadings(result: Readings): string {
   if (result.commands === 0) {
     return 'real commands: none found'
   }
-  const shown = result.differ.flatMap(({ command, folder, was, now }) => [
-    `  ${folder}: ${command.replace(/\s*\n\s*/g, ' / ').slice(0, 140)}`,
+  const shown = result.differ.flatMap(({ command, shell, folder, was, now }) => [
+    `  ${folder}, ${shell}: ${command.replace(/\s*\n\s*/g, ' / ').slice(0, 140)}`,
     `    was ${JSON.stringify(was)}`,
     `    now ${JSON.stringify(now)}`,
   ])

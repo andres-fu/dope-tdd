@@ -46,7 +46,11 @@ no approval and is not a workaround. `/tdd` lists it with its question
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request. When the catch check saw the test fail on an
+paste into a pull request. They compare with origin's default branch, or with
+`main` when origin names none, and the receipt says which: a pull request into
+another branch should use that one. A file new since that branch gets no such
+step, since there is no older version to put back, and a branch that isn't there
+is said as that ([#269](https://github.com/andres-fu/dope-tdd/issues/269)). When the catch check saw the test fail on an
 assertion (Vitest, node --test, pytest), the PROVEN line and the receipt quote
 it, for example ``fails with `expected 2 to be 3` ``, so a reader learns what
 the change does without running anything.
@@ -66,9 +70,14 @@ approved what, and the receipt lists them. A pause reason must say what and
 why (at least 30 characters; "need to proceed" is refused), only one request
 can wait at a time, and a module override open for more than 7 days blocks
 new ones. Claude's Edit and Write calls to `dope-tdd.overrides.json` are
-refused, and a shell change to it is put back and counted as a workaround. A
+refused, and so is a shell command that names it beside a write verb, even one
+that only mentions it in a note. A shell change to it the guard didn't read
+beforehand is put back and counted as a workaround. A
 command of git alone is left alone, since a pull can bring in other people's
-overrides, and [what gets past it](what-gets-past.md) says what that leaves open.
+overrides. "Alone" is judged by the commands the tool's shell runs, so a script
+after a PowerShell here-string commit message isn't git
+([#348](https://github.com/andres-fu/dope-tdd/issues/348)), and
+[what gets past it](what-gets-past.md) says what that leaves open.
 
 ## How it decides
 
@@ -146,7 +155,7 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   changed around it is said once and listed in `/tdd` under **changed during a
   read or test run**. Nobody is charged or credited. The change also counts
   against the module's next verdict where it can, though a verdict can still miss
-  it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
+  it ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A write the reader
   names, as it does `npm test > src/a.ts`, is the command's as usual
   ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). So is any change
   around a `>` or `>>` beside a test run (`echo x > a.txt && npm test`), which reads
@@ -163,11 +172,36 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   redirect, `tee`, `cp`, `mv`, `sed -i`, a PowerShell write or a script's file
   write. Quoted text is data, so a commit message or an echoed sentence that
   mentions `>> src/a.ts` writes nothing; a command that hands its quotes to a
-  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`) still has them read. A path
+  shell (`sh -c "…"`, `ssh host "…"`, `eval "…"`, `iex "…"`) still has them read,
+  but a shell's name inside quoted text doesn't count. `sed -i` and a PowerShell
+  write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
+  names: sed's file arguments, and the path after the verb or after `-Path`,
+  `-FilePath` or `-LiteralPath`, plus any path outside quotes. Inside text handed
+  to a shell (`eval "…"`, `ssh host "…"`), where the quotes are commands, a
+  PowerShell write names every path in its command, and so does a sed that isn't
+  a word of the command itself (by name or by path), dotted paths aside
+  ([#350](https://github.com/andres-fu/dope-tdd/issues/350)). Under the
+  PowerShell tool a here-string is one quoted span wherever it stands, so text in
+  `-Value` is data; under Bash `@'` is an ordinary quote, since Bash has no
+  here-strings. Under either shell, though, a command with `@'` right before an
+  LF or CRLF line end is kept whole rather than split into commands
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)). An opener with a
+  space or a lone CR after it doesn't keep it whole, so unless a plain one is
+  also there, the command is split and its body's quotes are read like bash's
+  ([#347](https://github.com/andres-fu/dope-tdd/issues/347)). For
+  `dope-tdd.overrides.json` and `dope-tdd.json` none of that
+  applies: the file's name beside a write verb anywhere in the command, quoted or
+  not, is a write to it, even when the text only talks about it. So a command
+  that names the record that way is refused, and a config change after one is
+  put to Claude as that command's. A path the shape
+  doesn't name, such as `-Path $p`, names nothing: the git check after the command
+  says what landed
+  ([#332](https://github.com/andres-fu/dope-tdd/issues/332)). A path
   spelled `./src/a.ts`, `src//a.ts` or `lib/../src/a.ts` is the file it names, for
   a shell write and for Edit, Write and NotebookEdit. A `..` is resolved by
   reading the path, so through a symbolic link it can land elsewhere. In a script's
-  text, or in quotes in PowerShell, a dotted path is left as text, since import
+  text, in a sed handed to a shell, or in quotes in PowerShell outside text handed
+  to a shell, a dotted path is left as text, since import
   paths are spelled that way
   ([#272](https://github.com/andres-fu/dope-tdd/issues/272)).
 - Code the guard can't pair with a test goes through, and isn't guarded. There
@@ -191,7 +225,12 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   Claude's edit either, but `/tdd` records it as **brought in by git, not
   guarded**, with the git verb only, never its arguments.
   Commands that only read beside it (`cat`, `sha256sum`, `git status`) do not
-  change that.
+  change that. Anything else beside it does, and the command is split the way the
+  tool's shell splits it, so a script on the next line, or a PowerShell here-string
+  that runs code (`@"…$(…)…"@`), is a command of its own: the change is then charged
+  as the plain form's would be. A here-string that runs nothing, such as a message
+  piped into `git commit -F -`, isn't a command
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - The project must be a git repository; without one the shell backstop
   records nothing.
 - A subagent started with `isolation: "worktree"` works in

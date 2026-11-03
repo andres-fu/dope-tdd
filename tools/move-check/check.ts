@@ -20,6 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { PLAIN_PATHS } from '../../hooks/gitChanges.ts'
 import { closingOnlyEnd, compare, coverageOf, findMoves, removedLinesIn, report, tokensInLines } from './move.ts'
 import type { Coverage, Move, Rename } from './move.ts'
 
@@ -122,7 +123,7 @@ export function existsAt(repo: string, ref: string, path: string): boolean {
  * shape of a move into a new file, would otherwise show only its new path, and its old text would never be read (#6).
  */
 export function changedCode(repo: string, base: string, head: string): { base: Record<string, string>; head: Record<string, string> } {
-  const paths = git(repo, ['diff', '--name-only', '--no-renames', base, head])
+  const paths = git(repo, [...PLAIN_PATHS, 'diff', '--name-only', '--no-renames', base, head])
     .split(/\r?\n/)
     .filter(path => CODE.test(path))
   const side = (ref: string) => Object.fromEntries(paths.flatMap(path => ((text => (text === null ? [] : [[path, text] as const]))(textAt(repo, ref, path)))))

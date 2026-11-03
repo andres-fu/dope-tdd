@@ -51,9 +51,11 @@ These aren't refused, and the last column says what the guard does instead.
 | A write committed by plumbing | `python3 fix.py && git add -A && git update-ref HEAD "$(git commit-tree ...)"` | Nothing: only `git commit` reads as a commit |
 | A new file staged in a repository with no commit yet | `python3 fix.py && git add -A` | Nothing: there's no commit to compare with |
 | A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it ([#297](https://github.com/andres-fu/dope-tdd/issues/297)) |
-| A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts`, `echo x 2> a.txt && npm test` | Said once for that file, charged to nobody |
+| A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts`, `echo x 2> a.txt && npm test`, `Set-Content -Pat "src/a.ts" x`, the second file of `Set-Content -Path 'src/a.ts','src/b.ts' x`, `& 'Set-Content' "src/a.ts" x` | Said once for that file, charged to nobody; a PowerShell write that looks like a write is charged as unguarded ([#332](https://github.com/andres-fu/dope-tdd/issues/332)) |
 | A write hidden in a read or a test run | `echo "$(sed -i ...)"` | Said once for that file, charged to nobody |
-| A path through a variable it can't expand | `echo 1 > "$ROOT/src/a.ts"`, `npm test > "$ROOT/src/a.ts"` | Not refused. If it lands in the project, git shows the change after the command: the first counts as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309)) |
+| A sed handed to a shell, with a target it reads as text | `eval "sed -i 's/a/b/' ./src/a.ts"` (a dotted path, left as text like an import path); `eval "sed -i 's/a/b/'" ./src/a.ts`; in PowerShell, a here-string holding a sed piped to `bash` in a command that also runs a plain `sed` | Not refused. After the command, git shows the change and it counts as unguarded ([#350](https://github.com/andres-fu/dope-tdd/issues/350)) |
+| A PowerShell command whose quoting the guard reads like bash's | A write after a `# see @'` comment line, or between `echo .@'` and `'@` with an apostrophe on each side of it; `echo --% @'`; an `@'` with a space or a lone CR after it; a quote escaped with a backtick; a write inside `"$(...)"` | Not refused. After the command, git shows the change: it counts as unguarded, or is said once and charged to nobody when the command looks like a read. With no git, or a gitignored file, nothing is said ([#347](https://github.com/andres-fu/dope-tdd/issues/347)) |
+| A path through a variable it can't expand | `echo 1 > "$ROOT/src/a.ts"`, `npm test > "$ROOT/src/a.ts"`, `Set-Content -Path $p x` | Not refused. If it lands in a watched folder of the checkout the command ends in, git shows the change after the command: the first and third count as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309), [#332](https://github.com/andres-fu/dope-tdd/issues/332)) |
 | A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git restore a.ts && git tag -a -m "$(./fix.sh)" v9`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
 | A write outside the folders it watches | A file outside `src/` and `tests/`, with the default layout | Nothing, unless the command names it |
 | A project with no git repository | A script's write | Nothing: the check after a command needs git |
@@ -71,13 +73,15 @@ A verdict is what the guard saw, and these are the gaps in what it sees.
 
 - **PROVEN means the test catches this change.** It doesn't mean the test is a good
   one, or that the code is right.
-- **PROVEN after a break put back can miss a later change.** If a file changes
-  between the restore and the green, the verdict still stands
-  ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). The same issue lists
-  the other cases where a change the guard has reported doesn't reach the next
-  verdict.
+- **A change the guard reported can miss the next verdict.** A source file that
+  changes during a run ending red, or a module changed with no test on record,
+  doesn't reach the green's verdict
+  ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A file changed after a
+  break was put back reads UNPROVEN.
 - **The catch check often can't run, and it says so.** An edit made by a script
-  reads **UNPROVEN · not checked: change not captured**. On a strict runner such as
+  reads **UNPROVEN · not checked: change not captured**, and the verdict says to
+  use the Edit tool next time, as does the line for a shell write with no test
+  touched. On a strict runner such as
   `node --test`, a change that adds an export can't load its test with the change
   undone, and reads the same way. Those are the safe answer, not a pass, so count
   them as unproven.
@@ -87,14 +91,28 @@ A verdict is what the guard saw, and these are the gaps in what it sees.
 `dope-tdd.overrides.json` holds the overrides that let an edit through without a
 test, so it is the file most worth forging. An Edit or a Write to it is refused.
 A shell command that changes it is refused if the guard can read that, and has it
-put back as a workaround if not.
+put back as a workaround if not. The guard reads it eagerly: the file's name beside
+a write verb anywhere in a command is a write to it, so a note or a heredoc that
+only mentions it is refused too
+([#322](https://github.com/andres-fu/dope-tdd/issues/322)).
 
 **The exception is a command of git alone**, because a pull or a merge can
 legitimately bring in other people's overrides, and putting those back would lose
-work. Telling the two apart is the part that can't be done. A command can read as
-git and still run a script:
+work. The command is split the way the tool's shell splits it: a PowerShell
+here-string message is part of its git command, and a script on the next line is a
+command of its own ([#348](https://github.com/andres-fu/dope-tdd/issues/348)). So a
+here-string git command piped to anything else, such as `| Select-Object`, isn't
+git alone, just like the plain form, while a here-string message that runs nothing,
+piped into `git commit -F -`, is part of the commit. Telling the two apart is the part that can't be
+done. A command can read as git and still run a script:
 
 - Something hidden in it: `git status "$(./forge.sh)"`.
+- Something the splitter reads as quoted or joined where the shell doesn't: an
+  apostrophe in a `#` comment before the script's line, a single `&` (Bash), a bare
+  CR line end, a backtick escape or curly quotes (which the splitter doesn't know),
+  a `<<WORD` (which PowerShell doesn't have), or an `@'` PowerShell doesn't open as a here-string
+  (`git status .@'`, `# @'`, `--% @'`) with the script inside what looks like its
+  body ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - An option or alias that runs a program: `git -c alias.x='!./forge.sh' x`,
   `git rebase --exec ./forge.sh HEAD~1`.
 - A hook, or anything configured to run, which the command's text never shows.
@@ -124,7 +142,8 @@ Three smaller gaps sit beside this one:
   ([#290](https://github.com/andres-fu/dope-tdd/issues/290)).
 
 **Session records are the same.** A digest on a record in `~/.dope-tdd/sessions/`
-shows a hand edit only if someone checks it, and nothing you run does yet
+shows a hand edit only if someone checks it, and nothing you run does: it's checked by
+hand, with `verifyRecord` in `hooks/sessionLog.ts`
 ([#294](https://github.com/andres-fu/dope-tdd/issues/294)). An agent that reads the
 code can recompute it anyway. The counts in `/tdd` and the receipt are evidence of
 an honest session, not proof that one was.
@@ -136,9 +155,14 @@ an honest session, not proof that one was.
 - **Run the [pull-request check](pr-check.md) in CI with `fail-on: untested`.** It
   works from the diff, outside the agent's session, and never reads the override
   record. By default it passes a change with no test, which is exactly what an
-  override lets through, so set that option if you want those to fail. It does read
-  `dope-tdd.json` from the pull request it judges, so review a change to that file
-  too: a pull request could exempt itself.
+  override lets through, so set that option if you want those to fail. It reads
+  `dope-tdd.json` from the base, not from the pull request it judges, so a pull
+  request can't exempt itself through that file
+  ([#319](https://github.com/andres-fu/dope-tdd/issues/319)). It can still change
+  the workflow that runs the check, its `fail-on` input or the step itself, so
+  review a change to the workflow too. A project's first config is the exception:
+  with no `dope-tdd.json` at the base, the pull request's counts, and with neither a
+  config nor a stack marker at the base, its first marker counts; the report says so.
 - **Count UNPROVEN as unproven,** and read `/tdd` for workarounds and for changes
   charged to nobody.
 - **Use a sandbox if you don't trust the agent.** Claude Code's permissions and an

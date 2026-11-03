@@ -74,6 +74,17 @@ describe('runAdvice', () => {
     expect(runAdvice(edited, recordRun(edited, true, at(3)))).toBe(say('green.sawRed', { module: MODULE }))
   })
 
+  // #311: two modules in one cycle. The flag on the stats is the last current module's, so the green read another's.
+  test('whether a green saw red is that module\'s own, not the module current before it', () => {
+    const edited = recordSourceEdit(recordRun(touched, false, at(1)), MODULE, true, at(2))
+    const other = recordTestTouch(edited, { module: 'other/thing', testPath: 'tests/other/thing.test.ts' }, at(3))
+    const backOn = recordTestTouch(other, { module: MODULE, testPath: 'tests/money/formatCents.test.ts' }, at(4))
+    const afterRun = recordRun(backOn, true, at(5))
+    expect(other.current?.module).toBe('other/thing')
+    expect(other.sawRed).toBe(false)
+    expect(runAdvice(other, afterRun)).toBe(say('green.sawRed', { module: MODULE }))
+  })
+
   // Karl's Python trial (2026-10-19): a pin broken on purpose, red, then green again was told only "saw red", while
   // the briefing calls exactly that PROVEN, and the counts had already stopped calling it never failed.
   test('after a pin went green, then red, then green again, says the pin is PROVEN', () => {

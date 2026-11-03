@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { BAND, MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, runTests, test, touchTest, writeAt } from './engine'
+import { BAND, MINUTE, ROOT, editAt, fakeEngine, runBash, runCommand, runPowerShell, runTests, test, touchTest, writeAt } from './engine'
 import type { FakeWorld } from './engine'
 
 // Override with a reason, v1 (2026-10-18): the agent asks, a person decides, the repo keeps the record.
@@ -236,6 +236,30 @@ describe("the record is only dope-tdd's to write, from the shell too", () => {
     await ask($, { kind: 'spike' })
     world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
     await runBash($, 'git pull')
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe('{"overrides":[]}')
+  })
+
+  // #348: a here-string opener kept the whole command one segment, so a script after a here-string commit message read
+  // as git alone and the backstop stood down. Each tool's command is split by its own shell.
+  test('a script after a here-string commit message has the record put back, under either tool', async ($, on) => {
+    const world = fakeEngine(on)
+    await ask($, { kind: 'spike' })
+    const before = world.fileContents.get(RECORD)
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    await runPowerShell($, "git commit -m @'\nmsg\n'@\nnode scripts/tidy.mjs")
+    expect(world.fileContents.get(RECORD)).toBe(before)
+    await runBash($, `git commit -qm "see @'\n" && node scripts/tidy.mjs`)
+    world.onBash = () => {}
+    expect(world.fileContents.get(RECORD)).toBe(before)
+  })
+
+  // Read as Bash, this PowerShell merge would split at the apostrophe and have a pulled-in record put back.
+  test('a PowerShell git command alone with a here-string message may still change the record', async ($, on) => {
+    const world = fakeEngine(on)
+    await ask($, { kind: 'spike' })
+    world.onBash = () => world.fileContents.set(RECORD, '{"overrides":[]}')
+    await runPowerShell($, "git merge other -m @'\nit's\n'@")
     world.onBash = () => {}
     expect(world.fileContents.get(RECORD)).toBe('{"overrides":[]}')
   })

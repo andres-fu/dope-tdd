@@ -70,6 +70,21 @@ test('writes the detector sees are counted; a command that looks like a write to
   assert.deepEqual(report.samples.suspectedMissed.map(item => item.command), ["perl -pi -e 's/a/b/' src/b.ts"])
 })
 
+// Design v2 for #346: a call is read with the shell that ran it, since only PowerShell has here-strings. Read both ways,
+// the prose here-string below would name src/a.ts.
+test('a PowerShell call is read as PowerShell and a Bash call as Bash', () => {
+  const note = "$script:t = @'\nit's src/a.ts here, isn't it\n'@\nAdd-Content -Path notes.md -Value $script:t"
+  const report = replay(
+    [
+      { tool: 'PowerShell', command: note, output: null, file: 't.jsonl' },
+      call("echo -n @'\n'\nsed -i 's/a/b/' src/b.ts\necho '\n'@"),
+    ],
+    1,
+  )
+  assert.equal(report.writtenPaths, 1)
+  assert.deepEqual(report.samples.writes.map(item => item.command.slice(0, 7)), ['echo -n'])
+})
+
 test('samples are capped and long commands are cut; the text report leads with the counts', () => {
   const many = Array.from({ length: 8 }, (_, i) => call(`npm test # ${'x'.repeat(200)} ${i}`, 'cut\n'))
   const report = replay(many, 2, 3)

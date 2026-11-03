@@ -34,6 +34,27 @@ npm run compare -- --sessions   # or to the briefing, band, /tdd or an Edit of a
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
 runs.
 
+## Working in this repo
+
+Each line here cost a session an hour or a broken file. A session that trips on the same thing twice
+in one sitting adds a line at the bottom in its pull request, so line 1 is the oldest. Ten lines at
+most: at ten, line 1 becomes a test, a tool, a lint or a note elsewhere, and leaves.
+
+1. `node --test`'s default reporter prints the summary before the failure detail, so `| tail` can drop
+   it and the guard counts nothing. With `--test-reporter=tap` the summary comes last, and `| tail -40`
+   keeps it. What the guard reads from a run is in [docs/testers.md](../docs/testers.md).
+2. Write a probe script or a test block with the Write tool, then run it by path. A heredoc through
+   Bash on Windows halves double backslashes, which breaks string and regex escapes in test files.
+3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text: a
+   write verb outside quotes (`sed -i`, `Set-Content`, `mv`), or a script's write call anywhere in it
+   whose target it can't trace (`writeFile(`, `open(..., 'w')`), beside a source file's name reads as a
+   write to it, even in a grep.
+4. Don't switch branches in a checkout another session is using. A side session that writes code
+   gets its own worktree.
+5. Before running `python`, check where it resolves: `command -v python` in Bash,
+   `(Get-Command python).Source` in PowerShell. A path under `WindowsApps` is the Store stub, which
+   hangs instead of failing.
+
 ## How we work
 
 - **Branch from `release` and open pull requests into `release`.** Only the release pull request goes
@@ -50,6 +71,12 @@ runs.
   normal use, and whether it is worth that. Have the `reviewer` agent try to break the paragraph, citing
   its sentences. This isn't a review round. Writing code is cheap and reviewing it isn't, so a wrong idea
   should die on paper.
+- **Decide from effects, not from text.** A new rule gates on what git, the disk or the runner shows
+  afterwards, and command text only says who gets charged. Code that predicts what a command will do
+  from its text is a list, and every review finds the next entry it lacks. Naming a file isn't
+  prediction: the Edit and Write gate decides from a path, and so may a shell write whose path is
+  plain. A new predictor is a design to attack on paper, and "it misses this spelling" is one finding,
+  the class, which takes the severity of its worst member.
 - **Prove first, then review.** Before the first review of the code, do the deliberate breaks and run
   the comparison where it can see the change. `npm run compare` takes seconds and shows which files the
   shell reader finds. `--sessions` takes about 17 minutes and adds the briefing, band, `/tdd` and what an
@@ -88,7 +115,10 @@ Look for these first, when writing code and when reviewing it.
    count that credits work not done this session.
 3. **It misreads a shell command.** Quoted text taken for a write, the wrong result kept from a command
    with two runs, a command judged in the wrong folder. A false refusal stops good work, and a missed
-   write is failure 1.
+   write that nothing says afterwards is failure 1. A spelling the reader misses is a gap, not a failure,
+   only when `/tdd` lists the file after the command; where the git check can't see (no git, a
+   gitignored file, a folder outside the layout, a worktree read against the wrong root) the miss is
+   failure 1. Gaps are listed on `docs/what-gets-past.md`.
 4. **It loses someone's work.** The catch check undoes a change on disk and puts it back. Anything that
    can leave a file reverted, or overwrite an edit made in the meantime, is the worst bug here.
 
@@ -132,9 +162,18 @@ request adds no other review.
 **Report.** Start with the count: `2 Important, 1 Nit, 1 Pre-existing`, or `No findings`. Give each
 finding a file and line, and say what goes wrong, with what input.
 
-- **Important**: one of the failures above, or anything that should stop the merge.
-- **Nit**: worth fixing, not worth waiting for. Three at most per review.
+- **Important**: a person could meet it. One of the four failures above, with the input or state that
+  reaches it: a verdict word that says more than was seen, lost work, a write that lands with nothing
+  said to the agent or nothing on the record, a false refusal. It stops the merge.
+- **Nit**: everything else worth fixing, a doc line describing the old behaviour and a missed spelling
+  the git check reports included. Fixed before the merge or answered. The pull request lists Nits, but
+  they don't count toward the three-round rule. Three at most per review; past three, name the class
+  once.
 - **Pre-existing**: a real problem this change did not cause. It becomes an issue, not a blocker.
+
+A finding shown only through the fake engine or by calling a function says so, and says what live
+input or state reaches it. If none does, it is a Nit, except failure 4: anything that can lose work
+is Important however it was shown.
 
 If you can't point to a line or say what goes wrong, it isn't a finding yet: say what you checked and
 could not confirm. Flag the class of bug, not each case. After three rounds of review and fixes, stop

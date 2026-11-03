@@ -1,4 +1,5 @@
-import { commandSegments } from './shell.ts'
+import { commandSegments, splitCommands } from './shell.ts'
+import type { Shell } from './shell.ts'
 
 export type SourceSnapshot = Readonly<Record<string, string>>
 
@@ -23,6 +24,9 @@ export function savedStateOf(status: string): SavedState | null {
   const ahead = lines.map(line => /^# branch\.ab \+(\d+) /.exec(line)?.[1]).find(n => n !== undefined)
   return ahead === '0' ? 'pushed' : 'committed'
 }
+
+/** Git quotes a path with a non-ASCII byte, and the quoted text is no file: a write to one went unseen (#299). */
+export const PLAIN_PATHS = ['-c', 'core.quotePath=false']
 
 export function parseNumstat(output: string): Record<string, string> {
   const entries = output
@@ -60,7 +64,8 @@ function onlyStaged(was: string | undefined, now: string | undefined): boolean {
   if (was === undefined || now === undefined || was.startsWith('untracked') === now.startsWith('untracked')) {
     return false
   }
-  return timeOf(was) === timeOf(now)
+  // A time that couldn't be read says nothing, so two of them don't match.
+  return timeOf(was) === timeOf(now) && timeOf(now) !== 'missing'
 }
 
 /**
@@ -125,8 +130,8 @@ export function baseAfter(oldHead: string, newHead: string, reflog: string): str
  * What the record keeps of a git command: `git <subcommand>`, and the action for `git stash`. Never its arguments,
  * where a token in a remote URL can sit (verified review B1, 2026-10-20: 80 characters of the command were kept).
  */
-export function gitVerb(command: string): string {
-  const segments = commandSegments(command)
+export function gitVerb(command: string, shell: Shell = 'bash'): string {
+  const segments = splitCommands(command, shell)
   // The rewrite that brought the code first, whatever git step came before it (#292).
   for (const segment of [...segments.filter(segmentBringsCode), ...segments]) {
     const words = segment.trim().split(/\s+/)
@@ -152,10 +157,11 @@ const CD_ONLY = /^\s*cd(?:\s|$)/
 
 /**
  * Every segment runs git (cds aside): only such a command may change a file git manages, such as the override record a
- * pull brings in. A git segment beside anything else proves nothing about what the rest wrote (verified review A6).
+ * pull brings in. A git segment beside anything else proves nothing about what the rest wrote (verified review A6). The
+ * commands are the shell's own (#348): the hook passes the tool's shell, and tests default to Bash.
  */
-export function isGitOnly(command: string): boolean {
-  const segments = commandSegments(command).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
+export function isGitOnly(command: string, shell: Shell = 'bash'): boolean {
+  const segments = splitCommands(command, shell).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
   return segments.length > 0 && segments.every(segment => /^\s*git\s/.test(segment))
 }
 
@@ -167,8 +173,8 @@ const LEAVES_THE_TREE = /^\s*git\s+(?:add|commit|push|fetch|tag)(?=\s|$)/
  * cannot write (a test run). Only then are the changes it leaves not the agent's; a git segment beside a script once hid
  * the script's writes (verified review A7, 2026-10-20).
  */
-export function isRevertOnly(command: string, quiet: (segment: string) => boolean): boolean {
-  const segments = commandSegments(command).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
+export function isRevertOnly(command: string, quiet: (segment: string) => boolean, shell: Shell = 'bash'): boolean {
+  const segments = splitCommands(command, shell).filter(segment => segment.trim() !== '' && !CD_ONLY.test(segment))
   return segments.some(segment => REWRITES_TREE.test(segment)) && segments.every(segment => REWRITES_TREE.test(segment) || LEAVES_THE_TREE.test(segment) || quiet(segment))
 }
 
@@ -193,8 +199,8 @@ const BACK_TO_HEAD = [
  * a remote. The guard does not charge it to the agent (isRevertCommand), but says it, so it never goes by unseen
  * (Karl's trial, 2026-10-19: a git restore logged nothing, which is right only for code put back to HEAD).
  */
-export function bringsInCode(command: string): boolean {
-  return commandSegments(command).some(segmentBringsCode)
+export function bringsInCode(command: string, shell: Shell = 'bash'): boolean {
+  return splitCommands(command, shell).some(segmentBringsCode)
 }
 
 function segmentBringsCode(segment: string): boolean {

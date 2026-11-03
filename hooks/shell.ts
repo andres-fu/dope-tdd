@@ -1,3 +1,5 @@
+// The plain PowerShell here-string opener only. A wider one would keep more commands whole, and a whole command that
+// starts with git reads as git alone, which turns the record backstop off for a script after it (#346 review, #348).
 const HERESTRING = /@['"]\r?\n/
 // A heredoc opener: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"`. Sticky, so it is tried at the `<<` just read.
 const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/y
@@ -49,9 +51,67 @@ export function writableText(segment: string): string {
  * command, because its body is data.
  */
 export function commandSegments(command: string): string[] {
-  if (HERESTRING.test(command)) {
-    return [command]
+  return HERESTRING.test(command) ? [command] : split(command, true, commandSegments)
+}
+
+export type Shell = 'bash' | 'powershell'
+
+/**
+ * #348: the commands a shell runs, without commandSegments' rule that keeps a command with a here-string opener whole,
+ * which let a script after a here-string commit message read as git alone. Bash has no here-strings, so `@'` is an
+ * ordinary quote. Under PowerShell each closed here-string is first one `@` word inside its command, so a here-string
+ * that is a stage of its own stays one (an `@"` one can run `$(…)`), and a backslash escapes nothing (`git add src\`
+ * ends its command at the line end). Text handed to a shell (`bash -c '…'`) is Bash, under either tool.
+ */
+export function splitCommands(command: string, shell: Shell): string[] {
+  const handed = (inner: string): string[] => splitCommands(inner, 'bash')
+  return shell === 'powershell' ? split(blankHerestrings(command), false, handed) : split(command, true, handed)
+}
+
+// The plain opener only, as HERESTRING: a wider one would blank spans PowerShell runs as commands (the design attack on
+// #348, `git status .@'` with a space after it).
+const PLAIN_OPEN = /@(['"])\r?\n/y
+
+/** PowerShell's closed here-strings, outside quotes, as spaces, or as an `@` and spaces: same length, newlines included. */
+function blankHerestrings(command: string): string {
+  let out = ''
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i] ?? ''
+    if (quote === null && char === '@') {
+      PLAIN_OPEN.lastIndex = i
+      const opened = PLAIN_OPEN.exec(command)
+      const close = opened === null ? null : new RegExp(String.raw`\r?\n${opened[1]}@`, 'g')
+      if (close !== null) {
+        // From the opener's own line end, so an empty body closes on the next line, not at a later close.
+        close.lastIndex = i + 2
+        const closed = close.exec(command)
+        if (closed !== null) {
+          const end = closed.index + closed[0].length
+          // One that runs code (`@"` with a `$(…)` in it) is a word, so a stage of its own stays one; one that runs
+          // nothing is space, so a message piped into `git commit -F -` is no command (#348 review).
+          const runs = opened[1] === '"' && command.slice(i, end).includes('$(')
+          out += (runs ? '@' : ' ') + ' '.repeat(end - i - 1)
+          i = end - 1
+          continue
+        }
+      }
+    }
+    if (quote === null && (char === '"' || char === "'")) {
+      quote = char
+    } else if (char === quote) {
+      quote = null
+    }
+    out += char
   }
+  return out
+}
+
+/**
+ * Splits on `&&`, `||`, `;`, `|` and newlines outside quotes; a backslash escapes the next character when `escapes`.
+ * Text a segment hands to a shell (`bash -c '…'`) is split by `handed`.
+ */
+function split(command: string, escapes: boolean, handed: (inner: string) => string[]): string[] {
   const segments: string[] = []
   let current = ''
   let quote: '"' | "'" | null = null
@@ -60,14 +120,14 @@ export function commandSegments(command: string): string[] {
     const char = command[i] ?? ''
     if (quote !== null) {
       current += char
-      if (char === '\\' && quote === '"' && i + 1 < command.length) {
+      if (escapes && char === '\\' && quote === '"' && i + 1 < command.length) {
         current += command[++i]
       } else if (char === quote) {
         quote = null
       }
       continue
     }
-    if (char === '\\' && i + 1 < command.length) {
+    if (escapes && char === '\\' && i + 1 < command.length) {
       current += char + command[++i]
       continue
     }
@@ -125,7 +185,7 @@ export function commandSegments(command: string): string[] {
   segments.push(current)
   return segments
     .map(segment => unwrapped(segment.trim()))
-    .flatMap(handedCommand)
+    .flatMap(segment => handedCommand(segment, handed))
     .filter(segment => segment !== '' && segment !== '}')
 }
 
@@ -133,13 +193,13 @@ export function commandSegments(command: string): string[] {
 // it moves the segments after it here too, though the shell's own cd ends with it: rare, and only a location goes wrong.
 const SHELL_C = /^(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*?\s+-\w*c\s+(['"])([\s\S]*)\1$/
 
-function handedCommand(segment: string): string[] {
+function handedCommand(segment: string, split: (inner: string) => string[]): string[] {
   const handed = SHELL_C.exec(segment)
   if (handed === null) {
     return [segment]
   }
   const inner = handed[1] === '"' ? (handed[2] ?? '').replace(/\\(["\\$`])/g, '$1') : (handed[2] ?? '')
-  return commandSegments(inner)
+  return split(inner)
 }
 
 // A value an option takes: a word, or a quoted string (`xvfb-run -s "-screen 0 1280x1024x24"`).

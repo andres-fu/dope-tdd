@@ -1,6 +1,81 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, cwdAfter, isPureRead, locatedSegments, writableText } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, cwdAfter, executedText, isPureRead, locatedSegments, splitCommands, writableText } from '../hooks/shell'
+
+// The catch check's mutant on #348: a data heredoc's body never runs, so only its opener line is executed; a one-line
+// segment is all executed.
+describe('executedText: the part of a segment that runs', () => {
+  test("a data heredoc runs only its opener line, and a one-line segment runs whole", () => {
+    expect(executedText("cat > notes.md <<'EOF'\nnpm test\nEOF")).toBe("cat > notes.md <<'EOF'")
+    expect(executedText('bash <<EOF\nnpm test\nEOF')).toBe('bash <<EOF\nnpm test\nEOF')
+    expect(executedText('npm test')).toBe('npm test')
+  })
+})
+
+// #348: commandSegments keeps any command with a here-string opener whole, so a script after a here-string commit
+// message read as git alone. splitCommands splits by the shell that runs the command: Bash has no here-strings, and
+// PowerShell's closed ones (the narrow opener, outside quotes) are blanked first, so they read as inline whitespace.
+describe('splitCommands: the commands a shell runs', () => {
+  test("under Bash an @' in quoted text is text, and the command splits", () => {
+    expect(splitCommands(`git commit -qm "see @'\n" && node tidy.mjs`, 'bash')).toEqual([`git commit -qm "see @'\n"`, 'node tidy.mjs'])
+  })
+
+  test('under PowerShell a closed literal here-string is whitespace inside its command, and the next line is a command', () => {
+    const [commit, script, ...rest] = splitCommands("git commit -m @'\nmsg; with | marks\n'@\nnode tidy.mjs", 'powershell')
+    expect(commit?.startsWith('git commit -m')).toBe(true)
+    expect(commit).not.toMatch(/msg|\|/)
+    expect(script).toBe('node tidy.mjs')
+    expect(rest).toEqual([])
+    expect(splitCommands("git merge other -m @'\nit's\n'@", 'powershell')).toHaveLength(1)
+    expect(splitCommands("git merge other -m @'\r\nit's\r\n'@ --no-ff", 'powershell')).toHaveLength(1)
+  })
+
+  test('under PowerShell an empty here-string closes on the next line, not at a later close', () => {
+    expect(splitCommands("git commit -m @'\n'@\nnode forge.mjs\ngit tag -a v1 -m @'\nx\n'@", 'powershell')).toContain('node forge.mjs')
+  })
+
+  test('under PowerShell an opener inside quotes is text, and an opener with a space after it is no here-string', () => {
+    expect(splitCommands(`git status "@'\n" ; node forge.mjs ; echo "\n'@"`, 'powershell')).toContain('node forge.mjs')
+    expect(splitCommands("git status .@'  \n'\nnode forge.mjs\necho x'\n'@", 'powershell')).toContain('node forge.mjs')
+  })
+
+  // The design attack on #348: PowerShell has no backslash escape, so `src\` at a line end ends the command there.
+  test('under PowerShell a backslash escapes nothing; under Bash it still does', () => {
+    expect(splitCommands('git add src\\\nnode tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
+    expect(splitCommands('git add src\\;node tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
+    expect(splitCommands('git add src\\;node tidy.mjs', 'bash')).toHaveLength(1)
+  })
+
+  // Review round 1: text handed to `bash -c` went back through commandSegments' one-segment rule, so a line ending in
+  // `@"` kept the inner text whole, and it started with git. A handed shell's text is Bash, split as Bash.
+  test("text handed to a shell is split as Bash, whatever @ it holds", () => {
+    for (const shell of ['bash', 'powershell'] as const) {
+      expect(splitCommands(`bash -c 'git status\necho "@"\nnode scripts/tidy.mjs'`, shell)).toContain('node scripts/tidy.mjs')
+    }
+  })
+
+  // Review round 1: a here-string that is a stage of its own stays one, as its plain-string form does, since an `@"` one
+  // can run `$(...)`. It reads as one `@` word.
+  test('under PowerShell a here-string that is its own stage stays a stage', () => {
+    expect(splitCommands('@"\nFix: $(node scripts/tidy.mjs)\n"@ | git commit -F -', 'powershell')).toEqual(['@', 'git commit -F -'])
+  })
+
+  // Review round 2: a here-string that runs nothing (a literal one, or an `@"` one with no `$(…)`) is no command, so a
+  // message piped into `git commit -F -` leaves the commit git alone.
+  test('under PowerShell a here-string that runs nothing is no stage', () => {
+    expect(splitCommands("git checkout other -- src/App.tsx\n@'\nbring App\n'@ | git commit -F -", 'powershell')).toEqual(['git checkout other -- src/App.tsx', 'git commit -F -'])
+    expect(splitCommands('@"\nFix the $name release\n"@ | git commit -F -', 'powershell')).toEqual(['git commit -F -'])
+    // A literal one runs nothing whatever it holds, `$(…)` included.
+    expect(splitCommands("git pull\n@'\nuse $(x) in the docs\n'@ | git commit -F -", 'powershell')).toEqual(['git pull', 'git commit -F -'])
+  })
+
+  test('a command with no here-string splits as commandSegments does', () => {
+    for (const command of ['git pull && git push', "echo 'a; b' | grep a", 'cd app; npm test']) {
+      expect(splitCommands(command, 'bash')).toEqual(commandSegments(command))
+      expect(splitCommands(command, 'powershell')).toEqual(commandSegments(command))
+    }
+  })
+})
 
 // The heredoc false positive (2026-10-18): a data heredoc's body is text and writes nothing; a body fed to an
 // interpreter or a shell is code, and its writes are real.
@@ -50,6 +125,14 @@ describe('commandSegments', () => {
     const hereString = "Set-Content src/a.ts @'\nx; y | z\n'@"
     expect(commandSegments(heredoc)).toEqual([heredoc])
     expect(commandSegments(hereString)).toEqual([hereString])
+  })
+
+  // Review round 3 of #346: keeping a command whole for a wider opener (`@'` and a space before the line end) made a
+  // git commit and the script after it one segment, which reads as git alone, so the record backstop skipped the
+  // script's write. Only the plain opener keeps a command whole, as on main; that one is #348.
+  test("splits a command whose @' has anything but a line end after it", () => {
+    expect(commandSegments("git commit -qm \"see @' \n\" && node scripts/tidy.mjs")).toHaveLength(2)
+    expect(commandSegments("git commit -qm \"see @'\u{a0}\n\" && node scripts/tidy.mjs")).toHaveLength(2)
   })
 
   test('a heredoc body stays with the command that opened it, and what follows the terminator is split as usual', () => {

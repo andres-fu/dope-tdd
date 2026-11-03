@@ -109,8 +109,11 @@ or the README does not name, or when the file was edited by hand.
 changes, update it with the README's "What it guards" and "What it doesn't
 guard" and `docs/setup.md`'s "Where Dope TDD applies", in the same pull request.
 
-Every sentence dope-tdd says to the agent lives in `hooks/messages.ts`, by id,
-with an example. Its exact words are pinned once, in
+Most sentences dope-tdd says to the agent live in `hooks/messages.ts`, by id,
+with an example. Some lines are still built where they're said, in
+`hooks/register.tsx` and `hooks/shellVerdict.ts`, so their wording changes show
+only in the code diff: read those by hand
+([#286](https://github.com/andres-fu/dope-tdd/issues/286)). Its exact words are pinned once, in
 `tests/fixtures/messages.golden.ts`; other tests check which message is said,
 with `say(id, facts)`. To change wording, edit the template, run
 `npm run golden`, and review the golden file's diff: it is every sentence the

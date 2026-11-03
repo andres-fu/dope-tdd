@@ -225,6 +225,16 @@ function mentioned(segment: string): string[] {
   return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path))
 }
 
+/**
+ * What an in-place sed writes: its file arguments. A sed whose quotes a shell runs (`eval "sed -i …"`, `su -c "…"`, a
+ * here-string piped to bash) is one quoted word to sedFiles, so there it also names the paths the command mentions,
+ * as a PowerShell verb behind a quoted shell does (#350).
+ */
+function sedTargets(segment: string, words: string): string[] {
+  const files = sedFiles(segment).filter(path => CODE_FILE.test(path))
+  return RUNS_QUOTED_SHELL.test(words) ? [...captures(SOURCE_PATH, words), ...files] : files
+}
+
 function writesIn(whole: string, herestrings: boolean): string[] {
   // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
   const segment = writableText(whole)
@@ -234,7 +244,7 @@ function writesIn(whole: string, herestrings: boolean): string[] {
   // must be the shell's own word, and name only what their shape names (#332): text in their quotes is data.
   return [
     ...(SCRIPT_WRITE.test(segment) && scriptTargets === null ? mentioned(segment) : (scriptTargets ?? [])),
-    ...(IN_PLACE_SED.test(words) ? sedFiles(segment).filter(path => CODE_FILE.test(path)) : []),
+    ...(IN_PLACE_SED.test(words) ? sedTargets(segment, words) : []),
     ...(POWERSHELL_WRITE.test(words) ? powershellTargets(segment, words) : []),
     ...captures(REDIRECT_TARGET, words),
     // cp and mv take quoted paths, so their targets come from the segment, once the verb is seen outside quotes.

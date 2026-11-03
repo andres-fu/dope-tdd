@@ -537,3 +537,24 @@ describe("the record and config check refuses whatever main's did", () => {
     expect(writesFileNamed(`cat > /tmp/notes.txt <<'EOF'\n@'\nEOF\nsed -i 's/denied/approved/' ${RECORD}`, RECORD)).toBe(true)
   })
 })
+
+// #350: a sed whose quotes a shell runs reached the sed reader as one quoted word, so after #341 it named nothing where
+// main named the file. A PowerShell verb behind a quoted shell already names the paths it mentions; sed does the same.
+describe('a sed -i handed to a shell names its files (#350)', () => {
+  test('eval, su -c and ssh hand their quoted sed to a shell', () => {
+    expect(findSourceWrites(`eval "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`su -c "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`ssh host "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`eval "sed -i 's/a/b/' src/a.ts"`, 'C:/r')).toEqual(['C:/r/src/a.ts'])
+  })
+
+  test('a PowerShell here-string piped to bash hands its sed to a shell', () => {
+    expect(findSourceWrites("@'\nsed -i 's/a/b/' src/a.ts\n'@ | bash", undefined, 'powershell')).toEqual(['src/a.ts'])
+  })
+
+  test('a sed not handed to a shell still names only its files', () => {
+    expect(findSourceWrites(`sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`)).toEqual([])
+    expect(findSourceWrites('sed -i -f src/script.ts docs/x.md')).toEqual([])
+    expect(findSourceWrites(`git commit -m "eval sed -i on src/a.ts"`)).toEqual([])
+  })
+})

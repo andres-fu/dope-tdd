@@ -173,7 +173,9 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   but a shell's name inside quoted text doesn't count. `sed -i` and a PowerShell
   write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
   names: sed's file arguments, and the path after the verb or after `-Path`,
-  `-FilePath` or `-LiteralPath`, plus any path outside quotes. Under the
+  `-FilePath` or `-LiteralPath`, plus any path outside quotes. In text handed to
+  a shell, its quotes are commands, so either one names every path the command
+  mentions ([#350](https://github.com/andres-fu/dope-tdd/issues/350)). Under the
   PowerShell tool a here-string is one quoted span wherever it stands, so text in
   `-Value` is data; under Bash `@'` is an ordinary quote, since Bash has no
   here-strings. Under either shell, though, a command with `@'` right before an

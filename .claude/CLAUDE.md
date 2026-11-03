@@ -50,6 +50,12 @@ runs.
   normal use, and whether it is worth that. Have the `reviewer` agent try to break the paragraph, citing
   its sentences. This isn't a review round. Writing code is cheap and reviewing it isn't, so a wrong idea
   should die on paper.
+- **Decide from effects, not from text.** Code that predicts what a command will do from its text is a
+  list, and a fresh review can always find the next entry it lacks: three designs for one fix to the
+  shell reader each fell to the next spelling, where running the git check after every command settled
+  the same question in one. So a new rule gates on what git, the disk or the runner shows afterwards.
+  The text may say who gets charged. A new predictor is a design to attack on paper, and "it misses
+  this spelling" is one finding, the class, which takes the severity of its worst member.
 - **Prove first, then review.** Before the first review of the code, do the deliberate breaks and run
   the comparison where it can see the change. `npm run compare` takes seconds and shows which files the
   shell reader finds. `--sessions` takes about 17 minutes and adds the briefing, band, `/tdd` and what an
@@ -88,7 +94,11 @@ Look for these first, when writing code and when reviewing it.
    count that credits work not done this session.
 3. **It misreads a shell command.** Quoted text taken for a write, the wrong result kept from a command
    with two runs, a command judged in the wrong folder. A false refusal stops good work, and a missed
-   write is failure 1.
+   write that nothing says afterwards is failure 1. A spelling the reader misses is a gap, not a failure,
+   only when the git check that runs after every shell command names the file in that command's result
+   and in `/tdd`; where that check can't see (no git, a gitignored file, a folder outside the layout, a
+   worktree read against the wrong root) the miss is failure 1. Gaps are listed on
+   `docs/what-gets-past.md`.
 4. **It loses someone's work.** The catch check undoes a change on disk and puts it back. Anything that
    can leave a file reverted, or overwrite an edit made in the meantime, is the worst bug here.
 
@@ -132,9 +142,18 @@ request adds no other review.
 **Report.** Start with the count: `2 Important, 1 Nit, 1 Pre-existing`, or `No findings`. Give each
 finding a file and line, and say what goes wrong, with what input.
 
-- **Important**: one of the failures above, or anything that should stop the merge.
-- **Nit**: worth fixing, not worth waiting for. Three at most per review.
+- **Important**: a person could meet it. One of the four failures above, with the input or state that
+  reaches it: a verdict word that says more than was seen, lost work, a write that lands with nothing
+  said to the agent or nothing on the record, a false refusal. It stops the merge.
+- **Nit**: everything else worth fixing, a doc line describing the old behaviour and a missed spelling
+  the git check reports included. Fixed before the merge or answered. The pull request lists Nits, but
+  they don't count toward the three-round rule. Three at most per review; past three, name the class
+  once.
 - **Pre-existing**: a real problem this change did not cause. It becomes an issue, not a blocker.
+
+A finding shown only through the fake engine or by calling a function says so, and says what live
+input or state reaches it. If none does, it is a Nit, except failure 4: anything that can lose work
+is Important however it was shown.
 
 If you can't point to a line or say what goes wrong, it isn't a finding yet: say what you checked and
 could not confirm. Flag the class of bug, not each case. After three rounds of review and fixes, stop

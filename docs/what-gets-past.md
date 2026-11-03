@@ -124,7 +124,8 @@ Three smaller gaps sit beside this one:
   ([#290](https://github.com/andres-fu/dope-tdd/issues/290)).
 
 **Session records are the same.** A digest on a record in `~/.dope-tdd/sessions/`
-shows a hand edit only if someone checks it, and nothing you run does yet
+shows a hand edit only if someone checks it, and nothing you run does: it's checked by
+hand, with `verifyRecord` in `hooks/sessionLog.ts`
 ([#294](https://github.com/andres-fu/dope-tdd/issues/294)). An agent that reads the
 code can recompute it anyway. The counts in `/tdd` and the receipt are evidence of
 an honest session, not proof that one was.

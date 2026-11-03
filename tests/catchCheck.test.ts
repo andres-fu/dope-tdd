@@ -205,8 +205,10 @@ describe('catchPlan', () => {
       expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: 'return 1\r\n', checkable: false }))).toEqual({ kind: 'done', result: { kind: 'proven', lineEndings: true } })
     })
 
-    test('the reason says what to do', () => {
-      expect(MOVED_SINCE_RESTORE).toMatch(/break it and run/)
+    // The band's next step already says to break it again, so the reason says only what happened.
+    test('the reason says what happened, short enough for the band', () => {
+      expect(MOVED_SINCE_RESTORE).toMatch(/changed after you put it back/)
+      expect(MOVED_SINCE_RESTORE.length).toBeLessThan(50)
     })
   })
 

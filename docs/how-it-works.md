@@ -146,7 +146,7 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   changed around it is said once and listed in `/tdd` under **changed during a
   read or test run**. Nobody is charged or credited. The change also counts
   against the module's next verdict where it can, though a verdict can still miss
-  it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
+  it ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A write the reader
   names, as it does `npm test > src/a.ts`, is the command's as usual
   ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). So is any change
   around a `>` or `>>` beside a test run (`echo x > a.txt && npm test`), which reads

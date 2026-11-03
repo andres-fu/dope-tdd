@@ -24,7 +24,7 @@ export type CatchPlanInput = {
 }
 
 /** Said when code put back after a break is no longer on disk: the break proved the code that was, not this. */
-export const MOVED_SINCE_RESTORE = 'the file is not the code you put back: break it and run the test again to prove it'
+export const MOVED_SINCE_RESTORE = 'the file changed after you put it back'
 
 /**
  * `done`: the verdict, with nothing to run. `pin`: proven by a deliberate break; the pinned file then gets the small

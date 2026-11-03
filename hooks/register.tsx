@@ -460,7 +460,7 @@ async function reviewRequest($: EngineInterface, root: string, request: Override
   const testPath = unlocked === undefined ? null : relativePath(root, unlocked)
   const lastCatch = request.module !== null && s.lastCatch?.module === request.module ? catchWord(s.lastCatch.outcome) : null
   const paths = [request.path, testPath].filter((path): path is string => path !== null)
-  const diff = paths.length === 0 ? null : await gitQuiet($, root, ['diff', '--no-ext-diff', 'HEAD', '--', ...paths])
+  const diff = paths.length === 0 ? null : await gitQuiet($, root, [...PLAIN_PATHS, 'diff', '--no-ext-diff', 'HEAD', '--', ...paths])
   const hunks = moduleHunks(diff === null || diff.exitCode !== 0 ? '' : diff.stdout, paths, 120)
   const { system, prompt } = reviewPrompt(request, { testPath, lastCatch, hunks, history })
   let result: ReviewResult

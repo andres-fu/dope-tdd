@@ -25,6 +25,7 @@ import { resolve } from 'node:path'
 import { catchOutcome, isIsolatedRunner, runnerArgv } from '../../hooks/catchCheck.ts'
 import type { RunFailure, RunResult, RunnerKind } from '../../hooks/catchCheck.ts'
 import { CONFIG_FILE, parseConfig, policyFor } from '../../hooks/config.ts'
+import { PLAIN_PATHS } from '../../hooks/gitChanges.ts'
 import type { GuardConfig, Policy } from '../../hooks/config.ts'
 import { experimentalCheckReason } from '../../hooks/refusals.ts'
 import { findRunner } from '../../hooks/findRunner.ts'
@@ -204,7 +205,7 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
     throw new Error('the working tree has uncommitted changes: check out the pull request head with a clean tree')
   }
   const base = git(root, 'merge-base', baseRef, 'HEAD')
-  const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
+  const changed = lines(git(root, ...PLAIN_PATHS, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
   const configText = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
   const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
   const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')

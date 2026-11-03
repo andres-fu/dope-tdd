@@ -40,6 +40,7 @@ import {
   leftOutNotices,
 } from './advice.ts'
 import { say } from './messages.ts'
+import { recheckLines } from './receipt.ts'
 import { drawBand, drawTestPane } from './draw.tsx'
 import { baseFor, bringsInCode, changedAround, gitVerb, isGitOnly, isRevertOnly, parseNumstat, savedStateOf } from './gitChanges.ts'
 import { flipsAngles, mutantsOf } from './mutate.ts'
@@ -2544,20 +2545,12 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   // Never the stash: on a committed change it saves nothing, and its pop would apply the reviewer's own stash.
   const head = await gitQuiet($, root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
   const base = head !== null && head.exitCode === 0 && head.stdout.trim() !== '' ? head.stdout.trim() : 'main'
-  lines.push('To check the proof yourself, from the repo root with this change checked out:', '```', run)
-  if (recorded !== undefined) {
-    const path = relativePath(root, recorded.path)
-    lines.push(`git checkout ${base} -- ${path}`, run, `git checkout HEAD -- ${path}`)
-  }
-  lines.push('```')
+  const path = recorded === undefined ? null : relativePath(root, recorded.path)
+  const atBase = path !== null && (await gitQuiet($, root, ['cat-file', '-e', `${base}:${path}`]))?.exitCode === 0
   // Idea 18: the words the test failed with when the catch check undid the change, when it kept them.
   const caught = s.lastCatch?.module === module && s.lastCatch.outcome.kind === 'caught' ? s.lastCatch.outcome.message : undefined
   const fails = caught === undefined ? 'fails' : `fails with \`${caught}\``
-  lines.push(
-    recorded === undefined
-      ? `No change to ${label} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
-      : `The first run passes. The second runs the same test against the code on ${base}, before the change, and ${fails}, which is what the catch check saw. The last line puts the change back.`,
-  )
+  lines.push(...recheckLines({ label, run, base, path, atBase, fails }))
   return lines.join('\n')
 }
 

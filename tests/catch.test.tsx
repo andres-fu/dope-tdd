@@ -594,6 +594,7 @@ describe('/tdd receipt', () => {
   test('prints the status and the two commands a reviewer runs, for the current module', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
+    world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
@@ -616,8 +617,22 @@ describe('/tdd receipt', () => {
     const green = await runTests($, world, 'pass')
 
     expect(green.context?.join(' ') ?? '').toMatch(/with the change undone its test fails with `expected '14m' to be '1y 2m'`\./)
+    world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
     const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
     expect(receipt.text).toMatch(/before the change, and fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
+  })
+
+  // #269: a file the base doesn't have can't be checked out from it, and the run after a failed checkout proves nothing.
+  test('a file new since the base gives no step that claims to prove it', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).not.toMatch(/git checkout/)
+    expect(receipt.text).toMatch(/src\/utils\/formatDuration\.ts is new since main/)
   })
 
   test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {

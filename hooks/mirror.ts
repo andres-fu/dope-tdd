@@ -138,9 +138,12 @@ function nobodys(rest: string, layout: Layout): ClassifiedPath {
   return ownTree || inTestsFolder(rest, layout) ? { kind: 'other', inTestFolder: true } : { kind: 'other' }
 }
 
-/** Under a layout whose tests sit in `__tests__` folders, any file in one is the tests' own: a helper, a fixture. */
+/**
+ * Under a layout whose tests sit in a `__tests__` folder beside the code (`{dir}__tests__/`), any file in one is the
+ * tests' own: a helper, a fixture. A layout with one fixed `__tests__` folder says nothing about a folder elsewhere.
+ */
 function inTestsFolder(rest: string, layout: Layout): boolean {
-  return layout.test.includes('__tests__/') && /(?:^|\/)__tests__\//.test(rest)
+  return /\}__tests__\//.test(layout.test) && /(?:^|\/)__tests__\//.test(rest)
 }
 
 function withPkg(pkg: string, module: string): string {

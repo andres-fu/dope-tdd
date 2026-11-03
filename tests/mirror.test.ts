@@ -131,6 +131,11 @@ describe('classifyPath says when other code sits in a test folder', () => {
     expect(classifyPath('R:', 'R:/src/lib/helper.ts', config('{"layout":"__tests__"}'))).toEqual({ kind: 'source', module: 'lib/helper' })
   })
 
+  test('a layout with one fixed __tests__ folder leaves a __tests__ folder elsewhere to the source', () => {
+    const fixed = config('{"layout":{"source":"src/{module}.{ext}","test":"test/__tests__/{module}.test.{ext}"}}')
+    expect(classifyPath('R:', 'R:/src/__tests__/real.ts', fixed)).toEqual({ kind: 'source', module: '__tests__/real' })
+  })
+
   test('a source folder that also holds the tests is not a test folder, and nor is anywhere else', () => {
     expect(classifyPath('R:', 'R:/src/gen.py', config('{"layout":"colocated"}'))).toEqual({ kind: 'other' })
     expect(classifyPath('R:', 'R:/tools/gen.py', config('{"layout":"mirror"}'))).toEqual({ kind: 'other' })

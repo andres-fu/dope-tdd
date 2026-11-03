@@ -1,7 +1,7 @@
 // What to tell the agent after an edit or a run: the decisions. The words are in the catalogue (messages.ts, 2026-10-18).
 import type { CatchOutcome, TddStats } from '../types'
 import { say } from './messages.ts'
-import { STUCK_RUNS } from './stats.ts'
+import { STUCK_RUNS, moduleState } from './stats.ts'
 
 export type Check = CatchOutcome | 'refactor'
 
@@ -171,11 +171,13 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   }
   const module = context.label ?? id
   const sourcePath = context.sourcePath ?? defaultSource(module)
+  // With two modules in a cycle the flag on the stats is the previous current module's (#311).
+  const sawRed = before.current?.module === id ? before.sawRed : moduleState(before, id).sawRed
   if (context.otherCheckout !== undefined) {
     return say('run.otherCheckout', { module, testPath: context.otherCheckout })
   }
   if (context.elsewhere !== undefined && context.elsewhere.length > 0) {
-    return say('red.elsewhere', { module, sourcePath, files: context.elsewhere, sawRed: before.sawRed })
+    return say('red.elsewhere', { module, sourcePath, files: context.elsewhere, sawRed })
   }
   const red = after.phase === 'red'
   // Before any code change this cycle, a red is the bug or a pin that guessed today's behaviour wrongly (VibeCast field
@@ -183,7 +185,7 @@ export function runAdvice(before: TddStats, after: TddStats, check?: Check, cont
   // A red where no assertion ran is neither (Karl's round 4, 2026-10-20): "fix the assertion" was wrong advice there.
   const line = red
     ? say(context.errorsOnly === true ? 'red.errorsOnly' : after.changes[id] === undefined ? 'red.first' : 'red.again', { module })
-    : greenAdvice(module, before.sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
+    : greenAdvice(module, sawRed, check, context.cycleCompleted ?? after.cycles > before.cycles, context.testChanged === true, sourcePath, after.pinning, before.pinBroken)
   const errorsNote = red && context.errorsOnly === true && before.unproven.includes(id) ? say('note.errorsOnly', { module }) : ''
   // Idea 16: said at STUCK_RUNS and every STUCK_RUNS after, so a long spell is named without a line on every run.
   const stuck = context.stuck

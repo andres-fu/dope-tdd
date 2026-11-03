@@ -85,7 +85,8 @@ change back, so it holds a copy of the source file it is checking:
 
 The session log is evidence of how a session went, not proof. A shell
 command that changes an existing record is recorded as a workaround and
-Claude is told, and the digest shows a hand edit later. Neither can stop an
+Claude is told, and each record carries a digest that shows a hand edit to
+whoever checks it, though nothing the plugin runs checks it. Neither can stop an
 agent that reads this code: anything the plugin can write, an agent with a
 shell can too. Proof is what the pull-request check below re-runs in CI.
 

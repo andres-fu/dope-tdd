@@ -594,6 +594,8 @@ describe('/tdd receipt', () => {
   test('prints the status and the two commands a reviewer runs, for the current module', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
+    world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
+    world.refs.set('main^{commit}', 'b'.repeat(40))
     world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
     await runTests($, world, 'pass')
 
@@ -616,8 +618,36 @@ describe('/tdd receipt', () => {
     const green = await runTests($, world, 'pass')
 
     expect(green.context?.join(' ') ?? '').toMatch(/with the change undone its test fails with `expected '14m' to be '1y 2m'`\./)
+    world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
+    world.refs.set('main^{commit}', 'b'.repeat(40))
     const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
     expect(receipt.text).toMatch(/before the change, and fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
+  })
+
+  // #269: a file the base doesn't have can't be checked out from it, and the run after a failed checkout proves nothing.
+  test('a base that is not a branch here is said as that, never as a new file', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).not.toMatch(/is new since/)
+    expect(receipt.text).toMatch(/main isn't a branch here/)
+  })
+
+  test('a file new since the base gives no step that claims to prove it', async ($, on) => {
+    const world = fakeEngine(on)
+    await fixUnderGuard($, world)
+    world.refs.set('main^{commit}', 'b'.repeat(40))
+    world.catchRun = { text: ' Tests  1 failed (1)\n', exitCode: 1 }
+    await runTests($, world, 'pass')
+
+    const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
+
+    expect(receipt.text).not.toMatch(/git checkout/)
+    expect(receipt.text).toMatch(/src\/utils\/formatDuration\.ts is new since main/)
   })
 
   test('names the module when asked, keeping its case, and says when nothing is current', async ($, on) => {
@@ -654,6 +684,25 @@ describe('PROVEN: break, red, restore, green', () => {
     expect(status.text).toMatch(/catch check: proven 1 · missed 0/)
     // No runner was started: there was nothing to revert.
     expect(world.gitCalls.some(argv => argv.some(arg => arg.includes('vitest.mjs')))).toBe(false)
+  })
+
+  // #285: "put back exactly as it was" was taken from the record of the restore, so a script or formatter run after it
+  // left different code on disk under the word PROVEN.
+  test('code changed after it was put back is not proven', async ($, on) => {
+    const world = fakeEngine(on)
+    world.fileContents.set(SOURCE, 'export const a = 1')
+    await touchTest($, world, 'utils/formatDuration')
+    await runTests($, world, 'pass')
+    await editAt($, 'src/utils/formatDuration.ts')
+    await runTests($, world, 'fail')
+    await restore($)
+    world.fileContents.set(SOURCE, 'export const a = 999')
+
+    const green = await runTests($, world, 'pass')
+    const status = await runCommand($, 'tdd')
+
+    expect(green.context?.join(' ')).toMatch(/UNPROVEN.*changed after you put it back/)
+    expect(status.text).toMatch(/catch check: proven 0 · missed 0/)
   })
 
   // #132, the break-and-restore door (found writing Karl's round 5, 2026-10-21): a break that only made the test fail to

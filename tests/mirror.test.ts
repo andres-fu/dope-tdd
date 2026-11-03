@@ -121,6 +121,21 @@ describe('classifyPath says when other code sits in a test folder', () => {
     expect(classifyPath('R:', 'R:/src/__tests__/helper.py', config('{"layout":"__tests__"}'))).toEqual({ kind: 'other', inTestFolder: true })
   })
 
+  // #275: the source template `src/{module}` matched a helper of the stack's own language first, so it was refused as
+  // source, naming `src/__tests__/__tests__/helper.test.ts`.
+  test('a helper of the stack\'s own language in a __tests__ folder is no source either', () => {
+    for (const path of ['R:/src/__tests__/helper.ts', 'R:/src/lib/__tests__/fixtures.ts']) {
+      expect(classifyPath('R:', path, config('{"layout":"__tests__"}'))).toEqual({ kind: 'other', inTestFolder: true })
+    }
+    expect(classifyPath('R:', 'R:/packages/a/src/__tests__/helper.ts', config('{"layout":"__tests__","roots":["packages/*"]}'))).toEqual({ kind: 'other', inTestFolder: true })
+    expect(classifyPath('R:', 'R:/src/lib/helper.ts', config('{"layout":"__tests__"}'))).toEqual({ kind: 'source', module: 'lib/helper' })
+  })
+
+  test('a layout with one fixed __tests__ folder leaves a __tests__ folder elsewhere to the source', () => {
+    const fixed = config('{"layout":{"source":"src/{module}.{ext}","test":"test/__tests__/{module}.test.{ext}"}}')
+    expect(classifyPath('R:', 'R:/src/__tests__/real.ts', fixed)).toEqual({ kind: 'source', module: '__tests__/real' })
+  })
+
   test('a source folder that also holds the tests is not a test folder, and nor is anywhere else', () => {
     expect(classifyPath('R:', 'R:/src/gen.py', config('{"layout":"colocated"}'))).toEqual({ kind: 'other' })
     expect(classifyPath('R:', 'R:/tools/gen.py', config('{"layout":"mirror"}'))).toEqual({ kind: 'other' })

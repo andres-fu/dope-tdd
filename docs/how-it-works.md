@@ -46,7 +46,11 @@ no approval and is not a workaround. `/tdd` lists it with its question
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
 detects, and `/tdd receipt` the receipt for the current module with the two
 commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request. When the catch check saw the test fail on an
+paste into a pull request. They compare with origin's default branch, or with
+`main` when origin names none, and the receipt says which: a pull request into
+another branch should use that one. A file new since that branch gets no such
+step, since there is no older version to put back, and a branch that isn't there
+is said as that ([#269](https://github.com/andres-fu/dope-tdd/issues/269)). When the catch check saw the test fail on an
 assertion (Vitest, node --test, pytest), the PROVEN line and the receipt quote
 it, for example ``fails with `expected 2 to be 3` ``, so a reader learns what
 the change does without running anything.
@@ -146,7 +150,7 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   changed around it is said once and listed in `/tdd` under **changed during a
   read or test run**. Nobody is charged or credited. The change also counts
   against the module's next verdict where it can, though a verdict can still miss
-  it ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). A write the reader
+  it ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A write the reader
   names, as it does `npm test > src/a.ts`, is the command's as usual
   ([#281](https://github.com/andres-fu/dope-tdd/issues/281)). So is any change
   around a `>` or `>>` beside a test run (`echo x > a.txt && npm test`), which reads

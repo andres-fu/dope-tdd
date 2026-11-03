@@ -226,9 +226,11 @@ after a PowerShell here-string commit message isn't git
   guarded**, with the git verb only, never its arguments.
   Commands that only read beside it (`cat`, `sha256sum`, `git status`) do not
   change that. Anything else beside it does, and the command is split the way the
-  tool's shell splits it, so a PowerShell here-string statement or a script on the
-  next line is a command of its own: the change is then charged as the plain form's
-  would be ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
+  tool's shell splits it, so a script on the next line, or a PowerShell here-string
+  that runs code (`@"…$(…)…"@`), is a command of its own: the change is then charged
+  as the plain form's would be. A here-string that runs nothing, such as a message
+  piped into `git commit -F -`, isn't a command
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - The project must be a git repository; without one the shell backstop
   records nothing.
 - A subagent started with `isolation: "worktree"` works in

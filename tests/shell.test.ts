@@ -20,7 +20,7 @@ describe('splitCommands: the commands a shell runs', () => {
     expect(splitCommands(`git commit -qm "see @'\n" && node tidy.mjs`, 'bash')).toEqual([`git commit -qm "see @'\n"`, 'node tidy.mjs'])
   })
 
-  test('under PowerShell a closed here-string is one word inside its command, and the next line is a command', () => {
+  test('under PowerShell a closed literal here-string is whitespace inside its command, and the next line is a command', () => {
     const [commit, script, ...rest] = splitCommands("git commit -m @'\nmsg; with | marks\n'@\nnode tidy.mjs", 'powershell')
     expect(commit?.startsWith('git commit -m')).toBe(true)
     expect(commit).not.toMatch(/msg|\|/)
@@ -58,6 +58,15 @@ describe('splitCommands: the commands a shell runs', () => {
   // can run `$(...)`. It reads as one `@` word.
   test('under PowerShell a here-string that is its own stage stays a stage', () => {
     expect(splitCommands('@"\nFix: $(node scripts/tidy.mjs)\n"@ | git commit -F -', 'powershell')).toEqual(['@', 'git commit -F -'])
+  })
+
+  // Review round 2: a here-string that runs nothing (a literal one, or an `@"` one with no `$(…)`) is no command, so a
+  // message piped into `git commit -F -` leaves the commit git alone.
+  test('under PowerShell a here-string that runs nothing is no stage', () => {
+    expect(splitCommands("git checkout other -- src/App.tsx\n@'\nbring App\n'@ | git commit -F -", 'powershell')).toEqual(['git checkout other -- src/App.tsx', 'git commit -F -'])
+    expect(splitCommands('@"\nFix the $name release\n"@ | git commit -F -', 'powershell')).toEqual(['git commit -F -'])
+    // A literal one runs nothing whatever it holds, `$(…)` included.
+    expect(splitCommands("git pull\n@'\nuse $(x) in the docs\n'@ | git commit -F -", 'powershell')).toEqual(['git pull', 'git commit -F -'])
   })
 
   test('a command with no here-string splits as commandSegments does', () => {

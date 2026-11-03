@@ -102,14 +102,15 @@ work. The command is split the way the tool's shell splits it: a PowerShell
 here-string message is part of its git command, and a script on the next line is a
 command of its own ([#348](https://github.com/andres-fu/dope-tdd/issues/348)). So a
 here-string git command piped to anything else, such as `| Select-Object`, isn't
-git alone, just like the plain form. Telling the two apart is the part that can't be
+git alone, just like the plain form, while a here-string message piped into
+`git commit -F -` is part of the commit. Telling the two apart is the part that can't be
 done. A command can read as git and still run a script:
 
 - Something hidden in it: `git status "$(./forge.sh)"`.
 - Something the splitter reads as quoted or joined where the shell doesn't: an
   apostrophe in a `#` comment before the script's line, a single `&` (Bash), a bare
-  CR line end, a backtick escape or a `<<WORD` (PowerShell, which has neither
-  Bash's heredocs nor its escapes), or an `@'` PowerShell doesn't open as a here-string
+  CR line end, a backtick escape (which the splitter doesn't know) or a `<<WORD`
+  (which PowerShell doesn't have), or an `@'` PowerShell doesn't open as a here-string
   (`git status .@'`, `# @'`, `--% @'`) with the script inside what looks like its
   body ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - An option or alias that runs a program: `git -c alias.x='!./forge.sh' x`,

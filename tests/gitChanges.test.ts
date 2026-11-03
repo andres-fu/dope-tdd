@@ -300,6 +300,12 @@ describe('git alone, a revert only and code brought in are judged by the shell t
     expect(isRevertOnly('@"\n$(python fix.py)\n"@\ngit restore README.md', quiet, 'powershell')).toBe(false)
   })
 
+  // Review round 2: a message piped from a here-string into `git commit -F -` runs nothing of its own.
+  test('a here-string message piped into git commit leaves the command git alone and a revert only', () => {
+    expect(isGitOnly("git pull\n@'\nmerge notes\n'@ | git commit -F -", 'powershell')).toBe(true)
+    expect(isRevertOnly("git checkout other -- src/App.tsx\n@'\nbring App\n'@ | git commit -F -", quiet, 'powershell')).toBe(true)
+  })
+
   test('code another rewrite in the command brings in is seen past a here-string', () => {
     const command = "git checkout -- src/a.ts\ngit checkout other -- src/b.ts\ngit commit -m @'\nbring b\n'@"
     expect(bringsInCode(command, 'powershell')).toBe(true)

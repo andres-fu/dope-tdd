@@ -72,7 +72,7 @@ export function splitCommands(command: string, shell: Shell): string[] {
 // #348, `git status .@'` with a space after it).
 const PLAIN_OPEN = /@(['"])\r?\n/y
 
-/** PowerShell's closed here-strings, outside quotes, as an `@` and spaces: same length, newlines included. */
+/** PowerShell's closed here-strings, outside quotes, as spaces, or as an `@` and spaces: same length, newlines included. */
 function blankHerestrings(command: string): string {
   let out = ''
   let quote: '"' | "'" | null = null
@@ -88,7 +88,10 @@ function blankHerestrings(command: string): string {
         const closed = close.exec(command)
         if (closed !== null) {
           const end = closed.index + closed[0].length
-          out += '@' + ' '.repeat(end - i - 1)
+          // One that runs code (`@"` with a `$(…)` in it) is a word, so a stage of its own stays one; one that runs
+          // nothing is space, so a message piped into `git commit -F -` is no command (#348 review).
+          const runs = opened[1] === '"' && command.slice(i, end).includes('$(')
+          out += (runs ? '@' : ' ') + ' '.repeat(end - i - 1)
           i = end - 1
           continue
         }

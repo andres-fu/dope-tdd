@@ -71,11 +71,11 @@ A verdict is what the guard saw, and these are the gaps in what it sees.
 
 - **PROVEN means the test catches this change.** It doesn't mean the test is a good
   one, or that the code is right.
-- **PROVEN after a break put back can miss a later change.** If a file changes
-  between the restore and the green, the verdict still stands
-  ([#285](https://github.com/andres-fu/dope-tdd/issues/285)). The same issue lists
-  the other cases where a change the guard has reported doesn't reach the next
-  verdict.
+- **A change the guard reported can miss the next verdict.** A source file that
+  changes during a run ending red, or a module changed with no test on record,
+  doesn't reach the green's verdict
+  ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A file changed after a
+  break was put back reads UNPROVEN.
 - **The catch check often can't run, and it says so.** An edit made by a script
   reads **UNPROVEN · not checked: change not captured**. On a strict runner such as
   `node --test`, a change that adds an export can't load its test with the change

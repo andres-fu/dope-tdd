@@ -128,7 +128,8 @@ export function replay(calls: readonly ShellCall[], files: number, samples = 5):
     }
   }
   for (const call of calls) {
-    const writes = timed(report.timingMs, 'writes', () => findSourceWrites(call.command))
+    // Read in the shell that ran it: only PowerShell has here-strings (design v2 for #346).
+    const writes = timed(report.timingMs, 'writes', () => findSourceWrites(call.command, undefined, call.tool === 'PowerShell' ? 'powershell' : 'bash'))
     if (writes.length > 0) {
       report.commandsWithWrites++
       report.writtenPaths += writes.length

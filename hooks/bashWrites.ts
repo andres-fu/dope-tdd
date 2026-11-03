@@ -90,38 +90,49 @@ export function literalWriteTargets(segment: string): string[] | null {
 const RUNS_QUOTED_SHELL = /(?:^|[\s;&|(])(?:bash|sh|zsh|dash|ksh|fish|eval|ssh|su|pwsh|powershell|cmd|wsl|iex|Invoke-Expression)(?:\.exe)?(?=\s|$)/i
 // Where a quoted span is a redirect's or tee's target, not text: `> "src/a.ts"`.
 const BEFORE_TARGET = /(?:>>?|\btee\s+(?:-a\s+)?)\s*$/
-// A PowerShell here-string opens with `@'` or `@"` at the end of a line and closes with `'@` or `"@` at the start of one.
-const HERESTRING_OPEN = /^@(['"])[ \t]*\r?\n/
-// Where PowerShell reads an opener: assigned to a `$variable`, given to a parameter, or after one of the verbs. In bash
-// `@'` is an ordinary quote, and a `'@` line anywhere later would otherwise blank the real commands between (security
-// review of 0.2.17).
-const HERESTRING_LEAD = /(?:(?:^|[\s;(])\$\w+\s*=|\s-\w+|\b(?:Set-Content|Add-Content|Out-File)(?:\s+\S+)*)\s*$/i
+// A PowerShell here-string opens with `@'` or `@"` and only whitespace after it to the line end, and closes with `'@`
+// or `"@` at the start of a line. The whitespace and line ends are PowerShell's own, checked with its parser (design v2
+// for #346): any space separator, tab, VT, FF, NEL, or a line or paragraph separator; then LF, CRLF or a bare CR.
+const HERESTRING_OPEN = /@(['"])[\t\v\f\u{85}\u{2028}\u{2029}\p{Zs}]*(\r\n?|\n)/uy
+
+/**
+ * Where a PowerShell here-string opened at `at` ends, past its close, or -1 when none opens there or it never closes.
+ * PowerShell runs nothing from a command with an unclosed one, and in Bash `@'` is an ordinary quote, so an opener
+ * alone is never a span (security review of 0.2.17).
+ */
+function herestringEnd(segment: string, at: number): number {
+  HERESTRING_OPEN.lastIndex = at
+  const opened = HERESTRING_OPEN.exec(segment)
+  if (opened === null) {
+    return -1
+  }
+  const close = opened[1] === '"' ? /(?:\r\n?|\n)"@/g : /(?:\r\n?|\n)'@/g
+  // From the opener's own line end, so an empty body (`@'`, then `'@` on the next line) closes there.
+  close.lastIndex = at + opened[0].length - (opened[2] ?? '').length
+  const closed = close.exec(segment)
+  return closed === null ? -1 : closed.index + closed[0].length
+}
 
 /**
  * #239: the shell words of a segment, with the text inside quotes blanked. A redirect, `sed -i`, `cp`, `mv` or `tee`
  * quoted in a commit message, an echoed sentence or a script's string is data and writes nothing; one outside quotes
  * is the shell's. A quoted redirect target stays, and a segment that hands its quotes to a shell (`ssh host "…"`,
  * `eval "…"`, `sh -c "…"`) is left whole, so its writes are still seen: the shell's name must itself be a shell word,
- * since a note that says "PowerShell" is prose (#332). A PowerShell here-string is one quoted span, whatever
- * apostrophes its body holds (#332). Same length as the segment.
+ * since a note that says "PowerShell" is prose (#332). With `herestrings`, for a command PowerShell runs, a here-string
+ * is one quoted span wherever it stands, whatever apostrophes its body holds (#332); Bash has none. Same length as the
+ * segment.
  */
-function shellWords(segment: string): string {
+function shellWords(segment: string, herestrings: boolean): string {
   let out = ''
   let quote: '"' | "'" | null = null
   let keep = false
   for (let i = 0; i < segment.length; i++) {
     const char = segment[i] ?? ''
     if (quote === null) {
-      const lead = out.slice(out.lastIndexOf('\n') + 1)
-      const herestring = char === '@' && HERESTRING_LEAD.test(lead) ? HERESTRING_OPEN.exec(segment.slice(i, i + 6)) : null
-      // Only a closed here-string in PowerShell shape is one: an opener alone, or one bash would read, is an ordinary
-      // quote (security review of 0.2.17).
-      const close = herestring === null ? null : `\n${herestring[1]}@`
-      const end = herestring === null || close === null ? -1 : segment.indexOf(close, i + herestring[0].length)
-      if (close !== null && end !== -1) {
-        const stop = end + close.length
-        out += segment.slice(i, stop).replace(/[^\n]/g, ' ')
-        i = stop - 1
+      const end = herestrings && char === '@' ? herestringEnd(segment, i) : -1
+      if (end !== -1) {
+        out += segment.slice(i, end).replace(/[^\r\n]/g, ' ')
+        i = end - 1
         continue
       }
       if (char === '"' || char === "'") {
@@ -214,10 +225,10 @@ function mentioned(segment: string): string[] {
   return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path))
 }
 
-function writesIn(whole: string): string[] {
+function writesIn(whole: string, herestrings: boolean): string[] {
   // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
   const segment = writableText(whole)
-  const words = shellWords(segment)
+  const words = shellWords(segment, herestrings)
   const scriptTargets = SCRIPT_WRITE.test(segment) ? literalWriteTargets(segment) : null
   // A script's writes live in its quoted code, so SCRIPT_WRITE reads the whole segment. sed -i and a PowerShell verb
   // must be the shell's own word, and name only what their shape names (#332): text in their quotes is data.
@@ -233,9 +244,11 @@ function writesIn(whole: string): string[] {
 
 /**
  * Whether the command writes one named file, whatever its extension: the patterns above match code files only, and the
- * override record is JSON (override v1, 2026-10-18). A redirect, tee, cp or mv onto it, rm or truncate of it, or an
- * script write that mentions it, or an in-place sed or PowerShell write that names it as a file (#332, #322: text in
- * their quotes or a data heredoc's body is data). The name must stand alone: `my-x.json.bak` is not `x.json`.
+ * override record is JSON (override v1, 2026-10-18). A redirect, tee, cp or mv onto it, rm or truncate of it, or the
+ * name anywhere beside a script write, an in-place sed or a PowerShell write, quoted or not, as on main: no reading of
+ * PowerShell's quoting can then hide a write to the file most worth forging, at the cost of refusing a note that only
+ * names it beside a verb (design v2 for #346; #322 stays open). The name must stand alone: `my-x.json.bak` is not
+ * `x.json`.
  */
 export function writesFileNamed(command: string, name: string): boolean {
   const text = command.replace(/\\/g, '/')
@@ -250,34 +263,44 @@ export function writesFileNamed(command: string, name: string): boolean {
   const mentioned = new RegExp(file, 'i').test(text)
   // The name with any folder before it, a drive letter or a variable included: `C:/r/x.json`, `$root/x.json`.
   const isNamed = new RegExp(String.raw`^(?:[^\s'"]*\/)?` + exact, 'i')
-  // Each command's runnable text, as findSourceWrites reads it: a data heredoc's body is dropped, the line after it stays.
-  const shaped = commandSegments(text).map(writableText).some(runnable => {
-    const words = shellWords(runnable)
-    const sedNames = IN_PLACE_SED.test(words) && sedFiles(runnable).some(path => isNamed.test(path))
-    const powershellNames = POWERSHELL_WRITE.test(words) && powershellNamed(runnable, words).some(path => isNamed.test(path))
-    // A quoted shell (`pwsh -c "…"`) keeps its quotes live, and its one quoted argument is the command: a write verb
-    // and the name together in it are a write to it (security review of 0.2.17).
-    const behindShell = words === runnable && new RegExp(file, 'i').test(runnable) && (IN_PLACE_SED.test(runnable) || POWERSHELL_WRITE.test(runnable))
-    return sedNames || powershellNames || behindShell
-  })
-  return onto.some(pattern => pattern.test(text)) || (mentioned && SCRIPT_WRITE.test(text)) || shaped
+  // What a sed or PowerShell write's shape names, read both ways: it catches `-Path:x.json`, which the boundary in
+  // `file` misses (#332).
+  const shaped = commandSegments(text).map(writableText).some(runnable =>
+    [false, true].some(herestrings => {
+      const words = shellWords(runnable, herestrings)
+      const sedNames = IN_PLACE_SED.test(words) && sedFiles(runnable).some(path => isNamed.test(path))
+      return sedNames || (POWERSHELL_WRITE.test(words) && powershellNamed(runnable, words).some(path => isNamed.test(path)))
+    }),
+  )
+  const besideVerb = mentioned && (IN_PLACE_SED.test(text) || POWERSHELL_WRITE.test(text) || SCRIPT_WRITE.test(text))
+  return onto.some(pattern => pattern.test(text)) || besideVerb || shaped
+}
+
+export type Shell = 'bash' | 'powershell'
+
+// Whether each reading of a command knows here-strings: its own shell's reading, or with no shell given both, so a
+// caller that forgets the shell refuses more instead of missing a write (design v2 for #346).
+function readings(shell: Shell | undefined): boolean[] {
+  return shell === undefined ? [false, true] : [shell === 'powershell']
 }
 
 /**
  * Source files the command writes. With a `root`, each path is resolved
  * against the directory its segment runs in (a `cd` earlier in the command
  * moves it), so the result is absolute and a write in another repository
- * resolves outside this one. Without a root, paths stay relative. Either way their dots are resolved (#272).
+ * resolves outside this one. Without a root, paths stay relative. Either way their dots are resolved (#272). `shell` is
+ * the program that runs the command, which says whether a here-string exists.
  */
-export function findSourceWrites(command: string, root?: string): string[] {
+export function findSourceWrites(command: string, root?: string, shell?: Shell): string[] {
   const normalized = command.replace(/\\/g, '/')
+  const writes = (segment: string): string[] => readings(shell).flatMap(herestrings => writesIn(segment, herestrings))
   if (root === undefined) {
-    return [...new Set(commandSegments(normalized).flatMap(writesIn).filter(isSourceFile).map(resolved).filter(path => !PARENT_SEGMENT.test(path)))]
+    return [...new Set(commandSegments(normalized).flatMap(writes).filter(isSourceFile).map(resolved).filter(path => !PARENT_SEGMENT.test(path)))]
   }
   const written = locatedSegments(normalized, root).flatMap(({ segment, cwd, vars }) =>
     // Paths through a variable the command set are expanded (#69); one through any other variable lands somewhere this
     // cannot see, so it is written as under ELSEWHERE and never taken for a file of this project.
-    writesIn(expandKnown(segment, vars).replace(/\$\{\w+\}\/|\$[A-Za-z_]\w*\//g, `${ELSEWHERE}/`))
+    writes(expandKnown(segment, vars).replace(/\$\{\w+\}\/|\$[A-Za-z_]\w*\//g, `${ELSEWHERE}/`))
       .filter(isSourceFile)
       .map(path =>
         /^(?:[A-Za-z]:)?\//.test(path) || path.startsWith(`${ELSEWHERE}/`) ? path : cwd === ELSEWHERE ? `${ELSEWHERE}/${path}` : `${cwd}/${path}`,

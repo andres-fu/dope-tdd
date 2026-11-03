@@ -70,7 +70,9 @@ approved what, and the receipt lists them. A pause reason must say what and
 why (at least 30 characters; "need to proceed" is refused), only one request
 can wait at a time, and a module override open for more than 7 days blocks
 new ones. Claude's Edit and Write calls to `dope-tdd.overrides.json` are
-refused, and a shell change to it is put back and counted as a workaround. A
+refused, and so is a shell command that names it beside a write verb, even one
+that only mentions it in a note. A shell change to it the guard didn't read
+beforehand is put back and counted as a workaround. A
 command of git alone is left alone, since a pull can bring in other people's
 overrides, and [what gets past it](what-gets-past.md) says what that leaves open.
 
@@ -171,13 +173,14 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   but a shell's name inside quoted text doesn't count. `sed -i` and a PowerShell
   write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
   names: sed's file arguments, and the path after the verb or after `-Path`,
-  `-FilePath` or `-LiteralPath`, plus any path outside quotes. A PowerShell
-  here-string is one quoted span, so text in `-Value` is data; it counts as one
-  only where PowerShell reads it, after `$name =`, a parameter or one of the
-  verbs, since in bash `@'` is an ordinary quote. For `dope-tdd.overrides.json`
-  and `dope-tdd.json`, a write verb beside the file's name inside a quoted
-  shell's text (`pwsh -c "…"`) is a write to it, refused even when the text only
-  talks about it. A path the shape
+  `-FilePath` or `-LiteralPath`, plus any path outside quotes. Under the
+  PowerShell tool a here-string is one quoted span wherever it stands, so text in
+  `-Value` is data; under Bash `@'` is an ordinary quote, since Bash has no
+  here-strings. For `dope-tdd.overrides.json` and `dope-tdd.json` none of that
+  applies: the file's name beside a write verb anywhere in the command, quoted or
+  not, is a write to it, even when the text only talks about it. So a command
+  that names the record that way is refused, and a config change after one is
+  put to Claude as that command's. A path the shape
   doesn't name, such as `-Path $p`, names nothing: the git check after the command
   says what landed
   ([#332](https://github.com/andres-fu/dope-tdd/issues/332)). A path

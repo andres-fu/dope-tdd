@@ -52,6 +52,16 @@ describe('commandSegments', () => {
     expect(commandSegments(hereString)).toEqual([hereString])
   })
 
+  // Design v2 for #346: PowerShell's parser opens a here-string with any of its whitespace before the line end, or a
+  // bare CR as the line end. Split there, the body's apostrophe ends a quote and blanks the write after the close.
+  test("keeps a PowerShell here-string whole whatever whitespace or line end follows its opener", () => {
+    for (const space of ['\f', '\v', '\u{a0}', '\u{85}', '\u{2003}', '\u{3000}', '\u{2028}', '     ']) {
+      const command = `$t = @'${space}\nit's\n'@\nSet-Content src/a.ts y`
+      expect(commandSegments(command)).toEqual([command])
+    }
+    expect(commandSegments("$t = @'\rit's\r'@\rSet-Content src/a.ts y")).toEqual(["$t = @'\rit's\r'@\rSet-Content src/a.ts y"])
+  })
+
   test('a heredoc body stays with the command that opened it, and what follows the terminator is split as usual', () => {
     const command = "cat > notes.md <<'EOT'\nx; y | z\nEOT\nsed -i 's/a/b/' index.md && echo done"
     expect(commandSegments(command)).toEqual(["cat > notes.md <<'EOT'\nx; y | z\nEOT", "sed -i 's/a/b/' index.md", 'echo done'])

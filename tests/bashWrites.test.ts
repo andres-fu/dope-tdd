@@ -349,11 +349,13 @@ describe('a PowerShell write names its target (#332)', () => {
     expect(findSourceWrites('Add-Content src/a.ts "see hooks/b.ts"')).toEqual(['src/a.ts'])
   })
 
-  test('the override record named only in quoted text is not written; named as the target it is', () => {
-    expect(writesFileNamed(`Add-Content -Path $p -Value "see ${RECORD}"`, RECORD)).toBe(false)
+  // Design v2 for #346: the record and config check is main's rule again, so the name beside a write verb anywhere is a
+  // write to it, even in quoted text. Fail-safe for the file most worth forging; a note naming it is refused.
+  test('the override record named as the target is written, and so is one named only in quoted text', () => {
+    expect(writesFileNamed(`Add-Content -Path $p -Value "see ${RECORD}"`, RECORD)).toBe(true)
     expect(writesFileNamed(`Set-Content -Path "${RECORD}" -Value '{}'`, RECORD)).toBe(true)
     expect(writesFileNamed(`Set-Content -Path:"${RECORD}" -Value '{}'`, RECORD)).toBe(true)
-    expect(writesFileNamed(`Set-Content -Path $p -Value "see dope-tdd.json"`, 'dope-tdd.json')).toBe(false)
+    expect(writesFileNamed(`Set-Content -Path $p -Value "see dope-tdd.json"`, 'dope-tdd.json')).toBe(true)
     expect(writesFileNamed(`Set-Content dope-tdd.json '{"mode":"observe"}'`, 'dope-tdd.json')).toBe(true)
   })
 
@@ -371,9 +373,9 @@ describe('a PowerShell write names its target (#332)', () => {
     const one = "$t=@'\nit's api.py here\n'@\nAdd-Content -Path $p -Value $t"
     const two = "$t=@'\nit's api.py here, isn't it\n'@\nAdd-Content -Path $p -Value $t"
     const double = '$t=@"\nit\'s api.py here, isn\'t it\n"@\nSet-Content -Path src/b.ts -Value $t'
-    expect(findSourceWrites(one)).toEqual([])
-    expect(findSourceWrites(two)).toEqual([])
-    expect(findSourceWrites(double)).toEqual(['src/b.ts'])
+    expect(findSourceWrites(one, undefined, 'powershell')).toEqual([])
+    expect(findSourceWrites(two, undefined, 'powershell')).toEqual([])
+    expect(findSourceWrites(double, undefined, 'powershell')).toEqual(['src/b.ts'])
   })
 
   test('a path option with a colon, or a quoted path into another checkout, is still named', () => {
@@ -418,14 +420,14 @@ describe('a PowerShell write names its target (#332)', () => {
   })
 
   // Review: a close on a later line still blanked the bash commands between, since the whole command is one segment.
-  // An opener is a here-string only where PowerShell would read one: after `$name =`, a parameter, or one of the verbs.
-  test('a close on a later line does not blank bash commands between: an opener counts only in PowerShell shape', () => {
+  // Design v2: Bash has no here-strings at all, so no close line can blank one of its commands.
+  test('a close on a later line does not blank bash commands between: Bash has no here-strings', () => {
     expect(writesFileNamed("echo @'\n'\nsed -i 's/a/b/' dope-tdd.overrides.json && echo @'\n'@", RECORD)).toBe(true)
     expect(writesFileNamed("echo @'\n'\nsed -i 's/a/b/' dope-tdd.overrides.json\necho @'\nx\n'@", RECORD)).toBe(true)
-    expect(findSourceWrites("echo @'\n'\nsed -i 's/x/y/' src/a.ts && echo @'\n'@")).toEqual(['src/a.ts'])
-    expect(findSourceWrites("echo @'\n'\necho x > src/a.ts\necho @'\n'@")).toEqual(['src/a.ts'])
-    expect(findSourceWrites("$t = @'\nsee src/a.ts\n'@\nSet-Content -Path $p -Value $t")).toEqual([])
-    expect(findSourceWrites("Set-Content -Path src/b.ts -Value @'\nsee src/a.ts\n'@")).toEqual(['src/b.ts'])
+    expect(findSourceWrites("echo @'\n'\nsed -i 's/x/y/' src/a.ts && echo @'\n'@", undefined, 'bash')).toEqual(['src/a.ts'])
+    expect(findSourceWrites("echo @'\n'\necho x > src/a.ts\necho @'\n'@", undefined, 'bash')).toEqual(['src/a.ts'])
+    expect(findSourceWrites("$t = @'\nsee src/a.ts\n'@\nSet-Content -Path $p -Value $t", undefined, 'powershell')).toEqual([])
+    expect(findSourceWrites("Set-Content -Path src/b.ts -Value @'\nsee src/a.ts\n'@", undefined, 'powershell')).toEqual(['src/b.ts'])
   })
 
   test('a record write behind a quoted shell is still a write to it', () => {
@@ -435,9 +437,100 @@ describe('a PowerShell write names its target (#332)', () => {
     expect(writesFileNamed(`bash -c "sed -i 's/a/b/' ${RECORD}"`, RECORD)).toBe(true)
   })
 
-  // #322: a data heredoc whose body named the record beside `sed -i` was refused as a write to the record.
-  test("a data heredoc's body naming the record beside sed -i is not a write to it (#322)", () => {
-    expect(writesFileNamed(`cat > /tmp/probe.sh <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(false)
+  // #322 is open again by design v2: a data heredoc whose body names the record beside `sed -i` is refused, as on main.
+  // Dropping the body needs the segment split to be right, and an `@'` line anywhere breaks it (shell.ts).
+  test("a heredoc's body naming the record beside sed -i is a write to it, fed to a shell or not (#322 open)", () => {
+    expect(writesFileNamed(`cat > /tmp/probe.sh <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(true)
     expect(writesFileNamed(`bash <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(true)
+  })
+})
+
+// Security review of 0.2.17, design v2 for #346: whether `@'` opens a here-string depends on which program runs the
+// command, so the hook passes its shell. Bash has none. PowerShell opens one at any `@'` or `@"` with only whitespace
+// after it to the line end, wherever it stands, and closes it at a `'@` or `"@` that starts a line. A caller that gives
+// no shell gets both readings, so forgetting it refuses more instead of missing a write.
+describe('a here-string is read only where PowerShell runs the command', () => {
+  const ps = (command: string): string[] => findSourceWrites(command, undefined, 'powershell')
+
+  test("under Bash an @' is an ordinary quote, so a later close line blanks nothing", () => {
+    expect(findSourceWrites("echo -n @'\n'\nsed -i 's/a/b/' src/a.ts\necho '\n'@", undefined, 'bash')).toEqual(['src/a.ts'])
+    expect(findSourceWrites("echo $x=@'\n'\necho x > src/a.ts\necho '\n'@", undefined, 'bash')).toEqual(['src/a.ts'])
+    // Bash runs no redirect here: the quote after `it` closes, and `'@ > src/a.ts'` is one quoted word.
+    expect(findSourceWrites("echo @'\nit's\n'@ > src/a.ts'", undefined, 'bash')).toEqual([])
+  })
+
+  // Round 2 of review, and the attack on design v1: PowerShell opens in shapes no lead list or character rule covered.
+  test('under PowerShell a here-string opens wherever it stands', () => {
+    expect(ps("@'\nit's\n'@ | Set-Content src/a.ts")).toEqual(['src/a.ts'])
+    expect(ps("$script:t = @'\nit's\n'@\nSet-Content src/a.ts $script:t")).toEqual(['src/a.ts'])
+    expect(ps("$env:T = @'\nit's\n'@; Set-Content src/a.ts $env:T")).toEqual(['src/a.ts'])
+    expect(ps("$s = 'x{0}' -f@'\nit's\n'@\nSet-Content src/a.ts y\necho 'done'")).toEqual(['src/a.ts'])
+    expect(ps("$script:t = @'\nit's api.py here, isn't it\n'@\nAdd-Content -Path $p -Value $script:t")).toEqual([])
+    expect(findSourceWrites("@'\nit's\n'@ | Set-Content src/a.ts", 'C:/r', 'powershell')).toEqual(['C:/r/src/a.ts'])
+  })
+
+  // The attack on design v2: PowerShell's parser accepts any of these between the opener and the line end, and a bare
+  // CR as a line end; the reader took only spaces and tabs, and saw 3 spaces at most.
+  test("under PowerShell the opener's whitespace and line ends are PowerShell's", () => {
+    for (const space of ['\f', '\v', '\u{a0}', '\u{85}', '\u{2003}', '\u{3000}', '\u{2028}', '     ']) {
+      expect(ps(`$t = @'${space}\nit's\n'@\nSet-Content src/a.ts y\necho 'done'`)).toEqual(['src/a.ts'])
+    }
+    expect(ps("$t = @'\rit's\r'@\rSet-Content src/a.ts y\recho 'done'")).toEqual(['src/a.ts'])
+    expect(ps("$t = @'\r\nit's\r\n'@\r\nSet-Content src/a.ts y\r\necho 'done'")).toEqual(['src/a.ts'])
+  })
+
+  // The catch check's mutant: an `@` that opens no here-string (an array, a hashtable, a splat) is an ordinary character.
+  test("under PowerShell an @ that opens no here-string is read past", () => {
+    expect(ps("$a = @(1, 2); $h = @{ k = 'v' }; Set-Content src/a.ts @params")).toEqual(['src/a.ts'])
+  })
+
+  // The catch check's mutant: a `@"` here-string closes at `"@`, and its body's quotes are data like any other.
+  test('under PowerShell a double-quoted here-string closes at its own mark, whatever quotes its body holds', () => {
+    expect(ps('$t = @"\nsay "hi\n"@\nSet-Content src/a.ts y\necho "done"')).toEqual(['src/a.ts'])
+  })
+
+  // PowerShell runs nothing from a command with an unclosed here-string, so reading the opener as a plain quote costs
+  // nothing there; blanking to the end would hide the write after the quote's own close.
+  test('under PowerShell an unclosed opener is a plain quote', () => {
+    expect(ps("$t = @'\nx\n'\nSet-Content src/a.ts y")).toEqual(['src/a.ts'])
+  })
+
+  // An empty body closes on the line after the opener; read past it, the span would run to a later close.
+  test('under PowerShell an empty here-string closes on the next line', () => {
+    expect(ps("$t = @'\n'@\nSet-Content src/a.ts $t\n$u = @'\nx\n'@")).toEqual(['src/a.ts'])
+    expect(ps('$t = @"\r\n"@\r\nSet-Content src/a.ts $t\r\n$u = @"\r\nx\r\n"@')).toEqual(['src/a.ts'])
+  })
+
+  test('with no shell given a command is read both ways, and either reading can name a write', () => {
+    expect(findSourceWrites("@'\nit's\n'@ | Set-Content src/a.ts")).toEqual(['src/a.ts'])
+    expect(findSourceWrites("echo -n @'\n'\nsed -i 's/a/b/' src/a.ts\necho '\n'@")).toEqual(['src/a.ts'])
+    expect(findSourceWrites("$script:t = @'\nit's api.py here, isn't it\n'@\nAdd-Content -Path $p -Value $script:t")).toEqual(['api.py'])
+  })
+})
+
+// Design v2 for #346: the record and config check is main's rule, the name beside a write verb anywhere in the text,
+// so no reading of PowerShell's quoting can hide a write main refused. Each input below got past release or design v1.
+describe("the record and config check refuses whatever main's did", () => {
+  const RECORD = 'dope-tdd.overrides.json'
+
+  test('PowerShell spellings the reader cannot model still name the record or the config', () => {
+    expect(writesFileNamed(`$s = 'x{0}' -f@'\nit's\n'@\nSet-Content ${RECORD} y\necho 'done'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`echo .@'\n'\nSet-Content ${RECORD} x\necho '\n'@`, RECORD)).toBe(true)
+    expect(writesFileNamed(`# see @'\nSet-Content ${RECORD} x\n'@'`, RECORD)).toBe(true)
+    expect(writesFileNamed(`echo --% @'\nSet-Content ${RECORD} x\n'@'`, RECORD)).toBe(true)
+    expect(writesFileNamed('echo "$(Set-Content dope-tdd.json x)"', 'dope-tdd.json')).toBe(true)
+    expect(writesFileNamed("echo `' @'\nx\n'@\nSet-Content dope-tdd.json x\necho 'done'", 'dope-tdd.json')).toBe(true)
+  })
+
+  // `-Path:<name>` with no quote has a colon before the name, which main's boundary misses: the shape names it, in
+  // whichever reading sees the verb.
+  test('a record named after -Path: with no quote is named by its shape, under either reading', () => {
+    expect(writesFileNamed(`Set-Content -Path:${RECORD} x`, RECORD)).toBe(true)
+    expect(writesFileNamed(`@'\nit's\n'@ | Set-Content -Path:${RECORD}`, RECORD)).toBe(true)
+    expect(writesFileNamed(`echo -n @'\n'\nSet-Content -Path:${RECORD} x\necho '\n'@`, RECORD)).toBe(true)
+  })
+
+  test("an @' line inside a Bash heredoc does not hide a write after it", () => {
+    expect(writesFileNamed(`cat > /tmp/notes.txt <<'EOF'\n@'\nEOF\nsed -i 's/denied/approved/' ${RECORD}`, RECORD)).toBe(true)
   })
 })

@@ -306,6 +306,8 @@ describe('quoted text is data: a redirect inside it writes nothing', () => {
   })
 
   test('a quoted target after an unquoted redirect, tee or cp is still a write', () => {
+    // A short double-quoted word closes at its own quote, so the redirect after it is still read.
+    expect(findSourceWrites('echo "a" > src/a.ts')).toEqual(['src/a.ts'])
     expect(findSourceWrites('echo x > "src/a.ts"')).toEqual(['src/a.ts'])
     expect(findSourceWrites("echo 'a > b' >> 'src/a.ts'")).toEqual(['src/a.ts'])
     expect(findSourceWrites('printf x | tee "src/a.ts"')).toEqual(['src/a.ts'])
@@ -535,5 +537,44 @@ describe("the record and config check refuses whatever main's did", () => {
 
   test("an @' line inside a Bash heredoc does not hide a write after it", () => {
     expect(writesFileNamed(`cat > /tmp/notes.txt <<'EOF'\n@'\nEOF\nsed -i 's/denied/approved/' ${RECORD}`, RECORD)).toBe(true)
+  })
+})
+
+// #350: a sed whose quotes a shell runs reached the sed reader as one quoted word, so after #341 it named nothing where
+// main named the file. A PowerShell verb behind a quoted shell already names the paths it mentions; sed does the same.
+describe('a sed -i handed to a shell names its files (#350)', () => {
+  test('eval, su -c and ssh hand their quoted sed to a shell', () => {
+    expect(findSourceWrites(`eval "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`su -c "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`ssh host "sed -i 's/a/b/' src/a.ts"`)).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`eval "sed -i 's/a/b/' src/a.ts"`, 'C:/r')).toEqual(['C:/r/src/a.ts'])
+  })
+
+  test('a PowerShell here-string piped to bash hands its sed to a shell', () => {
+    expect(findSourceWrites("@'\nsed -i 's/a/b/' src/a.ts\n'@ | bash", undefined, 'powershell')).toEqual(['src/a.ts'])
+  })
+
+  test('a sed not handed to a shell still names only its files', () => {
+    expect(findSourceWrites(`sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`)).toEqual([])
+    expect(findSourceWrites('sed -i -f src/script.ts docs/x.md')).toEqual([])
+    expect(findSourceWrites(`git commit -m "eval sed -i on src/a.ts"`)).toEqual([])
+  })
+
+  // Review round 1: a shell's name anywhere outside quotes keeps the quotes live, but a sed that is its own word has
+  // its files read already, so its script's paths are not targets: a comment, `wsl sed`, a here-string's body.
+  test("a sed that is its own word names only its files, whatever shell's name is beside it", () => {
+    expect(findSourceWrites(`sed -i "s|'src/old.ts'|'src/new.ts'|" docs/x.md  # keep in sync for bash users`)).toEqual([])
+    expect(findSourceWrites(`cd src && wsl sed -i "s#'./old.ts'#'./new.ts'#" c.ts`, 'C:/r', 'powershell')).toEqual(['C:/r/src/c.ts'])
+    expect(findSourceWrites("$msg = @'\nnotes about src/a.ts\n'@\nbash scripts/check.sh\nsed -i 's/x/y/' docs/x.md", undefined, 'powershell')).toEqual([])
+    // Spelled by its path, sed is no word of its own either, but with no shell in the command nothing is handed.
+    expect(findSourceWrites(`/usr/bin/sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`)).toEqual([])
+    // Review round 2: spelled by its path beside a shell's name, it is still the command's own sed, not handed text.
+    expect(findSourceWrites(`wsl /usr/bin/sed -i 's/a/b/' ./src/a.ts`, undefined, 'powershell')).toEqual(['src/a.ts'])
+    expect(findSourceWrites(`wsl /usr/bin/sed -i "s|'src/a.ts'|'src/b.ts'|" docs/x.md`, undefined, 'powershell')).toEqual([])
+  })
+
+  // Review round 1: a handed sed's script is text like a script's, so a dotted path in it is an import path (#272).
+  test('a handed sed leaves a dotted path in its script as text', () => {
+    expect(findSourceWrites(`eval 'sed -i "s#from ./old.js;#from ./new.js;#" src/c.ts'`)).toEqual(['src/c.ts'])
   })
 })

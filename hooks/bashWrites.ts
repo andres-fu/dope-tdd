@@ -225,6 +225,19 @@ function mentioned(segment: string): string[] {
   return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path))
 }
 
+/**
+ * What an in-place sed writes: its file arguments. A sed inside text handed to a shell (`eval "sed -i …"`, `su -c "…"`,
+ * a here-string piped to bash) is one quoted word to sedFiles, so there it also names the paths its segment mentions,
+ * dotted ones left as text as in a script (#272), as main did (#350). Only there: a sed that is its own word has its
+ * files read already, and a shell's name elsewhere in the segment (a comment, `wsl sed`) makes its script no target.
+ */
+function sedTargets(segment: string, words: string): string[] {
+  // The command's own sed, by name or by path (`/usr/bin/sed`).
+  const ownSed = (segment.match(SHELL_WORD) ?? []).some(word => /(?:^|\/)sed$/.test(word))
+  const handed = RUNS_QUOTED_SHELL.test(words) && !ownSed
+  return handed ? mentioned(segment) : sedFiles(segment).filter(path => CODE_FILE.test(path))
+}
+
 function writesIn(whole: string, herestrings: boolean): string[] {
   // A data heredoc's body is text: only its opener line can write (shell.ts, writableText).
   const segment = writableText(whole)
@@ -234,7 +247,7 @@ function writesIn(whole: string, herestrings: boolean): string[] {
   // must be the shell's own word, and name only what their shape names (#332): text in their quotes is data.
   return [
     ...(SCRIPT_WRITE.test(segment) && scriptTargets === null ? mentioned(segment) : (scriptTargets ?? [])),
-    ...(IN_PLACE_SED.test(words) ? sedFiles(segment).filter(path => CODE_FILE.test(path)) : []),
+    ...(IN_PLACE_SED.test(words) ? sedTargets(segment, words) : []),
     ...(POWERSHELL_WRITE.test(words) ? powershellTargets(segment, words) : []),
     ...captures(REDIRECT_TARGET, words),
     // cp and mv take quoted paths, so their targets come from the segment, once the verb is seen outside quotes.

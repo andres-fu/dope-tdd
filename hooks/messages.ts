@@ -95,7 +95,7 @@ export const MESSAGES = {
   'config.changed': entry({ detail: 'mode: enforce → warn' }, f =>
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
   'config.changedNearby': entry({ detail: 'mode: enforce → warn' }, f =>
-    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command. Git brought it in, or something else changed it, so it is not counted against anyone. This is recorded in /tdd.`),
+    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command: git brought it in, or it changed beside a command that may not have written it. Charged to nobody; recorded in /tdd.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).

@@ -118,6 +118,9 @@ describe('describeConfig', () => {
     expect(lines[0]).toContain('no catch check')
     expect(lines).toContain('catch check: not under observe (dope-tdd.json sets it on)')
     expect(lines.some(line => line.startsWith('catch check: on'))).toBe(false)
+    expect(describeConfig(parseConfig('{"mode":"observe","catchCheck":false}'))).toContain(
+      'catch check: off (dope-tdd.json); a green is not re-run with the change undone',
+    )
     expect(describeConfig(parseConfig('{"mode":"enforce","catchCheck":true}'))).toContain(
       'catch check: on for every runner (dope-tdd.json); an experimental runner undoes the change on disk for one test run',
     )

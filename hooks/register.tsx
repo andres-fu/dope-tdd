@@ -2512,9 +2512,8 @@ async function briefingCommand($: EngineInterface, root: string, config: GuardCo
 
 /**
  * The receipt for a module, ready for a pull request: the status as the band
- * reads it, then the two commands a reviewer runs to re-check the proof
- * without the plugin: the test, and the test against the code as it was
- * before the change.
+ * reads it, then the run a reviewer pastes to re-check the proof without the
+ * plugin, and in words how to see it fail without the change (#355).
  */
 async function receiptText($: EngineInterface, root: string, config: GuardConfig, named: string | undefined, nowMs: number): Promise<string> {
   const s = await readStats($)
@@ -2544,7 +2543,7 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
   // Not named `change`: the plugin directory reads a name as one thing across the file, and `change` is the
   // top-level helper that $ is passed to; a local of the same name made those calls unreadable to it.
   const recorded = changePath === undefined ? undefined : { path: changePath }
-  // Never the stash: on a committed change it saves nothing, and its pop would apply the reviewer's own stash.
+  // The base is only named in words: the receipt prints no command that changes a file (#355).
   const head = await gitQuiet($, root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
   const fromOrigin = head !== null && head.exitCode === 0 && head.stdout.trim() !== ''
   const base = fromOrigin ? head.stdout.trim() : 'main'

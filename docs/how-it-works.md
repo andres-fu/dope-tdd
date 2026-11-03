@@ -44,13 +44,17 @@ no approval and is not a workaround. `/tdd` lists it with its question
 (`docs/decisions/2026-10-26_stumble-twice.md`).
 
 `/tdd` prints the state, `/tdd why` the words, `/tdd setup` the layout it
-detects, and `/tdd receipt` the receipt for the current module with the two
-commands a reviewer runs to re-check the proof without the plugin, ready to
-paste into a pull request. They compare with origin's default branch, or with
-`main` when origin names none, and the receipt says which: a pull request into
-another branch should use that one. A file new since that branch gets no such
-step, since there is no older version to put back, and a branch that isn't there
-is said as that ([#269](https://github.com/andres-fu/dope-tdd/issues/269)). When the catch check saw the test fail on an
+detects, and `/tdd receipt` the receipt for the current module, ready to paste
+into a pull request: the command that runs the module's test, and in words how a
+reviewer sees it fail without the change, by putting the file back as it is on
+origin's default branch (or `main` when origin names none) in a checkout with
+nothing uncommitted. It prints no command that changes a file, since nothing here
+knows what the reader's checkout holds, and such steps could overwrite their work
+([#355](https://github.com/andres-fu/dope-tdd/issues/355)). The receipt says
+which branch it took: a pull request into another branch should use that one. A
+file new since that branch has no older version to put back, and a branch that
+isn't there is said as that
+([#269](https://github.com/andres-fu/dope-tdd/issues/269)). When the catch check saw the test fail on an
 assertion (Vitest, node --test, pytest), the PROVEN line and the receipt quote
 it, for example ``fails with `expected 2 to be 3` ``, so a reader learns what
 the change does without running anything.

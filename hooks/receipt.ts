@@ -16,27 +16,23 @@ export type RecheckFacts = {
   fails: string
 }
 
-/** A path as a shell reads it: quoted when it holds a space. */
-function quoted(path: string): string {
-  return /\s/.test(path) ? `"${path}"` : path
-}
-
 /**
- * The commands and what they show. #269: the base is assumed, so it is named, with what to do when a change goes into
- * another branch. A file the base doesn't have can't be put back, so no step claims to prove it: `git checkout` would
- * fail there, and the second run would pass and show nothing. A base that isn't here is said as that, never as a file
- * that's new.
+ * The run, and how to see the proof in words. #269: the base is assumed, so it is named, with what to do when a change
+ * goes into another branch. A file the base doesn't have has no older version to check against. A base that isn't here
+ * is said as that, never as a file that's new. #355: no command that changes a file is printed. Steps that put back the
+ * base's file and then HEAD's overwrote a change not yet committed, and git states that show nothing (a filter, a flag,
+ * a pattern in the path) lost work too; nothing here can say what the reader's checkout holds.
  */
 export function recheckLines({ label, run, base, baseFrom, path, atBase, fails }: RecheckFacts): string[] {
-  const steps = path !== null && atBase !== 'no' ? [`git checkout ${base} -- ${quoted(path)}`, run, `git checkout HEAD -- ${quoted(path)}`] : []
   const which = baseFrom === 'origin' ? `${base} is origin's default branch` : `${base} is a guess, as origin names no default branch here`
+  const putBack = (version: string): string => `in a checkout with nothing uncommitted, put \`${path}\` back as it is on ${version}, run the test again`
   const says =
     path === null
-      ? `No change to ${label} is on record this session, so there is nothing to put back; the first run is the whole receipt.`
+      ? `No change to ${label} is on record this session, so the run is the whole receipt.`
       : atBase === 'unknown'
-        ? `${base} isn't a branch here, so this couldn't be checked: put the branch this change goes into in its place. The first run passes; the second should fail, and the last line puts the change back.`
+        ? `${base} isn't a branch here, so the code before the change couldn't be found: ${putBack('the branch this change goes into')}, and it should fail. Then put the file back as it was.`
         : atBase === 'no'
-          ? `${path} is new since ${base}, so there is no older version to put back, and the first run is the whole receipt. ${which}: if this change goes into another branch, check against that one.`
-          : `The first run passes. The second runs the same test against the code on ${base}, before the change, and ${fails}, which is what the catch check saw. The last line puts the change back. ${which}: if this change goes into another branch, put that branch in its place.`
-  return ['To check the proof yourself, from the repo root with this change checked out:', '```', run, ...steps, '```', says]
+          ? `${path} is new since ${base}, so there is no older version to put back, and the run is the whole receipt. ${which}: if this change goes into another branch, check against that one.`
+          : `The run passes. To see it fail without the change: ${putBack(base)}, and it ${fails}, which is what the catch check saw. Then put the file back as it was. ${which}: if this change goes into another branch, use that one instead.`
+  return ['To check the proof yourself, from the repo root with this change checked out:', '```', run, '```', says]
 }

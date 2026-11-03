@@ -39,4 +39,4 @@ If a pin is red on its first run, the source has not changed, so the pin guessed
 - Do not re-save the test unchanged to unlock the module. That is recorded too.
 - Do not change behaviour and refactor in the same step. One cycle, one kind of change.
 
-When you finish, `/tdd receipt` prints the receipt and the commands a reviewer runs to re-check the proof.
+When you finish, `/tdd receipt` prints the receipt: the test run a reviewer pastes, and in words how to see it fail without the change.

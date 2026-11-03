@@ -591,7 +591,9 @@ describe('what the check cannot see is said, not skipped', () => {
 })
 
 describe('/tdd receipt', () => {
-  test('prints the status and the two commands a reviewer runs, for the current module', async ($, on) => {
+  // #355: the receipt printed `git checkout <base> -- <path>` and `git checkout HEAD -- <path>` around the run, which
+  // overwrote a change not yet committed. It now prints the run alone, and says in words how to see it fail.
+  test('prints the status, the run a reviewer pastes, and in words how to see it fail, for the current module', async ($, on) => {
     const world = fakeEngine(on)
     await fixUnderGuard($, world)
     world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
@@ -604,10 +606,9 @@ describe('/tdd receipt', () => {
     expect(receipt.text).toMatch(/^dope-tdd receipt for utils\/formatDuration/)
     expect(receipt.text).toMatch(/proven 1/)
     expect(receipt.text).toMatch(/npx vitest run tests\/utils\/formatDuration\.test\.ts/)
-    // Never the stash: on a committed change it saves nothing, and the pop applies the reviewer's own stash.
     expect(receipt.text).not.toMatch(/stash/)
-    expect(receipt.text).toMatch(/git checkout main -- src\/utils\/formatDuration\.ts\nnpx vitest run tests\/utils\/formatDuration\.test\.ts\ngit checkout HEAD -- src\/utils\/formatDuration\.ts/)
-    expect(receipt.text).toMatch(/The first run passes\. The second runs the same test against the code on main, before the change, and fails/)
+    expect(receipt.text).not.toMatch(/^git /m)
+    expect(receipt.text).toMatch(/put `src\/utils\/formatDuration\.ts` back as it is on main, run the test again, and it fails, which is what the catch check saw/)
   })
 
   // Idea 18 (2026-10-26): the receipt and the PROVEN line say what the test said with the change undone.
@@ -621,7 +622,7 @@ describe('/tdd receipt', () => {
     world.objects.set('main:src/utils/formatDuration.ts', 'export const a = 1')
     world.refs.set('main^{commit}', 'b'.repeat(40))
     const receipt = await $.command.run({ command: 'tdd', args: 'receipt' } as never)
-    expect(receipt.text).toMatch(/before the change, and fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
+    expect(receipt.text).toMatch(/run the test again, and it fails with `expected '14m' to be '1y 2m'`, which is what the catch check saw/)
   })
 
   // #269: a file the base doesn't have can't be checked out from it, and the run after a failed checkout proves nothing.

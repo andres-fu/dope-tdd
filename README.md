@@ -137,7 +137,9 @@ It guards **Claude's** edits to **this project's** source: the folder you
 opened Claude Code in, and the worktrees under its `.claude/worktrees/`, a
 subagent's or the session's own. Two things decide it, in
 order: whether the plugin runs in that folder at all, then what Dope TDD
-guards there.
+guards there. With a `--scope local` install, `/cd` into a worktree unloads
+the plugin until you `/cd` back, with nothing said: that scope covers only
+the folder it was installed in. A project or user install stays on.
 
 ![Where Dope TDD applies: Claude Code's install scope decides whether it runs in a folder, then it guards what sits in the folder the session was opened in.](assets/where-it-applies.svg)
 

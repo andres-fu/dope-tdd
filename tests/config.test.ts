@@ -112,6 +112,17 @@ describe('describeConfig', () => {
     expect(lines.every(line => !/[\u0000-\u001f\u007f]/.test(line))).toBe(true)
   })
 
+  // #336 (tester round 8B): under observe the mode line said "no catch check" and the catch-check line said "on".
+  test('under observe the catch-check line says it does not run, whatever the file sets', () => {
+    const lines = describeConfig(parseConfig('{"mode":"observe","catchCheck":true}'))
+    expect(lines[0]).toContain('no catch check')
+    expect(lines).toContain('catch check: not under observe (dope-tdd.json sets it on)')
+    expect(lines.some(line => line.startsWith('catch check: on'))).toBe(false)
+    expect(describeConfig(parseConfig('{"mode":"enforce","catchCheck":true}'))).toContain(
+      'catch check: on for every runner (dope-tdd.json); an experimental runner undoes the change on disk for one test run',
+    )
+  })
+
   // Decided 2026-10-20 (verified review G3): the model approver is experimental, and the one thing sent off the machine.
   test('a model approver is shown as experimental, with where requests go', () => {
     expect(describeConfig(parseConfig('{"overrides":{"approver":"model"}}'))).toContain(

@@ -64,12 +64,12 @@ export const MESSAGES = {
   // #238: once a session, the first code file or test run outside the project. Claude can work in another repository
   // from this session; it is left alone, and said, so nobody takes it for guarded work.
   'outside.project': entry({ path: 'C:/work/other/src/a.ts', root: 'C:/work/app' }, f =>
-    `dope-tdd: ${f.path} is outside this project (${f.root.replace(/\\/g, '/')}), so it is not guarded or counted, and nor is anything else outside it this session. To work test-first in another repository, open a Claude Code session in it.`),
+    `dope-tdd: ${f.path} is outside this project (${f.root.replace(/\\/g, '/')}), so it is not guarded or counted, and nothing else outside it is guarded this session either. To work test-first in another repository, open a Claude Code session in it.`),
   // #259: once a session, the first code file no layout pairs. The edit goes through; this is a notice, not a refusal.
   'edit.unwatched': entry({ path: 'scripts/build.ts' }, f =>
-    `dope-tdd: ${f.path} matches no test layout, so it is not guarded, and nor is other code like it this session. If a different layout would cover it, the user can check with /tdd setup. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
+    `dope-tdd: ${f.path} matches no test layout, so it is not guarded, and other code like it won't be guarded this session either. If a different layout would cover it, the user can check with /tdd setup. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
   'edit.otherStack': entry({ path: 'tools/gen.py', stack: 'node' }, f =>
-    `dope-tdd: ${f.path} isn't ${f.stack} code, so it is not guarded, and nor is other code like it this session. One dope-tdd.json guards one stack. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
+    `dope-tdd: ${f.path} isn't ${f.stack} code, so it is not guarded, and other code like it won't be guarded this session either. One dope-tdd.json guards one stack. To stop counting it, add it to "exempt" in dope-tdd.json; if there is none, the user can save one with /tdd setup write first.`),
   'edit.unguarded': entry({ sourcePath: 'src/utils/a', testPath: 'tests/utils/a.test.ts' }, f =>
     `dope-tdd: ${f.sourcePath} was edited with no test touched first. Write ${f.testPath} next and see it fail.`),
   // #281: the guard can't tell who made this change, so it says both and charges nobody.
@@ -95,7 +95,7 @@ export const MESSAGES = {
   'config.changed': entry({ detail: 'mode: enforce → warn' }, f =>
     `dope-tdd: dope-tdd.json changed (${f.detail}). This is recorded in /tdd; say why in your reply.`),
   'config.changedNearby': entry({ detail: 'mode: enforce → warn' }, f =>
-    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command, which may not have done it. This is recorded in /tdd.`),
+    `dope-tdd: dope-tdd.json changed (${f.detail}) around that command. Git brought it in, or something else changed it, so it is not counted against anyone. This is recorded in /tdd.`),
   'workaround.skipped': entry({ testPath: 'tests/utils/a.test.ts', added: 2 }, f =>
     `dope-tdd: ${f.testPath} gained ${f.added} ${plural(f.added, 'skip/only marker')}. A skipped test guards nothing. Recorded; say why in your reply.`),
   // Appended to a RED that never reached an assertion while the module's pin is unproven (2026-10-19).

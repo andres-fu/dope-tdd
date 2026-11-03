@@ -87,26 +87,36 @@ export function literalWriteTargets(segment: string): string[] | null {
 }
 
 // A command that runs a quoted argument as shell: what is quoted there is commands, so its redirects are real.
-const RUNS_QUOTED_SHELL = /(?:^|[\s;&|(])(?:bash|sh|zsh|dash|ksh|fish|eval|ssh|su|pwsh|powershell|cmd|wsl)(?:\.exe)?(?=\s|$)/i
+const RUNS_QUOTED_SHELL = /(?:^|[\s;&|(])(?:bash|sh|zsh|dash|ksh|fish|eval|ssh|su|pwsh|powershell|cmd|wsl|iex|Invoke-Expression)(?:\.exe)?(?=\s|$)/i
 // Where a quoted span is a redirect's or tee's target, not text: `> "src/a.ts"`.
 const BEFORE_TARGET = /(?:>>?|\btee\s+(?:-a\s+)?)\s*$/
+// A PowerShell here-string opens with `@'` or `@"` at the end of a line and closes with `'@` or `"@` at the start of one.
+const HERESTRING_OPEN = /^@(['"])[ \t]*\r?\n/
 
 /**
  * #239: the shell words of a segment, with the text inside quotes blanked. A redirect, `sed -i`, `cp`, `mv` or `tee`
  * quoted in a commit message, an echoed sentence or a script's string is data and writes nothing; one outside quotes
  * is the shell's. A quoted redirect target stays, and a segment that hands its quotes to a shell (`ssh host "…"`,
- * `eval "…"`, `sh -c "…"`) is left whole, so its writes are still seen. Same length as the segment.
+ * `eval "…"`, `sh -c "…"`) is left whole, so its writes are still seen: the shell's name must itself be a shell word,
+ * since a note that says "PowerShell" is prose (#332). A PowerShell here-string is one quoted span, whatever
+ * apostrophes its body holds (#332). Same length as the segment.
  */
 function shellWords(segment: string): string {
-  if (RUNS_QUOTED_SHELL.test(segment)) {
-    return segment
-  }
   let out = ''
   let quote: '"' | "'" | null = null
   let keep = false
   for (let i = 0; i < segment.length; i++) {
     const char = segment[i] ?? ''
     if (quote === null) {
+      const herestring = char === '@' ? HERESTRING_OPEN.exec(segment.slice(i, i + 6)) : null
+      if (herestring !== null) {
+        const close = `\n${herestring[1]}@`
+        const end = segment.indexOf(close, i + herestring[0].length)
+        const stop = end === -1 ? segment.length : end + close.length
+        out += segment.slice(i, stop).replace(/[^\n]/g, ' ')
+        i = stop - 1
+        continue
+      }
       if (char === '"' || char === "'") {
         quote = char
         keep = BEFORE_TARGET.test(out)
@@ -122,7 +132,56 @@ function shellWords(segment: string): string {
       out += keep || char === '\n' ? char : ' '
     }
   }
-  return out
+  return RUNS_QUOTED_SHELL.test(out) ? segment : out
+}
+
+// A PowerShell write's shape: the verb, the option that names its path (`-Path x` or `-Path:x`), the switches that take
+// no value, and where one command ends. Any other option takes the token after it as its value.
+const POWERSHELL_VERB = /^(?:Set-Content|Add-Content|Out-File)$/i
+const POWERSHELL_PATH_OPTION = /^-(?:Path|FilePath|LiteralPath)(?::(.*))?$/i
+const POWERSHELL_SWITCH = /^-(?:Append|Force|NoNewline|NoClobber|PassThru|AsByteStream|Confirm|WhatIf|Verbose|Debug)$/i
+const COMMAND_END = /^(?:;|\||&&|\|\|)$|;$/
+const QUOTES_AROUND = /^(['"])(.*)\1$/s
+
+/**
+ * What a PowerShell write names (#332): the value of `-Path`, `-FilePath` or `-LiteralPath`, or its first positional
+ * argument, quoted or not. Text in `-Value`, a here-string or any other quoted span is data. A target the shape doesn't
+ * name (`-Path $p`) names nothing: the git check after the command says what landed. Tokens are read from the blanked
+ * words, so a verb or an option inside quotes is text; each value is read from the segment, quotes stripped.
+ */
+function powershellNamed(segment: string, words: string): string[] {
+  const tokens = [...words.matchAll(SHELL_WORD)]
+  const raw = (index: number): string => {
+    const token = tokens[index]
+    return token === undefined ? '' : segment.slice(token.index, token.index + token[0].length).replace(QUOTES_AROUND, '$2')
+  }
+  const named: string[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    if (!POWERSHELL_VERB.test(tokens[i]?.[0] ?? '')) {
+      continue
+    }
+    let positional = false
+    for (let j = i + 1; j < tokens.length; j++) {
+      const word = tokens[j]?.[0] ?? ''
+      if (COMMAND_END.test(word)) {
+        break
+      }
+      const option = POWERSHELL_PATH_OPTION.exec(raw(j))
+      if (option !== null) {
+        named.push(option[1] === undefined ? raw(++j) : option[1].replace(QUOTES_AROUND, '$2'))
+      } else if (word.startsWith('-')) {
+        j += POWERSHELL_SWITCH.test(word) ? 0 : 1
+      } else if (!positional) {
+        positional = true
+        named.push(raw(j))
+      }
+    }
+  }
+  return named
+}
+
+function powershellTargets(segment: string, words: string): string[] {
+  return [...captures(SOURCE_PATH, words), ...powershellNamed(segment, words).filter(path => CODE_FILE.test(path))]
 }
 
 // One word of a shell command, its quotes kept: `'a b'c` is one word.
@@ -141,14 +200,11 @@ function sedFiles(segment: string): string[] {
 }
 
 /**
- * Every path a segment mentions, for a write that can't be traced to one. Round 3 of #272: everything `release` read stays
- * read, and a path spelled relatively, which it dropped or misread, counts only where the command's shape names it: sed's
- * files, or a PowerShell path outside quotes. In a script, or in quotes, those are import paths in a text replace, and
- * resolving them refuses the edit for a file it never touches. #260 is the proper reader.
+ * Every path a script mentions, for a write that can't be traced to one. Round 3 of #272: a path spelled relatively is
+ * an import path in a text replace, and resolving it refuses the edit for a file the script never touches.
  */
-function mentioned(segment: string, words: string): string[] {
-  const named = new Set(IN_PLACE_SED.test(words) ? sedFiles(segment) : POWERSHELL_WRITE.test(segment) ? captures(SOURCE_PATH, words) : [])
-  return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path) || named.has(path))
+function mentioned(segment: string): string[] {
+  return captures(SOURCE_PATH, segment).filter(path => !RELATIVE_SPELLING.test(path))
 }
 
 function writesIn(whole: string): string[] {
@@ -156,11 +212,12 @@ function writesIn(whole: string): string[] {
   const segment = writableText(whole)
   const words = shellWords(segment)
   const scriptTargets = SCRIPT_WRITE.test(segment) ? literalWriteTargets(segment) : null
-  // A script's writes live in its quoted code, so SCRIPT_WRITE and PowerShell read the whole segment; sed -i must be
-  // the shell's own word.
-  const writesEveryMention = IN_PLACE_SED.test(words) || POWERSHELL_WRITE.test(segment) || (SCRIPT_WRITE.test(segment) && scriptTargets === null)
+  // A script's writes live in its quoted code, so SCRIPT_WRITE reads the whole segment. sed -i and a PowerShell verb
+  // must be the shell's own word, and name only what their shape names (#332): text in their quotes is data.
   return [
-    ...(writesEveryMention ? mentioned(segment, words) : (scriptTargets ?? [])),
+    ...(SCRIPT_WRITE.test(segment) && scriptTargets === null ? mentioned(segment) : (scriptTargets ?? [])),
+    ...(IN_PLACE_SED.test(words) ? sedFiles(segment).filter(path => CODE_FILE.test(path)) : []),
+    ...(POWERSHELL_WRITE.test(words) ? powershellTargets(segment, words) : []),
     ...captures(REDIRECT_TARGET, words),
     // cp and mv take quoted paths, so their targets come from the segment, once the verb is seen outside quotes.
     ...(/\b(?:cp|mv)\b/.test(words) ? captures(COPY_OR_MOVE_TARGET, segment) : []),
@@ -170,7 +227,8 @@ function writesIn(whole: string): string[] {
 /**
  * Whether the command writes one named file, whatever its extension: the patterns above match code files only, and the
  * override record is JSON (override v1, 2026-10-18). A redirect, tee, cp or mv onto it, rm or truncate of it, or an
- * in-place sed, PowerShell or script write that mentions it. The name must stand alone: `my-x.json.bak` is not `x.json`.
+ * script write that mentions it, or an in-place sed or PowerShell write that names it as a file (#332, #322: text in
+ * their quotes or a data heredoc's body is data). The name must stand alone: `my-x.json.bak` is not `x.json`.
  */
 export function writesFileNamed(command: string, name: string): boolean {
   const text = command.replace(/\\/g, '/')
@@ -183,7 +241,16 @@ export function writesFileNamed(command: string, name: string): boolean {
     new RegExp(String.raw`\b(?:rm|truncate)\b[^|;&\n]*` + file, 'i'),
   ]
   const mentioned = new RegExp(file, 'i').test(text)
-  return onto.some(pattern => pattern.test(text)) || (mentioned && (IN_PLACE_SED.test(text) || POWERSHELL_WRITE.test(text) || SCRIPT_WRITE.test(text)))
+  // The name with any folder before it, a drive letter or a variable included: `C:/r/x.json`, `$root/x.json`.
+  const isNamed = new RegExp(String.raw`^(?:[^\s'"]*\/)?` + exact, 'i')
+  // Each command's runnable text, as findSourceWrites reads it: a data heredoc's body is dropped, the line after it stays.
+  const shaped = commandSegments(text).map(writableText).some(runnable => {
+    const words = shellWords(runnable)
+    const sedNames = IN_PLACE_SED.test(words) && sedFiles(runnable).some(path => isNamed.test(path))
+    const powershellNames = POWERSHELL_WRITE.test(words) && powershellNamed(runnable, words).some(path => isNamed.test(path))
+    return sedNames || powershellNames
+  })
+  return onto.some(pattern => pattern.test(text)) || (mentioned && SCRIPT_WRITE.test(text)) || shaped
 }
 
 /**

@@ -1,6 +1,48 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, cwdAfter, isPureRead, locatedSegments, writableText } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, cwdAfter, isPureRead, locatedSegments, splitCommands, writableText } from '../hooks/shell'
+
+// #348: commandSegments keeps any command with a here-string opener whole, so a script after a here-string commit
+// message read as git alone. splitCommands splits by the shell that runs the command: Bash has no here-strings, and
+// PowerShell's closed ones (the narrow opener, outside quotes) are blanked first, so they read as inline whitespace.
+describe('splitCommands: the commands a shell runs', () => {
+  test("under Bash an @' in quoted text is text, and the command splits", () => {
+    expect(splitCommands(`git commit -qm "see @'\n" && node tidy.mjs`, 'bash')).toEqual([`git commit -qm "see @'\n"`, 'node tidy.mjs'])
+  })
+
+  test('under PowerShell a closed here-string is whitespace inside its command, and the next line is a command', () => {
+    const [commit, script, ...rest] = splitCommands("git commit -m @'\nmsg; with | marks\n'@\nnode tidy.mjs", 'powershell')
+    expect(commit?.startsWith('git commit -m')).toBe(true)
+    expect(commit).not.toMatch(/msg|\|/)
+    expect(script).toBe('node tidy.mjs')
+    expect(rest).toEqual([])
+    expect(splitCommands("git merge other -m @'\nit's\n'@", 'powershell')).toHaveLength(1)
+    expect(splitCommands("git merge other -m @'\r\nit's\r\n'@ --no-ff", 'powershell')).toHaveLength(1)
+  })
+
+  test('under PowerShell an empty here-string closes on the next line, not at a later close', () => {
+    expect(splitCommands("git commit -m @'\n'@\nnode forge.mjs\ngit tag -a v1 -m @'\nx\n'@", 'powershell')).toContain('node forge.mjs')
+  })
+
+  test('under PowerShell an opener inside quotes is text, and an opener with a space after it is no here-string', () => {
+    expect(splitCommands(`git status "@'\n" ; node forge.mjs ; echo "\n'@"`, 'powershell')).toContain('node forge.mjs')
+    expect(splitCommands("git status .@'  \n'\nnode forge.mjs\necho x'\n'@", 'powershell')).toContain('node forge.mjs')
+  })
+
+  // The design attack on #348: PowerShell has no backslash escape, so `src\` at a line end ends the command there.
+  test('under PowerShell a backslash escapes nothing; under Bash it still does', () => {
+    expect(splitCommands('git add src\\\nnode tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
+    expect(splitCommands('git add src\\;node tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
+    expect(splitCommands('git add src\\;node tidy.mjs', 'bash')).toHaveLength(1)
+  })
+
+  test('a command with no here-string splits as commandSegments does', () => {
+    for (const command of ['git pull && git push', "echo 'a; b' | grep a", 'cd app; npm test']) {
+      expect(splitCommands(command, 'bash')).toEqual(commandSegments(command))
+      expect(splitCommands(command, 'powershell')).toEqual(commandSegments(command))
+    }
+  })
+})
 
 // The heredoc false positive (2026-10-18): a data heredoc's body is text and writes nothing; a body fed to an
 // interpreter or a shell is code, and its writes are real.

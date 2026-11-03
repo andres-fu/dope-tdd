@@ -1882,7 +1882,7 @@ async function guardShell(
   const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
-    const result = await watchConfig($, root, command, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
+    const result = await watchConfig($, root, command, shell, () => checkShell($, command, proceed, shell, { root, start, written, scene }, agentId))
     await noteSaved($, root)
     return tell((await configForRender($, root)).mode === 'observe', result, git.lines)
   }
@@ -1983,15 +1983,15 @@ async function checkShell(
   // A git rewrite with nothing beside it that could write leaves changes that are not the agent's; one beside a script
   // does not hide what the script wrote (verified review A7). Reads beside it write nothing either (Karl's round 4,
   // 2026-10-20: `git checkout main -- api.py; sha256sum api.py` was charged to the agent as a guarded edit).
-  const revertOnly = isRevertOnly(command, looksReadOnly)
+  const revertOnly = isRevertOnly(command, looksReadOnly, shell)
   const around = before === null || after === null ? [] : changedAround(before, after, afterOldBase, await mtimesOfGone($, root, before, after))
   const seen = revertOnly ? [] : around
   // Code git wrote from another branch, commit or stash is not the agent's edit, but it is said, never silent (2026-10-19).
-  if (revertOnly && bringsInCode(command)) {
+  if (revertOnly && bringsInCode(command, shell)) {
     const brought = changedOfKind(root, around, 'source', config).filter(({ path }) => policyFor(config, path) !== 'exempt')
     if (brought.length > 0) {
       // The verb only: the arguments can hold a token in a remote URL (verified review B1).
-      const detail = gitVerb(command)
+      const detail = gitVerb(command, shell)
       await change($, s => recordGitIn(s, [...new Set(brought.map(({ module }) => module))], detail, nowMs))
       $.ui.log(`dope-tdd: ${detail} brought in code from elsewhere, not guarded: ${brought.map(({ path }) => path).join(', ')}`)
     }
@@ -2565,10 +2565,11 @@ async function receiptText($: EngineInterface, root: string, config: GuardConfig
  * record has it put back, and it is a workaround on the record. One that created it from nothing leaves it empty, so a
  * forged record approves nothing.
  */
-async function keepRecord($: EngineInterface, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+async function keepRecord($: EngineInterface, command: string, shell: ShellName, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
   // Git may change the record (a pull, a checkout or a merge brings in other people's overrides), but only a command
   // made of git alone: a git segment beside a script proves nothing about what the script wrote (verified review A6).
-  if (isGitOnly(command)) {
+  // Its commands are the tool's shell's own, so a here-string message can't hide a script after it (#348).
+  if (isGitOnly(command, shell)) {
     return run()
   }
   const root = await $.session.root()
@@ -2590,7 +2591,7 @@ async function keepRecord($: EngineInterface, command: string, run: () => Promis
 }
 
 /** A config a command changed is recorded as Edit's is (#293), even when the check around the command throws. */
-async function watchConfig($: EngineInterface, root: string, command: string, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
+async function watchConfig($: EngineInterface, root: string, command: string, shell: ShellName, run: () => Promise<ToolCallResult>): Promise<ToolCallResult> {
   const path = `${root}/${CONFIG_FILE}`
   const textBefore = await readWhole($, path)
   const before = await loadConfig($, root)
@@ -2608,7 +2609,7 @@ async function watchConfig($: EngineInterface, root: string, command: string, ru
       refused: result?.deny !== undefined,
       heldReadOnly: result?.isReadOnly === true,
       looksReadOnly: looksReadOnly(command),
-      revertOnly: isRevertOnly(command, looksReadOnly),
+      revertOnly: isRevertOnly(command, looksReadOnly, shell),
       named: writesFileNamed(command, CONFIG_FILE),
       loosened: isLoosening(before, after),
       // A read can fail with the file still there (a lock, `chmod 000`).
@@ -2960,13 +2961,13 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'bash', e.agentId)))).catch(($, e, next) => {
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, 'bash', () => guardShell($, e.command, () => next(e), 'bash', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'Bash', next.error)
     return next(e)
   })
 
   // Windows sessions run their shell through this tool; test runs, writes and the git backstop are the same story.
-  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, () => guardShell($, e.command, () => next(e), 'powershell', e.agentId)))).catch(($, e, next) => {
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => watchSessionLogs($, () => keepRecord($, e.command, 'powershell', () => guardShell($, e.command, () => next(e), 'powershell', e.agentId)))).catch(($, e, next) => {
     reportGuardFailure($, 'PowerShell', next.error)
     return next(e)
   })

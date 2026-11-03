@@ -51,9 +51,59 @@ export function writableText(segment: string): string {
  * command, because its body is data.
  */
 export function commandSegments(command: string): string[] {
-  if (HERESTRING.test(command)) {
-    return [command]
+  return HERESTRING.test(command) ? [command] : split(command, true)
+}
+
+export type Shell = 'bash' | 'powershell'
+
+/**
+ * #348: the commands a shell runs, without commandSegments' rule that keeps a command with a here-string opener whole,
+ * which let a script after a here-string commit message read as git alone. Bash has no here-strings, so `@'` is an
+ * ordinary quote. Under PowerShell each closed here-string is blanked first, so it is whitespace inside its command,
+ * and a backslash escapes nothing (`git add src\` ends its command at the line end).
+ */
+export function splitCommands(command: string, shell: Shell): string[] {
+  return shell === 'powershell' ? split(blankHerestrings(command), false) : split(command, true)
+}
+
+// The plain opener only, as HERESTRING: a wider one would blank spans PowerShell runs as commands (the design attack on
+// #348, `git status .@'` with a space after it).
+const PLAIN_OPEN = /@(['"])\r?\n/y
+
+/** PowerShell's closed here-strings, outside quotes, as spaces: same length, newlines included. */
+function blankHerestrings(command: string): string {
+  let out = ''
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i] ?? ''
+    if (quote === null && char === '@') {
+      PLAIN_OPEN.lastIndex = i
+      const opened = PLAIN_OPEN.exec(command)
+      const close = opened === null ? null : new RegExp(String.raw`\r?\n${opened[1]}@`, 'g')
+      if (close !== null) {
+        // From the opener's own line end, so an empty body closes on the next line, not at a later close.
+        close.lastIndex = i + 2
+        const closed = close.exec(command)
+        if (closed !== null) {
+          const end = closed.index + closed[0].length
+          out += ' '.repeat(end - i)
+          i = end - 1
+          continue
+        }
+      }
+    }
+    if (quote === null && (char === '"' || char === "'")) {
+      quote = char
+    } else if (char === quote) {
+      quote = null
+    }
+    out += char
   }
+  return out
+}
+
+/** Splits on `&&`, `||`, `;`, `|` and newlines outside quotes; a backslash escapes the next character when `escapes`. */
+function split(command: string, escapes: boolean): string[] {
   const segments: string[] = []
   let current = ''
   let quote: '"' | "'" | null = null
@@ -62,14 +112,14 @@ export function commandSegments(command: string): string[] {
     const char = command[i] ?? ''
     if (quote !== null) {
       current += char
-      if (char === '\\' && quote === '"' && i + 1 < command.length) {
+      if (escapes && char === '\\' && quote === '"' && i + 1 < command.length) {
         current += command[++i]
       } else if (char === quote) {
         quote = null
       }
       continue
     }
-    if (char === '\\' && i + 1 < command.length) {
+    if (escapes && char === '\\' && i + 1 < command.length) {
       current += char + command[++i]
       continue
     }

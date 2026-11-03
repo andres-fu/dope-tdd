@@ -1711,6 +1711,20 @@ describe('each shell tool reads here-strings its own way', () => {
     expect(write.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
   })
 
+  // #348: the revert-only judgement reads the tool's shell too. Read as Bash, the apostrophe would split off a stray
+  // segment, and the code the pull brought in would be charged to the agent.
+  test('under PowerShell a stash, pull and pop with a here-string message is a revert only', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runPowerShell($, "git stash push -m @'\nit's wip\n'@\ngit pull\ngit stash pop")
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/unguarded [1-9]/)
+  })
+
   test("under Bash an @' is an ordinary quote, and a write to that file is denied", async ($, on) => {
     fakeEngine(on)
 

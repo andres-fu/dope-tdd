@@ -19,9 +19,12 @@ export type CatchPlanInput = {
   redErrorsOnly: boolean
   /** The config lets the check touch the changed file: not observe, not exempt, and catchCheck is not false. */
   checkable: boolean
-  /** The file on disk is not the code on record: a script or formatter moved it after the last edit (#285). */
-  changedOnDisk: boolean
+  /** The file as it is on disk now, null when it's gone or can't be read: a script or formatter may have moved it (#285). */
+  onDisk: string | null
 }
+
+/** Said when code put back after a break is no longer on disk: the break proved the code that was, not this. */
+export const MOVED_SINCE_RESTORE = 'the file is not the code you put back: break it and run the test again to prove it'
 
 /**
  * `done`: the verdict, with nothing to run. `pin`: proven by a deliberate break; the pinned file then gets the small
@@ -53,10 +56,12 @@ export function catchPlan(input: CatchPlanInput): CatchPlan {
     if (!input.provedByRed) {
       return { kind: 'done', result: 'unchecked' }
     }
-    // "Put back exactly as it was" has to be true of the disk, not only of the record of the restore (#285).
-    if (input.changedOnDisk) {
-      return { kind: 'done', result: { kind: 'unverified', reason: 'changed outside' } }
+    // "Put back exactly as it was" has to be true of the disk, not only of the record of the restore (#285). Line endings
+    // alone don't count, for the reason above.
+    if (input.onDisk === null || !sameIgnoringLineEndings(input.onDisk, change.after)) {
+      return { kind: 'done', result: { kind: 'unverified', reason: MOVED_SINCE_RESTORE } }
     }
+    const lineEndings = lineEndingsOnly || input.onDisk !== change.after
     // A break that only stopped the test from loading (a bad import) proves no assertion can fail; the red message said
     // so, and the restore must not then say PROVEN (#132's break-and-restore door, found 2026-10-21).
     if (input.redErrorsOnly) {
@@ -65,9 +70,9 @@ export function catchPlan(input: CatchPlanInput): CatchPlan {
     // #55: one break proves one behaviour. The pinned file gets the small changes a new file gets, in the worktree,
     // where the config allows a check at all. They add what else the pins miss; the verdict stays PROVEN either way.
     if (!input.checkable) {
-      return { kind: 'done', result: { kind: 'proven', ...(lineEndingsOnly ? { lineEndings: true } : {}) } }
+      return { kind: 'done', result: { kind: 'proven', ...(lineEndings ? { lineEndings: true } : {}) } }
     }
-    return { kind: 'pin', lineEndings: lineEndingsOnly }
+    return { kind: 'pin', lineEndings }
   }
   if (change.kind === 'refactor') {
     return { kind: 'done', result: 'refactor' }

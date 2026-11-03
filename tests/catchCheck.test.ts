@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { catchOutcome, catchPlan, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
+import { MOVED_SINCE_RESTORE, catchOutcome, catchPlan, isIsolatedRunner, linkArgv, nestedPackageDirs, runFailure, runnerArgv, timeBudgetMs, unlinkArgv, worktreeFailureReason } from '../hooks/catchCheck'
 import { NODE_TEST_REAL_IPC_CRASH, NODE_TEST_REAL_LOAD_ERROR, PYTEST_COLLECTION_ERROR_QUIET, PYTEST_FAIL, UNITTEST_IMPORT_ERROR, VITEST_REAL_FAIL } from './fixtures/runnerOutputs'
 
 describe('runFailure', () => {
@@ -181,22 +181,33 @@ describe('isIsolatedRunner', () => {
 // register.tsx gathers the module's change and the config's word on it, then runs what the plan names.
 describe('catchPlan', () => {
   const fix = { path: 'C:/r/src/a.ts', before: 'return 1\n', after: 'return 2\n', kind: 'fix' as const }
-  const input = (over: Partial<Parameters<typeof catchPlan>[0]> = {}): Parameters<typeof catchPlan>[0] => ({
-    change: fix,
-    hasTest: true,
-    editedSinceRun: false,
-    provedByRed: false,
-    redErrorsOnly: false,
-    checkable: true,
-    changedOnDisk: false,
-    ...over,
-  })
+  // The disk holds the code on record unless a test says otherwise.
+  const input = (over: Partial<Parameters<typeof catchPlan>[0]> = {}): Parameters<typeof catchPlan>[0] => {
+    const change = 'change' in over ? over.change : fix
+    return { change, hasTest: true, editedSinceRun: false, provedByRed: false, redErrorsOnly: false, checkable: true, onDisk: change?.after ?? null, ...over }
+  }
 
-  test('code that moved after it was put back is no proof, whatever the config allows (#285)', () => {
+  describe('code put back is checked against the disk (#285)', () => {
     const restored = { ...fix, after: fix.before }
-    const changed = { kind: 'done', result: { kind: 'unverified', reason: 'changed outside' } }
-    expect(catchPlan(input({ change: restored, provedByRed: true, changedOnDisk: true }))).toEqual(changed)
-    expect(catchPlan(input({ change: restored, provedByRed: true, changedOnDisk: true, checkable: false }))).toEqual(changed)
+    const moved = { kind: 'done', result: { kind: 'unverified', reason: MOVED_SINCE_RESTORE } }
+
+    test('code that moved after it was put back is no proof, whatever the config allows', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: 'return 9\n' }))).toEqual(moved)
+      expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: 'return 9\n', checkable: false }))).toEqual(moved)
+    })
+
+    test('a file gone or unreadable is no proof either', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: null }))).toEqual(moved)
+    })
+
+    test('only its line endings changed is still the code put back, as with a restore by shell (#57)', () => {
+      expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: 'return 1\r\n' }))).toEqual({ kind: 'pin', lineEndings: true })
+      expect(catchPlan(input({ change: restored, provedByRed: true, onDisk: 'return 1\r\n', checkable: false }))).toEqual({ kind: 'done', result: { kind: 'proven', lineEndings: true } })
+    })
+
+    test('the reason says what to do', () => {
+      expect(MOVED_SINCE_RESTORE).toMatch(/break it and run/)
+    })
   })
 
   test('a change of code is reverted against its test', () => {

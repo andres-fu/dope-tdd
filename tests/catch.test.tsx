@@ -671,7 +671,7 @@ describe('PROVEN: break, red, restore, green', () => {
     const green = await runTests($, world, 'pass')
     const status = await runCommand($, 'tdd')
 
-    expect(green.context?.join(' ')).toMatch(/UNPROVEN.*changed/)
+    expect(green.context?.join(' ')).toMatch(/UNPROVEN.*not the code you put back/)
     expect(status.text).toMatch(/catch check: proven 0 · missed 0/)
   })
 

@@ -4,7 +4,7 @@
 import type { LeftOut, LeftOutList } from '../types'
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from './advice.ts'
 import type { GuardConfig, Policy } from './config.ts'
-import { say } from './messages.ts'
+import { EDIT_NUDGE, say } from './messages.ts'
 import { classifyPath, isInsideRoot, moduleLabel, relativePath, sameCheckout, sourcePathFor } from './mirror.ts'
 import type { LayoutConfig } from './mirror.ts'
 import { neverRan, runnerDidNotStart, unreadableRunner } from './runOutcome.ts'
@@ -210,7 +210,7 @@ export function shellReminders(facts: ShellReminderFacts, config: LayoutConfig, 
   return facts.paused
     ? []
     : [
-        ...facts.unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first.`),
+        ...facts.unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first. ${EDIT_NUDGE} An Edit is refused until its test is touched, so the test comes first and the catch check can prove it.`),
         ...(alreadyFailing.length === 0
           ? []
           : [

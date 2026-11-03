@@ -210,7 +210,7 @@ export function shellReminders(facts: ShellReminderFacts, config: LayoutConfig, 
   return facts.paused
     ? []
     : [
-        ...facts.unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first. ${EDIT_NUDGE}`),
+        ...facts.unguardedPaths.map(path => `dope-tdd: ${path} changed through a shell command without a test touched first. ${EDIT_NUDGE} An Edit is refused until its test is touched, so the test comes first and the catch check can prove it.`),
         ...(alreadyFailing.length === 0
           ? []
           : [

@@ -37,7 +37,7 @@ describe('the message catalogue', () => {
   test('a green not checked because the change was not captured points to the Edit tool; a timeout does not', () => {
     const notCaptured = say('green.notChecked', { module: 'utils/a', sawRed: true, reason: 'change not captured' })
     expect(notCaptured).toContain('UNPROVEN: not checked (change not captured)')
-    expect(notCaptured).toContain(EDIT_NUDGE)
+    expect(notCaptured).toContain(`${EDIT_NUDGE} The catch check can only prove a change it captured.`)
     expect(say('green.notChecked', { module: 'utils/a', sawRed: true, reason: 'timeout' })).not.toContain(EDIT_NUDGE)
   })
 })

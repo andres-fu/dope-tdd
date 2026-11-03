@@ -211,9 +211,11 @@ describe('shellReminders', () => {
   // The Edit nudge (2026-11-03): a script write can't be proven by the catch check, so the line says what to do instead.
   test('a source file changed through the shell with no test touched is named, and the line points to the Edit tool', () => {
     expect(shellReminders({ ...none, unguardedPaths: ['src/utils/a.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
-      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE}`,
+      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE} An Edit is refused until its test is touched, so the test comes first and the catch check can prove it.`,
     ])
-    expect(EDIT_NUDGE).toContain('Edit tool')
+    // The shared sentence carries no reason: a sed the reader captured is unproven because no test was touched, not
+    // because the capture failed, so each surface gives its own.
+    expect(EDIT_NUDGE).toBe('Use the Edit tool for code changes next time.')
   })
 
   test('a runner that did not start says nothing was counted', () => {
@@ -245,7 +247,7 @@ describe('shellReminders', () => {
       advice: 'dope-tdd: GREEN',
     }
     expect(shellReminders(facts, DEFAULT_CONFIG, 'C:/r')).toEqual([
-      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE}`,
+      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE} An Edit is refused until its test is touched, so the test comes first and the catch check can prove it.`,
       'dope-tdd: utils/a is green apart from 2 tests that were already failing before your change: adds; subtracts.',
       'dope-tdd: the test runner did not start (command not found); nothing was counted. Run it the way this project runs its tests.',
       unreadableRunnerAdvice('mocha'),

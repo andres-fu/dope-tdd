@@ -7,10 +7,11 @@ import { formatAgo } from './timeText.ts'
 // After a proven green the next step is a refactor or the next red; on a tests-only task, the next pin (VibeCast, 2026-10-18).
 const REFACTOR = 'Now refactor with the test untouched, or write the next failing test.'
 /**
- * The Edit nudge (2026-11-03): a change made by a script or a shell write is one the catch check can't capture, so it
- * can't be proven. Said where such a change shows up, so the agent learns the cheaper path.
+ * The Edit nudge (2026-11-03): said where a script's or a shell's change shows up, so the agent learns the cheaper path.
+ * It carries no reason of its own, since each surface has a different one: a shell write went through before any test
+ * was touched, and a change the catch check never captured can't be proven.
  */
-export const EDIT_NUDGE = 'Use the Edit tool for code changes next time: the catch check can only prove a change it captured.'
+export const EDIT_NUDGE = 'Use the Edit tool for code changes next time.'
 const PROVE = 'Break the code on purpose and run again to prove the test can fail.'
 /** #57: said when the restore matches the code from before the break except CRLF against LF, so nobody wonders why. */
 const LINE_ENDINGS_NOTE =
@@ -171,7 +172,7 @@ export const MESSAGES = {
       : `dope-tdd: GREEN on ${f.module}: PROVEN. It never saw red, but with the change undone ${fails}. ${REFACTOR}`
   }),
   'green.notChecked': entry({ module: 'utils/a', sawRed: true, reason: 'change not captured' }, f =>
-    `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${f.reason}). ${f.reason === 'change not captured' ? `${EDIT_NUDGE} ` : ''}${REFACTOR}`),
+    `dope-tdd: GREEN on ${f.module}${f.sawRed ? ', saw red' : ''}. UNPROVEN: not checked (${f.reason}). ${f.reason === 'change not captured' ? `${EDIT_NUDGE} The catch check can only prove a change it captured. ` : ''}${REFACTOR}`),
   'green.pinBreakProven': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. ${REFACTOR}`),
   'green.sawRed': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module}, saw red. ${REFACTOR}`),
   'green.neverRed': entry<Module>({ module: 'utils/a' }, f => `dope-tdd: GREEN on ${f.module} but it never saw red: UNPROVEN. ${PROVE}`),

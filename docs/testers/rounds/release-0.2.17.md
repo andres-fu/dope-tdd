@@ -37,10 +37,9 @@ what the round found beside the steps, plus what review found in the same week.
   missing, and offers no re-check for a file that is new since it (#269). Under `observe`,
   `/tdd` no longer says the catch check is on (#336). The outside-project notice reads "and nothing
   else outside it is guarded this session either", and the unpaired-code notice "and other code like
-  it won't be guarded this session either" (#338, a tester's wording). A `dope-tdd.json` change
-  around a command that may not have written it now says "git brought it in, or it changed beside a
-  command that may not have written it. Charged to nobody; recorded in /tdd." (#338). The session record's digest is
-  said to be checked by hand (#294). A `sed -i` inside text handed to a shell (`eval "…"`, `ssh host
+  it won't be guarded this session either" (#338, a tester's wording). A `dope-tdd.json` change git
+  brought in, or one beside a command that looks read-only, now ends "Charged to nobody; recorded in
+  /tdd." (#338). The session record's digest is said to be checked by hand (#294). A `sed -i` inside text handed to a shell (`eval "…"`, `ssh host
   "…"`) names its file again (#350).
 - **README:** with a `--scope local` install, `/cd` into a worktree unloads the plugin until `/cd`
   back, with nothing said. Whether project and user installs stay on is untested (#339).
@@ -68,9 +67,9 @@ same scope, from inside the project.
 
 **Step 1: the here-string that was refused.** With Claude Code's PowerShell tool, repeat round 8B's
 5.5 command, or an `Add-Content -Path $p -Value $t` whose here-string names a source file in plain
-prose. Expect it to run, with no `dope-tdd:` line. Then `Add-Content src/<a source file> x` with no
-test touched: expect a refusal. If it runs instead, it appended one line: put the file back with
-`git checkout -- src/<that file>`, and paste what happened.
+prose. Expect it to run, with no `dope-tdd:` line. Then pick a source file with no uncommitted changes
+and no test touched, and run `Add-Content src/<that file> x`: expect a refusal. If it runs instead, put
+the file back with `git checkout -- src/<that file>`, and paste what happened.
 
 **Step 2: a script's write.** Write a short script that changes a source file whose test hasn't been
 touched, and run it. Expect the line to contain "Use the Edit tool for code changes next time."

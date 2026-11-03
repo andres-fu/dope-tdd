@@ -77,7 +77,8 @@ A verdict is what the guard saw, and these are the gaps in what it sees.
   ([#323](https://github.com/andres-fu/dope-tdd/issues/323)). A file changed after a
   break was put back reads UNPROVEN.
 - **The catch check often can't run, and it says so.** An edit made by a script
-  reads **UNPROVEN · not checked: change not captured**. On a strict runner such as
+  reads **UNPROVEN · not checked: change not captured**, and the verdict says to use
+  the Edit tool next time, as does the line for a shell write with no test touched. On a strict runner such as
   `node --test`, a change that adds an export can't load its test with the change
   undone, and reads the same way. Those are the safe answer, not a pass, so count
   them as unproven.

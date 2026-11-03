@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { MESSAGES, renderAll, say } from '../hooks/messages'
+import { EDIT_NUDGE, MESSAGES, renderAll, say } from '../hooks/messages'
 import { GOLDEN } from './fixtures/messages.golden'
 
 // The message catalogue (2026-10-18): every sentence dope-tdd says to the agent lives in hooks/messages.ts, and its
@@ -30,6 +30,15 @@ describe('the message catalogue', () => {
 
   test('say renders one message from its facts', () => {
     expect(say('red.again', { module: 'runPlan' })).toBe(MESSAGES['red.again'].say({ module: 'runPlan' }))
+  })
+
+  // The Edit nudge (2026-11-03): a change the guard did not capture came through a script, so the verdict says what
+  // to do next time. Any other reason for not checking gets no nudge.
+  test('a green not checked because the change was not captured points to the Edit tool; a timeout does not', () => {
+    const notCaptured = say('green.notChecked', { module: 'utils/a', sawRed: true, reason: 'change not captured' })
+    expect(notCaptured).toContain('UNPROVEN: not checked (change not captured)')
+    expect(notCaptured).toContain(EDIT_NUDGE)
+    expect(say('green.notChecked', { module: 'utils/a', sawRed: true, reason: 'timeout' })).not.toContain(EDIT_NUDGE)
   })
 })
 

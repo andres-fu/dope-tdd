@@ -45,7 +45,7 @@ export const GOLDEN: Record<string, string> = {
   "green.brokenProven": "dope-tdd: GREEN on utils/a: PROVEN. Its test failed on your break and passes with the code put back exactly as it was. Now refactor with the test untouched, or write the next failing test.",
   "green.provenBy": "dope-tdd: GREEN on io, saw red, but its own test, test/io.test.ts, does not catch the change, but test/slugify.test.ts does: PROVEN by test/slugify.test.ts. Its own test is missing an assertion for this change; add one there. Now refactor with the test untouched, or write the next failing test.",
   "green.caught": "dope-tdd: GREEN on utils/a: PROVEN. It saw red, and with the change undone its test fails. Now refactor with the test untouched, or write the next failing test.",
-  "green.notChecked": "dope-tdd: GREEN on utils/a, saw red. UNPROVEN: not checked (timeout). Now refactor with the test untouched, or write the next failing test.",
+  "green.notChecked": "dope-tdd: GREEN on utils/a, saw red. UNPROVEN: not checked (change not captured). Use the Edit tool for code changes next time: the catch check can only prove a change it captured. Now refactor with the test untouched, or write the next failing test.",
   "green.pinBreakProven": "dope-tdd: GREEN on utils/a, saw red: its test went green, failed on a break, and passes again, so it is PROVEN. Now refactor with the test untouched, or write the next failing test.",
   "green.sawRed": "dope-tdd: GREEN on utils/a, saw red. Now refactor with the test untouched, or write the next failing test.",
   "green.neverRed": "dope-tdd: GREEN on utils/a but it never saw red: UNPROVEN. Break the code on purpose and run again to prove the test can fail.",

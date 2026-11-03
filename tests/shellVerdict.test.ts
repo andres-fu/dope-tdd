@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { carriedOnAdvice, redUnlockAdvice, unreadableRunnerAdvice } from '../hooks/advice'
 import { DEFAULT_CONFIG } from '../hooks/config'
+import { EDIT_NUDGE } from '../hooks/messages'
 import { ELSEWHERE } from '../hooks/shell'
 import { changeOwner, configLeftAlone, judgeConfigChange, leftOutShellEdits, gateShellWrites, judgeFailures, ownTestRun, readShellRun, shellGate, shellReminders, splitChanges } from '../hooks/shellVerdict'
 import type { ShellReminderFacts } from '../hooks/shellVerdict'
@@ -207,10 +208,12 @@ describe('shellReminders', () => {
   })
 
   // One fact at a time, so a failure names the line that broke. Wording is asserted only where the user reads it.
-  test('a source file changed through the shell with no test touched is named', () => {
+  // The Edit nudge (2026-11-03): a script write can't be proven by the catch check, so the line says what to do instead.
+  test('a source file changed through the shell with no test touched is named, and the line points to the Edit tool', () => {
     expect(shellReminders({ ...none, unguardedPaths: ['src/utils/a.ts'] }, DEFAULT_CONFIG, 'C:/r')).toEqual([
-      'dope-tdd: src/utils/a.ts changed through a shell command without a test touched first.',
+      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE}`,
     ])
+    expect(EDIT_NUDGE).toContain('Edit tool')
   })
 
   test('a runner that did not start says nothing was counted', () => {
@@ -242,7 +245,7 @@ describe('shellReminders', () => {
       advice: 'dope-tdd: GREEN',
     }
     expect(shellReminders(facts, DEFAULT_CONFIG, 'C:/r')).toEqual([
-      'dope-tdd: src/utils/a.ts changed through a shell command without a test touched first.',
+      `dope-tdd: src/utils/a.ts changed through a shell command without a test touched first. ${EDIT_NUDGE}`,
       'dope-tdd: utils/a is green apart from 2 tests that were already failing before your change: adds; subtracts.',
       'dope-tdd: the test runner did not start (command not found); nothing was counted. Run it the way this project runs its tests.',
       unreadableRunnerAdvice('mocha'),

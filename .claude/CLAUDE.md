@@ -34,6 +34,23 @@ npm run compare -- --sessions   # or to the briefing, band, /tdd or an Edit of a
 [CONTRIBUTING.md](../CONTRIBUTING.md) has the build, the test layout, the release steps and the live
 runs.
 
+## Working in this repo
+
+Each line here cost a session an hour or a broken file. Ten lines at most: at ten, the oldest becomes a
+test, a tool or a lint, and leaves. A session that trips on the same thing twice adds a line in its pull
+request.
+
+1. Run a test file without a pipe. `node --test` prints its summary before the failures, so `head` or
+   `grep` cuts it off and the guard counts nothing. To filter, use `--test-reporter=tap | tail -40`.
+2. Write a probe script or a test block with the Write tool, then run it by path. A heredoc through
+   Bash on Windows loses backslashes and quotes, and has broken test files mid-edit.
+3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text, and a
+   write verb beside a source file's name there can read as a write to it, even in a read.
+4. Don't switch branches in a checkout another session is using. A side session that writes code
+   gets its own worktree.
+5. Probe for Python with `command -v python` first. On Windows a bare `python` can be the Store stub,
+   which hangs instead of failing.
+
 ## How we work
 
 - **Branch from `release` and open pull requests into `release`.** Only the release pull request goes

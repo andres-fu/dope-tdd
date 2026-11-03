@@ -47,7 +47,8 @@ most: at ten, line 1 becomes a test, a tool, a lint or a note elsewhere, and lea
    Bash on Windows halves double backslashes, which breaks string and regex escapes in test files.
 3. Search with the Grep tool and read with the Read tool. The guard reads a shell command's text: a
    write verb outside quotes (`sed -i`, `Set-Content`, `mv`), or a script's write call anywhere in it
-   (`writeFile(`, `open(..., 'w')`), beside a source file's name reads as a write to it, even in a grep.
+   whose target it can't trace (`writeFile(`, `open(..., 'w')`), beside a source file's name reads as a
+   write to it, even in a grep.
 4. Don't switch branches in a checkout another session is using. A side session that writes code
    gets its own worktree.
 5. Before running `python`, check where it resolves: `command -v python` in Bash,

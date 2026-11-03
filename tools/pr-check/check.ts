@@ -19,7 +19,7 @@
 // dependencies must be installed. The same rules as the plugin: dope-tdd.json, the stack's layouts and runners.
 
 import { spawnSync, execFileSync } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { catchOutcome, isIsolatedRunner, runnerArgv } from '../../hooks/catchCheck.ts'
@@ -206,11 +206,17 @@ export function report(rows: readonly Row[], base: string, configNote: string | 
 function configFor(root: string, base: string): { text: string | null; note: string | null } {
   const head = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
   if (git(root, 'ls-tree', base, '--', CONFIG_FILE) === '') {
-    return { text: head, note: null }
+    // Said, so a reader sees the pull request wrote the rules it was judged by.
+    return { text: head, note: head === null ? null : `This pull request adds ${CONFIG_FILE}, and it was judged by that file, since the base has none.` }
   }
   const text = git(root, 'show', `${base}:${CONFIG_FILE}`)
   const same = head !== null && head.replace(/\r\n/g, '\n').trim() === text.replace(/\r\n/g, '\n').trim()
-  return { text, note: same ? null : `This pull request changes ${CONFIG_FILE}, so it was judged by the base's copy.` }
+  return {
+    text,
+    note: same
+      ? null
+      : `This pull request changes ${CONFIG_FILE}. It was judged by the base's copy, so the change isn't in force here: tests or sources at new paths aren't seen. Merge the config change on its own first.`,
+  }
 }
 
 /** The check of a pull request checked out at `root`: a row per guarded source it changes, the merge base used, and any word on the config. */
@@ -220,8 +226,12 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
   }
   const base = git(root, 'merge-base', baseRef, 'HEAD')
   const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
-  const { text: configText, note: configNote } = configFor(root, base)
-  const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
+  const { text: configText, note: changedNote } = configFor(root, base)
+  // The stack comes from the base too: a marker the pull request adds would change the layout it's judged by.
+  const config = parseConfig(configText, detectStackFrom(lines(git(root, 'ls-tree', '--name-only', base))) ?? undefined)
+  // An invalid file is ignored whole, as the plugin ignores it, and said, as the plugin says it.
+  const invalidNote = config.error === null ? null : `${CONFIG_FILE} is invalid, so the defaults were used. Fix it on the base branch.`
+  const configNote = [changedNote, invalidNote].filter(note => note !== null).join(' ') || null
   const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
   // Moved code: every changed code file as it was at the base and as it is at HEAD, which is the checkout (the tree
   // is clean), so its committed text is what is on disk.

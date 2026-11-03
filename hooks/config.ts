@@ -325,7 +325,10 @@ export function describeConfig(config: GuardConfig): string[] {
     ...(config.roots.length === 0 ? [] : [`roots: ${config.roots.join(', ')}`]),
     ...(config.godot === null ? [] : [`godot: ${config.godot}`]),
     ...(config.catchCheck === false ? [`catch check: off (${CONFIG_FILE}); a green is not re-run with the change undone`] : []),
-    ...(config.catchCheck === true ? [`catch check: on for every runner (${CONFIG_FILE}); an experimental runner undoes the change on disk for one test run`] : []),
+    // #336: under observe nothing runs, so the line says that rather than contradict the mode line above.
+    ...(config.catchCheck === true
+      ? [config.mode === 'observe' ? `catch check: not under observe (${CONFIG_FILE} sets it on)` : `catch check: on for every runner (${CONFIG_FILE}); an experimental runner undoes the change on disk for one test run`]
+      : []),
     // Experimental, and the one thing sent off the machine (decided 2026-10-20, verified review G3).
     ...(approverOf(config).approver === 'model' ? ["approver: model (experimental): override requests and the module's diff go to the model API"] : []),
     ...(config.error === null ? [] : [`config: ${config.error} (using defaults)`]),

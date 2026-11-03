@@ -50,12 +50,12 @@ runs.
   normal use, and whether it is worth that. Have the `reviewer` agent try to break the paragraph, citing
   its sentences. This isn't a review round. Writing code is cheap and reviewing it isn't, so a wrong idea
   should die on paper.
-- **Decide from effects, not from text.** Code that predicts what a command will do from its text is a
-  list, and a fresh review can always find the next entry it lacks: three designs for one fix to the
-  shell reader each fell to the next spelling, where running the git check after every command settled
-  the same question in one. So a new rule gates on what git, the disk or the runner shows afterwards.
-  The text may say who gets charged. A new predictor is a design to attack on paper, and "it misses
-  this spelling" is one finding, the class, which takes the severity of its worst member.
+- **Decide from effects, not from text.** A new rule gates on what git, the disk or the runner shows
+  afterwards, and command text only says who gets charged. Code that predicts what a command will do
+  from its text is a list, and every review finds the next entry it lacks. Naming a file isn't
+  prediction: the Edit and Write gate decides from a path, and so may a shell write whose path is
+  plain. A new predictor is a design to attack on paper, and "it misses this spelling" is one finding,
+  the class, which takes the severity of its worst member.
 - **Prove first, then review.** Before the first review of the code, do the deliberate breaks and run
   the comparison where it can see the change. `npm run compare` takes seconds and shows which files the
   shell reader finds. `--sessions` takes about 17 minutes and adds the briefing, band, `/tdd` and what an
@@ -95,10 +95,9 @@ Look for these first, when writing code and when reviewing it.
 3. **It misreads a shell command.** Quoted text taken for a write, the wrong result kept from a command
    with two runs, a command judged in the wrong folder. A false refusal stops good work, and a missed
    write that nothing says afterwards is failure 1. A spelling the reader misses is a gap, not a failure,
-   only when the git check that runs after every shell command names the file in that command's result
-   and in `/tdd`; where that check can't see (no git, a gitignored file, a folder outside the layout, a
-   worktree read against the wrong root) the miss is failure 1. Gaps are listed on
-   `docs/what-gets-past.md`.
+   only when `/tdd` lists the file after the command; where the git check can't see (no git, a
+   gitignored file, a folder outside the layout, a worktree read against the wrong root) the miss is
+   failure 1. Gaps are listed on `docs/what-gets-past.md`.
 4. **It loses someone's work.** The catch check undoes a change on disk and puts it back. Anything that
    can leave a file reverted, or overwrite an edit made in the meantime, is the worst bug here.
 

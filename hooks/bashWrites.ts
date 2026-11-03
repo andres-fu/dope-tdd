@@ -109,10 +109,12 @@ function shellWords(segment: string): string {
     const char = segment[i] ?? ''
     if (quote === null) {
       const herestring = char === '@' ? HERESTRING_OPEN.exec(segment.slice(i, i + 6)) : null
-      if (herestring !== null) {
-        const close = `\n${herestring[1]}@`
-        const end = segment.indexOf(close, i + herestring[0].length)
-        const stop = end === -1 ? segment.length : end + close.length
+      // Only a closed here-string is one: an opener alone is an ordinary quote, or a bash command would have the rest
+      // of itself blanked (security review of 0.2.17).
+      const close = herestring === null ? null : `\n${herestring[1]}@`
+      const end = herestring === null || close === null ? -1 : segment.indexOf(close, i + herestring[0].length)
+      if (close !== null && end !== -1) {
+        const stop = end + close.length
         out += segment.slice(i, stop).replace(/[^\n]/g, ' ')
         i = stop - 1
         continue
@@ -248,7 +250,10 @@ export function writesFileNamed(command: string, name: string): boolean {
     const words = shellWords(runnable)
     const sedNames = IN_PLACE_SED.test(words) && sedFiles(runnable).some(path => isNamed.test(path))
     const powershellNames = POWERSHELL_WRITE.test(words) && powershellNamed(runnable, words).some(path => isNamed.test(path))
-    return sedNames || powershellNames
+    // A quoted shell (`pwsh -c "…"`) keeps its quotes live, and its one quoted argument is the command: a write verb
+    // and the name together in it are a write to it (security review of 0.2.17).
+    const behindShell = words === runnable && new RegExp(file, 'i').test(runnable) && (IN_PLACE_SED.test(runnable) || POWERSHELL_WRITE.test(runnable))
+    return sedNames || powershellNames || behindShell
   })
   return onto.some(pattern => pattern.test(text)) || (mentioned && SCRIPT_WRITE.test(text)) || shaped
 }

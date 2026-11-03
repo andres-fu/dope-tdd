@@ -408,6 +408,22 @@ describe('a PowerShell write names its target (#332)', () => {
     expect(writesFileNamed(`Set-Content -Path "C:/r/dope-tdd.json" '{"mode":"observe"}'`, 'dope-tdd.json')).toBe(true)
   })
 
+  // Security review of 0.2.17: an unclosed `@'` at the end of a line blanked the rest of a Bash command, and a
+  // PowerShell write behind `pwsh -c "…"` was no longer a write to the record. main refused both.
+  test('an unclosed here-string opener is an ordinary quote, so a write after it is still seen', () => {
+    const bash = "echo @'\n'\nsed -i 's/\"denied\"/\"approved\"/' dope-tdd.overrides.json"
+    expect(writesFileNamed(bash, RECORD)).toBe(true)
+    expect(writesFileNamed("echo @'\n'\nSet-Content dope-tdd.overrides.json '{}'", RECORD)).toBe(true)
+    expect(findSourceWrites("echo @'\n'\nsed -i 's/x/y/' src/a.ts")).toEqual(['src/a.ts'])
+  })
+
+  test('a record write behind a quoted shell is still a write to it', () => {
+    expect(writesFileNamed(`pwsh -c "Set-Content ${RECORD} '{}'"`, RECORD)).toBe(true)
+    expect(writesFileNamed(`powershell -Command "Add-Content -Path ${RECORD} -Value x"`, RECORD)).toBe(true)
+    expect(writesFileNamed(`iex "Set-Content dope-tdd.json x"`, 'dope-tdd.json')).toBe(true)
+    expect(writesFileNamed(`bash -c "sed -i 's/a/b/' ${RECORD}"`, RECORD)).toBe(true)
+  })
+
   // #322: a data heredoc whose body named the record beside `sed -i` was refused as a write to the record.
   test("a data heredoc's body naming the record beside sed -i is not a write to it (#322)", () => {
     expect(writesFileNamed(`cat > /tmp/probe.sh <<'EOF'\nsed -i 's/denied/approved/' ${RECORD}\nEOF`, RECORD)).toBe(false)

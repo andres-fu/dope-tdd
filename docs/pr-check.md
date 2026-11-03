@@ -37,7 +37,14 @@ the plugin uses. Tests that already fail on the pull request
 are set aside by name. By default a MISSED fails the check; `fail-on:
 untested` is stricter, `never` only reports. It reads `dope-tdd.json` as the
 plugin does ([#192](https://github.com/andres-fu/dope-tdd/issues/192)): the
-layout, `exempt`, and the settings below. It doesn't read the project's code the way
+layout, `exempt`, and the settings below. It reads the file and the stack's marker
+files from the merge base, not from the pull request, so a pull request can't loosen
+what it's judged by. One that changes `dope-tdd.json` is told so at the top of the
+report: its change isn't in force, so tests or sources moved to a new layout aren't
+seen, and the config change should merge on its own first. With no `dope-tdd.json` at
+the base, a first one in the pull request counts, and with neither a config nor a
+marker at the base, its first marker counts; the report says so in both cases. An
+invalid file is ignored and said, as the plugin does. It doesn't read the project's code the way
 a session can, so a project with no `dope-tdd.json` and no marker is Node to the check
 until `/tdd setup write` saves a config:
 

@@ -19,7 +19,7 @@
 // dependencies must be installed. The same rules as the plugin: dope-tdd.json, the stack's layouts and runners.
 
 import { spawnSync, execFileSync } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { catchOutcome, isIsolatedRunner, runnerArgv } from '../../hooks/catchCheck.ts'
@@ -34,7 +34,8 @@ import { failedTestsIn } from '../../hooks/runners.ts'
 import { changedCode, existsAt, renameRules } from '../move-check/check.ts'
 import { declarations, findMoves } from '../move-check/move.ts'
 import type { Move, Rename } from '../move-check/move.ts'
-import { detectStackFrom, stackOf } from '../../hooks/stacks.ts'
+import { detectStackFrom, stackMarker, stackOf } from '../../hooks/stacks.ts'
+import type { StackName } from '../../hooks/stacks.ts'
 
 type Verdict = 'PROVEN' | 'MISSED' | 'MOVED' | 'UNTESTED' | 'UNPROVEN'
 /** `policy`: what dope-tdd.json says for the source; only an enforced one fails the check (#192). */
@@ -180,11 +181,12 @@ async function catchCheckModule(root: string, config: GuardConfig, policy: Polic
   }
 }
 
-export function report(rows: readonly Row[], base: string): string {
+export function report(rows: readonly Row[], base: string, configNote: string | null = null): string {
   const count = (verdict: Verdict) => rows.filter(row => row.verdict === verdict).length
   return [
     '## Dope TDD: do the tests catch this change?',
     '',
+    ...(configNote === null ? [] : [`**${configNote}**`, '']),
     rows.length === 0
       ? 'No source file in this pull request is one the project guards.'
       : `${count('PROVEN')} proven · ${count('MISSED')} missed · ${count('MOVED')} moved · ${count('UNTESTED')} untested · ${count('UNPROVEN')} not checked, against ${base}.`,
@@ -198,15 +200,58 @@ export function report(rows: readonly Row[], base: string): string {
   ].join('\n')
 }
 
-/** The check of a pull request checked out at `root`: a row per guarded source it changes, and the merge base used. */
-export async function checkPullRequest(root: string, baseRef: string, { timeoutMs = 180_000, renames = [] as readonly Rename[] } = {}): Promise<{ rows: Row[]; base: string }> {
+/**
+ * The config a pull request is judged by: the base's, so it can't pass by changing what it's judged by (#319). A project
+ * with none at the base has nothing else to go on, so its first config counts. The note says when the two differ.
+ */
+function configFor(root: string, base: string): { text: string | null; atBase: boolean; changed: boolean } {
+  const head = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
+  if (git(root, 'ls-tree', base, '--', CONFIG_FILE) === '') {
+    return { text: head, atBase: false, changed: head !== null }
+  }
+  const text = git(root, 'show', `${base}:${CONFIG_FILE}`)
+  const same = head !== null && head.replace(/\r\n/g, '\n').trim() === text.replace(/\r\n/g, '\n').trim()
+  return { text, atBase: true, changed: !same }
+}
+
+/**
+ * The stack, from the base's markers, so one the pull request adds can't move the layout. A project with neither a
+ * marker nor a config at the base takes the pull request's first marker, as with a first config, and the note says so.
+ */
+function stackFor(root: string, base: string, configAtBase: boolean): { stack: StackName | undefined; note: string | null } {
+  const atBase = detectStackFrom(lines(git(root, 'ls-tree', '--name-only', base)))
+  if (atBase !== null || configAtBase) return { stack: atBase ?? undefined, note: null }
+  const headNames = lines(git(root, 'ls-tree', '--name-only', 'HEAD'))
+  const added = detectStackFrom(headNames)
+  if (added === null) return { stack: undefined, note: null }
+  return { stack: added, note: `This pull request adds ${stackMarker(headNames, added)}, and it was judged as ${added} by it, since the base has no marker.` }
+}
+
+/** What the report says about the config, ahead of the table. Each says what the pull request did and where it stands. */
+function configNotes(found: { atBase: boolean; changed: boolean }, invalid: boolean, stackNote: string | null): string | null {
+  const notes = [
+    found.atBase && found.changed
+      ? `This pull request changes ${CONFIG_FILE}. It was judged by the base's copy, so the change isn't in force here: tests or sources at new paths aren't seen. Merge the config change on its own first.`
+      : null,
+    !found.atBase && found.changed && !invalid ? `This pull request adds ${CONFIG_FILE}, and it was judged by that file, since the base has none.` : null,
+    invalid ? `${CONFIG_FILE} is invalid, so the defaults were used. ${found.atBase ? 'Fix it on the base branch.' : 'Fix it in this pull request.'}` : null,
+    stackNote,
+  ].filter(note => note !== null)
+  return notes.length === 0 ? null : notes.join(' ')
+}
+
+/** The check of a pull request checked out at `root`: a row per guarded source it changes, the merge base used, and any word on the config. */
+export async function checkPullRequest(root: string, baseRef: string, { timeoutMs = 180_000, renames = [] as readonly Rename[] } = {}): Promise<{ rows: Row[]; base: string; configNote: string | null }> {
   if (lines(git(root, 'status', '--porcelain', '--untracked-files=no')).length > 0) {
     throw new Error('the working tree has uncommitted changes: check out the pull request head with a clean tree')
   }
   const base = git(root, 'merge-base', baseRef, 'HEAD')
   const changed = lines(git(root, 'diff', '--name-only', '--diff-filter=AMR', base, 'HEAD'))
-  const configText = existsSync(`${root}/${CONFIG_FILE}`) ? readFileSync(`${root}/${CONFIG_FILE}`, 'utf8') : null
-  const config = parseConfig(configText, detectStackFrom(readdirSync(root)) ?? undefined)
+  const found = configFor(root, base)
+  const { stack, note: stackNote } = stackFor(root, base, found.atBase)
+  const config = parseConfig(found.text, stack)
+  // An invalid file is ignored whole, as the plugin ignores it, and said, as the plugin says it.
+  const configNote = configNotes(found, config.error !== null, stackNote)
   const tests = changed.filter(path => classifyPath(root, `${root}/${path}`, config).kind === 'test')
   // Moved code: every changed code file as it was at the base and as it is at HEAD, which is the checkout (the tree
   // is clean), so its committed text is what is on disk.
@@ -221,7 +266,7 @@ export async function checkPullRequest(root: string, baseRef: string, { timeoutM
     // The table names a module as the plugin's messages do: a folder's module by its source path (`web//x` reads `web/src/x`).
     rows.push({ ...row, module: moduleLabel(config, row.module), policy })
   }
-  return { rows, base }
+  return { rows, base, configNote }
 }
 
 async function main(): Promise<void> {
@@ -237,8 +282,8 @@ async function main(): Promise<void> {
   if (baseRef === undefined) throw new Error('--base is required (the branch the pull request goes into)')
   // The move check's own reading of a rule (#67): --rename 'old=new', or --rename-from/--rename-to for code with `=`.
   const renames = renameRules(argv)
-  const { rows, base } = await checkPullRequest(root, baseRef, { timeoutMs, renames })
-  const text = report(rows, `${baseRef} (${base.slice(0, 7)})`)
+  const { rows, base, configNote } = await checkPullRequest(root, baseRef, { timeoutMs, renames })
+  const text = report(rows, `${baseRef} (${base.slice(0, 7)})`, configNote)
   console.log(text)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)
   process.exitCode = isFailing(rows, failOn) ? 1 : 0

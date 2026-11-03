@@ -135,7 +135,12 @@ export function fixedPrefix(template: string): string {
 function nobodys(rest: string, layout: Layout): ClassifiedPath {
   const tests = fixedPrefix(layout.test)
   const ownTree = tests !== '' && tests !== fixedPrefix(layout.source) && rest.startsWith(tests)
-  return ownTree || (layout.test.includes('__tests__/') && /(?:^|\/)__tests__\//.test(rest)) ? { kind: 'other', inTestFolder: true } : { kind: 'other' }
+  return ownTree || inTestsFolder(rest, layout) ? { kind: 'other', inTestFolder: true } : { kind: 'other' }
+}
+
+/** Under a layout whose tests sit in `__tests__` folders, any file in one is the tests' own: a helper, a fixture. */
+function inTestsFolder(rest: string, layout: Layout): boolean {
+  return layout.test.includes('__tests__/') && /(?:^|\/)__tests__\//.test(rest)
 }
 
 function withPkg(pkg: string, module: string): string {
@@ -186,7 +191,8 @@ function classifyIn(split: { pkg: string; rest: string }, layout: Layout, stack:
   }
   // A file inside a tests folder of its own that is not a test (a fixture, a conftest) is nobody's source.
   const testsRoot = literalRoot(layout.test)
-  if (testsRoot !== null && testsRoot !== literalRoot(layout.source) && split.rest.startsWith(`${testsRoot}/`)) {
+  // A `__tests__` folder sits inside the source tree, so the source template would claim its helpers first (#275).
+  if ((testsRoot !== null && testsRoot !== literalRoot(layout.source) && split.rest.startsWith(`${testsRoot}/`)) || inTestsFolder(split.rest, layout)) {
     return { kind: 'other', inTestFolder: true }
   }
   const source = matchTemplate(layout.source, split.rest, exts)

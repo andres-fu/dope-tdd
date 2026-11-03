@@ -53,7 +53,7 @@ These aren't refused, and the last column says what the guard does instead.
 | A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it ([#297](https://github.com/andres-fu/dope-tdd/issues/297)) |
 | A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts`, `echo x 2> a.txt && npm test` | Said once for that file, charged to nobody |
 | A write hidden in a read or a test run | `echo "$(sed -i ...)"` | Said once for that file, charged to nobody |
-| A path through `$PWD` | `echo 1 > "$PWD/src/a.ts"`, `npm test > "$PWD/src/a.ts"` | Not refused. After the command, git shows the change: the first counts as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309)) |
+| A path through a variable it can't expand | `echo 1 > "$ROOT/src/a.ts"`, `npm test > "$ROOT/src/a.ts"` | Not refused. If it lands in the project, git shows the change after the command: the first counts as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309)) |
 | A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git restore a.ts && git tag -a -m "$(./fix.sh)" v9`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
 | A write outside the folders it watches | A file outside `src/` and `tests/`, with the default layout | Nothing, unless the command names it |
 | A project with no git repository | A script's write | Nothing: the check after a command needs git |

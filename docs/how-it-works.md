@@ -173,9 +173,11 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   but a shell's name inside quoted text doesn't count. `sed -i` and a PowerShell
   write (`Set-Content`, `Add-Content`, `Out-File`) name only what their shape
   names: sed's file arguments, and the path after the verb or after `-Path`,
-  `-FilePath` or `-LiteralPath`, plus any path outside quotes. In text handed to
-  a shell, its quotes are commands, so either one names every path the command
-  mentions ([#350](https://github.com/andres-fu/dope-tdd/issues/350)). Under the
+  `-FilePath` or `-LiteralPath`, plus any path outside quotes. Inside text handed
+  to a shell (`eval "…"`, `ssh host "…"`), where the quotes are commands, a
+  PowerShell write names every path in its command, and so does a sed that isn't
+  a word of the command itself, dotted paths aside
+  ([#350](https://github.com/andres-fu/dope-tdd/issues/350)). Under the
   PowerShell tool a here-string is one quoted span wherever it stands, so text in
   `-Value` is data; under Bash `@'` is an ordinary quote, since Bash has no
   here-strings. Under either shell, though, a command with `@'` right before an
@@ -195,7 +197,8 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   spelled `./src/a.ts`, `src//a.ts` or `lib/../src/a.ts` is the file it names, for
   a shell write and for Edit, Write and NotebookEdit. A `..` is resolved by
   reading the path, so through a symbolic link it can land elsewhere. In a script's
-  text, or in quotes in PowerShell, a dotted path is left as text, since import
+  text, in a sed handed to a shell, or in quotes in PowerShell, a dotted path is
+  left as text, since import
   paths are spelled that way
   ([#272](https://github.com/andres-fu/dope-tdd/issues/272)).
 - Code the guard can't pair with a test goes through, and isn't guarded. There

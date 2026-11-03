@@ -226,13 +226,14 @@ function mentioned(segment: string): string[] {
 }
 
 /**
- * What an in-place sed writes: its file arguments. A sed whose quotes a shell runs (`eval "sed -i …"`, `su -c "…"`, a
- * here-string piped to bash) is one quoted word to sedFiles, so there it also names the paths the command mentions,
- * as a PowerShell verb behind a quoted shell does (#350).
+ * What an in-place sed writes: its file arguments. A sed inside text handed to a shell (`eval "sed -i …"`, `su -c "…"`,
+ * a here-string piped to bash) is one quoted word to sedFiles, so there it also names the paths its segment mentions,
+ * dotted ones left as text as in a script (#272), as main did (#350). Only there: a sed that is its own word has its
+ * files read already, and a shell's name elsewhere in the segment (a comment, `wsl sed`) makes its script no target.
  */
 function sedTargets(segment: string, words: string): string[] {
-  const files = sedFiles(segment).filter(path => CODE_FILE.test(path))
-  return RUNS_QUOTED_SHELL.test(words) ? [...captures(SOURCE_PATH, words), ...files] : files
+  const handed = RUNS_QUOTED_SHELL.test(words) && !(segment.match(SHELL_WORD) ?? []).includes('sed')
+  return handed ? mentioned(segment) : sedFiles(segment).filter(path => CODE_FILE.test(path))
 }
 
 function writesIn(whole: string, herestrings: boolean): string[] {

@@ -292,6 +292,14 @@ describe('git alone, a revert only and code brought in are judged by the shell t
     expect(isRevertOnly("git stash push -m @'\nwip\n'@\ngit pull\ngit stash pop", quiet, 'powershell')).toBe(true)
   })
 
+  // Review round 1: a script inside `bash -c`, or one an `@"` here-string runs as its own stage, is not git.
+  test('a script handed to a shell, or run by a here-string stage, is not git alone or a revert only', () => {
+    expect(isGitOnly(`bash -c 'git status\necho "@"\nnode scripts/tidy.mjs'`, 'bash')).toBe(false)
+    expect(isRevertOnly(`sh -c 'git restore README.md\necho "@"\npython /tmp/fix.py'`, quiet, 'bash')).toBe(false)
+    expect(isGitOnly('@"\nFix: $(node scripts/tidy.mjs)\n"@ | git commit -F -', 'powershell')).toBe(false)
+    expect(isRevertOnly('@"\n$(python fix.py)\n"@\ngit restore README.md', quiet, 'powershell')).toBe(false)
+  })
+
   test('code another rewrite in the command brings in is seen past a here-string', () => {
     const command = "git checkout -- src/a.ts\ngit checkout other -- src/b.ts\ngit commit -m @'\nbring b\n'@"
     expect(bringsInCode(command, 'powershell')).toBe(true)

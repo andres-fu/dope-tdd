@@ -51,7 +51,7 @@ export function writableText(segment: string): string {
  * command, because its body is data.
  */
 export function commandSegments(command: string): string[] {
-  return HERESTRING.test(command) ? [command] : split(command, true)
+  return HERESTRING.test(command) ? [command] : split(command, true, commandSegments)
 }
 
 export type Shell = 'bash' | 'powershell'
@@ -59,18 +59,20 @@ export type Shell = 'bash' | 'powershell'
 /**
  * #348: the commands a shell runs, without commandSegments' rule that keeps a command with a here-string opener whole,
  * which let a script after a here-string commit message read as git alone. Bash has no here-strings, so `@'` is an
- * ordinary quote. Under PowerShell each closed here-string is blanked first, so it is whitespace inside its command,
- * and a backslash escapes nothing (`git add src\` ends its command at the line end).
+ * ordinary quote. Under PowerShell each closed here-string is first one `@` word inside its command, so a here-string
+ * that is a stage of its own stays one (an `@"` one can run `$(…)`), and a backslash escapes nothing (`git add src\`
+ * ends its command at the line end). Text handed to a shell (`bash -c '…'`) is Bash, under either tool.
  */
 export function splitCommands(command: string, shell: Shell): string[] {
-  return shell === 'powershell' ? split(blankHerestrings(command), false) : split(command, true)
+  const handed = (inner: string): string[] => splitCommands(inner, 'bash')
+  return shell === 'powershell' ? split(blankHerestrings(command), false, handed) : split(command, true, handed)
 }
 
 // The plain opener only, as HERESTRING: a wider one would blank spans PowerShell runs as commands (the design attack on
 // #348, `git status .@'` with a space after it).
 const PLAIN_OPEN = /@(['"])\r?\n/y
 
-/** PowerShell's closed here-strings, outside quotes, as spaces: same length, newlines included. */
+/** PowerShell's closed here-strings, outside quotes, as an `@` and spaces: same length, newlines included. */
 function blankHerestrings(command: string): string {
   let out = ''
   let quote: '"' | "'" | null = null
@@ -86,7 +88,7 @@ function blankHerestrings(command: string): string {
         const closed = close.exec(command)
         if (closed !== null) {
           const end = closed.index + closed[0].length
-          out += ' '.repeat(end - i)
+          out += '@' + ' '.repeat(end - i - 1)
           i = end - 1
           continue
         }
@@ -102,8 +104,11 @@ function blankHerestrings(command: string): string {
   return out
 }
 
-/** Splits on `&&`, `||`, `;`, `|` and newlines outside quotes; a backslash escapes the next character when `escapes`. */
-function split(command: string, escapes: boolean): string[] {
+/**
+ * Splits on `&&`, `||`, `;`, `|` and newlines outside quotes; a backslash escapes the next character when `escapes`.
+ * Text a segment hands to a shell (`bash -c '…'`) is split by `handed`.
+ */
+function split(command: string, escapes: boolean, handed: (inner: string) => string[]): string[] {
   const segments: string[] = []
   let current = ''
   let quote: '"' | "'" | null = null
@@ -177,7 +182,7 @@ function split(command: string, escapes: boolean): string[] {
   segments.push(current)
   return segments
     .map(segment => unwrapped(segment.trim()))
-    .flatMap(handedCommand)
+    .flatMap(segment => handedCommand(segment, handed))
     .filter(segment => segment !== '' && segment !== '}')
 }
 
@@ -185,13 +190,13 @@ function split(command: string, escapes: boolean): string[] {
 // it moves the segments after it here too, though the shell's own cd ends with it: rare, and only a location goes wrong.
 const SHELL_C = /^(?:\S*[\\/])?(?:bash|sh|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*?\s+-\w*c\s+(['"])([\s\S]*)\1$/
 
-function handedCommand(segment: string): string[] {
+function handedCommand(segment: string, split: (inner: string) => string[]): string[] {
   const handed = SHELL_C.exec(segment)
   if (handed === null) {
     return [segment]
   }
   const inner = handed[1] === '"' ? (handed[2] ?? '').replace(/\\(["\\$`])/g, '$1') : (handed[2] ?? '')
-  return commandSegments(inner)
+  return split(inner)
 }
 
 // A value an option takes: a word, or a quoted string (`xvfb-run -s "-screen 0 1280x1024x24"`).

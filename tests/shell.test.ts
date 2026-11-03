@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ELSEWHERE, commandSegments, cwdAfter, isPureRead, locatedSegments, splitCommands, writableText } from '../hooks/shell'
+import { ELSEWHERE, commandSegments, cwdAfter, executedText, isPureRead, locatedSegments, splitCommands, writableText } from '../hooks/shell'
+
+// The catch check's mutant on #348: a data heredoc's body never runs, so only its opener line is executed; a one-line
+// segment is all executed.
+describe('executedText: the part of a segment that runs', () => {
+  test("a data heredoc runs only its opener line, and a one-line segment runs whole", () => {
+    expect(executedText("cat > notes.md <<'EOF'\nnpm test\nEOF")).toBe("cat > notes.md <<'EOF'")
+    expect(executedText('bash <<EOF\nnpm test\nEOF')).toBe('bash <<EOF\nnpm test\nEOF')
+    expect(executedText('npm test')).toBe('npm test')
+  })
+})
 
 // #348: commandSegments keeps any command with a here-string opener whole, so a script after a here-string commit
 // message read as git alone. splitCommands splits by the shell that runs the command: Bash has no here-strings, and
@@ -10,7 +20,7 @@ describe('splitCommands: the commands a shell runs', () => {
     expect(splitCommands(`git commit -qm "see @'\n" && node tidy.mjs`, 'bash')).toEqual([`git commit -qm "see @'\n"`, 'node tidy.mjs'])
   })
 
-  test('under PowerShell a closed here-string is whitespace inside its command, and the next line is a command', () => {
+  test('under PowerShell a closed here-string is one word inside its command, and the next line is a command', () => {
     const [commit, script, ...rest] = splitCommands("git commit -m @'\nmsg; with | marks\n'@\nnode tidy.mjs", 'powershell')
     expect(commit?.startsWith('git commit -m')).toBe(true)
     expect(commit).not.toMatch(/msg|\|/)
@@ -34,6 +44,20 @@ describe('splitCommands: the commands a shell runs', () => {
     expect(splitCommands('git add src\\\nnode tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
     expect(splitCommands('git add src\\;node tidy.mjs', 'powershell')).toEqual(['git add src\\', 'node tidy.mjs'])
     expect(splitCommands('git add src\\;node tidy.mjs', 'bash')).toHaveLength(1)
+  })
+
+  // Review round 1: text handed to `bash -c` went back through commandSegments' one-segment rule, so a line ending in
+  // `@"` kept the inner text whole, and it started with git. A handed shell's text is Bash, split as Bash.
+  test("text handed to a shell is split as Bash, whatever @ it holds", () => {
+    for (const shell of ['bash', 'powershell'] as const) {
+      expect(splitCommands(`bash -c 'git status\necho "@"\nnode scripts/tidy.mjs'`, shell)).toContain('node scripts/tidy.mjs')
+    }
+  })
+
+  // Review round 1: a here-string that is a stage of its own stays one, as its plain-string form does, since an `@"` one
+  // can run `$(...)`. It reads as one `@` word.
+  test('under PowerShell a here-string that is its own stage stays a stage', () => {
+    expect(splitCommands('@"\nFix: $(node scripts/tidy.mjs)\n"@ | git commit -F -', 'powershell')).toEqual(['@', 'git commit -F -'])
   })
 
   test('a command with no here-string splits as commandSegments does', () => {

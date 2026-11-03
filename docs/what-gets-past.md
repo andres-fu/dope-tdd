@@ -108,7 +108,8 @@ done. A command can read as git and still run a script:
 - Something hidden in it: `git status "$(./forge.sh)"`.
 - Something the splitter reads as quoted or joined where the shell doesn't: an
   apostrophe in a `#` comment before the script's line, a single `&` (Bash), a bare
-  CR line end (PowerShell), or an `@'` PowerShell doesn't open as a here-string
+  CR line end, a backtick escape or a `<<WORD` (PowerShell, which has neither
+  Bash's heredocs nor its escapes), or an `@'` PowerShell doesn't open as a here-string
   (`git status .@'`, `# @'`, `--% @'`) with the script inside what looks like its
   body ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - An option or alias that runs a program: `git -c alias.x='!./forge.sh' x`,

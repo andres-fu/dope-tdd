@@ -176,7 +176,13 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   `-FilePath` or `-LiteralPath`, plus any path outside quotes. Under the
   PowerShell tool a here-string is one quoted span wherever it stands, so text in
   `-Value` is data; under Bash `@'` is an ordinary quote, since Bash has no
-  here-strings. For `dope-tdd.overrides.json` and `dope-tdd.json` none of that
+  here-strings. Under either shell, though, a command with `@'` right before an
+  LF or CRLF line end is kept whole rather than split into commands
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)). An opener with a
+  space or a lone CR after it doesn't keep it whole, so unless a plain one is
+  also there, the command is split and its body's quotes are read like bash's
+  ([#347](https://github.com/andres-fu/dope-tdd/issues/347)). For
+  `dope-tdd.overrides.json` and `dope-tdd.json` none of that
   applies: the file's name beside a write verb anywhere in the command, quoted or
   not, is a write to it, even when the text only talks about it. So a command
   that names the record that way is refused, and a config change after one is

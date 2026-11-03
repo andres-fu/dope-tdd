@@ -470,10 +470,13 @@ describe('a here-string is read only where PowerShell runs the command', () => {
   })
 
   // The attack on design v2: PowerShell's parser accepts any of these between the opener and the line end, and a bare
-  // CR as a line end; the reader took only spaces and tabs, and saw 3 spaces at most.
+  // CR as a line end; the reader took only spaces and tabs, and saw 3 spaces at most. The reader sees them in a command
+  // kept whole, which a plain opener elsewhere in it does (shell.ts). With only a wide opener the command splits and
+  // its body's quotes can hide a source write (#347); the record check reads the raw text and still refuses it.
   test("under PowerShell the opener's whitespace and line ends are PowerShell's", () => {
     for (const space of ['\f', '\v', '\u{a0}', '\u{85}', '\u{2003}', '\u{3000}', '\u{2028}', '     ']) {
-      expect(ps(`$t = @'${space}\nit's\n'@\nSet-Content src/a.ts y\necho 'done'`)).toEqual(['src/a.ts'])
+      expect(ps(`$u = @'\nx\n'@\n$t = @'${space}\nit's\n'@\nSet-Content src/a.ts y\necho 'done'`)).toEqual(['src/a.ts'])
+      expect(writesFileNamed(`$t = @'${space}\nit's\n'@\nSet-Content dope-tdd.overrides.json y\necho 'done'`, 'dope-tdd.overrides.json')).toBe(true)
     }
     expect(ps("$t = @'\rit's\r'@\rSet-Content src/a.ts y\recho 'done'")).toEqual(['src/a.ts'])
     expect(ps("$t = @'\r\nit's\r\n'@\r\nSet-Content src/a.ts y\r\necho 'done'")).toEqual(['src/a.ts'])

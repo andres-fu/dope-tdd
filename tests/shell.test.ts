@@ -52,14 +52,12 @@ describe('commandSegments', () => {
     expect(commandSegments(hereString)).toEqual([hereString])
   })
 
-  // Design v2 for #346: PowerShell's parser opens a here-string with any of its whitespace before the line end, or a
-  // bare CR as the line end. Split there, the body's apostrophe ends a quote and blanks the write after the close.
-  test("keeps a PowerShell here-string whole whatever whitespace or line end follows its opener", () => {
-    for (const space of ['\f', '\v', '\u{a0}', '\u{85}', '\u{2003}', '\u{3000}', '\u{2028}', '     ']) {
-      const command = `$t = @'${space}\nit's\n'@\nSet-Content src/a.ts y`
-      expect(commandSegments(command)).toEqual([command])
-    }
-    expect(commandSegments("$t = @'\rit's\r'@\rSet-Content src/a.ts y")).toEqual(["$t = @'\rit's\r'@\rSet-Content src/a.ts y"])
+  // Review round 3 of #346: keeping a command whole for a wider opener (`@'` and a space before the line end) made a
+  // git commit and the script after it one segment, which reads as git alone, so the record backstop skipped the
+  // script's write. Only the plain opener keeps a command whole, as on main; that one is #348.
+  test("splits a command whose @' has anything but a line end after it", () => {
+    expect(commandSegments("git commit -qm \"see @' \n\" && node scripts/tidy.mjs")).toHaveLength(2)
+    expect(commandSegments("git commit -qm \"see @'\u{a0}\n\" && node scripts/tidy.mjs")).toHaveLength(2)
   })
 
   test('a heredoc body stays with the command that opened it, and what follows the terminator is split as usual', () => {

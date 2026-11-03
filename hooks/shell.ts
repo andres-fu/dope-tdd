@@ -1,5 +1,6 @@
-// A PowerShell here-string opener, with the whitespace and line ends PowerShell's parser takes (design v2 for #346).
-const HERESTRING = /@['"][\t\v\f\u{85}\u{2028}\u{2029}\p{Zs}]*(?:\r\n?|\n)/u
+// The plain PowerShell here-string opener only. A wider one would keep more commands whole, and a whole command that
+// starts with git reads as git alone, which turns the record backstop off for a script after it (#346 review, #348).
+const HERESTRING = /@['"]\r?\n/
 // A heredoc opener: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"`. Sticky, so it is tried at the `<<` just read.
 const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/y
 

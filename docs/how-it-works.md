@@ -74,7 +74,10 @@ refused, and so is a shell command that names it beside a write verb, even one
 that only mentions it in a note. A shell change to it the guard didn't read
 beforehand is put back and counted as a workaround. A
 command of git alone is left alone, since a pull can bring in other people's
-overrides, and [what gets past it](what-gets-past.md) says what that leaves open.
+overrides. "Alone" is judged by the commands the tool's shell runs, so a script
+after a PowerShell here-string commit message isn't git
+([#348](https://github.com/andres-fu/dope-tdd/issues/348)), and
+[what gets past it](what-gets-past.md) says what that leaves open.
 
 ## How it decides
 
@@ -222,7 +225,12 @@ overrides, and [what gets past it](what-gets-past.md) says what that leaves open
   Claude's edit either, but `/tdd` records it as **brought in by git, not
   guarded**, with the git verb only, never its arguments.
   Commands that only read beside it (`cat`, `sha256sum`, `git status`) do not
-  change that.
+  change that. Anything else beside it does, and the command is split the way the
+  tool's shell splits it, so a script on the next line, or a PowerShell here-string
+  that runs code (`@"…$(…)…"@`), is a command of its own: the change is then charged
+  as the plain form's would be. A here-string that runs nothing, such as a message
+  piped into `git commit -F -`, isn't a command
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - The project must be a git repository; without one the shell backstop
   records nothing.
 - A subagent started with `isolation: "worktree"` works in

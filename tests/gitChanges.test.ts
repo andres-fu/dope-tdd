@@ -268,6 +268,53 @@ describe('isGitOnly', () => {
   })
 })
 
+// #348: a here-string opener anywhere kept the whole command one segment, so a script after a here-string commit
+// message read as git alone (the record backstop stood down) or as a revert only (a script's write went unsaid). The
+// commands are now the shell's own: Bash has no here-strings, and PowerShell's are blanked before the split.
+describe('git alone, a revert only and code brought in are judged by the shell that runs the command (#348)', () => {
+  const quiet = (segment: string) => /^\s*(?:pytest|npm test)\b/.test(segment)
+
+  test('a script after a here-string message is not git alone, under either shell', () => {
+    expect(isGitOnly("git commit -m @'\nmsg\n'@\nnode tidy.mjs", 'powershell')).toBe(false)
+    expect(isGitOnly(`git commit -qm "see @'\n" && node tidy.mjs`, 'bash')).toBe(false)
+    expect(isGitOnly('git add src\\\nnode tidy.mjs', 'powershell')).toBe(false)
+  })
+
+  test('git alone with a here-string message is still git alone', () => {
+    expect(isGitOnly("git merge other -m @'\nit's\n'@", 'powershell')).toBe(true)
+    expect(isGitOnly("git stash push -m @'\nwip\n'@\ngit pull\ngit stash pop", 'powershell')).toBe(true)
+    expect(isGitOnly(`git commit -qm "see @'\n"`, 'bash')).toBe(true)
+  })
+
+  test('a script after a revert and a here-string is not a revert only', () => {
+    expect(isRevertOnly("git checkout -- api.py\n$t = @'\nx\n'@\nnode fix.mjs", quiet, 'powershell')).toBe(false)
+    expect(isRevertOnly(`git checkout -- api.py && echo "@'\n" && node fix.mjs`, quiet, 'bash')).toBe(false)
+    expect(isRevertOnly("git stash push -m @'\nwip\n'@\ngit pull\ngit stash pop", quiet, 'powershell')).toBe(true)
+  })
+
+  // Review round 1: a script inside `bash -c`, or one an `@"` here-string runs as its own stage, is not git.
+  test('a script handed to a shell, or run by a here-string stage, is not git alone or a revert only', () => {
+    expect(isGitOnly(`bash -c 'git status\necho "@"\nnode scripts/tidy.mjs'`, 'bash')).toBe(false)
+    expect(isRevertOnly(`sh -c 'git restore README.md\necho "@"\npython /tmp/fix.py'`, quiet, 'bash')).toBe(false)
+    expect(isGitOnly('@"\nFix: $(node scripts/tidy.mjs)\n"@ | git commit -F -', 'powershell')).toBe(false)
+    expect(isRevertOnly('@"\n$(python fix.py)\n"@\ngit restore README.md', quiet, 'powershell')).toBe(false)
+  })
+
+  // Review round 2: a message piped from a here-string into `git commit -F -` runs nothing of its own.
+  test('a here-string message piped into git commit leaves the command git alone and a revert only', () => {
+    expect(isGitOnly("git pull\n@'\nmerge notes\n'@ | git commit -F -", 'powershell')).toBe(true)
+    expect(isRevertOnly("git checkout other -- src/App.tsx\n@'\nbring App\n'@ | git commit -F -", quiet, 'powershell')).toBe(true)
+  })
+
+  test('code another rewrite in the command brings in is seen past a here-string', () => {
+    const command = "git checkout -- src/a.ts\ngit checkout other -- src/b.ts\ngit commit -m @'\nbring b\n'@"
+    expect(bringsInCode(command, 'powershell')).toBe(true)
+    expect(gitVerb(command, 'powershell')).toBe('git checkout')
+    // Kept whole, the stash's message ran into the pull, and the verb read as the stash's.
+    expect(gitVerb("git stash push -m @'\nx\n'@\ngit pull", 'powershell')).toBe('git pull')
+  })
+})
+
 // Verified review A7 (2026-10-20): one git rewrite segment emptied the change list for the whole command, so
 // `python fix.py; git restore x` counted nothing. Only a command of git rewrites, cds and quiet segments is skipped.
 describe('isRevertOnly', () => {

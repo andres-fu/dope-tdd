@@ -1711,6 +1711,48 @@ describe('each shell tool reads here-strings its own way', () => {
     expect(write.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
   })
 
+  // #348: the revert-only judgement reads the tool's shell too. Read as Bash, the apostrophe would split off a stray
+  // segment, and the code the pull brought in would be charged to the agent.
+  test('under PowerShell a stash, pull and pop with a here-string message is a revert only', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runPowerShell($, "git stash push -m @'\nit's wip\n'@\ngit pull\ngit stash pop")
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).not.toMatch(/unguarded [1-9]/)
+  })
+
+  // Review round 1 of #348: the brought-in line reads the tool's shell too. Read as Bash, the backslash would join the
+  // restore and the checkout into one command that puts a file back, and the code from `other` would go unsaid.
+  test('under PowerShell code a checkout brings in past a trailing backslash is said', async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runPowerShell($, 'git checkout -- lib\\\ngit checkout other -- src/App.tsx')
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/unguarded 0/)
+    expect(status.text).toMatch(/brought in by git, not guarded App \(git checkout\)$/m)
+  })
+
+  // Read as Bash, the stash's here-string message runs into the line after it, and the verb reads as the stash's.
+  test("under PowerShell the git verb said is the pull's, past a stash's here-string message", async ($, on) => {
+    const world = fakeEngine(on)
+    world.onBash = () => {
+      world.numstat = '3\t1\tsrc/App.tsx\n'
+    }
+
+    await runPowerShell($, "git stash push -m @'\nx\n'@\ngit pull")
+    const status = await runCommand($, 'tdd')
+
+    expect(status.text).toMatch(/brought in by git, not guarded App \(git pull\)$/m)
+  })
+
   test("under Bash an @' is an ordinary quote, and a write to that file is denied", async ($, on) => {
     fakeEngine(on)
 
@@ -2070,6 +2112,18 @@ describe('a config changed through a shell is on the record', () => {
     expect(result.context?.join(' ')).not.toMatch(/say why/)
     expect(status.text).toMatch(/config\s+\(mode enforce → observe\)/)
     expect(status.text).not.toMatch(/workarounds: 1/)
+  })
+
+  // Review round 1 of #348: the config check reads the tool's shell too. Read as Bash, the apostrophe would split off a
+  // stray command, and the pull's change would be asked about and counted.
+  test('brought in by a PowerShell pull past a here-string stash message: not counted, and nothing asked', async ($, on) => {
+    const world = fakeEngine(on)
+    loosen(world)
+
+    const result = await runPowerShell($, "git stash push -m @'\nit's wip\n'@\ngit pull\ngit stash pop")
+
+    expect(result.context?.join(' ')).not.toMatch(/say why/)
+    expect((await runCommand($, 'tdd')).text).not.toMatch(/workarounds: 1/)
   })
 
   test('around a command that only looks read-only: said, not counted', async ($, on) => {

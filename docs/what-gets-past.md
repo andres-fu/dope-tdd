@@ -98,14 +98,21 @@ only mentions it is refused too
 
 **The exception is a command of git alone**, because a pull or a merge can
 legitimately bring in other people's overrides, and putting those back would lose
-work. Telling the two apart is the part that can't be done. A command can read as
-git and still run a script:
+work. The command is split the way the tool's shell splits it: a PowerShell
+here-string message is part of its git command, and a script on the next line is a
+command of its own ([#348](https://github.com/andres-fu/dope-tdd/issues/348)). So a
+here-string git command piped to anything else, such as `| Select-Object`, isn't
+git alone, just like the plain form, while a here-string message that runs nothing,
+piped into `git commit -F -`, is part of the commit. Telling the two apart is the part that can't be
+done. A command can read as git and still run a script:
 
 - Something hidden in it: `git status "$(./forge.sh)"`.
-- Something after a here-string: a command that starts with git and holds `@'`
-  right before a line end, such as `git commit -m @'` … `'@` in PowerShell, reads
-  as git alone, so a script after it in the same call is left alone too
-  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
+- Something the splitter reads as quoted or joined where the shell doesn't: an
+  apostrophe in a `#` comment before the script's line, a single `&` (Bash), a bare
+  CR line end, a backtick escape or curly quotes (which the splitter doesn't know),
+  a `<<WORD` (which PowerShell doesn't have), or an `@'` PowerShell doesn't open as a here-string
+  (`git status .@'`, `# @'`, `--% @'`) with the script inside what looks like its
+  body ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - An option or alias that runs a program: `git -c alias.x='!./forge.sh' x`,
   `git rebase --exec ./forge.sh HEAD~1`.
 - A hook, or anything configured to run, which the command's text never shows.

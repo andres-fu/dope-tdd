@@ -53,6 +53,7 @@ These aren't refused, and the last column says what the guard does instead.
 | A gitignored file in a watched folder | A generated file under `src/` | Nothing: git doesn't report it ([#297](https://github.com/andres-fu/dope-tdd/issues/297)) |
 | A write spelled in a way it doesn't read | `sort -o src/a.ts src/b.ts`, `ls >& src/a.ts`, `echo x 2> a.txt && npm test`, `Set-Content -Pat "src/a.ts" x`, the second file of `Set-Content -Path 'src/a.ts','src/b.ts' x`, `& 'Set-Content' "src/a.ts" x` | Said once for that file, charged to nobody; a PowerShell write that looks like a write is charged as unguarded ([#332](https://github.com/andres-fu/dope-tdd/issues/332)) |
 | A write hidden in a read or a test run | `echo "$(sed -i ...)"` | Said once for that file, charged to nobody |
+| A PowerShell command whose quoting the guard reads like bash's | A write after a `# see @'` comment line, or between `echo .@'` and `'@` with an apostrophe on each side of it; `echo --% @'`; an `@'` with a space or a lone CR after it; a quote escaped with a backtick; a write inside `"$(...)"` | Not refused. After the command, git shows the change: it counts as unguarded, or is said once and charged to nobody when the command looks like a read. With no git, or a gitignored file, nothing is said ([#347](https://github.com/andres-fu/dope-tdd/issues/347)) |
 | A path through a variable it can't expand | `echo 1 > "$ROOT/src/a.ts"`, `npm test > "$ROOT/src/a.ts"`, `Set-Content -Path $p x` | Not refused. If it lands in a watched folder of the checkout the command ends in, git shows the change after the command: the first and third count as unguarded, the second is said once and charged to nobody ([#309](https://github.com/andres-fu/dope-tdd/issues/309), [#332](https://github.com/andres-fu/dope-tdd/issues/332)) |
 | A write hidden beside a git rewrite | `git restore a.ts; echo "$(sed -i ...)"`, `git restore a.ts && git tag -a -m "$(./fix.sh)" v9`, `git rebase --exec ./fix.sh HEAD~1` | Nothing: the change counts as git's ([#284](https://github.com/andres-fu/dope-tdd/issues/284)) |
 | A write outside the folders it watches | A file outside `src/` and `tests/`, with the default layout | Nothing, unless the command names it |
@@ -89,7 +90,10 @@ A verdict is what the guard saw, and these are the gaps in what it sees.
 `dope-tdd.overrides.json` holds the overrides that let an edit through without a
 test, so it is the file most worth forging. An Edit or a Write to it is refused.
 A shell command that changes it is refused if the guard can read that, and has it
-put back as a workaround if not.
+put back as a workaround if not. The guard reads it eagerly: the file's name beside
+a write verb anywhere in a command is a write to it, so a note or a heredoc that
+only mentions it is refused too
+([#322](https://github.com/andres-fu/dope-tdd/issues/322)).
 
 **The exception is a command of git alone**, because a pull or a merge can
 legitimately bring in other people's overrides, and putting those back would lose
@@ -97,6 +101,10 @@ work. Telling the two apart is the part that can't be done. A command can read a
 git and still run a script:
 
 - Something hidden in it: `git status "$(./forge.sh)"`.
+- Something after a here-string: a command that starts with git and holds `@'`
+  right before a line end, such as `git commit -m @'` … `'@` in PowerShell, reads
+  as git alone, so a script after it in the same call is left alone too
+  ([#348](https://github.com/andres-fu/dope-tdd/issues/348)).
 - An option or alias that runs a program: `git -c alias.x='!./forge.sh' x`,
   `git rebase --exec ./forge.sh HEAD~1`.
 - A hook, or anything configured to run, which the command's text never shows.

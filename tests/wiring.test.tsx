@@ -1697,6 +1697,31 @@ describe('the PowerShell tool', () => {
   })
 })
 
+// Design v2 for #346: the hook tells the reader which shell runs the command. Each tool must take its own reading, not
+// the both-ways fallback for a caller that gives none, which refuses both commands below (the first is #332's false
+// refusal). The denied write beside each shows the file is locked, so "not refused" means something.
+describe('each shell tool reads here-strings its own way', () => {
+  test('under PowerShell a here-string naming a source file is data, and a write to that file is denied', async ($, on) => {
+    fakeEngine(on)
+
+    const note = await runPowerShell($, "$t = @'\nit's src/utils/calculateDuration.ts here, isn't it\n'@\nAdd-Content -Path notes.md -Value $t")
+    const write = await runPowerShell($, "Set-Content -Path src/utils/calculateDuration.ts -Value 'x'")
+
+    expect(note.deny).toBeUndefined()
+    expect(write.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+
+  test("under Bash an @' is an ordinary quote, and a write to that file is denied", async ($, on) => {
+    fakeEngine(on)
+
+    const quoted = await runBash($, "echo @'\nit's\n'@ > src/utils/calculateDuration.ts'")
+    const write = await runBash($, 'echo x > src/utils/calculateDuration.ts')
+
+    expect(quoted.deny).toBeUndefined()
+    expect(write.deny).toMatch(/tests\/utils\/calculateDuration\.test\.ts/)
+  })
+})
+
 describe('honest runs', () => {
   test('a failing run piped through tail is still RED, because the runner summary says so', async ($, on) => {
     const world = fakeEngine(on)

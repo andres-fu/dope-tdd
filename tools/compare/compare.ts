@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { shellCalls, transcriptFiles } from '../replay/replay.ts'
 import { ALL } from './plan.ts'
 import { compareReadings, compareSessions, formatReadings, formatSessions, parseArgs, problemsIn, readSessions, sameFiles } from './report.ts'
-import type { Compared, Reader, Session } from './report.ts'
+import type { Compared, Reader, Session, ShellCommand } from './report.ts'
 import { unpack } from './unpack.ts'
 
 const CHECKOUT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
@@ -61,8 +61,11 @@ async function readerIn(build: string): Promise<Reader> {
   return module.findSourceWrites
 }
 
-function commandsIn(dir: string): string[] {
-  return transcriptFiles(dir).flatMap(file => shellCalls(readFileSync(file, 'utf8').split('\n'), file).map(call => call.command))
+// Each command with the shell that ran it, since only PowerShell has here-strings (design v2 for #346).
+function commandsIn(dir: string): ShellCommand[] {
+  return transcriptFiles(dir).flatMap(file =>
+    shellCalls(readFileSync(file, 'utf8').split('\n'), file).map(call => ({ command: call.command, shell: call.tool === 'PowerShell' ? 'powershell' : 'bash' }) as const),
+  )
 }
 
 function addHarness(build: string): void {

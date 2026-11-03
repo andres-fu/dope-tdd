@@ -52,6 +52,14 @@ describe('commandSegments', () => {
     expect(commandSegments(hereString)).toEqual([hereString])
   })
 
+  // Review round 3 of #346: keeping a command whole for a wider opener (`@'` and a space before the line end) made a
+  // git commit and the script after it one segment, which reads as git alone, so the record backstop skipped the
+  // script's write. Only the plain opener keeps a command whole, as on main; that one is #348.
+  test("splits a command whose @' has anything but a line end after it", () => {
+    expect(commandSegments("git commit -qm \"see @' \n\" && node scripts/tidy.mjs")).toHaveLength(2)
+    expect(commandSegments("git commit -qm \"see @'\u{a0}\n\" && node scripts/tidy.mjs")).toHaveLength(2)
+  })
+
   test('a heredoc body stays with the command that opened it, and what follows the terminator is split as usual', () => {
     const command = "cat > notes.md <<'EOT'\nx; y | z\nEOT\nsed -i 's/a/b/' index.md && echo done"
     expect(commandSegments(command)).toEqual(["cat > notes.md <<'EOT'\nx; y | z\nEOT", "sed -i 's/a/b/' index.md", 'echo done'])

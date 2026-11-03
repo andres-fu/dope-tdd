@@ -1877,7 +1877,8 @@ async function guardShell(
   const scene: ShellScene = { base: await agentRoot($, agentId), sessionRoot, mainCheckout: await mainCheckoutOf($, sessionRoot) }
   // The command starts where the last one left the shell, when that is still inside the project.
   const start = await settledStart(command, shellStart(await readCwd($, shell, agentId), scene), scene.base, path => $.fs.exists(path))
-  const written = findSourceWrites(command, start)
+  // The tool says which program runs the command, and only PowerShell has here-strings (design v2 for #346).
+  const written = findSourceWrites(command, start, shell)
   const root = shellRoot(command, start, written, scene)
   const git = await noteGitOperation($, root)
   if (git.operation === null) {
